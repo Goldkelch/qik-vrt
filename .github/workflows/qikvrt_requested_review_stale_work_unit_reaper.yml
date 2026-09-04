@@ -7,12 +7,17 @@ on:
     branches: [main]
   pull_request_target:
     types: [synchronize, closed, reopened, edited]
+  workflow_run:
+    workflows:
+      - "QIKVRT requested review executor"
+    types: [completed]
   workflow_dispatch:
 
 permissions:
   actions: write
   contents: read
   pull-requests: read
+  statuses: read
 
 concurrency:
   group: qikvrt-requested-review-stale-work-unit-reaper-${{ github.repository }}
@@ -21,10 +26,12 @@ concurrency:
 jobs:
   reap:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 8
     env:
       GH_TOKEN: ${{ github.token }}
       REPOSITORY: ${{ github.repository }}
+      LEDGER_CHECKOUT: .qikvrt/mesh-review-ledger
+      RECEIPT_ROOT: .qikvrt/requested-review-stale-work-unit-reaper
     steps:
       - name: Check out exact trusted main classifier
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -33,105 +40,485 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Check out durable Mesh review queue without blob API hydration
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: qikvrt/mesh-review-ledger-v1
+          path: .qikvrt/mesh-review-ledger
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.12"
 
-      - name: Reap only stale recursive workflow-dispatch children
+      - name: Verify stale-run and durable-queue recovery contracts
         shell: bash
         run: |
           set -euo pipefail
-          root=.qikvrt/requested-review-stale-work-unit-reaper
-          mkdir -p "$root"
+          python3 -B -m unittest -v \
+            tests.test_qikvrt_requested_review_stale_work_unit_reaper
+
+      - name: Reap stale transports and resume one exact durable queue unit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RECEIPT_ROOT"
           python3 -B - <<'PY'
-          import json, os, pathlib, subprocess
-          from tools.qikvrt_requested_review_stale_work_unit_reaper import classify_run
+          from __future__ import annotations
 
-          repo=os.environ['REPOSITORY']
-          root=pathlib.Path('.qikvrt/requested-review-stale-work-unit-reaper')
+          import json
+          import os
+          import pathlib
+          import subprocess
+          import time
+          from typing import Any
 
-          def api(method,path):
-              command=['gh','api','--method',method,path]
-              completed=subprocess.run(command,text=True,capture_output=True,check=False)
-              if completed.returncode:
-                  raise SystemExit(
-                      f'GITHUB_API_{method}_FAILED {path}: {completed.stderr.strip()[:300]}'
-                  )
-              return json.loads(completed.stdout) if completed.stdout.strip() else {}
-
-          main=api('GET',f'repos/{repo}/git/ref/heads/main')['object']['sha']
-          runs=api(
-              'GET',
-              f'repos/{repo}/actions/workflows/qikvrt_requested_review_executor.yml/'
-              'runs?event=workflow_dispatch&per_page=100',
-          ).get('workflow_runs',[])
-          observations=[]
-          for run in runs:
-              if run.get('status') not in {'pending','queued','requested','waiting'}:
-                  continue
-              title=str(run.get('display_title') or '')
-              parts=title.split()
-              pr_token=next((item for item in parts if item.startswith('pr=')),None)
-              if pr_token is None or not pr_token[3:].isdigit():
-                  observations.append({
-                      'run_id':run.get('id'),
-                      'state':'HOLD_UNVERIFIED',
-                      'first_blocker':'RECURSIVE_WORK_UNIT_TITLE_UNBOUND',
-                      'cancelled':False,
-                  })
-                  continue
-              number=int(pr_token[3:])
-              pr=api('GET',f'repos/{repo}/pulls/{number}')
-              decision=classify_run(run,pr,main)
-              observation={
-                  'run_id':int(run['id']),
-                  'pr_number':number,
-                  'queued_status':run.get('status'),
-                  'current_main_sha':main,
-                  'live_head_sha':(pr.get('head') or {}).get('sha'),
-                  'live_base_sha':(pr.get('base') or {}).get('sha'),
-                  **decision,
-                  'cancelled':False,
-                  'post_cancel_status':None,
-              }
-              if decision['cancel']:
-                  completed=subprocess.run([
-                      'gh','api','--method','POST',
-                      f"repos/{repo}/actions/runs/{run['id']}/cancel",
-                  ],text=True,capture_output=True,check=False)
-                  reread=api('GET',f"repos/{repo}/actions/runs/{run['id']}")
-                  observation['post_cancel_status']=reread.get('status')
-                  observation['cancelled']=(
-                      reread.get('status') not in {'pending','queued','requested','waiting'}
-                      or completed.returncode == 0
-                  )
-                  if not observation['cancelled']:
-                      raise SystemExit(
-                          'STALE_RECURSIVE_TRANSPORT_CANCEL_NOT_OBSERVED_'
-                          + str(run['id'])
-                      )
-              observations.append(observation)
-
-          value={
-              'schema':'qikvrt_requested_review_stale_work_unit_reaper_v1',
-              'current_main_sha':main,
-              'observations':observations,
-              'cancelled_run_ids':[
-                  item['run_id'] for item in observations if item.get('cancelled')
-              ],
-              'completion_claims':{
-                  'PASS':False,'FINAL_PASS':False,
-                  'EFFECT_ACK_DONE':False,'MERGE':False,
-              },
-          }
-          (root/'receipt.json').write_text(
-              json.dumps(value,sort_keys=True,indent=2)+'\n',encoding='utf-8'
+          from tools.qikvrt_requested_review_stale_work_unit_reaper import (
+              classify_queue_work_unit,
+              classify_run,
+              load_unacknowledged_queue,
           )
-          print(json.dumps(value,sort_keys=True))
+
+          ACTIVE = {"pending", "queued", "requested", "waiting", "in_progress"}
+          RATE_LIMIT_TEXT = "API rate limit exceeded for installation."
+          repo = os.environ["REPOSITORY"]
+          ledger_root = pathlib.Path(os.environ["LEDGER_CHECKOUT"])
+          receipt_root = pathlib.Path(os.environ["RECEIPT_ROOT"])
+          receipt_path = receipt_root / "receipt.json"
+          observations: list[dict[str, Any]] = []
+          queue_decisions: list[dict[str, Any]] = []
+          current_main_sha: str | None = None
+          productive_effect = False
+          effect_ack = "NOT_REQUIRED"
+
+          class RateLimitHold(RuntimeError):
+              def __init__(self, method: str, endpoint: str, *, after_effect: bool = False):
+                  super().__init__(f"{method} {endpoint}")
+                  self.method = method
+                  self.endpoint = endpoint
+                  self.after_effect = after_effect
+
+          def command(
+              method: str,
+              endpoint: str,
+              *,
+              fields: list[str] | None = None,
+              retry_read: bool,
+              after_effect: bool = False,
+          ) -> dict[str, Any]:
+              delays = (0, 15, 45) if retry_read else (0,)
+              last_error = ""
+              for delay in delays:
+                  if delay:
+                      print(
+                          "QIKVRT_GITHUB_INSTALLATION_RATE_LIMIT_BACKOFF_SECONDS="
+                          + str(delay)
+                      )
+                      time.sleep(delay)
+                  args = ["gh", "api", "--method", method, endpoint]
+                  for field in fields or []:
+                      args.extend(["-f", field])
+                  completed = subprocess.run(
+                      args,
+                      text=True,
+                      capture_output=True,
+                      check=False,
+                  )
+                  if completed.returncode == 0:
+                      text = completed.stdout.strip()
+                      if not text:
+                          return {}
+                      value = json.loads(text)
+                      if not isinstance(value, dict):
+                          raise SystemExit(
+                              f"GITHUB_API_{method}_NON_OBJECT {endpoint}"
+                          )
+                      return value
+                  last_error = completed.stderr.strip()
+                  if RATE_LIMIT_TEXT not in last_error:
+                      raise SystemExit(
+                          f"GITHUB_API_{method}_FAILED {endpoint}: "
+                          + last_error[:500]
+                      )
+              raise RateLimitHold(method, endpoint, after_effect=after_effect)
+
+          def api_get(endpoint: str, *, after_effect: bool = False) -> dict[str, Any]:
+              return command(
+                  "GET",
+                  endpoint,
+                  retry_read=True,
+                  after_effect=after_effect,
+              )
+
+          def api_post(
+              endpoint: str,
+              *,
+              fields: list[str] | None = None,
+              after_effect: bool = False,
+          ) -> dict[str, Any]:
+              # Never replay a write whose effect may be ambiguous.
+              return command(
+                  "POST",
+                  endpoint,
+                  fields=fields,
+                  retry_read=False,
+                  after_effect=after_effect,
+              )
+
+          def completion_claims() -> dict[str, bool]:
+              return {
+                  "PASS": False,
+                  "FINAL_PASS": False,
+                  "EFFECT_ACK_DONE": False,
+                  "MERGE": False,
+              }
+
+          def preserve(value: dict[str, Any]) -> None:
+              receipt_path.write_text(
+                  json.dumps(value, sort_keys=True, indent=2) + "\n",
+                  encoding="utf-8",
+              )
+              print(json.dumps(value, sort_keys=True))
+
+          def hold_for_rate_limit(error: RateLimitHold) -> None:
+              preserve(
+                  {
+                      "schema":
+                          "qikvrt_requested_review_stale_work_unit_reaper_v2",
+                      "current_main_sha": current_main_sha,
+                      "state": "HOLD",
+                      "d0": 1,
+                      "reason": "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",
+                      "first_causal_blocker":
+                          "TRUSTED_MAIN_RECURSIVE_REVIEW_QUEUE_"
+                          "GITHUB_INSTALLATION_API_RATE_LIMIT_EXHAUSTED",
+                      "next_action": "REOBSERVE_ON_NEXT_REPOSITORY_INTERRUPT",
+                      "rate_limit": {
+                          "method": error.method,
+                          "endpoint": error.endpoint,
+                          "after_effect": error.after_effect,
+                      },
+                      "observations": observations,
+                      "queue_decisions": queue_decisions,
+                      "productive_effect": productive_effect,
+                      "effect_ack":
+                          "NOT_OBSERVED"
+                          if error.after_effect
+                          else "NOT_REQUIRED",
+                      "completion_claims": completion_claims(),
+                  }
+              )
+
+          def run_number(run: dict[str, Any]) -> int | None:
+              title = str(run.get("display_title") or "")
+              for token in title.split():
+                  if token.startswith("pr=") and token[3:].isdigit():
+                      return int(token[3:])
+              return None
+
+          try:
+              main = api_get(f"repos/{repo}/git/ref/heads/main")
+              current_main_sha = str((main.get("object") or {}).get("sha") or "")
+              if len(current_main_sha) != 40:
+                  raise SystemExit("CURRENT_MAIN_SHA_UNBOUND")
+
+              executor_endpoint = (
+                  f"repos/{repo}/actions/workflows/"
+                  "qikvrt_requested_review_executor.yml/runs?per_page=100"
+              )
+              executor_runs = api_get(executor_endpoint).get("workflow_runs", [])
+              if not isinstance(executor_runs, list):
+                  raise SystemExit("REQUESTED_REVIEW_RUN_LIST_INVALID")
+
+              # Preserve the pre-existing stale-transport contract, but route an
+              # exact installation-quota failure to HOLD instead of erasing the
+              # observation under set -e.
+              for run in executor_runs:
+                  if (
+                      not isinstance(run, dict)
+                      or run.get("event") != "workflow_dispatch"
+                      or run.get("status") not in ACTIVE
+                  ):
+                      continue
+                  number = run_number(run)
+                  if number is None:
+                      observations.append(
+                          {
+                              "run_id": run.get("id"),
+                              "state": "HOLD_UNVERIFIED",
+                              "first_blocker":
+                                  "RECURSIVE_WORK_UNIT_TITLE_UNBOUND",
+                              "cancelled": False,
+                          }
+                      )
+                      continue
+                  pr = api_get(f"repos/{repo}/pulls/{number}")
+                  decision = classify_run(run, pr, current_main_sha)
+                  observation = {
+                      "run_id": int(run["id"]),
+                      "pr_number": number,
+                      "queued_status": run.get("status"),
+                      "current_main_sha": current_main_sha,
+                      "live_head_sha": (pr.get("head") or {}).get("sha"),
+                      "live_base_sha": (pr.get("base") or {}).get("sha"),
+                      **decision,
+                      "cancelled": False,
+                      "post_cancel_status": None,
+                  }
+                  if decision["cancel"]:
+                      api_post(
+                          f"repos/{repo}/actions/runs/{run['id']}/cancel"
+                      )
+                      productive_effect = True
+                      reread = api_get(
+                          f"repos/{repo}/actions/runs/{run['id']}",
+                          after_effect=True,
+                      )
+                      observation["post_cancel_status"] = reread.get("status")
+                      observation["cancelled"] = (
+                          reread.get("status") not in ACTIVE
+                      )
+                      if observation["cancelled"]:
+                          effect_ack = "DONE"
+                      if not observation["cancelled"]:
+                          raise SystemExit(
+                              "STALE_RECURSIVE_TRANSPORT_CANCEL_NOT_OBSERVED_"
+                              + str(run["id"])
+                          )
+                  observations.append(observation)
+
+              # Re-read after any cancellation.  The global executor is a
+              # single writer; no durable queue continuation may be dispatched
+              # while any executor run still owns that role.
+              executor_runs = api_get(executor_endpoint).get("workflow_runs", [])
+              if not isinstance(executor_runs, list):
+                  raise SystemExit("REQUESTED_REVIEW_RUN_REREAD_INVALID")
+
+              work_units = load_unacknowledged_queue(
+                  ledger_root,
+                  repo,
+                  limit=64,
+              )
+              selected: dict[str, Any] | None = None
+              selected_decision: dict[str, Any] | None = None
+
+              for work_unit in work_units:
+                  intent = work_unit["intent"]
+                  number = int(intent["pr_number"])
+                  head = str(intent["head_sha"])
+                  pr = api_get(f"repos/{repo}/pulls/{number}")
+                  status_payload = api_get(
+                      f"repos/{repo}/commits/{head}/status"
+                  )
+                  statuses = status_payload.get("statuses", [])
+                  if not isinstance(statuses, list):
+                      raise SystemExit("COMMIT_STATUS_LIST_INVALID")
+                  decision = classify_queue_work_unit(
+                      work_unit,
+                      pr,
+                      current_main_sha,
+                      statuses,
+                      executor_runs,
+                  )
+                  queue_decisions.append(
+                      {
+                          "queue_path": work_unit["queue_path"],
+                          "ack_path": work_unit["ack_path"],
+                          **decision,
+                      }
+                  )
+                  if decision.get("dispatch"):
+                      selected = work_unit
+                      selected_decision = decision
+                      break
+                  if decision.get("state") == "HOLD":
+                      break
+
+              if selected is None:
+                  holding = next(
+                      (
+                          item
+                          for item in queue_decisions
+                          if item.get("state") == "HOLD"
+                      ),
+                      None,
+                  )
+                  preserve(
+                      {
+                          "schema":
+                              "qikvrt_requested_review_stale_work_unit_reaper_v2",
+                          "current_main_sha": current_main_sha,
+                          "state": "HOLD" if holding else "NOOP",
+                          "d0": 1 if holding else 0,
+                          "reason":
+                              holding.get("first_blocker")
+                              if holding
+                              else "NO_EXACT_DURABLE_QUEUE_DISPATCH_EDGE",
+                          "first_causal_blocker":
+                              holding.get("first_blocker")
+                              if holding
+                              else None,
+                          "next_action":
+                              holding.get("next_action")
+                              if holding
+                              else "NOOP",
+                          "observations": observations,
+                          "queue_decisions": queue_decisions,
+                          "productive_effect": productive_effect,
+                          "effect_ack": effect_ack,
+                          "completion_claims": completion_claims(),
+                      }
+                  )
+                  raise SystemExit(0)
+
+              intent = selected["intent"]
+              number = int(intent["pr_number"])
+              head = str(intent["head_sha"])
+              fingerprint = str(intent["successor_fingerprint"])
+              expected_title = (
+                  f"QIKVRT requested review pr={number} "
+                  f"head={head} fp={fingerprint}"
+              )
+
+              # Final exact subject rebind immediately before the one permitted
+              # transport effect.
+              pr = api_get(f"repos/{repo}/pulls/{number}")
+              if (
+                  pr.get("state") != "open"
+                  or (pr.get("head") or {}).get("sha") != head
+                  or (pr.get("base") or {}).get("sha") != current_main_sha
+              ):
+                  queue_decisions.append(
+                      {
+                          "queue_path": selected["queue_path"],
+                          "state": "STALE_QUEUE_WORK_UNIT",
+                          "d0": 0,
+                          "dispatch": False,
+                          "first_blocker": "SUBJECT_DRIFT_BEFORE_DISPATCH",
+                          "next_action": "REOBSERVE_CURRENT_QUEUE",
+                      }
+                  )
+                  preserve(
+                      {
+                          "schema":
+                              "qikvrt_requested_review_stale_work_unit_reaper_v2",
+                          "current_main_sha": current_main_sha,
+                          "state": "NOOP",
+                          "d0": 0,
+                          "reason": "SUBJECT_DRIFT_BEFORE_DISPATCH",
+                          "first_causal_blocker":
+                              "SUBJECT_DRIFT_BEFORE_DISPATCH",
+                          "next_action": "REOBSERVE_CURRENT_QUEUE",
+                          "observations": observations,
+                          "queue_decisions": queue_decisions,
+                          "productive_effect": productive_effect,
+                          "effect_ack": effect_ack,
+                          "completion_claims": completion_claims(),
+                      }
+                  )
+                  raise SystemExit(0)
+
+              pre_run_ids = {
+                  int(item["id"])
+                  for item in executor_runs
+                  if isinstance(item, dict)
+                  and isinstance(item.get("id"), int)
+              }
+              api_post(
+                  f"repos/{repo}/actions/workflows/"
+                  "qikvrt_requested_review_executor.yml/dispatches",
+                  fields=[
+                      "ref=main",
+                      f"inputs[pr]={number}",
+                      f"inputs[head]={head}",
+                      f"inputs[fingerprint]={fingerprint}",
+                  ],
+              )
+              productive_effect = True
+              effect_ack = "NOT_OBSERVED"
+
+              observed_run: dict[str, Any] | None = None
+              for delay in (0, 1, 2, 4):
+                  if delay:
+                      time.sleep(delay)
+                  reread = api_get(executor_endpoint, after_effect=True)
+                  values = reread.get("workflow_runs", [])
+                  if not isinstance(values, list):
+                      raise SystemExit("REQUESTED_REVIEW_DISPATCH_REREAD_INVALID")
+                  observed_run = next(
+                      (
+                          item
+                          for item in values
+                          if isinstance(item, dict)
+                          and isinstance(item.get("id"), int)
+                          and int(item["id"]) not in pre_run_ids
+                          and item.get("event") == "workflow_dispatch"
+                          and item.get("display_title") == expected_title
+                      ),
+                      None,
+                  )
+                  if observed_run is not None:
+                      break
+
+              if observed_run is None:
+                  preserve(
+                      {
+                          "schema":
+                              "qikvrt_requested_review_stale_work_unit_reaper_v2",
+                          "current_main_sha": current_main_sha,
+                          "state": "HOLD",
+                          "d0": 1,
+                          "reason":
+                              "RECURSIVE_REVIEW_QUEUE_DISPATCH_ACK_NOT_OBSERVED",
+                          "first_causal_blocker":
+                              "RECURSIVE_REVIEW_QUEUE_DISPATCH_ACK_NOT_OBSERVED",
+                          "next_action":
+                              "REOBSERVE_TRANSPORT_WITHOUT_REDISPATCH",
+                          "selected_work_unit": selected,
+                          "selected_decision": selected_decision,
+                          "observations": observations,
+                          "queue_decisions": queue_decisions,
+                          "productive_effect": productive_effect,
+                          "effect_ack": effect_ack,
+                          "completion_claims": completion_claims(),
+                      }
+                  )
+                  raise SystemExit(0)
+
+              effect_ack = "DONE"
+              preserve(
+                  {
+                      "schema":
+                          "qikvrt_requested_review_stale_work_unit_reaper_v2",
+                      "current_main_sha": current_main_sha,
+                      "state": "REOBSERVE",
+                      "d0": 2,
+                      "reason": "EXACT_DURABLE_QUEUE_WORK_UNIT_DISPATCHED",
+                      "first_causal_blocker": None,
+                      "next_action":
+                          "OBSERVE_EXACT_REQUESTED_REVIEW_EXECUTOR_RESULT",
+                      "selected_work_unit": selected,
+                      "selected_decision": selected_decision,
+                      "dispatched_run": {
+                          "id": observed_run.get("id"),
+                          "status": observed_run.get("status"),
+                          "event": observed_run.get("event"),
+                          "display_title": observed_run.get("display_title"),
+                      },
+                      "observations": observations,
+                      "queue_decisions": queue_decisions,
+                      "productive_effect": productive_effect,
+                      "effect_ack": effect_ack,
+                      "completion_claims": completion_claims(),
+                  }
+              )
+          except RateLimitHold as error:
+              hold_for_rate_limit(error)
           PY
 
-      - name: Preserve reaper receipt
+      - name: Preserve reaper and queue-recovery receipt
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
