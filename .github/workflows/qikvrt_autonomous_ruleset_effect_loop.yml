@@ -578,7 +578,10 @@ jobs:
           cat "$root/continuation-readback.json"
 
       - name: Dispatch one fresh same-head review-gate reobservation
-        if: steps.select.outputs.state == 'CANDIDATE' && steps.reconcile.outputs.state == 'CURRENT'
+        if: >-
+          steps.select.outputs.state == 'CANDIDATE' &&
+          steps.reconcile.outputs.state == 'CURRENT' &&
+          steps.reconcile.outputs.effect_observed == 'false'
         env:
           PR_NUMBER: ${{ steps.select.outputs.pr }}
           EXPECTED_HEAD: ${{ steps.select.outputs.head }}
