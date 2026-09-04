@@ -1,0 +1,63 @@
+name: QIKVRT Metatransistor Horizon contract
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/qikvrt_horizon_event_projection.yml"
+      - ".github/workflows/qikvrt_metatransistor_horizon.yml"
+      - "deploy/vercel-monitor/**"
+      - "deploy/universal-terminal/entrypoint.sh"
+      - "src/qikvrt_metatransistor_terminal.py"
+      - "tools/qikvrt_metatransistor_horizon.py"
+      - "tests/test_qikvrt_metatransistor_horizon.py"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/qikvrt_horizon_event_projection.yml"
+      - ".github/workflows/qikvrt_metatransistor_horizon.yml"
+      - "deploy/vercel-monitor/**"
+      - "deploy/universal-terminal/entrypoint.sh"
+      - "src/qikvrt_metatransistor_terminal.py"
+      - "tools/qikvrt_metatransistor_horizon.py"
+      - "tests/test_qikvrt_metatransistor_horizon.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify Tested Event Model Driven Development contract
+        run: |
+          set -euo pipefail
+          python3 -B -m py_compile \
+            tools/qikvrt_metatransistor_horizon.py \
+            src/qikvrt_metatransistor_terminal.py \
+            tests/test_qikvrt_metatransistor_horizon.py
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v tests.test_qikvrt_metatransistor_horizon
+          python3 -m json.tool deploy/vercel-monitor/GATE_SET_V1.json >/dev/null
+          python3 -m json.tool deploy/vercel-monitor/NODE_REGISTRY_V1.json >/dev/null
+          sh -n deploy/universal-terminal/entrypoint.sh
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          html = Path('deploy/vercel-monitor/index.html').read_text(encoding='utf-8')
+          match = re.search(r'<script>\n(.*)\n</script>', html, re.S)
+          if not match:
+              raise SystemExit('inline monitor script not found')
+          Path('/tmp/qikvrt-horizon-inline.js').write_text(match.group(1), encoding='utf-8')
+          PY
+          node --check deploy/vercel-monitor/api/_redis.js
+          node --check deploy/vercel-monitor/api/gate-event.js
+          node --check deploy/vercel-monitor/api/gate-stream.js
+          node --check deploy/vercel-monitor/api/gates.js
+          node --check deploy/vercel-monitor/api/state.js
+          node --check /tmp/qikvrt-horizon-inline.js

@@ -1,22 +1,79 @@
-import { getRedis, LATEST_HEAD_KEY, gatesKey, subjectKey } from './_redis.js';
+import {
+  getRedis,
+  STREAM_KEY,
+  LATEST_PROJECTION_KEY,
+  NODE_PROJECTIONS_KEY,
+} from './_redis.js';
 
-export default async function handler(req,res){
-  if(req.method!=='GET') return res.status(405).json({error:'MONITOR_ONLY'});
-  try{
-    const redis=await getRedis();
-    const head=await redis.get(LATEST_HEAD_KEY);
-    if(!head) return res.status(503).json({schema:'qikvrt_monitor_projection_v2',state:'HOLD_UNVERIFIED',reason:'NO_EVENT_SNAPSHOT'});
-    const [rawGates,rawSubject]=await Promise.all([redis.hGetAll(gatesKey(head)),redis.get(subjectKey(head))]);
-    const workflows=Object.values(rawGates).map(v=>JSON.parse(v)).sort((a,b)=>a.name.localeCompare(b.name));
-    const subject=rawSubject?JSON.parse(rawSubject):{kind:'workflow_run',head_sha:head};
-    res.setHeader('Cache-Control','no-store');
-    res.setHeader('X-QIKVRT-Role','MONITOR_ONLY');
+const NODE_REGISTRY = Object.freeze([
+  Object.freeze({
+    id: 'authority',
+    repository: 'Goldkelch/qik-vrt',
+    role: 'AUTHORITY',
+    surface: 'MASTER_MONITOR_AND_FULL_TERMINAL',
+    terminal_endpoint: 'http://127.0.0.1:8771',
+    external_effect: 'NONE',
+  }),
+  Object.freeze({
+    id: 'mirror',
+    repository: 'ingolf-lohmann/qik-vrt',
+    role: 'MIRROR',
+    surface: 'MONITOR_AND_FULL_TERMINAL',
+    terminal_endpoint: 'http://127.0.0.1:8771',
+    external_effect: 'NONE',
+  }),
+]);
+
+export default async function handler(req, res) {
+  if (req.method !== 'GET') return res.status(405).json({ error: 'MONITOR_ONLY' });
+  try {
+    const redis = await getRedis();
+    const [latestRaw, nodeMap, tail] = await redis.multi()
+      .get(LATEST_PROJECTION_KEY)
+      .hGetAll(NODE_PROJECTIONS_KEY)
+      .xRevRange(STREAM_KEY, '+', '-', { COUNT: 1 })
+      .exec();
+    const projections = Object.values(nodeMap)
+      .map(value => JSON.parse(value))
+      .sort((left, right) => String(left.node?.id).localeCompare(String(right.node?.id)));
+    const latest = latestRaw ? JSON.parse(latestRaw) : null;
+    const cursor = tail?.[0]?.id || '0-0';
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-QIKVRT-Role', 'MASTER_MONITOR');
+    res.setHeader('X-QIKVRT-Polling', 'disabled');
     return res.status(200).json({
-      schema:'qikvrt_monitor_projection_v2',authority:'Goldkelch/qik-vrt',subject:{...subject,head_sha:head},
-      projection:{role:'MONITOR_ONLY',terminal:false,write:false,effect_commit:false},workflows,
-      transport:{polling:false,snapshot_only:true,live:'/api/gate-stream'},observed_at:new Date().toISOString()
+      schema: 'qikvrt_horizon_snapshot_v3',
+      authority: 'Goldkelch/qik-vrt',
+      framework: 'KubiKAva',
+      development_model: 'TESTED_EVENT_MODEL_DRIVEN_DEVELOPMENT',
+      state: latest ? 'OBSERVED' : 'REOBSERVE',
+      reason: latest ? null : 'NO_EVENT_SNAPSHOT_YET',
+      latest_projection: latest,
+      node_projections: projections,
+      node_registry: NODE_REGISTRY,
+      stream_cursor: cursor,
+      transport: {
+        polling: false,
+        snapshot_reads: 1,
+        live: '/api/gate-stream',
+        resume: 'Last-Event-ID',
+      },
+      observed_at: new Date().toISOString(),
+      claims: {
+        pass: false,
+        final_pass: false,
+        effect_ack_done: false,
+        deployment: false,
+        publication: false,
+      },
     });
-  }catch(error){
-    return res.status(503).json({schema:'qikvrt_monitor_projection_v2',state:'HOLD_UNVERIFIED',reason:error?.message||'SNAPSHOT_FAILURE'});
+  } catch (error) {
+    return res.status(503).json({
+      schema: 'qikvrt_horizon_snapshot_v3',
+      state: 'REOBSERVE',
+      reason: error?.message || 'SNAPSHOT_FAILURE',
+      stream_cursor: '0-0',
+      transport: { polling: false, live: '/api/gate-stream' },
+    });
   }
 }

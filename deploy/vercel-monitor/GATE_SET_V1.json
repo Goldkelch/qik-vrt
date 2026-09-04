@@ -1,13 +1,19 @@
 {
-  "schema": "qikvrt_horizon_gate_set_v2",
+  "schema": "qikvrt_horizon_metatransistor_v3",
   "authority": "Goldkelch/qik-vrt",
   "surface": "deploy/vercel-monitor",
-  "transport": "EVENT_DRIVEN_TERMINAL_PROJECTION",
-  "polling": false,
-  "snapshot_on_connect": true,
-  "live_transport": "SERVER_SENT_EVENTS",
-  "event_source": "github.workflow_run",
-  "event_bus": "redis_stream",
+  "framework": "KubiKAva",
+  "development_model": "TESTED_EVENT_MODEL_DRIVEN_DEVELOPMENT",
+  "transport": {
+    "kind": "EVENT_DRIVEN_TERMINAL_PROJECTION",
+    "polling": false,
+    "snapshot_on_connect": true,
+    "live_transport": "SERVER_SENT_EVENTS",
+    "event_source": "github.workflow_run",
+    "event_bus": "redis_stream",
+    "resume": "LAST_EVENT_ID",
+    "heartbeat_is_state_observation": false
+  },
   "gates": [
     "QIKVRT CI",
     "QIKVRT repository evidence materialization",
@@ -19,8 +25,32 @@
     "QIKVRT explicit HOLD contract"
   ],
   "terminal_pattern": ["OBSERVE", "CLASSIFY", "D0", "ACTION", "EFFECT", "READBACK", "SUCCESSOR"],
+  "metatransistor": {
+    "inner_node": "authority",
+    "gate_ring_size": 8,
+    "max_compute_depth": 9,
+    "serial_frame": "qikvrt_serialized_metatransistor_frame_v1",
+    "mirror_materialization": "EXACT_HASH_AND_SEQUENCE",
+    "derealization": "ONLY_AFTER_EXACT_READBACK"
+  },
+  "dead_end": {
+    "criterion": "ALL_EIGHT_GATES_HOLD_AT_STABLE_EXACT_SUBJECT_DEPTH_9",
+    "requires_authoritative_repository_receipts": true,
+    "active_writer_must_be_false": true,
+    "successor_observed_must_be_false": true,
+    "disposition": "CUT_ELIGIBLE",
+    "automatic_cut": false,
+    "cut_order": [
+      "READBACK_EXACT_SUBJECT_AND_CARRIER",
+      "PERSIST_CUT_RECEIPT",
+      "CLOSE_PULL_REQUEST_NOT_PLANNED_IF_OPEN",
+      "CLOSE_EXCLUSIVE_ISSUE_CARRIER_IF_OPEN",
+      "DELETE_UNPROTECTED_NONDEFAULT_BRANCH_IF_HEAD_UNCHANGED",
+      "READBACK_ALL_CARRIER_ABSENCE"
+    ]
+  },
   "boundary": {
-    "monitor_only": true,
+    "monitor_transport_write_only": true,
     "repository_write": false,
     "approval": false,
     "merge": false,

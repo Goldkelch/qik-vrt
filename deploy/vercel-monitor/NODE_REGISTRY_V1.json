@@ -1,0 +1,38 @@
+{
+  "schema": "qikvrt_horizon_node_registry_v1",
+  "framework": "KubiKAva",
+  "development_model": "TESTED_EVENT_MODEL_DRIVEN_DEVELOPMENT",
+  "authority": "Goldkelch/qik-vrt",
+  "master_monitor_node": "authority",
+  "nodes": [
+    {
+      "id": "authority",
+      "repository": "Goldkelch/qik-vrt",
+      "role": "AUTHORITY",
+      "surface": "MASTER_MONITOR_AND_FULL_TERMINAL",
+      "reflection": "INTERNAL_STATE_TO_SERIALIZED_TERMINAL_FRAME",
+      "input": "LOCAL_EFFECT_ACK_PREPARE_COMMIT",
+      "terminal_endpoint": "http://127.0.0.1:8771",
+      "external_effect": "NONE"
+    },
+    {
+      "id": "mirror",
+      "repository": "ingolf-lohmann/qik-vrt",
+      "role": "MIRROR",
+      "surface": "MONITOR_AND_FULL_TERMINAL",
+      "reflection": "INTERNAL_STATE_TO_SERIALIZED_TERMINAL_FRAME",
+      "input": "LOCAL_EFFECT_ACK_PREPARE_COMMIT",
+      "terminal_endpoint": "http://127.0.0.1:8771",
+      "upstream": "authority",
+      "external_effect": "NONE"
+    }
+  ],
+  "node_template": {
+    "surface": ["MONITOR_ONLY", "MONITOR_AND_FULL_TERMINAL"],
+    "required_output": "qikvrt_serialized_metatransistor_frame_v1",
+    "required_binding": ["node_id", "sequence", "previous_hash", "frame_hash", "exact_subject"],
+    "lossless_materialization": true,
+    "derealization_requires_exact_readback": true,
+    "predecessor_evidence_transfer": false
+  }
+}
