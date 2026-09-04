@@ -1,0 +1,495 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT autonomous ruleset effect loop
+
+on:
+  workflow_run:
+    workflows:
+      - "QIKVRT required code-owner review"
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Exact open main-based pull request number"
+        required: true
+        type: string
+      expected_head:
+        description: "Exact current pull-request head SHA"
+        required: true
+        type: string
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: qikvrt-autonomous-ruleset-effect-loop-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  reconcile-and-reobserve:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id || '' }}
+      REQUESTED_PR: ${{ inputs.pr || '' }}
+      REQUESTED_HEAD: ${{ inputs.expected_head || '' }}
+      REVIEW_STATUS_CONTEXT: QIKVRT required code-owner review
+      EFFECT_STATUS_CONTEXT: QIKVRT autonomous ruleset repair
+      EFFECT_ROOT: /tmp/qikvrt-autonomous-ruleset-effect
+
+    steps:
+      - name: Check out exact trusted Main implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Select exact ruleset-repair subject
+        id: select
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$EFFECT_ROOT"
+          rm -rf "$root"
+          mkdir -p "$root/artifact"
+
+          python3 -B - <<'PY'
+          import json
+          import os
+          import pathlib
+          import re
+          import subprocess
+
+          root = pathlib.Path(os.environ["EFFECT_ROOT"])
+          repo = os.environ["REPOSITORY"]
+
+          def gh(path):
+              return json.loads(
+                  subprocess.check_output(["gh", "api", path], text=True)
+              )
+
+          def write(value):
+              (root / "preselection.json").write_text(
+                  json.dumps(value, indent=2, sort_keys=True) + "\n",
+                  encoding="utf-8",
+              )
+
+          def noop(blocker, **extra):
+              write({
+                  "schema": "qikvrt_autonomous_ruleset_effect_preselection_v2",
+                  "state": "NOOP",
+                  "first_blocker": blocker,
+                  **extra,
+              })
+              raise SystemExit(0)
+
+          checkout = subprocess.check_output(
+              ["git", "rev-parse", "--verify", "HEAD^{commit}"], text=True
+          ).strip()
+          live_main = gh(f"repos/{repo}/commits/main").get("sha")
+          if not re.fullmatch(r"[0-9a-f]{40}", str(live_main or "")):
+              noop("TRUSTED_MAIN_READBACK_INVALID")
+          if checkout != live_main:
+              noop(
+                  "TRUSTED_MAIN_DRIFT_BEFORE_SELECTION",
+                  checkout_head=checkout,
+                  observed_main=live_main,
+              )
+
+          event_name = os.environ["GITHUB_EVENT_NAME"]
+          if event_name == "workflow_dispatch":
+              requested_pr = os.environ.get("REQUESTED_PR", "").strip()
+              requested_head = os.environ.get("REQUESTED_HEAD", "").strip()
+              if not requested_pr.isdigit() or int(requested_pr) <= 0:
+                  noop("MANUAL_PR_NUMBER_INVALID")
+              if not re.fullmatch(r"[0-9a-f]{40}", requested_head):
+                  noop("MANUAL_EXPECTED_HEAD_INVALID")
+              write({
+                  "schema": "qikvrt_autonomous_ruleset_effect_preselection_v2",
+                  "state": "MANUAL_CANDIDATE",
+                  "first_blocker": None,
+                  "pr_number": int(requested_pr),
+                  "expected_head": requested_head,
+                  "trusted_main_sha": live_main,
+              })
+              raise SystemExit(0)
+
+          if event_name != "workflow_run":
+              noop("UNSUPPORTED_TRIGGER", event_name=event_name)
+
+          raw_run_id = os.environ.get("UPSTREAM_RUN_ID", "").strip()
+          if not raw_run_id.isdigit() or int(raw_run_id) <= 0:
+              noop("UPSTREAM_RUN_ID_INVALID")
+          run_id = int(raw_run_id)
+          run = gh(f"repos/{repo}/actions/runs/{run_id}")
+          workflow = gh(
+              f"repos/{repo}/actions/workflows/qikvrt_required_review_gate.yml"
+          )
+          trusted_path = ".github/workflows/qikvrt_required_review_gate.yml"
+          if (
+              run.get("name") != "QIKVRT required code-owner review"
+              or run.get("path") != trusted_path
+              or workflow.get("path") != trusted_path
+              or run.get("workflow_id") != workflow.get("id")
+              or run.get("conclusion") != "success"
+              or run.get("head_branch") != "main"
+              or run.get("head_sha") != live_main
+              or (run.get("repository") or {}).get("full_name") != repo
+          ):
+              noop(
+                  "UPSTREAM_GATE_PROVENANCE_INVALID",
+                  upstream_run_id=run_id,
+                  trusted_main_sha=live_main,
+              )
+
+          artifacts = gh(f"repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100")
+          expected_name = (
+              f"qikvrt-required-code-owner-selection-{run_id}-CANDIDATE"
+          )
+          matches = [
+              item
+              for item in artifacts.get("artifacts", [])
+              if isinstance(item, dict)
+              and item.get("name") == expected_name
+              and item.get("expired") is not True
+          ]
+          if len(matches) != 1:
+              noop(
+                  "UPSTREAM_CANDIDATE_ARTIFACT_MISSING_OR_AMBIGUOUS",
+                  upstream_run_id=run_id,
+                  expected_artifact=expected_name,
+                  observed_matches=len(matches),
+              )
+          artifact = matches[0]
+          archive_url = artifact.get("archive_download_url")
+          if not isinstance(archive_url, str) or not archive_url.startswith(
+              "https://api.github.com/repos/"
+          ):
+              noop("UPSTREAM_CANDIDATE_ARTIFACT_URL_INVALID")
+          write({
+              "schema": "qikvrt_autonomous_ruleset_effect_preselection_v2",
+              "state": "ARTIFACT_CANDIDATE",
+              "first_blocker": None,
+              "trusted_main_sha": live_main,
+              "upstream_run_id": run_id,
+              "artifact_id": artifact.get("id"),
+              "artifact_name": expected_name,
+              "artifact_digest": artifact.get("digest"),
+              "artifact_url": archive_url,
+          })
+          PY
+
+          pre_state="$(jq -r .state "$root/preselection.json")"
+          if [ "$pre_state" = ARTIFACT_CANDIDATE ]; then
+            gh api "$(jq -r .artifact_url "$root/preselection.json")" > "$root/evidence.zip"
+            unzip -q "$root/evidence.zip" -d "$root/artifact"
+            mapfile -t selection_files < <(
+              find "$root/artifact" -type f \
+                -name qikvrt-required-review-selection.json -print
+            )
+            test "${#selection_files[@]}" -eq 1
+            cp "${selection_files[0]}" "$root/upstream-selection.json"
+          fi
+
+          python3 -B - <<'PY'
+          import json
+          import os
+          import pathlib
+          import re
+          import subprocess
+
+          root = pathlib.Path(os.environ["EFFECT_ROOT"])
+          repo = os.environ["REPOSITORY"]
+          context = os.environ["REVIEW_STATUS_CONTEXT"]
+          pre = json.loads((root / "preselection.json").read_text(encoding="utf-8"))
+
+          def gh(path):
+              return json.loads(
+                  subprocess.check_output(["gh", "api", path], text=True)
+              )
+
+          def pages(path):
+              raw = json.loads(
+                  subprocess.check_output(
+                      ["gh", "api", "--paginate", "--slurp", path], text=True
+                  )
+              )
+              result = []
+              for page in raw:
+                  result.extend(page if isinstance(page, list) else [page])
+              return result
+
+          def save(value):
+              (root / "selection.json").write_text(
+                  json.dumps(value, indent=2, sort_keys=True) + "\n",
+                  encoding="utf-8",
+              )
+
+          def noop(blocker, **extra):
+              save({
+                  "schema": "qikvrt_autonomous_ruleset_effect_selection_v2",
+                  "state": "NOOP",
+                  "first_blocker": blocker,
+                  **extra,
+              })
+              raise SystemExit(0)
+
+          if pre.get("state") == "NOOP":
+              noop(pre.get("first_blocker") or "PRESELECTION_NOOP")
+
+          upstream_run_id = None
+          artifact_name = None
+          if pre.get("state") == "MANUAL_CANDIDATE":
+              number = pre.get("pr_number")
+              expected_head = pre.get("expected_head")
+          elif pre.get("state") == "ARTIFACT_CANDIDATE":
+              selection = json.loads(
+                  (root / "upstream-selection.json").read_text(encoding="utf-8")
+              )
+              numbers = selection.get("pr_numbers")
+              expected_head = selection.get("expected_head")
+              if (
+                  selection.get("schema")
+                  != "qikvrt_required_code_owner_review_selection_v1"
+                  or selection.get("state") != "CANDIDATE"
+                  or not isinstance(numbers, list)
+                  or len(numbers) != 1
+                  or isinstance(numbers[0], bool)
+                  or not isinstance(numbers[0], int)
+                  or numbers[0] <= 0
+                  or not re.fullmatch(r"[0-9a-f]{40}", str(expected_head or ""))
+              ):
+                  noop("UPSTREAM_SELECTION_BINDING_INVALID")
+              number = numbers[0]
+              upstream_run_id = pre.get("upstream_run_id")
+              artifact_name = pre.get("artifact_name")
+          else:
+              noop("PRESELECTION_STATE_INVALID", observed_state=pre.get("state"))
+
+          if isinstance(number, bool) or not isinstance(number, int) or number <= 0:
+              noop("PR_NUMBER_INVALID")
+          if not re.fullmatch(r"[0-9a-f]{40}", str(expected_head or "")):
+              noop("EXPECTED_HEAD_INVALID")
+
+          pull = gh(f"repos/{repo}/pulls/{number}")
+          observed_head = (pull.get("head") or {}).get("sha")
+          if (
+              pull.get("state") != "open"
+              or (pull.get("base") or {}).get("ref") != "main"
+              or (pull.get("head") or {}).get("repo", {}).get("full_name") != repo
+              or observed_head != expected_head
+          ):
+              noop(
+                  "EXACT_SUBJECT_DRIFT",
+                  pr_number=number,
+                  expected_head=expected_head,
+                  observed_head=observed_head,
+              )
+
+          statuses = pages(f"repos/{repo}/commits/{expected_head}/statuses?per_page=100")
+          matching = [item for item in statuses if item.get("context") == context]
+          if upstream_run_id is not None:
+              target = f"https://github.com/{repo}/actions/runs/{upstream_run_id}"
+              matching = [item for item in matching if item.get("target_url") == target]
+          matching.sort(
+              key=lambda item: (
+                  item.get("updated_at") or item.get("created_at") or "",
+                  int(item.get("id") or 0),
+              )
+          )
+          status = matching[-1] if matching else None
+          if (
+              not isinstance(status, dict)
+              or status.get("state") != "failure"
+              or status.get("description")
+              != "failure: CODE_OWNER_RULE_NOT_ENFORCED"
+          ):
+              noop(
+                  "EXACT_RULESET_BLOCKER_STATUS_MISSING",
+                  pr_number=number,
+                  head_sha=expected_head,
+              )
+
+          live_main = gh(f"repos/{repo}/commits/main").get("sha")
+          if live_main != pre.get("trusted_main_sha"):
+              noop(
+                  "TRUSTED_MAIN_DRIFT_AFTER_SELECTION",
+                  expected_main=pre.get("trusted_main_sha"),
+                  observed_main=live_main,
+              )
+
+          save({
+              "schema": "qikvrt_autonomous_ruleset_effect_selection_v2",
+              "state": "CANDIDATE",
+              "first_blocker": "CODE_OWNER_RULE_NOT_ENFORCED",
+              "pr_number": number,
+              "head_sha": expected_head,
+              "trusted_main_sha": live_main,
+              "status_id": status.get("id"),
+              "status_target_url": status.get("target_url"),
+              "upstream_run_id": upstream_run_id,
+              "upstream_artifact_name": artifact_name,
+              "predecessor_evidence_transfer": False,
+          })
+          PY
+
+          cat "$root/selection.json"
+          python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+          value = json.load(
+              open(os.path.join(os.environ["EFFECT_ROOT"], "selection.json"), encoding="utf-8")
+          )
+          print(f"state={value['state']}")
+          print(f"pr={value.get('pr_number') or ''}")
+          print(f"head={value.get('head_sha') or ''}")
+          print(f"main={value.get('trusted_main_sha') or ''}")
+          print(f"blocker={value.get('first_blocker') or ''}")
+          PY
+
+      - name: Reconcile full normative ruleset and require exact readback
+        id: reconcile
+        if: steps.select.outputs.state == 'CANDIDATE'
+        env:
+          PR_NUMBER: ${{ steps.select.outputs.pr }}
+          EXPECTED_HEAD: ${{ steps.select.outputs.head }}
+          EXPECTED_MAIN: ${{ steps.select.outputs.main }}
+          QIKVRT_RULESET_ADMIN_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$EFFECT_ROOT"
+          checkout="$(git rev-parse --verify HEAD^{commit})"
+          live_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"
+          current_head="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+          test "$checkout" = "$EXPECTED_MAIN"
+          test "$live_main" = "$EXPECTED_MAIN"
+          test "$current_head" = "$EXPECTED_HEAD"
+
+          gh api "repos/${REPOSITORY}/rulesets/19344903" > "$root/live-ruleset-before.json"
+          set +e
+          python3 -B tools/qikvrt_ruleset_reconcile.py \
+            --snapshot "$root/live-ruleset-before.json" \
+            --receipt "$root/preflight-receipt.json"
+          preflight_rc=$?
+          set -e
+          preflight_state="$(jq -r .state "$root/preflight-receipt.json")"
+
+          if [ "$preflight_state" = CURRENT ]; then
+            cp "$root/preflight-receipt.json" "$root/terminal-receipt.json"
+          elif [ "$preflight_state" = DRIFT ]; then
+            set +e
+            python3 -B tools/qikvrt_ruleset_reconcile.py \
+              --apply \
+              --receipt "$root/apply-receipt.json"
+            apply_rc=$?
+            set -e
+            cp "$root/apply-receipt.json" "$root/terminal-receipt.json"
+            printf '%s\n' "$apply_rc" > "$root/apply-exit-code.txt"
+          else
+            cp "$root/preflight-receipt.json" "$root/terminal-receipt.json"
+          fi
+          printf '%s\n' "$preflight_rc" > "$root/preflight-exit-code.txt"
+
+          terminal_state="$(jq -r .state "$root/terminal-receipt.json")"
+          case "$terminal_state" in
+            CURRENT|HOLD) ;;
+            *)
+              python3 -B - <<'PY'
+          import json
+          import os
+          import pathlib
+          root = pathlib.Path(os.environ["EFFECT_ROOT"])
+          observed = json.loads((root / "terminal-receipt.json").read_text(encoding="utf-8"))
+          (root / "terminal-receipt.json").write_text(
+              json.dumps({
+                  "schema": "qikvrt_github_main_ruleset_reconciliation_v1",
+                  "repository": "Goldkelch/qik-vrt",
+                  "ruleset_id": 19344903,
+                  "state": "HOLD",
+                  "first_blocker": "RULESET_RECONCILIATION_NOT_TERMINAL",
+                  "observed_state": observed.get("state"),
+                  "mutation": "NONE",
+                  "effect_observed": False,
+              }, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+              ;;
+          esac
+
+          cat "$root/terminal-receipt.json"
+          python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+          value = json.load(
+              open(os.path.join(os.environ["EFFECT_ROOT"], "terminal-receipt.json"), encoding="utf-8")
+          )
+          print(f"state={value.get('state') or ''}")
+          print(f"blocker={value.get('first_blocker') or ''}")
+          print(f"mutation={value.get('mutation') or ''}")
+          print(f"effect_observed={'true' if value.get('effect_observed') else 'false'}")
+          PY
+
+      - name: Publish exact authority HOLD
+        if: steps.select.outputs.state == 'CANDIDATE' && steps.reconcile.outputs.state == 'HOLD'
+        env:
+          PR_NUMBER: ${{ steps.select.outputs.pr }}
+          EXPECTED_HEAD: ${{ steps.select.outputs.head }}
+          EXPECTED_MAIN: ${{ steps.select.outputs.main }}
+          BLOCKER: ${{ steps.reconcile.outputs.blocker }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_head="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+          current_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"
+          test "$current_head" = "$EXPECTED_HEAD"
+          test "$current_main" = "$EXPECTED_MAIN"
+          detail="${BLOCKER:-HOLD_RULESET_ADMIN_AUTHORITY}"
+          gh api --method POST "repos/${REPOSITORY}/statuses/${EXPECTED_HEAD}" \
+            -f state=pending \
+            -f context="$EFFECT_STATUS_CONTEXT" \
+            -f description="REQUEST_AUTHORITY: ${detail:0:100}" \
+            -f target_url="${GITHUB_SERVER_URL}/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+      - name: Dispatch one fresh same-head review-gate reobservation
+        if: steps.select.outputs.state == 'CANDIDATE' && steps.reconcile.outputs.state == 'CURRENT'
+        env:
+          PR_NUMBER: ${{ steps.select.outputs.pr }}
+          EXPECTED_HEAD: ${{ steps.select.outputs.head }}
+          EXPECTED_MAIN: ${{ steps.select.outputs.main }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_head="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+          current_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"
+          test "$current_head" = "$EXPECTED_HEAD"
+          test "$current_main" = "$EXPECTED_MAIN"
+          jq -n --arg pr "$PR_NUMBER" '{ref:"main",inputs:{pr:$pr}}' \
+            | gh api --method POST \
+                "repos/${REPOSITORY}/actions/workflows/qikvrt_required_review_gate.yml/dispatches" \
+                --input -
+          gh api --method POST "repos/${REPOSITORY}/statuses/${EXPECTED_HEAD}" \
+            -f state=success \
+            -f context="$EFFECT_STATUS_CONTEXT" \
+            -f description="ruleset CURRENT; exact-head gate reobservation dispatched" \
+            -f target_url="${GITHUB_SERVER_URL}/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+      - name: Preserve exact selection and admin-effect receipts
+        if: always() && steps.select.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-autonomous-ruleset-effect-${{ github.run_id }}-${{ steps.select.outputs.state }}
+          path: /tmp/qikvrt-autonomous-ruleset-effect
+          if-no-files-found: error
+          retention-days: 90
