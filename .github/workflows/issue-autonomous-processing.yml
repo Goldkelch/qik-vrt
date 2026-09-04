@@ -38,14 +38,49 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          number="$EVENT_ISSUE_NUMBER"
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then number="$INPUT_ISSUE_NUMBER"; fi
-          test -n "$number"
           issue_path="$RUNNER_TEMP/qikvrt-issue.json"
-          gh api "repos/$REPOSITORY/issues/$number" > "$issue_path"
-          jq -e '.pull_request | not' "$issue_path" >/dev/null
+          case "$EVENT_NAME" in
+            issues)
+              number="$EVENT_ISSUE_NUMBER"
+              test -n "$number"
+              jq -e \
+                --arg repository "$REPOSITORY" \
+                --argjson number "$number" \
+                '
+                  .repository.full_name == $repository and
+                  (.action == "opened" or .action == "reopened" or .action == "edited") and
+                  .issue.number == $number and
+                  (.issue.repository_url | endswith("/repos/" + $repository)) and
+                  (.issue.pull_request | not)
+                ' "$GITHUB_EVENT_PATH" >/dev/null
+              jq -c '.issue' "$GITHUB_EVENT_PATH" > "$issue_path"
+              ;;
+            workflow_dispatch)
+              number="$INPUT_ISSUE_NUMBER"
+              test -n "$number"
+              gh api \
+                -H "Accept: application/vnd.github+json" \
+                "repos/$REPOSITORY/issues/$number" > "$issue_path"
+              jq -e \
+                --arg repository "$REPOSITORY" \
+                --argjson number "$number" \
+                '
+                  .number == $number and
+                  (.repository_url | endswith("/repos/" + $repository)) and
+                  (.pull_request | not)
+                ' "$issue_path" >/dev/null
+              ;;
+            *)
+              echo "BLOCK: unsupported issue intake event: $EVENT_NAME" >&2
+              exit 2
+              ;;
+          esac
+          event_payload_sha256="$(sha256sum "$GITHUB_EVENT_PATH" | awk '{print $1}')"
+          issue_sha256="$(sha256sum "$issue_path" | awk '{print $1}')"
           echo "number=$number" >> "$GITHUB_OUTPUT"
           echo "path=$issue_path" >> "$GITHUB_OUTPUT"
+          echo "event_payload_sha256=$event_payload_sha256" >> "$GITHUB_OUTPUT"
+          echo "issue_sha256=$issue_sha256" >> "$GITHUB_OUTPUT"
 
       - name: Bind history-preserving issue work branch
         id: branch
