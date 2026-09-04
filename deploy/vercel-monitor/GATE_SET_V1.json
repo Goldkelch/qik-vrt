@@ -1,9 +1,13 @@
 {
-  "schema": "qikvrt_horizon_gate_set_v1",
+  "schema": "qikvrt_horizon_gate_set_v2",
   "authority": "Goldkelch/qik-vrt",
   "surface": "deploy/vercel-monitor",
-  "refresh_seconds": 1,
-  "page_refresh_seconds": 60,
+  "transport": "EVENT_DRIVEN_TERMINAL_PROJECTION",
+  "polling": false,
+  "snapshot_on_connect": true,
+  "live_transport": "SERVER_SENT_EVENTS",
+  "event_source": "github.workflow_run",
+  "event_bus": "redis_stream",
   "gates": [
     "QIKVRT CI",
     "QIKVRT repository evidence materialization",
@@ -14,6 +18,7 @@
     "QIKVRT zero-bug continuous invariant",
     "QIKVRT explicit HOLD contract"
   ],
+  "terminal_pattern": ["OBSERVE", "CLASSIFY", "D0", "ACTION", "EFFECT", "READBACK", "SUCCESSOR"],
   "boundary": {
     "monitor_only": true,
     "repository_write": false,
