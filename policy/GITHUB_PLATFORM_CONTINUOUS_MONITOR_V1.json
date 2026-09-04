@@ -1,0 +1,36 @@
+{
+  "schema": "qikvrt_github_platform_continuous_monitor_policy_v1",
+  "state": "ACTIVE_POLICY_CANDIDATE",
+  "scope": [
+    "github_actions",
+    "github_api"
+  ],
+  "material_effect_classes": [
+    "RATE_LIMITS",
+    "REVIEW_ROUTING",
+    "WORKFLOW_EXECUTION_STATE",
+    "EXACT_HEAD_REOBSERVATION"
+  ],
+  "loop_contract": {
+    "repository_native": true,
+    "continuous": true,
+    "allowed_infinite_loops": 1,
+    "loop_identity": "QIKVRT_GITHUB_PLATFORM_CONTINUOUS_MONITOR",
+    "all_other_repository_control_paths": "EVENT_DRIVEN_OR_FINITE",
+    "polling_elsewhere": "FORBIDDEN"
+  },
+  "alert_contract": {
+    "only_material_changes": true,
+    "separate_platform_news_from_repository_evidence": true,
+    "require_likely_repository_impact": true,
+    "require_smallest_safe_mitigation": true,
+    "deduplicate_unchanged_state": true
+  },
+  "evidence_boundary": {
+    "platform_news_is_not_repository_effect": true,
+    "repository_observation_is_not_merge_or_approval": true,
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
