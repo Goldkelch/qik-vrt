@@ -68,6 +68,14 @@ class RulesetReconcileTests(unittest.TestCase):
         with self.assertRaises(reconcile.RulesetBlock):
             reconcile.evaluate(current, self.policy)
 
+    def test_ruleset_failure_is_not_encoded_as_hold(self):
+        source = (reconcile.ROOT / "tools/qikvrt_ruleset_reconcile.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"state": "REQUEST_AUTHORITY"', source)
+        self.assertIn('"continuation_required": True', source)
+        self.assertNotIn('"state": "HOLD"', source)
+
     def test_reconciler_workflow_keeps_admin_token_separate(self):
         workflow = (
             reconcile.ROOT / ".github/workflows/qikvrt_ruleset_reconcile.yml"

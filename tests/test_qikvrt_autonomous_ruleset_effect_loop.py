@@ -41,21 +41,39 @@ class AutonomousRulesetEffectLoopContractTest(unittest.TestCase):
         self.assertIn("--receipt", self.text)
         self.assertIn("rulesets/19344903", self.text)
 
-    def test_admin_authority_is_explicit_and_not_weakened(self):
+    def test_admin_authority_is_nonterminal_and_repository_routed(self):
         self.assertIn("QIKVRT_RULESET_ADMIN_TOKEN", self.text)
         self.assertNotIn("QIKVRT_GITHUB_ADMIN_TOKEN", self.text)
-        self.assertIn("REQUEST_AUTHORITY:", self.text)
+        self.assertIn("REQUEST_AUTHORITY", self.text)
         self.assertIn("state=pending", self.text)
+        self.assertIn("issues: write", self.text)
+        self.assertIn("qikvrt-ruleset-authority:", self.text)
+        self.assertIn("issues/${PR_NUMBER}/comments", self.text)
+        self.assertIn("issues/comments/${comment_id}", self.text)
         self.assertNotIn("required_approving_review_count: 0", self.text)
         self.assertNotIn("require_code_owner_review: false", self.text)
 
+    def test_hold_requires_absence_of_repository_carriers(self):
+        self.assertIn("tools/qikvrt_hold_admissibility.py", self.text)
+        self.assertIn("--pull-request-carrier", self.text)
+        self.assertIn("--branch-carrier", self.text)
+        self.assertIn("hold_admissible", self.text)
+        self.assertIn("HOLD_ADMISSIBLE=false", self.text)
+        self.assertNotIn('"state": "HOLD"', self.text)
+        self.assertNotIn("steps.reconcile.outputs.state == 'HOLD'", self.text)
+        self.assertNotIn("Publish exact authority HOLD", self.text)
+
     def test_effect_and_same_head_reobservation_are_fenced(self):
         self.assertGreaterEqual(
-            self.text.count('test "$current_head" = "$EXPECTED_HEAD"'),
+            self.text.count('pulls/${PR_NUMBER}" --jq .head.sha'),
             3,
         )
         self.assertGreaterEqual(
-            self.text.count('test "$current_main" = "$EXPECTED_MAIN"'),
+            self.text.count('commits/main" --jq .sha'),
+            3,
+        )
+        self.assertGreaterEqual(
+            self.text.count('git/ref/heads/${HEAD_REF}" --jq .object.sha'),
             3,
         )
         self.assertIn(
@@ -78,7 +96,7 @@ class AutonomousRulesetEffectLoopContractTest(unittest.TestCase):
         self.assertNotIn("zenodo", self.text.lower())
         self.assertNotIn("arxiv", self.text.lower())
         self.assertNotIn("wikipedia", self.text.lower())
-        self.assertNotIn("EFFECT_ACK_DONE", self.text)
+        self.assertNotIn("EFFECT_ACK_DONE=true", self.text)
 
 
 if __name__ == "__main__":
