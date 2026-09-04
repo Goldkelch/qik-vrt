@@ -1,0 +1,102 @@
+name: QIKVRT Horizon event projection
+
+on:
+  workflow_run:
+    workflows:
+      - QIKVRT CI
+      - QIKVRT repository evidence materialization
+      - QIKVRT Collective Proposal Review
+      - QIKVRT code-owner review observer
+      - QIKVRT live status watch
+      - QIKVRT Spark branch work-unit core
+      - QIKVRT zero-bug continuous invariant
+      - QIKVRT explicit HOLD contract
+    types: [requested, in_progress, completed]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: horizon-event-${{ github.event.workflow_run.id }}-${{ github.event.action }}
+  cancel-in-progress: false
+
+jobs:
+  project:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: OBSERVE CLASSIFY D0
+        env:
+          ACTION: ${{ github.event.action }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          GATE: ${{ github.event.workflow_run.name }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          STATUS: ${{ github.event.workflow_run.status }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          UPDATED_AT: ${{ github.event.workflow_run.updated_at }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os
+          action=os.environ['ACTION']
+          conclusion=os.environ.get('CONCLUSION') or None
+          if action == 'requested': state='REQUESTED'
+          elif action == 'in_progress': state='RUNNING'
+          elif conclusion == 'success': state='SUCCESS'
+          elif conclusion in {'failure','action_required','timed_out','startup_failure'}: state='BLOCKED'
+          elif conclusion in {'skipped','neutral'}: state='SKIPPED'
+          elif conclusion == 'cancelled': state='CANCELLED'
+          else: state='UNKNOWN'
+          pr=os.environ.get('PR_NUMBER','').strip()
+          subject={'kind':'pull_request','number':int(pr),'head_sha':os.environ['HEAD_SHA'],'head_branch':os.environ['HEAD_BRANCH']} if pr.isdigit() else {'kind':'workflow_run','head_sha':os.environ['HEAD_SHA'],'head_branch':os.environ['HEAD_BRANCH']}
+          event={
+            'schema':'qikvrt_horizon_gate_event_v1',
+            'event_id':f"{os.environ['RUN_ID']}:{action}",
+            'source':'github.workflow_run',
+            'gate':os.environ['GATE'],
+            'run_id':int(os.environ['RUN_ID']),
+            'head_sha':os.environ['HEAD_SHA'],
+            'status':os.environ.get('STATUS') or None,
+            'conclusion':conclusion,
+            'state':state,
+            'updated_at':os.environ.get('UPDATED_AT') or None,
+            'subject':subject,
+            'terminal':{
+              'OBSERVE':'WORKFLOW_RUN_EVENT',
+              'CLASSIFY':state,
+              'D0':os.environ['HEAD_SHA'],
+              'ACTION':'PROJECT_MONITOR_TRANSITION',
+              'EFFECT':'TRANSPORT_ONLY',
+              'READBACK':'REQUIRED',
+              'SUCCESSOR':'EVENT_OR_RECONNECT'
+            }
+          }
+          open('horizon-event.json','w',encoding='utf-8').write(json.dumps(event,separators=(',',':')))
+          print(json.dumps(event,indent=2))
+          PY
+
+      - name: ACTION transport event with GitHub OIDC
+        env:
+          OIDC_URL: ${{ env.ACTIONS_ID_TOKEN_REQUEST_URL }}
+          OIDC_TOKEN: ${{ env.ACTIONS_ID_TOKEN_REQUEST_TOKEN }}
+        run: |
+          set -euo pipefail
+          token="$(curl --fail --silent --show-error \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Fhorizon-by-qik-vrt.vercel.app" | jq -r .value)"
+          test -n "$token" && test "$token" != null
+          code="$(curl --silent --show-error --output horizon-receipt.json --write-out '%{http_code}' \
+            -X POST https://horizon-by-qik-vrt.vercel.app/api/gate-event \
+            -H "Authorization: Bearer ${token}" \
+            -H 'Content-Type: application/json' \
+            --data-binary @horizon-event.json)"
+          cat horizon-receipt.json
+          test "$code" = 202 -o "$code" = 200
+
+      - name: READBACK fail closed
+        run: |
+          set -euo pipefail
+          jq -e '.accepted == true and .transport_ack != false' horizon-receipt.json >/dev/null
+          jq -e '(.effect_ack // false) == false' horizon-receipt.json >/dev/null
