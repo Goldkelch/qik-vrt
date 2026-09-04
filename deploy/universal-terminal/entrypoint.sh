@@ -16,7 +16,7 @@ if [ ! -f "$PROFILE_DIR/.qikvrt-profile-initialized" ]; then
   : > "$PROFILE_DIR/.qikvrt-profile-initialized"
 fi
 
-python3 -B /opt/qikvrt/src/qikvrt_effect_ack_http_terminal.py \
+python3 -B /opt/qikvrt/src/qikvrt_metatransistor_terminal.py \
   --host 127.0.0.1 --port "$HTTP_PORT" \
   > /opt/qikvrt/runtime/logs/effect-ack-http.log 2>&1 &
 HTTP_PID=$!

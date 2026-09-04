@@ -1,0 +1,125 @@
+{
+  "schema": "qikvrt_horizon_metatransistor_v4",
+  "authority": "Goldkelch/qik-vrt",
+  "surface": "deploy/vercel-monitor",
+  "framework": "KubiKAva",
+  "development_model": "TESTED_EVENT_MODEL_DRIVEN_DEVELOPMENT",
+  "transport": {
+    "kind": "EVENT_DRIVEN_UNIVERSAL_TERMINAL_PROJECTION",
+    "polling": false,
+    "snapshot_on_connect": true,
+    "snapshot_reads_per_connection": 1,
+    "live_transport": "SERVER_SENT_EVENTS",
+    "terminal_transport": "BOUNDED_POST_THEN_EVENT_READBACK",
+    "event_source": "github.workflow_run",
+    "event_bus": "redis_stream",
+    "resume": "LAST_EVENT_ID",
+    "heartbeat_is_state_observation": false
+  },
+  "gates": [
+    "QIKVRT CI",
+    "QIKVRT repository evidence materialization",
+    "QIKVRT Collective Proposal Review",
+    "QIKVRT code-owner review observer",
+    "QIKVRT live status watch",
+    "QIKVRT Spark branch work-unit core",
+    "QIKVRT zero-bug continuous invariant",
+    "QIKVRT explicit HOLD contract"
+  ],
+  "gate_states": [
+    "NOT_OBSERVED",
+    "CONTINUE",
+    "READY",
+    "HOLD",
+    "SKIPPED"
+  ],
+  "terminal_pattern": [
+    "OBSERVE",
+    "CLASSIFY",
+    "D0",
+    "ACTION",
+    "EFFECT",
+    "READBACK",
+    "SUCCESSOR"
+  ],
+  "metatransistor": {
+    "inner_node": "authority",
+    "gate_ring_size": 8,
+    "max_compute_depth": 9,
+    "serial_frame": "qikvrt_serialized_metatransistor_frame_v1",
+    "mirror_materialization": "EXACT_HASH_SEQUENCE_AND_BASE8_PATH",
+    "derealization": "ONLY_AFTER_EXACT_READBACK"
+  },
+  "recursive_node_contract": {
+    "topology": "EIGHT_ARY_RECURSIVE_TREE_WITH_8_BY_8_AUTHORITY_RING",
+    "fanout": 8,
+    "root_role": "AUTHORITY",
+    "child_role": "MIRROR_AUTHORITY",
+    "each_mirror_immediately_defines_eight_children": true,
+    "every_node_has_monitor": true,
+    "terminal_slots": [0, 7],
+    "serialized_payload_manifested_in_every_child": true,
+    "lossless_derealization_required": true,
+    "browser_materialized_depth": 2,
+    "logical_node_count_at_depth_9": 153391689,
+    "browser_materialization_is_bounded_and_lazy_beyond_depth_2": true
+  },
+  "minimum_demonstrator": {
+    "kind": "SIGNED_FIXED_POINT_ALU",
+    "operations": [
+      "ADD",
+      "SUB",
+      "MUL",
+      "MAC"
+    ],
+    "rounding": "TOWARD_ZERO",
+    "overflow": "LOCAL_GATE_HOLD",
+    "transport_lossless": true,
+    "physical_hardware_execution": false
+  },
+  "maximum_architectural_target": {
+    "kind": "COMPLETE_COMPUTER_SYSTEM",
+    "layers": [
+      "CPU",
+      "MOTHERBOARD",
+      "OPERATING_SYSTEM",
+      "PROTOCOL_STACK",
+      "SERVICES",
+      "CLIENTS",
+      "TERMINALS"
+    ],
+    "implementation_complete": false
+  },
+  "dead_end": {
+    "criterion": "ALL_EIGHT_GATES_HOLD_AT_STABLE_EXACT_SUBJECT_DEPTH_9",
+    "requires_authoritative_repository_receipts": true,
+    "active_writer_must_be_false": true,
+    "successor_observed_must_be_false": true,
+    "while_carrier_exists": "CUT_CANDIDATE_REQUIRES_EXACT_RECEIPT",
+    "after_exact_safe_carrier_binding": "CUT_ELIGIBLE",
+    "terminal_hold_before_carrier_removal": false,
+    "automatic_cut": false,
+    "cut_order": [
+      "READBACK_EXACT_SUBJECT_AND_CARRIER",
+      "PERSIST_CUT_RECEIPT",
+      "CLOSE_PULL_REQUEST_NOT_PLANNED_IF_OPEN",
+      "CLOSE_EXCLUSIVE_ISSUE_CARRIER_IF_OPEN",
+      "DELETE_UNPROTECTED_NONDEFAULT_BRANCH_IF_HEAD_UNCHANGED",
+      "READBACK_ALL_CARRIER_ABSENCE"
+    ]
+  },
+  "boundary": {
+    "monitor_transport_write_only": true,
+    "bounded_terminal_data_input": true,
+    "arbitrary_code_execution": false,
+    "repository_write": false,
+    "retirement_effect": false,
+    "approval": false,
+    "merge": false,
+    "deployment_effect": false,
+    "publication_effect": false,
+    "pass": false,
+    "final_pass": false,
+    "effect_ack_done": false
+  }
+}

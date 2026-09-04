@@ -1,0 +1,118 @@
+{
+  "schema": "qikvrt_metatransistor_recursive_mesh_v1",
+  "title": "QIK-VRT Metatransistor recursive Authority/Mirror data-flow contract",
+  "owner": "Ingolf Lohmann",
+  "framework": "KubiKAva",
+  "development_model": "TESTED_EVENT_MODEL_DRIVEN_DEVELOPMENT",
+  "polling": false,
+  "fanout": 8,
+  "retirement_depth": 9,
+  "authority": {
+    "role": "INNER_STATE_AUTHORITY",
+    "provides_master_monitor": true,
+    "accepts_bounded_terminal_input": true,
+    "serializes_every_transition": true,
+    "requires_exact_subject_binding": true
+  },
+  "mirror": {
+    "receives_through": "SERIALIZED_UNIVERSAL_TERMINAL_LINK",
+    "manifests_complete_payload": true,
+    "reflects_inner_state_outward": true,
+    "becomes_authority_for_children": true,
+    "child_count": 8,
+    "provides_child_authority_monitor": true,
+    "provides_terminal_to_slots": [
+      0,
+      7
+    ]
+  },
+  "scale": {
+    "topology": "EIGHT_ARY_RECURSIVE_TREE_WITH_8_BY_8_AUTHORITY_RING",
+    "level_0_nodes": 1,
+    "level_1_nodes": 8,
+    "level_2_nodes": 64,
+    "level_3_nodes": 512,
+    "logical_total_through_depth_9": 153391689,
+    "runtime_materialization": "BOUNDED_LAZY_PROJECTION",
+    "identity": "ROOT_SUBJECT_SHA256_PLUS_BASE8_PATH"
+  },
+  "tick": {
+    "order": [
+      "OBSERVE",
+      "CLASSIFY",
+      "D0",
+      "ACTION",
+      "SERIALIZE",
+      "MANIFEST",
+      "READBACK",
+      "SUCCESSOR"
+    ],
+    "payload_format": "CANONICAL_JSON_UTF8",
+    "per_lane_digest": "SHA256",
+    "lossless_derealization": true,
+    "predecessor_evidence_transfer": false
+  },
+  "demonstrators": {
+    "minimum": {
+      "kind": "SIGNED_FIXED_POINT_ALU",
+      "operations": [
+        "ADD",
+        "SUB",
+        "MUL",
+        "MAC"
+      ],
+      "overflow": "LOCAL_HOLD",
+      "rounding": "EXPLICIT_TOWARD_ZERO",
+      "transport_lossless_even_when_numeric_rounding_occurs": true
+    },
+    "maximum_architectural_target": {
+      "kind": "COMPLETE_COMPUTER_SYSTEM",
+      "layers": [
+        "CPU",
+        "MOTHERBOARD",
+        "OPERATING_SYSTEM",
+        "PROTOCOL_STACK",
+        "SERVICES",
+        "CLIENTS",
+        "TERMINALS"
+      ],
+      "implementation_complete": false
+    }
+  },
+  "dead_end": {
+    "predicate": "ALL_EIGHT_EXACT_GATES_ARE_HOLD_AT_CAUSAL_DEPTH_9",
+    "classification_while_issue_pr_or_branch_exists": "CUT_CANDIDATE_REQUIRES_EXACT_RECEIPT",
+    "required_next_action": "PREPARE_EXACT_CARRIER_RETIREMENT",
+    "cut_eligible_requires": [
+      "AUTHORITATIVE_REPOSITORY_RECEIPT_FOR_EACH_GATE",
+      "NO_ACTIVE_WRITER",
+      "NO_SUCCESSOR_OBSERVED",
+      "EXACT_CURRENT_HEAD",
+      "UNPROTECTED_NONDEFAULT_BRANCH"
+    ],
+    "hold_admissible_only_after_relevant_carriers_are_removed": true,
+    "monitor_may_delete_or_close_carriers": false
+  },
+  "terminal_input": {
+    "transport": "BOUNDED_POST_THEN_SSE_READBACK",
+    "maximum_utf8_bytes": 4096,
+    "kinds": [
+      "DATA",
+      "FIXED_POINT_ALU"
+    ],
+    "arbitrary_code_execution": false,
+    "repository_write": false,
+    "security_profile": "DATAFLOW_DEMONSTRATOR_SECURITY_DEFERRED"
+  },
+  "boundaries": {
+    "logical_mesh_node_is_not_automatically_a_git_repository": true,
+    "software_visualization_is_not_physical_hardware_execution": true,
+    "repository_candidate_is_not_trusted_main": true,
+    "transport_ack_is_not_effect_ack": true,
+    "pass": false,
+    "final_pass": false,
+    "effect_ack_done": false,
+    "deployment": false,
+    "publication": false
+  }
+}

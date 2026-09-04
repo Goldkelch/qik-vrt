@@ -1,0 +1,96 @@
+name: QIKVRT Horizon event projection
+
+on:
+  workflow_run:
+    workflows:
+      - QIKVRT CI
+      - QIKVRT repository evidence materialization
+      - QIKVRT Collective Proposal Review
+      - QIKVRT code-owner review observer
+      - QIKVRT live status watch
+      - QIKVRT Spark branch work-unit core
+      - QIKVRT zero-bug continuous invariant
+      - QIKVRT explicit HOLD contract
+    types: [requested, in_progress, completed]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: horizon-event-${{ github.repository }}-${{ github.event.workflow_run.id }}-${{ github.event.action }}
+  cancel-in-progress: false
+
+jobs:
+  project:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Bind trusted projector implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: OBSERVE CLASSIFY D0 serialized Metatransistor event
+        env:
+          REPOSITORY: ${{ github.repository }}
+          EVENT_ACTION: ${{ github.event.action }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          GATE: ${{ github.event.workflow_run.name }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_STATUS: ${{ github.event.workflow_run.status }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          UPDATED_AT: ${{ github.event.workflow_run.updated_at }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_metatransistor_horizon.py event \
+            --repository "$REPOSITORY" \
+            --gate "$GATE" \
+            --run-id "$RUN_ID" \
+            --head-sha "$HEAD_SHA" \
+            --head-branch "$HEAD_BRANCH" \
+            --action "$EVENT_ACTION" \
+            --status "$RUN_STATUS" \
+            --conclusion "$CONCLUSION" \
+            --updated-at "$UPDATED_AT" \
+            --pr-number "$PR_NUMBER" \
+            --event-id "${REPOSITORY}:${RUN_ID}:${EVENT_ACTION}" \
+            > horizon-event.json
+          python3 -m json.tool horizon-event.json
+
+      - name: ACTION transport event with GitHub OIDC
+        run: |
+          set -euo pipefail
+          token="$(curl --fail --silent --show-error \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Fhorizon-by-qik-vrt.vercel.app" | jq -r .value)"
+          test -n "$token" && test "$token" != null
+          curl --fail-with-body --silent --show-error \
+            -X POST https://horizon-by-qik-vrt.vercel.app/api/gate-event \
+            -H "Authorization: Bearer ${token}" \
+            -H 'Content-Type: application/json' \
+            --data-binary @horizon-event.json \
+            > horizon-receipt.json
+          cat horizon-receipt.json
+
+      - name: READBACK fail closed
+        run: |
+          set -euo pipefail
+          jq -e '.accepted == true and .transport_ack == true' horizon-receipt.json >/dev/null
+          jq -e '(.effect_ack // false) == false' horizon-receipt.json >/dev/null
+          jq -e '(.cut_eligible // false) == false or (.disposition == "CUT_ELIGIBLE")' horizon-receipt.json >/dev/null
+
+      - name: Preserve exact transport receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-horizon-${{ github.repository_id }}-${{ github.event.workflow_run.id }}-${{ github.event.action }}
+          path: |
+            horizon-event.json
+            horizon-receipt.json
+          if-no-files-found: warn
+          retention-days: 14
