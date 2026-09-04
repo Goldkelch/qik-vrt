@@ -5,12 +5,14 @@ export default async function handler(req, res) {
   }
   const prUrl = 'https://api.github.com/repos/Goldkelch/qik-vrt/pulls/966';
   const runUrl = 'https://api.github.com/repos/Goldkelch/qik-vrt/actions/runs?event=pull_request&per_page=30';
+  const token = process.env.GITHUB_READ_TOKEN || process.env.GITHUB_TOKEN || '';
   const headers = {
     'Accept':'application/vnd.github+json',
-    'User-Agent':'qikvrt-vercel-monitor/1'
+    'User-Agent':'qikvrt-vercel-monitor/2'
   };
+  if (token) headers.Authorization = `Bearer ${token}`;
   try {
-    const [prResp, runsResp] = await Promise.all([fetch(prUrl,{headers}), fetch(runUrl,{headers})]);
+    const [prResp, runsResp] = await Promise.all([fetch(prUrl,{headers,cache:'no-store'}), fetch(runUrl,{headers,cache:'no-store'})]);
     if (!prResp.ok || !runsResp.ok) {
       return res.status(502).json({
         schema:'qikvrt_monitor_projection_v1',
@@ -31,6 +33,7 @@ export default async function handler(req, res) {
     }));
     res.setHeader('Cache-Control','no-store');
     res.setHeader('X-QIKVRT-Role','MONITOR_ONLY');
+    res.setHeader('X-QIKVRT-Page-Refresh','60s');
     return res.status(200).json({
       schema:'qikvrt_monitor_projection_v1',
       authority:'Goldkelch/qik-vrt',
@@ -38,6 +41,7 @@ export default async function handler(req, res) {
       projection:{role:'MONITOR_ONLY',terminal:false,write:false,effect_commit:false},
       workflows:exactRuns,
       rule:'On projection change, non-authority nodes must request and reobserve the exact change from Goldkelch; this projection is never itself EFFECT_ACK.',
+      refresh_contract:{gates_seconds:1,page_seconds:60},
       observed_at:new Date().toISOString()
     });
   } catch (error) {
