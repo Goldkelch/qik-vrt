@@ -117,14 +117,30 @@ class MetatransistorHorizonTests(unittest.TestCase):
         changed["payload"]["text"] = "changed"
         self.assertFalse(horizon.verify_terminal_frame(changed))
 
-    def test_repository_surface_is_event_driven_and_visualizes_nodes(self) -> None:
+    def test_repository_surface_is_event_driven_atomic_and_visualizes_nodes(self) -> None:
         html = (ROOT / "deploy/vercel-monitor/index.html").read_text(encoding="utf-8")
-        stream = (ROOT / "deploy/vercel-monitor/api/gate-stream.js").read_text(encoding="utf-8")
-        snapshot = (ROOT / "deploy/vercel-monitor/api/state.js").read_text(encoding="utf-8")
-        ingress = (ROOT / "deploy/vercel-monitor/api/gate-event.js").read_text(encoding="utf-8")
-        workflow = (ROOT / ".github/workflows/qikvrt_horizon_event_projection.yml").read_text(encoding="utf-8")
-        registry = json.loads((ROOT / "deploy/vercel-monitor/NODE_REGISTRY_V1.json").read_text(encoding="utf-8"))
-        gate_set = json.loads((ROOT / "deploy/vercel-monitor/GATE_SET_V1.json").read_text(encoding="utf-8"))
+        stream = (
+            ROOT / "deploy/vercel-monitor/api/gate-stream.js"
+        ).read_text(encoding="utf-8")
+        snapshot = (
+            ROOT / "deploy/vercel-monitor/api/state.js"
+        ).read_text(encoding="utf-8")
+        ingress = (
+            ROOT / "deploy/vercel-monitor/api/gate-event.js"
+        ).read_text(encoding="utf-8")
+        workflow = (
+            ROOT / ".github/workflows/qikvrt_horizon_event_projection.yml"
+        ).read_text(encoding="utf-8")
+        registry = json.loads(
+            (ROOT / "deploy/vercel-monitor/NODE_REGISTRY_V1.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        gate_set = json.loads(
+            (ROOT / "deploy/vercel-monitor/GATE_SET_V1.json").read_text(
+                encoding="utf-8"
+            )
+        )
         self.assertNotIn("setInterval", html)
         self.assertEqual(html.count("fetch('/api/state'"), 1)
         self.assertIn("new EventSource", html)
@@ -132,20 +148,36 @@ class MetatransistorHorizonTests(unittest.TestCase):
         self.assertIn("last-event-id", stream.lower())
         self.assertIn("xRead", stream)
         self.assertIn("BLOCK: 25000", stream)
+        self.assertIn("reader.destroy()", stream)
         self.assertIn("qikvrt_metatransistor_projection_v1", ingress)
         self.assertIn("holdCount + 1", ingress)
+        self.assertIn("WatchError", ingress)
+        self.assertIn("client.watch(dkey, gkey)", ingress)
+        self.assertIn("const replies = await client.multi()", ingress)
+        self.assertIn(".xAdd(", ingress)
+        self.assertIn(".set(dkey, body.event_id", ingress)
+        self.assertIn("client.destroy()", ingress)
+        self.assertNotIn("redis.set(dedupeKey(body.event_id)", ingress)
         self.assertIn("ref: main", workflow)
         self.assertIn("id-token: write", workflow)
         self.assertIn("qikvrt_metatransistor_horizon.py event", workflow)
         self.assertEqual(gate_set["metatransistor"]["max_compute_depth"], 9)
         self.assertFalse(gate_set["transport"]["polling"])
         self.assertEqual(registry["framework"], "KubiKAva")
-        self.assertTrue(any(node["role"] == "AUTHORITY" for node in registry["nodes"]))
-        self.assertTrue(any("FULL_TERMINAL" in node["surface"] for node in registry["nodes"]))
+        self.assertTrue(
+            any(node["role"] == "AUTHORITY" for node in registry["nodes"])
+        )
+        self.assertTrue(
+            any("FULL_TERMINAL" in node["surface"] for node in registry["nodes"])
+        )
 
     def test_loopback_terminal_wrapper_exposes_only_registered_origins(self) -> None:
-        wrapper = (ROOT / "src/qikvrt_metatransistor_terminal.py").read_text(encoding="utf-8")
-        entrypoint = (ROOT / "deploy/universal-terminal/entrypoint.sh").read_text(encoding="utf-8")
+        wrapper = (
+            ROOT / "src/qikvrt_metatransistor_terminal.py"
+        ).read_text(encoding="utf-8")
+        entrypoint = (
+            ROOT / "deploy/universal-terminal/entrypoint.sh"
+        ).read_text(encoding="utf-8")
         self.assertIn("https://horizon-by-qik-vrt.vercel.app", wrapper)
         self.assertIn("https://goldkelch.github.io", wrapper)
         self.assertIn("Access-Control-Allow-Private-Network", wrapper)
