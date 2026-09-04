@@ -22,6 +22,27 @@ class PlanckTickGapLawZenodoReconciliationContractTests(unittest.TestCase):
             self.text.index("GET public Zenodo record and verify downloaded bytes"),
         )
 
+    def test_final_main_reobservation_follows_zenodo_gets_and_precedes_receipt(self) -> None:
+        public_get = self.text.index("payload = get_bytes(content_url)")
+        final_guard = self.text.index(
+            "post_readback_main_head = read_remote_main()"
+        )
+        receipt_write = self.text.index("output_path.write_text(")
+        self.assertLess(public_get, final_guard)
+        self.assertLess(final_guard, receipt_write)
+        self.assertIn(
+            "TRUSTED_MAIN_DRIFT_AFTER_ZENODO_READBACK",
+            self.text,
+        )
+        self.assertIn(
+            '"post_readback_main_reobservation": {',
+            self.text,
+        )
+        self.assertIn(
+            '"post_readback_main_matches_initial_exact_main": True',
+            self.text,
+        )
+
     def test_reconciliation_is_get_only_and_creates_no_second_record(self) -> None:
         self.assertIn('method="GET"', self.text)
         self.assertNotIn("ZENODO_ACCESS_TOKEN", self.text)
