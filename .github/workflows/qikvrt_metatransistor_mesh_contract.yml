@@ -1,0 +1,129 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT metatransistor recursive mesh contract
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/qikvrt_metatransistor_mesh_contract.yml"
+      - "deploy/vercel-monitor/**"
+      - "policy/QIKVRT_METATRANSISTOR_RECURSIVE_MESH_V1.json"
+      - "tools/qikvrt_metatransistor_mesh.py"
+      - "tests/test_qikvrt_metatransistor_mesh.py"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/qikvrt_metatransistor_mesh_contract.yml"
+      - "deploy/vercel-monitor/**"
+      - "policy/QIKVRT_METATRANSISTOR_RECURSIVE_MESH_V1.json"
+      - "tools/qikvrt_metatransistor_mesh.py"
+      - "tests/test_qikvrt_metatransistor_mesh.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tested-event-model:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind exact head and tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'HEAD=%s\n' "$(git rev-parse --verify HEAD^{commit})" | tee metatransistor-binding.txt
+          printf 'TREE=%s\n' "$(git rev-parse --verify HEAD^{tree})" | tee -a metatransistor-binding.txt
+
+      - name: Verify recursive Authority Mirror data flow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m py_compile \
+            tools/qikvrt_metatransistor_mesh.py \
+            tests/test_qikvrt_metatransistor_mesh.py
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v tests.test_qikvrt_metatransistor_mesh
+          python3 -B tools/qikvrt_metatransistor_mesh.py demo \
+            --depth 2 \
+            --output metatransistor-demo.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          value = json.loads(Path('metatransistor-demo.json').read_text(encoding='utf-8'))
+          assert value['fanout'] == 8
+          assert value['materialized_node_count'] == 73
+          assert value['logical_node_count_at_retirement_depth'] == 153391689
+          assert value['first_level_derealization']['lossless'] is True
+          assert value['polling'] is False
+          PY
+
+      - name: Verify browser server and terminal event model
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check deploy/vercel-monitor/api/_mesh.js
+          node --check deploy/vercel-monitor/api/_redis.js
+          node --check deploy/vercel-monitor/api/gate-event.js
+          node --check deploy/vercel-monitor/api/gate-stream.js
+          node --check deploy/vercel-monitor/api/state.js
+          node --check deploy/vercel-monitor/api/terminal-event.js
+          node --check deploy/vercel-monitor/api/gates.js
+          node deploy/vercel-monitor/test-metatransistor.mjs | tee metatransistor-js-receipt.json
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          html = Path('deploy/vercel-monitor/index.html').read_text(encoding='utf-8')
+          assert html.count("fetch('/api/state'") == 1
+          assert 'setInterval' not in html
+          assert 'setTimeout' not in html
+          assert '/api/gates' not in html
+          assert 'new EventSource' in html
+          assert '/api/gate-stream?cursor=' in html
+          assert 'qikvrt_terminal_input_v1' in html
+          match = re.search(r'<script>\n(.*)\n</script>', html, re.S)
+          if not match:
+              raise SystemExit('inline monitor module not found')
+          Path('/tmp/qikvrt-horizon-inline.js').write_text(match.group(1), encoding='utf-8')
+          PY
+          node --check /tmp/qikvrt-horizon-inline.js
+          ! grep -nE 'api\.github\.com|github\.com/.*/actions/runs' deploy/vercel-monitor/api/state.js
+          grep -q 'BLOCK: 25000' deploy/vercel-monitor/api/gate-stream.js
+          grep -q "terminal-transition" deploy/vercel-monitor/api/gate-stream.js
+
+      - name: Verify machine-readable contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          gate_set = json.loads(Path('deploy/vercel-monitor/GATE_SET_V1.json').read_text(encoding='utf-8'))
+          registry = json.loads(Path('deploy/vercel-monitor/NODE_REGISTRY_V1.json').read_text(encoding='utf-8'))
+          policy = json.loads(Path('policy/QIKVRT_METATRANSISTOR_RECURSIVE_MESH_V1.json').read_text(encoding='utf-8'))
+          assert gate_set['transport']['polling'] is False
+          assert gate_set['recursive_node_contract']['fanout'] == 8
+          assert gate_set['recursive_node_contract']['logical_node_count_at_depth_9'] == 153391689
+          assert gate_set['dead_end']['terminal_hold_before_carrier_removal'] is False
+          assert registry['recursive_node_template']['each_mirror_becomes_authority'] is True
+          assert policy['terminal_input']['arbitrary_code_execution'] is False
+          assert policy['dead_end']['hold_admissible_only_after_relevant_carriers_are_removed'] is True
+          PY
+
+      - name: Preserve exact contract receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-metatransistor-mesh-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            metatransistor-binding.txt
+            metatransistor-demo.json
+            metatransistor-js-receipt.json
+          if-no-files-found: warn
+          retention-days: 14

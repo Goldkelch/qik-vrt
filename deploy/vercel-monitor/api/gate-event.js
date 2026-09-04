@@ -1,13 +1,16 @@
 import { createHash } from 'node:crypto';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
-import { WatchError } from 'redis';
+import { materializeMesh, subjectIdentity, summarizeMesh } from './_mesh.js';
 import {
   getRedis,
   STREAM_KEY,
   LATEST_PROJECTION_KEY,
+  LATEST_MESH_KEY,
   NODE_PROJECTIONS_KEY,
+  NODE_MESHES_KEY,
   gatesKey,
   projectionKey,
+  meshKey,
   dedupeKey,
 } from './_redis.js';
 
@@ -23,41 +26,26 @@ const GATES = Object.freeze([
 ]);
 const GATE_SET = new Set(GATES);
 const ALLOWED_REPOSITORIES = new Map([
-  ['Goldkelch/qik-vrt', {
-    id: 'authority',
-    role: 'AUTHORITY',
-    capability: 'MASTER_MONITOR_AND_FULL_TERMINAL',
-  }],
-  ['ingolf-lohmann/qik-vrt', {
-    id: 'mirror',
-    role: 'MIRROR',
-    capability: 'MONITOR_AND_FULL_TERMINAL',
-  }],
+  ['Goldkelch/qik-vrt', { id: 'authority', role: 'AUTHORITY', capability: 'MASTER_MONITOR_AND_FULL_TERMINAL' }],
+  ['ingolf-lohmann/qik-vrt', { id: 'mirror', role: 'MIRROR', capability: 'MONITOR_AND_FULL_TERMINAL' }],
 ]);
 const STATES = new Set(['NOT_OBSERVED', 'CONTINUE', 'READY', 'HOLD', 'SKIPPED']);
 const SHA40 = /^[0-9a-f]{40}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const MAX_DEPTH = 9;
-const MAX_CAS_ATTEMPTS = 3;
-const JWKS = createRemoteJWKSet(
-  new URL('https://token.actions.githubusercontent.com/.well-known/jwks'),
-);
+const JWKS = createRemoteJWKSet(new URL('https://token.actions.githubusercontent.com/.well-known/jwks'));
 const AUDIENCE = 'https://horizon-by-qik-vrt.vercel.app';
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.keys(value).sort().map(key => [key, canonical(value[key])]),
-    );
+    return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])]));
   }
   return value;
 }
 
 function fingerprint(value) {
-  return createHash('sha256')
-    .update(JSON.stringify(canonical(value)))
-    .digest('hex');
+  return createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
 }
 
 function fail(message, statusCode = 422) {
@@ -69,23 +57,20 @@ function fail(message, statusCode = 422) {
 async function authenticate(req) {
   const header = req.headers.authorization || '';
   if (!header.startsWith('Bearer ')) fail('OIDC_REQUIRED', 401);
-  const { payload } = await jwtVerify(header.slice(7), JWKS, {
+  const token = header.slice(7);
+  const { payload } = await jwtVerify(token, JWKS, {
     issuer: 'https://token.actions.githubusercontent.com',
     audience: AUDIENCE,
   });
   const repository = String(payload.repository || '');
-  if (!ALLOWED_REPOSITORIES.has(repository)) {
-    fail('REPOSITORY_NOT_REGISTERED', 403);
-  }
+  if (!ALLOWED_REPOSITORIES.has(repository)) fail('REPOSITORY_NOT_REGISTERED', 403);
   if (payload.event_name !== 'workflow_run') fail('EVENT_MISMATCH', 403);
-  return {
-    repository,
-    registered: ALLOWED_REPOSITORIES.get(repository),
-  };
+  return { repository, registered: ALLOWED_REPOSITORIES.get(repository) };
 }
 
 function parseBody(req) {
-  return typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+  if (typeof req.body === 'string') return JSON.parse(req.body);
+  return req.body;
 }
 
 function subjectId(subject) {
@@ -111,76 +96,55 @@ function normalizeGate(body) {
 
 function vectorFrom(rawGates) {
   return GATES.map(name => {
-    const gate = rawGates[name] ? JSON.parse(rawGates[name]) : {};
+    const parsed = rawGates[name] ? JSON.parse(rawGates[name]) : {};
     return {
       name,
-      state: gate.state || 'NOT_OBSERVED',
-      status: gate.status ?? null,
-      conclusion: gate.conclusion ?? null,
-      run_id: gate.run_id ?? null,
-      updated_at: gate.updated_at ?? null,
-      event_id: gate.event_id ?? null,
-      cause_authority: gate.cause_authority || '',
-      causal_fingerprint: gate.causal_fingerprint || '',
+      state: parsed.state || 'NOT_OBSERVED',
+      status: parsed.status ?? null,
+      conclusion: parsed.conclusion ?? null,
+      run_id: parsed.run_id ?? null,
+      updated_at: parsed.updated_at ?? null,
+      event_id: parsed.event_id ?? null,
+      cause_authority: parsed.cause_authority || '',
+      causal_fingerprint: parsed.causal_fingerprint || '',
     };
   });
 }
 
 function carrierFrom(body) {
-  const supplied = body.carrier && typeof body.carrier === 'object'
-    ? body.carrier
-    : {};
+  const supplied = body.carrier && typeof body.carrier === 'object' ? body.carrier : {};
   return {
-    pull_request_open: Boolean(
-      supplied.pull_request_open ?? (body.subject?.kind === 'pull_request'),
-    ),
+    pull_request_open: Boolean(supplied.pull_request_open ?? (body.subject?.kind === 'pull_request')),
     issue_open: Boolean(supplied.issue_open),
-    branch_exists: Boolean(
-      supplied.branch_exists ?? body.subject?.head_branch,
-    ),
+    branch_exists: Boolean(supplied.branch_exists ?? body.subject?.head_branch),
     exact_head_current: Boolean(supplied.exact_head_current),
     protected: Boolean(supplied.protected ?? true),
     default_branch: Boolean(supplied.default_branch ?? true),
   };
 }
 
-function project(body, vector) {
+function project({ body, vector }) {
   const complete = vector.every(gate => gate.state !== 'NOT_OBSERVED');
   const allHold = complete && vector.every(gate => gate.state === 'HOLD');
-  const holdCount = vector.filter(gate => gate.state === 'HOLD').length;
+  const vectorFingerprint = fingerprint({ head_sha: body.head_sha, gates: vector });
   const activeWriter = Boolean(body.active_writer);
   const successorObserved = Boolean(body.successor_observed);
+  const holdCount = vector.filter(gate => gate.state === 'HOLD').length;
   const computationDepth = activeWriter || successorObserved || holdCount === 0
     ? 0
     : Math.min(MAX_DEPTH, holdCount + 1);
-  const vectorFingerprint = fingerprint({
-    head_sha: body.head_sha,
-    gates: vector,
-  });
   const authoritativeVector = complete && vector.every(gate =>
-    gate.cause_authority === 'REPOSITORY_RECEIPT'
-      && SHA256.test(gate.causal_fingerprint)
+    gate.cause_authority === 'REPOSITORY_RECEIPT' && SHA256.test(gate.causal_fingerprint)
   );
   const carrier = carrierFrom(body);
-  const carrierPresent = carrier.pull_request_open
-    || carrier.issue_open
-    || carrier.branch_exists;
-  const cutCandidate = complete
-    && allHold
-    && computationDepth >= MAX_DEPTH;
-  const cutEligible = cutCandidate
-    && authoritativeVector
-    && carrierPresent
-    && carrier.exact_head_current
-    && !carrier.protected
-    && !carrier.default_branch;
-
+  const carrierPresent = carrier.pull_request_open || carrier.issue_open || carrier.branch_exists;
+  const cutCandidate = complete && allHold && computationDepth >= MAX_DEPTH;
+  const cutEligible = cutCandidate && authoritativeVector && carrierPresent &&
+    carrier.exact_head_current && !carrier.protected && !carrier.default_branch;
   let disposition = 'REOBSERVE_INCOMPLETE_VECTOR';
   if (complete) disposition = 'CONTINUE';
   if (allHold) disposition = 'CONTINUE_DEPTH_OBSERVATION';
-  if (cutCandidate) {
-    disposition = 'CUT_CANDIDATE_REQUIRES_EXACT_RECEIPT';
-  }
+  if (cutCandidate) disposition = 'CUT_CANDIDATE_REQUIRES_EXACT_RECEIPT';
   if (cutEligible) disposition = 'CUT_ELIGIBLE';
 
   return {
@@ -189,6 +153,7 @@ function project(body, vector) {
     development_model: 'TESTED_EVENT_MODEL_DRIVEN_DEVELOPMENT',
     node: body.node,
     subject: body.subject,
+    subject_id: subjectIdentity({ repository: body.node.repository, ...body.subject }),
     head_sha: body.head_sha,
     gate_count: GATES.length,
     gates: vector,
@@ -230,152 +195,125 @@ function project(body, vector) {
   };
 }
 
-function duplicateReceipt(body, streamId) {
+function meshPayload(body, projection) {
   return {
-    schema: 'qikvrt_horizon_ingress_receipt_v2',
-    accepted: true,
-    deduplicated: true,
-    event_id: body.event_id,
-    stream_id: streamId || null,
-    transport_ack: true,
-    effect_ack: false,
+    schema: 'qikvrt_metatransistor_gate_payload_v1',
+    event: {
+      event_id: body.event_id,
+      gate: body.gate,
+      run_id: body.run_id,
+      state: body.state,
+      conclusion: body.conclusion ?? null,
+      updated_at: body.updated_at ?? null,
+      causal_fingerprint: body.causal_fingerprint,
+      cause_authority: body.cause_authority,
+    },
+    projection: {
+      head_sha: projection.head_sha,
+      disposition: projection.disposition,
+      computation_depth: projection.computation_depth,
+      vector_fingerprint: projection.vector_fingerprint,
+      cut_candidate: projection.cut_candidate,
+      cut_eligible: projection.cut_eligible,
+    },
   };
 }
 
-async function persistAtomically(base, body) {
-  const sid = subjectId(body.subject);
-  const dkey = dedupeKey(body.event_id);
-  const gkey = gatesKey(body.node.id, sid, body.head_sha);
-  const pkey = projectionKey(body.node.id, sid);
-  const gate = normalizeGate(body);
-  const serializedGate = JSON.stringify(gate);
-  const client = base.duplicate();
-  client.on('error', error => {
-    console.error('horizon atomic projection', error?.message || error);
-  });
-  await client.connect();
-
-  try {
-    for (let attempt = 1; attempt <= MAX_CAS_ATTEMPTS; attempt += 1) {
-      await client.watch(dkey, gkey);
-      const [existingStreamId, currentGates] = await Promise.all([
-        client.get(dkey),
-        client.hGetAll(gkey),
-      ]);
-      if (existingStreamId) {
-        await client.unwatch();
-        return {
-          deduplicated: true,
-          streamId: existingStreamId,
-          projection: null,
-        };
-      }
-
-      currentGates[body.gate] = serializedGate;
-      const projection = project(body, vectorFrom(currentGates));
-      const serializedProjection = JSON.stringify(projection);
-      const envelope = {
-        schema: 'qikvrt_horizon_stream_event_v2',
-        event: body,
-        projection,
-        transport_ack: true,
-        effect_ack: false,
-      };
-
-      try {
-        const replies = await client.multi()
-          .hSet(gkey, body.gate, serializedGate)
-          .set(pkey, serializedProjection)
-          .set(LATEST_PROJECTION_KEY, serializedProjection)
-          .hSet(NODE_PROJECTIONS_KEY, body.node.id, serializedProjection)
-          .xAdd(
-            STREAM_KEY,
-            '*',
-            { payload: JSON.stringify(envelope) },
-            {
-              TRIM: {
-                strategy: 'MAXLEN',
-                strategyModifier: '~',
-                threshold: 4096,
-              },
-            },
-          )
-          .set(dkey, body.event_id, { EX: 604800 })
-          .exec();
-        return {
-          deduplicated: false,
-          streamId: replies[4],
-          projection,
-        };
-      } catch (error) {
-        if (!(error instanceof WatchError)) throw error;
-      }
-    }
-    fail('PROJECTION_CAS_CONTENDED', 409);
-  } finally {
-    client.destroy();
-  }
-}
-
-function validate(body, auth) {
-  if (!body || body.schema !== 'qikvrt_horizon_gate_event_v2') {
-    fail('SCHEMA_MISMATCH');
-  }
-  if (!GATE_SET.has(body.gate)) fail('UNKNOWN_GATE');
-  if (!SHA40.test(body.head_sha || '')) fail('EXACT_HEAD_REQUIRED');
-  if (!Number.isInteger(body.run_id) || body.run_id < 1) {
-    fail('RUN_ID_REQUIRED');
-  }
-  if (!body.event_id || !STATES.has(body.state)) {
-    fail('INCOMPLETE_EVENT');
-  }
-  if (!body.node || body.node.repository !== auth.repository) {
-    fail('NODE_REPOSITORY_MISMATCH');
-  }
-  if (
-    body.node.id !== auth.registered.id
-    || body.node.role !== auth.registered.role
-  ) {
-    fail('NODE_ROLE_MISMATCH');
-  }
-  if (body.node.capability !== auth.registered.capability) {
-    fail('NODE_CAPABILITY_MISMATCH');
-  }
-  if (body.subject?.head_sha !== body.head_sha) {
-    fail('SUBJECT_HEAD_MISMATCH');
-  }
-}
-
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'EVENT_INGRESS_POST_ONLY' });
-  }
+  if (req.method !== 'POST') return res.status(405).json({ error: 'EVENT_INGRESS_POST_ONLY' });
+  let redis;
+  let lockKey;
+  let lockAcquired = false;
   try {
     const auth = await authenticate(req);
     const body = parseBody(req);
-    validate(body, auth);
-    const result = await persistAtomically(await getRedis(), body);
-    if (result.deduplicated) {
-      return res.status(200).json(duplicateReceipt(body, result.streamId));
+    if (!body || body.schema !== 'qikvrt_horizon_gate_event_v2') fail('SCHEMA_MISMATCH');
+    if (!GATE_SET.has(body.gate)) fail('UNKNOWN_GATE');
+    if (!SHA40.test(body.head_sha || '')) fail('EXACT_HEAD_REQUIRED');
+    if (!Number.isInteger(body.run_id) || body.run_id < 1) fail('RUN_ID_REQUIRED');
+    if (!body.event_id || !STATES.has(body.state)) fail('INCOMPLETE_EVENT');
+    if (!body.node || body.node.repository !== auth.repository) fail('NODE_REPOSITORY_MISMATCH');
+    if (body.node.id !== auth.registered.id || body.node.role !== auth.registered.role) {
+      fail('NODE_ROLE_MISMATCH');
     }
-    const projection = result.projection;
+    if (body.node.capability !== auth.registered.capability) fail('NODE_CAPABILITY_MISMATCH');
+    if (body.subject?.head_sha !== body.head_sha) fail('SUBJECT_HEAD_MISMATCH');
+
+    redis = await getRedis();
+    lockKey = dedupeKey(body.event_id);
+    const first = await redis.set(lockKey, 'PROCESSING', { NX: true, EX: 60 });
+    if (!first) {
+      return res.status(200).json({
+        schema: 'qikvrt_horizon_ingress_receipt_v3',
+        accepted: true,
+        deduplicated: true,
+        event_id: body.event_id,
+        transport_ack: true,
+        effect_ack: false,
+      });
+    }
+    lockAcquired = true;
+
+    const sid = subjectId(body.subject);
+    const pkey = projectionKey(body.node.id, sid);
+    const gkey = gatesKey(body.node.id, sid, body.head_sha);
+    await redis.hSet(gkey, body.gate, JSON.stringify(normalizeGate(body)));
+    const rawGates = await redis.hGetAll(gkey);
+    const projection = project({ body, vector: vectorFrom(rawGates) });
+    const exactSubject = { repository: auth.repository, ...body.subject, head_sha: body.head_sha };
+    const fullMesh = materializeMesh(exactSubject, meshPayload(body, projection), 2, body.run_id);
+    const mesh = summarizeMesh(fullMesh, 1);
+    const serializedProjection = JSON.stringify(projection);
+    const serializedMesh = JSON.stringify(mesh);
+
+    await redis.multi()
+      .set(pkey, serializedProjection)
+      .set(meshKey(body.node.id, sid), JSON.stringify(fullMesh))
+      .set(LATEST_PROJECTION_KEY, serializedProjection)
+      .set(LATEST_MESH_KEY, serializedMesh)
+      .hSet(NODE_PROJECTIONS_KEY, body.node.id, serializedProjection)
+      .hSet(NODE_MESHES_KEY, body.node.id, serializedMesh)
+      .exec();
+
+    const envelope = {
+      schema: 'qikvrt_horizon_stream_event_v3',
+      event: body,
+      projection,
+      mesh,
+      terminal_pattern: body.terminal,
+      transport_ack: true,
+      effect_ack: false,
+    };
+    const streamId = await redis.xAdd(
+      STREAM_KEY,
+      '*',
+      { payload: JSON.stringify(envelope) },
+      { TRIM: { strategy: 'MAXLEN', strategyModifier: '~', threshold: 4096 } },
+    );
+    await redis.set(lockKey, streamId, { EX: 604800 });
+    lockAcquired = false;
     return res.status(202).json({
-      schema: 'qikvrt_horizon_ingress_receipt_v2',
+      schema: 'qikvrt_horizon_ingress_receipt_v3',
       accepted: true,
       deduplicated: false,
       event_id: body.event_id,
-      stream_id: result.streamId,
+      stream_id: streamId,
+      subject_id: projection.subject_id,
       disposition: projection.disposition,
       computation_depth: projection.computation_depth,
       cut_candidate: projection.cut_candidate,
       cut_eligible: projection.cut_eligible,
+      mesh_summary_sha256: mesh.summary_sha256,
       transport_ack: true,
       effect_ack: false,
     });
   } catch (error) {
+    if (redis && lockKey && lockAcquired) {
+      try { await redis.del(lockKey); } catch {}
+    }
     const status = Number(error?.statusCode || 503);
     return res.status(status).json({
-      schema: 'qikvrt_horizon_ingress_receipt_v2',
+      schema: 'qikvrt_horizon_ingress_receipt_v3',
       accepted: false,
       state: 'REOBSERVE',
       disposition: 'CONTINUE',
