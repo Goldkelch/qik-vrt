@@ -1,0 +1,154 @@
+name: QIKVRT GitHub platform continuous monitor
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/qikvrt_github_platform_continuous_monitor.yml'
+      - 'policy/GITHUB_PLATFORM_CONTINUOUS_MONITOR_V1.json'
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: qikvrt-github-platform-single-infinite-loop
+  cancel-in-progress: false
+
+jobs:
+  continuous-monitor:
+    name: single permitted repository-native infinite loop
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify single-loop policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          p=json.load(open('policy/GITHUB_PLATFORM_CONTINUOUS_MONITOR_V1.json'))
+          assert p['loop_contract']['allowed_infinite_loops'] == 1
+          assert p['loop_contract']['loop_identity'] == 'QIKVRT_GITHUB_PLATFORM_CONTINUOUS_MONITOR'
+          assert p['loop_contract']['polling_elsewhere'] == 'FORBIDDEN'
+          PY
+
+      - name: Continuously observe GitHub platform and exact repository state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-github-platform-monitor"
+          mkdir -p "$root"
+          last="$root/last-material-fingerprint"
+
+          observe() {
+            now="$(date -u +%FT%TZ)"
+            rate="$(gh api rate_limit)"
+            main="$(gh api "repos/$REPOSITORY/commits/main")"
+            runs="$(gh api "repos/$REPOSITORY/actions/runs?branch=main&per_page=30")"
+            pulls="$(gh api "repos/$REPOSITORY/pulls?state=open&per_page=100")"
+            feed="$(curl --fail --silent --show-error --location --max-time 30 https://github.blog/changelog/feed/ || true)"
+
+            python - "$now" "$root" <<'PY' <<<"$rate
+---QIKVRT---
+$main
+---QIKVRT---
+$runs
+---QIKVRT---
+$pulls
+---QIKVRT---
+$feed"
+          import hashlib,json,pathlib,re,sys
+          now,root=sys.argv[1],pathlib.Path(sys.argv[2])
+          parts=sys.stdin.read().split('\n---QIKVRT---\n')
+          if len(parts) != 5:
+              raise SystemExit('observation envelope incomplete')
+          rate=json.loads(parts[0]); main=json.loads(parts[1]); runs=json.loads(parts[2]); pulls=json.loads(parts[3]); feed=parts[4]
+          head=main.get('sha')
+          tree=((main.get('commit') or {}).get('tree') or {}).get('sha')
+          if not re.fullmatch(r'[0-9a-f]{40}', head or '') or not re.fullmatch(r'[0-9a-f]{40}', tree or ''):
+              raise SystemExit('exact main head/tree unavailable')
+          keywords=re.compile(r'(?i)(rate.?limit|review.?request|review routing|workflow|github actions|rest api|graphql|check.?run|job status|workflow run|head sha|commit status)')
+          platform_hits=sorted(set(m.group(0).lower() for m in keywords.finditer(feed)))
+          remaining=((rate.get('resources') or {}).get('core') or {}).get('remaining')
+          limit=((rate.get('resources') or {}).get('core') or {}).get('limit')
+          reset=((rate.get('resources') or {}).get('core') or {}).get('reset')
+          workflow_state=[(r.get('name'),r.get('status'),r.get('conclusion'),r.get('head_sha')) for r in (runs.get('workflow_runs') or [])]
+          review_state=[]
+          for pr in pulls:
+              review_state.append((pr.get('number'), ((pr.get('head') or {}).get('sha')), tuple(sorted(x.get('login') for x in (pr.get('requested_reviewers') or []) if x.get('login')))))
+          observation={
+              'schema':'qikvrt_github_platform_continuous_observation_v1',
+              'observed_at':now,
+              'platform':{'feed_keyword_hits':platform_hits,'core_rate_limit':{'remaining':remaining,'limit':limit,'reset':reset}},
+              'repository':{'main_head_sha':head,'main_tree_sha':tree,'workflow_state':workflow_state,'review_state':review_state},
+              'claims':{'platform_news_is_repository_effect':False,'PASS':False,'FINAL_PASS':False,'EFFECT_ACK_DONE':False},
+          }
+          stable=dict(observation)
+          stable.pop('observed_at',None)
+          fp=hashlib.sha256(json.dumps(stable,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+          (root/'observation.json').write_text(json.dumps(observation,indent=2,sort_keys=True)+'\n')
+          (root/'fingerprint').write_text(fp+'\n')
+          PY
+
+            fp="$(cat "$root/fingerprint")"
+            if [[ -f "$last" ]] && [[ "$(cat "$last")" == "$fp" ]]; then
+              return 0
+            fi
+
+            # A changed observation is only a candidate. Alert only on a fail-closed
+            # material class that can be established mechanically here.
+            material="$(python - "$root/observation.json" <<'PY'
+          import json,sys
+          o=json.load(open(sys.argv[1]))
+          r=o['platform']['core_rate_limit']
+          rem=r.get('remaining'); lim=r.get('limit')
+          hits=set(o['platform']['feed_keyword_hits'])
+          material=[]
+          if isinstance(rem,int) and isinstance(lim,int) and lim > 0 and rem <= max(10, lim//100):
+              material.append('RATE_LIMITS')
+          if any('review' in h for h in hits): material.append('REVIEW_ROUTING_CANDIDATE')
+          if any(('workflow' in h or 'github actions' in h or 'check' in h or 'job status' in h) for h in hits): material.append('WORKFLOW_EXECUTION_STATE_CANDIDATE')
+          if any(('head sha' in h or 'commit status' in h or 'rest api' in h or 'graphql' in h) for h in hits): material.append('EXACT_HEAD_REOBSERVATION_CANDIDATE')
+          print(','.join(sorted(set(material))))
+          PY
+            )"
+
+            if [[ -n "$material" ]]; then
+              title="QIKVRT platform-monitor material candidate: $material"
+              body="$(python - "$root/observation.json" "$material" <<'PY'
+          import json,sys
+          o=json.load(open(sys.argv[1])); material=sys.argv[2]
+          print('Repository-native continuous monitor detected a material platform-change candidate.\n')
+          print('Platform signal: '+material+'\n')
+          print('Repository evidence (separate): main `%s` / tree `%s`.'%(o['repository']['main_head_sha'],o['repository']['main_tree_sha']))
+          print('\nLikely impact: fail-closed reobservation/review/workflow decisions may become stale or unavailable until the changed platform contract is rebound.')
+          print('\nSmallest safe mitigation: HOLD the affected Mesh edge, preserve the exact head/tree, and reobserve through the current authoritative GitHub API before any continuation.')
+          print('\nNo merge, approval, deployment, publication, PASS, FINAL_PASS, or EFFECT_ACK_DONE is implied.')
+          PY
+              )"
+              gh issue create --repo "$REPOSITORY" --title "$title" --body "$body" >/dev/null
+            fi
+
+            printf '%s\n' "$fp" > "$last"
+          }
+
+          # This is intentionally the sole permitted repository-native infinite loop.
+          while true; do
+            if observe; then
+              sleep 60
+            else
+              # Fail closed under transient API/network failure; never spin blindly.
+              sleep 300
+            fi
+          done
