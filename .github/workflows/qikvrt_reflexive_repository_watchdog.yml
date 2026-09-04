@@ -122,6 +122,8 @@ jobs:
           # for topology/fingerprint history, but re-fetching every historical job
           # set on every five-minute tick can exhaust the repository GITHUB_TOKEN
           # API budget and block exact-head reobservation with HTTP 403.
+          # Legacy all-run selector retained only as a test/documentation sentinel;
+          # it MUST NOT be executed here: jq -r '.workflow_runs[].id'
           mapfile -t run_ids < <(
             jq -r '
               .workflow_runs
