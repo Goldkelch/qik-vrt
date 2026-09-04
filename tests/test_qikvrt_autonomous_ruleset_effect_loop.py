@@ -81,6 +81,10 @@ class AutonomousRulesetEffectLoopContractTest(unittest.TestCase):
             self.text,
         )
         self.assertIn(
+            "steps.reconcile.outputs.effect_observed == 'false'",
+            self.text,
+        )
+        self.assertIn(
             "qikvrt_required_review_gate.yml/dispatches",
             self.text,
         )
