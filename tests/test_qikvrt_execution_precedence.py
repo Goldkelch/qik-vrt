@@ -4,6 +4,7 @@ from pathlib import Path
 import unittest
 
 from tools.qikvrt_execution_precedence import (
+    PrecedenceError,
     evaluate_repository_convergence,
     next_eligible,
     validate_policy,
@@ -97,6 +98,22 @@ class ExecutionPrecedenceTests(unittest.TestCase):
                 "unclassified_branch_refs": 0,
             },
         )
+
+    def test_convergence_repository_list_rejects_malformed_or_duplicate_entries(self):
+        for repositories in (
+            ["Goldkelch/qik-vrt", {"repository": "ingolf-lohmann/qik-vrt"}],
+            ["Goldkelch/qik-vrt", "Goldkelch/qik-vrt"],
+        ):
+            with self.subTest(repositories=repositories):
+                policy = {
+                    **self.policy,
+                    "repository_convergence": {
+                        **self.policy["repository_convergence"],
+                        "repositories": repositories,
+                    },
+                }
+                with self.assertRaises(PrecedenceError):
+                    validate_policy(policy)
 
     def test_nonzero_carrier_count_blocks_convergence(self):
         observations = {

@@ -112,7 +112,16 @@ def validate_policy(policy: Mapping[str, Any]) -> None:
     if convergence.get("completion_role") != "NECESSARY_NOT_SUFFICIENT":
         raise PrecedenceError("repository convergence must be necessary but not sufficient")
     repositories = convergence.get("repositories")
-    if not isinstance(repositories, list) or set(repositories) != _CONVERGENCE_REPOSITORIES:
+    if (
+        not isinstance(repositories, list)
+        or len(repositories) != len(_CONVERGENCE_REPOSITORIES)
+        or any(
+            not isinstance(repository, str)
+            or repository not in _CONVERGENCE_REPOSITORIES
+            for repository in repositories
+        )
+        or len({repository for repository in repositories}) != len(repositories)
+    ):
         raise PrecedenceError("repository convergence must cover Authority and Mirror")
     targets = convergence.get("target_counts")
     if not isinstance(targets, Mapping) or set(targets) != set(_CONVERGENCE_METRICS):
