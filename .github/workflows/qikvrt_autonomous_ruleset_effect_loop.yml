@@ -371,9 +371,11 @@ jobs:
           root="$EFFECT_ROOT"
           checkout="$(git rev-parse --verify HEAD^{commit})"
           live_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"
+          current_main="$live_main"
           current_head="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
           test "$checkout" = "$EXPECTED_MAIN"
           test "$live_main" = "$EXPECTED_MAIN"
+          test "$current_main" = "$EXPECTED_MAIN"
           test "$current_head" = "$EXPECTED_HEAD"
 
           gh api "repos/${REPOSITORY}/rulesets/19344903" > "$root/live-ruleset-before.json"
