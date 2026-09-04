@@ -6,6 +6,7 @@ import importlib.util
 import pathlib
 import sys
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
@@ -138,6 +139,17 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
     def test_pr_author_cannot_satisfy_independent_gate(self):
         result = self.evaluate([self.approval()], pr=self.pr(user={"login": "Goldkelch"}))
         self.assertEqual((result["gate_state"], result["first_blocker"]), ("failure", "CODE_OWNER_REVIEW_SELF_APPROVAL"))
+
+    def test_single_matching_code_owner_rejects_author_without_counterpart(self):
+        with mock.patch.object(MODULE, "_code_owners", return_value=("Goldkelch",)):
+            result = MODULE.evaluate_required_review(
+                {"number": 99, "head": {"sha": self.head}, "user": {"login": "Goldkelch"}},
+                self.enforced_rules(),
+                [],
+                required_code_owners=["Goldkelch"],
+            )
+        self.assertEqual((result["gate_state"], result["first_blocker"]), ("failure", "CODE_OWNER_COUNTERPART_UNAVAILABLE"))
+        self.assertEqual(result["pr_number"], 99)
 
     def test_goldkelch_author_requires_ingolf_counterpart(self):
         result = self.evaluate(
