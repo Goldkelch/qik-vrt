@@ -151,8 +151,6 @@ jobs:
             sha256sum state/live/QIKVRT_LIVE_EVENTS.jsonl
           } | sha256sum | awk '{print $1}')"
 
-          # Reobserve immediately before the first durable write. A stale subject
-          # may have been materialized locally, but it must not become remote evidence.
           git fetch origin main
           current_main="$(git rev-parse origin/main)"
           if [ "$current_main" != "$SUBJECT_SHA" ]; then
@@ -204,18 +202,18 @@ jobs:
           body="$(cat <<EOF
           ## Exact-subject materialization candidate
 
-          This PR is the durable repository carrier for a productive materialization delta. It does **not** establish canonical persisted evidence on \\`main\\`, PASS, FINAL_PASS, or EFFECT_ACK_DONE.
+          This PR is the durable repository carrier for a productive materialization delta. It does not establish canonical persisted evidence on main, PASS, FINAL_PASS, or EFFECT_ACK_DONE.
 
-          - exact subject: \\`$SUBJECT_SHA\\`
-          - source event: \\`$SOURCE_EVENT\\`
-          - candidate branch: \\`$CANDIDATE_BRANCH\\`
-          - candidate commit: \\`$CANDIDATE_SHA\\`
-          - candidate tree: \\`$CANDIDATE_TREE\\`
-          - materialized content digest: \\`$MATERIALIZED_DIGEST\\`
-          - Lean/Lake execution: \\`$LAKE_STATE\\`
-          - materialized DoD: \\`$status_dod\\`
+          - exact subject: $SUBJECT_SHA
+          - source event: $SOURCE_EVENT
+          - candidate branch: $CANDIDATE_BRANCH
+          - candidate commit: $CANDIDATE_SHA
+          - candidate tree: $CANDIDATE_TREE
+          - materialized content digest: $MATERIALIZED_DIGEST
+          - Lean/Lake execution: $LAKE_STATE
+          - materialized DoD: $status_dod
 
-          Canonical persistence is admissible only after the repository PR path completes and a subsequent exact-current-\\`main\\` readback binds the resulting state. No predecessor or candidate status transfers across that boundary.
+          Canonical persistence is admissible only after the repository PR path completes and a subsequent exact-current-main readback binds the resulting state. No predecessor or candidate status transfers across that boundary.
           EOF
           )"
 
