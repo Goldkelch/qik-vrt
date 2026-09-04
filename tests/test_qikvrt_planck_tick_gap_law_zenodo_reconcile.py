@@ -53,11 +53,21 @@ class PlanckTickGapLawZenodoReconciliationContractTests(unittest.TestCase):
         self.assertIn('"FINAL_PASS": False', self.text)
         self.assertIn('"EFFECT_ACK_DONE": False', self.text)
 
+    def test_workflow_is_read_only_and_retains_receipt_as_artifact(self) -> None:
+        self.assertIn("permissions:\n  contents: read", self.text)
+        self.assertIn("persist-credentials: false", self.text)
+        self.assertNotIn("contents: write", self.text)
+        self.assertNotIn("RECEIPT_BRANCH", self.text)
+        self.assertNotIn("git push", self.text)
+        self.assertNotIn("git commit", self.text)
+        self.assertIn("actions/upload-artifact@", self.text)
+        self.assertIn("input for a separate repository persistence PR", self.text)
+
     def test_main_push_and_manual_dispatch_are_supported(self) -> None:
         self.assertIn("workflow_dispatch:", self.text)
         self.assertIn("branches: [main]", self.text)
         self.assertIn(
-            'receipt/planck-tick-gap-law-zenodo-current-main-${{ github.run_id }}',
+            "planck-tick-gap-law-zenodo-current-main-${{ github.run_id }}",
             self.text,
         )
 
