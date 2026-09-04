@@ -101,7 +101,10 @@ jobs:
               subject="PR #$pr @ $head"
               case "$state" in
                 success) verb='EFFECT' ;;
-                failure|cancelled|action_required|timed_out) verb='HOLD' ;;
+                # A workflow surface conclusion establishes an observation to
+                # classify.  It cannot establish that all issue, PR and branch
+                # carriers are exhausted, so it cannot authoritatively emit HOLD.
+                failure|cancelled|action_required|timed_out) verb='CLASSIFY' ;;
                 *) verb='OBSERVE' ;;
               esac
               detail="$name → $state ($run_url)"

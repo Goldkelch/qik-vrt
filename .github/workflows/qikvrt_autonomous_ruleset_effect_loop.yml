@@ -21,6 +21,7 @@ on:
 permissions:
   actions: write
   contents: read
+  issues: write
   pull-requests: read
   statuses: write
 
@@ -54,7 +55,7 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Select exact ruleset-repair subject
+      - name: Select exact ruleset-repair subject and active carriers
         id: select
         shell: bash
         run: |
@@ -78,15 +79,15 @@ jobs:
                   subprocess.check_output(["gh", "api", path], text=True)
               )
 
-          def write(value):
-              (root / "preselection.json").write_text(
+          def save(name, value):
+              (root / name).write_text(
                   json.dumps(value, indent=2, sort_keys=True) + "\n",
                   encoding="utf-8",
               )
 
           def noop(blocker, **extra):
-              write({
-                  "schema": "qikvrt_autonomous_ruleset_effect_preselection_v2",
+              save("preselection.json", {
+                  "schema": "qikvrt_autonomous_ruleset_effect_preselection_v3",
                   "state": "NOOP",
                   "first_blocker": blocker,
                   **extra,
@@ -114,8 +115,8 @@ jobs:
                   noop("MANUAL_PR_NUMBER_INVALID")
               if not re.fullmatch(r"[0-9a-f]{40}", requested_head):
                   noop("MANUAL_EXPECTED_HEAD_INVALID")
-              write({
-                  "schema": "qikvrt_autonomous_ruleset_effect_preselection_v2",
+              save("preselection.json", {
+                  "schema": "qikvrt_autonomous_ruleset_effect_preselection_v3",
                   "state": "MANUAL_CANDIDATE",
                   "first_blocker": None,
                   "pr_number": int(requested_pr),
@@ -153,9 +154,7 @@ jobs:
               )
 
           artifacts = gh(f"repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100")
-          expected_name = (
-              f"qikvrt-required-code-owner-selection-{run_id}-CANDIDATE"
-          )
+          expected_name = f"qikvrt-required-code-owner-selection-{run_id}-CANDIDATE"
           matches = [
               item
               for item in artifacts.get("artifacts", [])
@@ -176,8 +175,8 @@ jobs:
               "https://api.github.com/repos/"
           ):
               noop("UPSTREAM_CANDIDATE_ARTIFACT_URL_INVALID")
-          write({
-              "schema": "qikvrt_autonomous_ruleset_effect_preselection_v2",
+          save("preselection.json", {
+              "schema": "qikvrt_autonomous_ruleset_effect_preselection_v3",
               "state": "ARTIFACT_CANDIDATE",
               "first_blocker": None,
               "trusted_main_sha": live_main,
@@ -237,7 +236,7 @@ jobs:
 
           def noop(blocker, **extra):
               save({
-                  "schema": "qikvrt_autonomous_ruleset_effect_selection_v2",
+                  "schema": "qikvrt_autonomous_ruleset_effect_selection_v3",
                   "state": "NOOP",
                   "first_blocker": blocker,
                   **extra,
@@ -282,18 +281,34 @@ jobs:
               noop("EXPECTED_HEAD_INVALID")
 
           pull = gh(f"repos/{repo}/pulls/{number}")
-          observed_head = (pull.get("head") or {}).get("sha")
+          head = pull.get("head") or {}
+          base = pull.get("base") or {}
+          observed_head = head.get("sha")
+          head_ref = head.get("ref")
           if (
               pull.get("state") != "open"
-              or (pull.get("base") or {}).get("ref") != "main"
-              or (pull.get("head") or {}).get("repo", {}).get("full_name") != repo
+              or base.get("ref") != "main"
+              or head.get("repo", {}).get("full_name") != repo
               or observed_head != expected_head
+              or not isinstance(head_ref, str)
+              or not head_ref
           ):
               noop(
                   "EXACT_SUBJECT_DRIFT",
                   pr_number=number,
                   expected_head=expected_head,
                   observed_head=observed_head,
+              )
+
+          branch = gh(f"repos/{repo}/git/ref/heads/{head_ref}")
+          branch_sha = (branch.get("object") or {}).get("sha")
+          if branch_sha != expected_head:
+              noop(
+                  "EXACT_HEAD_BRANCH_DRIFT",
+                  pr_number=number,
+                  head_ref=head_ref,
+                  expected_head=expected_head,
+                  observed_branch_sha=branch_sha,
               )
 
           statuses = pages(f"repos/{repo}/commits/{expected_head}/statuses?per_page=100")
@@ -329,16 +344,20 @@ jobs:
               )
 
           save({
-              "schema": "qikvrt_autonomous_ruleset_effect_selection_v2",
+              "schema": "qikvrt_autonomous_ruleset_effect_selection_v3",
               "state": "CANDIDATE",
               "first_blocker": "CODE_OWNER_RULE_NOT_ENFORCED",
               "pr_number": number,
               "head_sha": expected_head,
+              "head_ref": head_ref,
+              "head_branch_sha": branch_sha,
               "trusted_main_sha": live_main,
               "status_id": status.get("id"),
               "status_target_url": status.get("target_url"),
               "upstream_run_id": upstream_run_id,
               "upstream_artifact_name": artifact_name,
+              "open_pull_request_carrier": f"#{number}@{expected_head}",
+              "work_branch_carrier": f"{head_ref}@{branch_sha}",
               "predecessor_evidence_transfer": False,
           })
           PY
@@ -353,16 +372,18 @@ jobs:
           print(f"state={value['state']}")
           print(f"pr={value.get('pr_number') or ''}")
           print(f"head={value.get('head_sha') or ''}")
+          print(f"head_ref={value.get('head_ref') or ''}")
           print(f"main={value.get('trusted_main_sha') or ''}")
           print(f"blocker={value.get('first_blocker') or ''}")
           PY
 
-      - name: Reconcile full normative ruleset and require exact readback
+      - name: Reconcile full normative ruleset and classify continuation
         id: reconcile
         if: steps.select.outputs.state == 'CANDIDATE'
         env:
           PR_NUMBER: ${{ steps.select.outputs.pr }}
           EXPECTED_HEAD: ${{ steps.select.outputs.head }}
+          HEAD_REF: ${{ steps.select.outputs.head_ref }}
           EXPECTED_MAIN: ${{ steps.select.outputs.main }}
           QIKVRT_RULESET_ADMIN_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}
         shell: bash
@@ -372,9 +393,11 @@ jobs:
           checkout="$(git rev-parse --verify HEAD^{commit})"
           live_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"
           current_head="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+          branch_head="$(gh api "repos/${REPOSITORY}/git/ref/heads/${HEAD_REF}" --jq .object.sha)"
           test "$checkout" = "$EXPECTED_MAIN"
           test "$live_main" = "$EXPECTED_MAIN"
           test "$current_head" = "$EXPECTED_HEAD"
+          test "$branch_head" = "$EXPECTED_HEAD"
 
           gh api "repos/${REPOSITORY}/rulesets/19344903" > "$root/live-ruleset-before.json"
           set +e
@@ -386,7 +409,7 @@ jobs:
           preflight_state="$(jq -r .state "$root/preflight-receipt.json")"
 
           if [ "$preflight_state" = CURRENT ]; then
-            cp "$root/preflight-receipt.json" "$root/terminal-receipt.json"
+            cp "$root/preflight-receipt.json" "$root/effect-receipt.json"
           elif [ "$preflight_state" = DRIFT ]; then
             set +e
             python3 -B tools/qikvrt_ruleset_reconcile.py \
@@ -394,87 +417,179 @@ jobs:
               --receipt "$root/apply-receipt.json"
             apply_rc=$?
             set -e
-            cp "$root/apply-receipt.json" "$root/terminal-receipt.json"
+            cp "$root/apply-receipt.json" "$root/effect-receipt.json"
             printf '%s\n' "$apply_rc" > "$root/apply-exit-code.txt"
           else
-            cp "$root/preflight-receipt.json" "$root/terminal-receipt.json"
+            cp "$root/preflight-receipt.json" "$root/effect-receipt.json"
           fi
           printf '%s\n' "$preflight_rc" > "$root/preflight-exit-code.txt"
 
-          terminal_state="$(jq -r .state "$root/terminal-receipt.json")"
-          case "$terminal_state" in
-            CURRENT|HOLD) ;;
-            *)
-              python3 -B - <<'PY'
-          import json
-          import os
-          import pathlib
-          root = pathlib.Path(os.environ["EFFECT_ROOT"])
-          observed = json.loads((root / "terminal-receipt.json").read_text(encoding="utf-8"))
-          (root / "terminal-receipt.json").write_text(
-              json.dumps({
-                  "schema": "qikvrt_github_main_ruleset_reconciliation_v1",
-                  "repository": "Goldkelch/qik-vrt",
-                  "ruleset_id": 19344903,
-                  "state": "HOLD",
-                  "first_blocker": "RULESET_RECONCILIATION_NOT_TERMINAL",
-                  "observed_state": observed.get("state"),
-                  "mutation": "NONE",
-                  "effect_observed": False,
-              }, indent=2, sort_keys=True) + "\n",
-              encoding="utf-8",
-          )
-          PY
-              ;;
-          esac
+          observed_state="$(jq -r .state "$root/effect-receipt.json")"
+          if [ "$observed_state" != CURRENT ] && [ "$observed_state" != REQUEST_AUTHORITY ]; then
+            jq \
+              --arg observed "$observed_state" \
+              '. + {
+                state: "REQUEST_AUTHORITY",
+                first_blocker: (.first_blocker // "RULESET_RECONCILIATION_NOT_CURRENT"),
+                observed_state: $observed,
+                next_action: "ROUTE_RULESET_ADMIN_AUTHORITY_THROUGH_REPOSITORY_CARRIER",
+                continuation_required: true,
+                mutation: "NONE",
+                effect_observed: false
+              }' \
+              "$root/effect-receipt.json" > "$root/effect-receipt.tmp"
+            mv "$root/effect-receipt.tmp" "$root/effect-receipt.json"
+            observed_state=REQUEST_AUTHORITY
+          fi
 
-          cat "$root/terminal-receipt.json"
+          live_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"
+          current_head="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+          branch_head="$(gh api "repos/${REPOSITORY}/git/ref/heads/${HEAD_REF}" --jq .object.sha)"
+          test "$live_main" = "$EXPECTED_MAIN"
+          test "$current_head" = "$EXPECTED_HEAD"
+          test "$branch_head" = "$EXPECTED_HEAD"
+
+          if [ "$observed_state" = REQUEST_AUTHORITY ]; then
+            blocker="$(jq -r '.first_blocker // "RULESET_ADMIN_AUTHORITY_REQUIRED"' "$root/effect-receipt.json")"
+            python3 -B tools/qikvrt_hold_admissibility.py \
+              --pull-request-carrier "#${PR_NUMBER}@${EXPECTED_HEAD}" \
+              --branch-carrier "${HEAD_REF}@${EXPECTED_HEAD}" \
+              --continuation-state REQUEST_AUTHORITY \
+              --first-blocker "$blocker" \
+              --next-action ROUTE_RULESET_ADMIN_AUTHORITY_THROUGH_ACTIVE_PR \
+              --receipt "$root/hold-admissibility.json" \
+              > "$root/hold-admissibility.stdout.json"
+            jq -s \
+              '.[0] + {
+                state: .[1].state,
+                hold_admissible: .[1].hold_admissible,
+                carrier_count: .[1].carrier_count,
+                carriers: .[1].carriers,
+                next_action: .[1].next_action,
+                continuation_required: true
+              }' \
+              "$root/effect-receipt.json" "$root/hold-admissibility.json" \
+              > "$root/continuation-receipt.json"
+          else
+            cp "$root/effect-receipt.json" "$root/continuation-receipt.json"
+          fi
+
+          cat "$root/continuation-receipt.json"
           python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
           import json
           import os
           value = json.load(
-              open(os.path.join(os.environ["EFFECT_ROOT"], "terminal-receipt.json"), encoding="utf-8")
+              open(os.path.join(os.environ["EFFECT_ROOT"], "continuation-receipt.json"), encoding="utf-8")
           )
           print(f"state={value.get('state') or ''}")
           print(f"blocker={value.get('first_blocker') or ''}")
           print(f"mutation={value.get('mutation') or ''}")
           print(f"effect_observed={'true' if value.get('effect_observed') else 'false'}")
+          print(f"hold_admissible={'true' if value.get('hold_admissible') else 'false'}")
           PY
 
-      - name: Publish exact authority HOLD
-        if: steps.select.outputs.state == 'CANDIDATE' && steps.reconcile.outputs.state == 'HOLD'
+      - name: Publish and read back exact repository continuation
+        if: steps.select.outputs.state == 'CANDIDATE' && steps.reconcile.outputs.state == 'REQUEST_AUTHORITY'
         env:
           PR_NUMBER: ${{ steps.select.outputs.pr }}
           EXPECTED_HEAD: ${{ steps.select.outputs.head }}
+          HEAD_REF: ${{ steps.select.outputs.head_ref }}
           EXPECTED_MAIN: ${{ steps.select.outputs.main }}
           BLOCKER: ${{ steps.reconcile.outputs.blocker }}
         shell: bash
         run: |
           set -euo pipefail
-          current_head="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
-          current_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"
-          test "$current_head" = "$EXPECTED_HEAD"
-          test "$current_main" = "$EXPECTED_MAIN"
-          detail="${BLOCKER:-HOLD_RULESET_ADMIN_AUTHORITY}"
+          root="$EFFECT_ROOT"
+          pull_json="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
+          test "$(jq -r .state <<<"$pull_json")" = open
+          test "$(jq -r .base.ref <<<"$pull_json")" = main
+          test "$(jq -r .head.sha <<<"$pull_json")" = "$EXPECTED_HEAD"
+          test "$(jq -r .head.ref <<<"$pull_json")" = "$HEAD_REF"
+          test "$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)" = "$EXPECTED_MAIN"
+          test "$(gh api "repos/${REPOSITORY}/git/ref/heads/${HEAD_REF}" --jq .object.sha)" = "$EXPECTED_HEAD"
+
+          detail="${BLOCKER:-RULESET_ADMIN_AUTHORITY_REQUIRED}"
+          fingerprint="$(printf '%s\0%s\0%s\0%s\0%s' \
+            "$REPOSITORY" "$PR_NUMBER" "$EXPECTED_HEAD" "$EXPECTED_MAIN" "$detail" \
+            | sha256sum | cut -d' ' -f1)"
+          marker="<!-- qikvrt-ruleset-authority:${fingerprint} -->"
+          body="${marker}
+          REQUEST_AUTHORITY is a nonterminal repository continuation.
+
+          Exact subject: #${PR_NUMBER}@${EXPECTED_HEAD}
+          Exact work branch: ${HEAD_REF}@${EXPECTED_HEAD}
+          Exact trusted Main: ${EXPECTED_MAIN}
+          First blocker: ${detail}
+          Next action: route the ruleset-administration effect through this active PR/branch and reobserve the same exact subject.
+
+          HOLD_ADMISSIBLE=false because an open pull request and its work branch are authoritative active carriers. This comment is a deduplicated issue_comment control event; it is not approval, merge, publication, PASS, FINAL_PASS, empirical confirmation, or EFFECT_ACK_DONE."
+
+          comments="$(gh api --paginate --slurp \
+            "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100")"
+          comment_id="$(jq -r --arg marker "$marker" \
+            '[.[][] | select((.body // "") | contains($marker))] | sort_by(.id) | last | .id // empty' \
+            <<<"$comments")"
+          created=false
+          if [ -z "$comment_id" ]; then
+            comment_id="$(jq -n --arg body "$body" '{body:$body}' \
+              | gh api --method POST "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" \
+                  --input - --jq .id)"
+            created=true
+          fi
+
+          readback="$(gh api "repos/${REPOSITORY}/issues/comments/${comment_id}")"
+          test "$(jq -r .id <<<"$readback")" = "$comment_id"
+          jq -e --arg marker "$marker" '(.body // "") | contains($marker)' \
+            <<<"$readback" >/dev/null
+
           gh api --method POST "repos/${REPOSITORY}/statuses/${EXPECTED_HEAD}" \
             -f state=pending \
             -f context="$EFFECT_STATUS_CONTEXT" \
-            -f description="REQUEST_AUTHORITY: ${detail:0:100}" \
+            -f description="REQUEST_AUTHORITY; active PR/branch; HOLD inadmissible" \
             -f target_url="${GITHUB_SERVER_URL}/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          test "$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)" = "$EXPECTED_HEAD"
+          test "$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)" = "$EXPECTED_MAIN"
+          test "$(gh api "repos/${REPOSITORY}/git/ref/heads/${HEAD_REF}" --jq .object.sha)" = "$EXPECTED_HEAD"
+
+          jq -n \
+            --argjson comment_id "$comment_id" \
+            --argjson created "$created" \
+            --arg pr "$PR_NUMBER" \
+            --arg head "$EXPECTED_HEAD" \
+            --arg head_ref "$HEAD_REF" \
+            --arg main "$EXPECTED_MAIN" \
+            --arg blocker "$detail" \
+            '{
+              schema: "qikvrt_ruleset_authority_continuation_readback_v1",
+              state: "REQUEST_AUTHORITY",
+              hold_admissible: false,
+              pr_number: ($pr | tonumber),
+              head_sha: $head,
+              head_ref: $head_ref,
+              trusted_main_sha: $main,
+              first_blocker: $blocker,
+              comment_id: $comment_id,
+              comment_created: $created,
+              issue_comment_readback: true,
+              exact_subject_readback: true,
+              predecessor_evidence_transfer: false
+            }' > "$root/continuation-readback.json"
+          cat "$root/continuation-readback.json"
 
       - name: Dispatch one fresh same-head review-gate reobservation
         if: steps.select.outputs.state == 'CANDIDATE' && steps.reconcile.outputs.state == 'CURRENT'
         env:
           PR_NUMBER: ${{ steps.select.outputs.pr }}
           EXPECTED_HEAD: ${{ steps.select.outputs.head }}
+          HEAD_REF: ${{ steps.select.outputs.head_ref }}
           EXPECTED_MAIN: ${{ steps.select.outputs.main }}
         shell: bash
         run: |
           set -euo pipefail
-          current_head="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
-          current_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"
-          test "$current_head" = "$EXPECTED_HEAD"
-          test "$current_main" = "$EXPECTED_MAIN"
+          test "$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)" = "$EXPECTED_HEAD"
+          test "$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)" = "$EXPECTED_MAIN"
+          test "$(gh api "repos/${REPOSITORY}/git/ref/heads/${HEAD_REF}" --jq .object.sha)" = "$EXPECTED_HEAD"
           jq -n --arg pr "$PR_NUMBER" '{ref:"main",inputs:{pr:$pr}}' \
             | gh api --method POST \
                 "repos/${REPOSITORY}/actions/workflows/qikvrt_required_review_gate.yml/dispatches" \
@@ -485,7 +600,7 @@ jobs:
             -f description="ruleset CURRENT; exact-head gate reobservation dispatched" \
             -f target_url="${GITHUB_SERVER_URL}/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
-      - name: Preserve exact selection and admin-effect receipts
+      - name: Preserve exact selection, effect, continuation, and readback receipts
         if: always() && steps.select.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
