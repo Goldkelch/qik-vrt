@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import copy
 import unittest
+from unittest import mock
 
 from tools import qikvrt_ruleset_reconcile as reconcile
 
@@ -67,6 +68,24 @@ class RulesetReconcileTests(unittest.TestCase):
         current["id"] += 1
         with self.assertRaises(reconcile.RulesetBlock):
             reconcile.evaluate(current, self.policy)
+
+    def test_api_requests_use_the_ruleset_admin_token(self):
+        response = mock.MagicMock()
+        response.__enter__.return_value = response
+        response.read.return_value = b'{"id": 19344903}'
+        response.headers = {}
+        with mock.patch.object(
+            reconcile.urllib.request,
+            "urlopen",
+            return_value=response,
+        ) as urlopen:
+            reconcile._request(
+                "GET",
+                "https://api.github.com/repos/Goldkelch/qik-vrt/rulesets/19344903",
+                "admin-token",
+            )
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.get_header("Authorization"), "Bearer " + "admin-token")
 
     def test_ruleset_failure_is_not_encoded_as_hold(self):
         source = (reconcile.ROOT / "tools/qikvrt_ruleset_reconcile.py").read_text(

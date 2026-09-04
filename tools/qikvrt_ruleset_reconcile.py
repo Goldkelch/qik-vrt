@@ -130,7 +130,7 @@ def _request(
 ) -> tuple[dict[str, Any], str | None]:
     headers = {
         "Accept": "application/vnd.github+json",
-        "Authorization": f"Bearer {token}",
+        "Authorization": "Bearer " + token,
         "X-GitHub-Api-Version": "2022-11-28",
     }
     if etag:
