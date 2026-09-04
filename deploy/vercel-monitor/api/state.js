@@ -1,55 +1,22 @@
-export default async function handler(req, res) {
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
-    return res.status(405).json({error:'MONITOR_ONLY'});
-  }
-  const prUrl = 'https://api.github.com/repos/Goldkelch/qik-vrt/pulls/966';
-  const runUrl = 'https://api.github.com/repos/Goldkelch/qik-vrt/actions/runs?event=pull_request&per_page=30';
-  const token = process.env.GITHUB_READ_TOKEN || process.env.GITHUB_TOKEN || '';
-  const headers = {
-    'Accept':'application/vnd.github+json',
-    'User-Agent':'qikvrt-vercel-monitor/2'
-  };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  try {
-    const [prResp, runsResp] = await Promise.all([fetch(prUrl,{headers,cache:'no-store'}), fetch(runUrl,{headers,cache:'no-store'})]);
-    if (!prResp.ok || !runsResp.ok) {
-      return res.status(502).json({
-        schema:'qikvrt_monitor_projection_v1',
-        role:'MONITOR_ONLY',
-        state:'HOLD_UNVERIFIED',
-        reason:'UPSTREAM_READBACK_UNAVAILABLE'
-      });
-    }
-    const pr = await prResp.json();
-    const runs = await runsResp.json();
-    const exactHead = pr.head?.sha || null;
-    const exactRuns = (runs.workflow_runs || []).filter(r => r.head_sha === exactHead).map(r => ({
-      id:r.id,
-      name:r.name,
-      status:r.status,
-      conclusion:r.conclusion,
-      updated_at:r.updated_at
-    }));
+import { getRedis, LATEST_HEAD_KEY, gatesKey, subjectKey } from './_redis.js';
+
+export default async function handler(req,res){
+  if(req.method!=='GET') return res.status(405).json({error:'MONITOR_ONLY'});
+  try{
+    const redis=await getRedis();
+    const head=await redis.get(LATEST_HEAD_KEY);
+    if(!head) return res.status(503).json({schema:'qikvrt_monitor_projection_v2',state:'HOLD_UNVERIFIED',reason:'NO_EVENT_SNAPSHOT'});
+    const [rawGates,rawSubject]=await Promise.all([redis.hGetAll(gatesKey(head)),redis.get(subjectKey(head))]);
+    const workflows=Object.values(rawGates).map(v=>JSON.parse(v)).sort((a,b)=>a.name.localeCompare(b.name));
+    const subject=rawSubject?JSON.parse(rawSubject):{kind:'workflow_run',head_sha:head};
     res.setHeader('Cache-Control','no-store');
     res.setHeader('X-QIKVRT-Role','MONITOR_ONLY');
-    res.setHeader('X-QIKVRT-Page-Refresh','60s');
     return res.status(200).json({
-      schema:'qikvrt_monitor_projection_v1',
-      authority:'Goldkelch/qik-vrt',
-      subject:{kind:'pull_request',number:966,head_sha:exactHead,base_sha:pr.base?.sha || null},
-      projection:{role:'MONITOR_ONLY',terminal:false,write:false,effect_commit:false},
-      workflows:exactRuns,
-      rule:'On projection change, non-authority nodes must request and reobserve the exact change from Goldkelch; this projection is never itself EFFECT_ACK.',
-      refresh_contract:{gates_seconds:1,page_seconds:60},
-      observed_at:new Date().toISOString()
+      schema:'qikvrt_monitor_projection_v2',authority:'Goldkelch/qik-vrt',subject:{...subject,head_sha:head},
+      projection:{role:'MONITOR_ONLY',terminal:false,write:false,effect_commit:false},workflows,
+      transport:{polling:false,snapshot_only:true,live:'/api/gate-stream'},observed_at:new Date().toISOString()
     });
-  } catch (error) {
-    return res.status(502).json({
-      schema:'qikvrt_monitor_projection_v1',
-      role:'MONITOR_ONLY',
-      state:'HOLD_UNVERIFIED',
-      reason:'MONITOR_EXCEPTION'
-    });
+  }catch(error){
+    return res.status(503).json({schema:'qikvrt_monitor_projection_v2',state:'HOLD_UNVERIFIED',reason:error?.message||'SNAPSHOT_FAILURE'});
   }
 }
