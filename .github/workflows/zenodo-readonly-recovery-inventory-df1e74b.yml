@@ -1,0 +1,185 @@
+name: Zenodo read-only recovery inventory df1e74b
+
+on:
+  push:
+    branches:
+      - recovery/zenodo-readonly-inventory-df1e74b-v1
+    paths:
+      - .github/workflows/zenodo-readonly-recovery-inventory-df1e74b.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zenodo-readonly-recovery-inventory-df1e74b
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    environment: zenodo-production
+    timeout-minutes: 15
+    env:
+      EXECUTION_HEAD: 0cc8e5fe667a85bf4c0f112868dc43f47a4829dc
+      MANIFEST_PATH: release/relational-time-monotonic-evidence-sphere-zenodo-v1/publish-request.json
+      ZENODO_API_BASE: https://zenodo.org/api
+      ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+    steps:
+      - name: Checkout exact publication execution head
+        uses: actions/checkout@v4
+        with:
+          ref: 0cc8e5fe667a85bf4c0f112868dc43f47a4829dc
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Assert exact immutable execution binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXECUTION_HEAD"
+          test "$(git status --porcelain --untracked-files=no)" = ""
+          test -f "$MANIFEST_PATH"
+
+      - name: Inventory consumed lock against Zenodo with GET-only guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+          import urllib.parse
+          import urllib.request
+
+          root = pathlib.Path.cwd().resolve()
+          sys.path.insert(0, str(root / "tools"))
+          import qikvrt_zenodo_publish as publish
+
+          execution_head = os.environ["EXECUTION_HEAD"]
+          manifest_path = root / os.environ["MANIFEST_PATH"]
+          token = os.environ.get("ZENODO_ACCESS_TOKEN", "")
+          if len(token) < 20 or any(ch.isspace() for ch in token):
+              raise SystemExit("BLOCK: zenodo-production token missing or structurally invalid")
+
+          manifest = publish.load_manifest(manifest_path, root)
+          if manifest.get("repository") != "Goldkelch/qik-vrt":
+              raise SystemExit("BLOCK: manifest repository differs")
+          if manifest.get("manifest_sha256") != "fbb9c4f4e3369c199a0fe542ce345069100d03fc50c098f8b1e200dee67cc648":
+              raise SystemExit("BLOCK: manifest digest differs")
+          authorization = manifest.get("owner_authorization")
+          if not isinstance(authorization, dict):
+              raise SystemExit("BLOCK: owner authorization missing")
+          if authorization.get("authorization_id") != "qikvrt-relational-time-evidence-sphere-v1-20260831-2f5a9b9aa7cc4f92":
+              raise SystemExit("BLOCK: authorization id differs")
+          if authorization.get("publication_id") != "qikvrt-relational-time-monotonic-evidence-sphere-v1":
+              raise SystemExit("BLOCK: publication id differs")
+
+          # Validate the already-consumed GitHub lock through public, unauthenticated GETs.
+          # This diagnostic never possesses a GitHub write token.
+          def public_get_json(url: str):
+              req = urllib.request.Request(
+                  url,
+                  method="GET",
+                  headers={"Accept": "application/vnd.github+json", "User-Agent": "qik-vrt-zenodo-readonly-recovery"},
+              )
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  if response.status != 200 or response.geturl() != url:
+                      raise RuntimeError("public GitHub lock readback rejected")
+                  raw = response.read(1024 * 1024 + 1)
+              if len(raw) > 1024 * 1024:
+                  raise RuntimeError("public GitHub lock readback exceeded byte bound")
+              value = json.loads(raw.decode("utf-8"))
+              if not isinstance(value, dict):
+                  raise RuntimeError("public GitHub lock readback was not an object")
+              return value
+
+          ref = authorization["remote_consumption_ref"]
+          if not ref.startswith("refs/tags/"):
+              raise SystemExit("BLOCK: consumption lock is not a tag ref")
+          suffix = ref.removeprefix("refs/")
+          ref_url = "https://api.github.com/repos/Goldkelch/qik-vrt/git/ref/" + urllib.parse.quote(suffix, safe="/")
+          ref_value = public_get_json(ref_url)
+          target = ref_value.get("object")
+          tag_object = target.get("sha") if isinstance(target, dict) else None
+          if not isinstance(tag_object, str):
+              raise SystemExit("BLOCK: consumed lock lacks annotated tag object")
+          publish._validate_github_ref_response(ref_value, ref, tag_object)
+          tag_url = "https://api.github.com/repos/Goldkelch/qik-vrt/git/tags/" + tag_object
+          tag_value = public_get_json(tag_url)
+          expected_tag = publish._expected_consumption_tag(manifest, execution_head)
+          publish._validate_github_tag_response(tag_value, expected_tag, tag_object)
+
+          # From this point onward every urllib Request in the process is GET-only.
+          # The canonical repository inventory/recovery selector is reused verbatim;
+          # POST/PUT/PATCH/DELETE/HEAD are technically unreachable under this guard.
+          OriginalRequest = urllib.request.Request
+          class GetOnlyRequest(OriginalRequest):
+              def __init__(self, *args, **kwargs):
+                  super().__init__(*args, **kwargs)
+                  if self.get_method() != "GET":
+                      raise RuntimeError("BLOCK: non-GET network method attempted during read-only recovery inventory")
+          urllib.request.Request = GetOnlyRequest
+
+          base_url = publish.zenodo.validate_base_url(os.environ["ZENODO_API_BASE"])
+          client = publish.zenodo.ZenodoClient(token, base_url)
+          metadata = manifest["metadata"]
+          entries = publish._shared_entries(manifest["files"])
+
+          try:
+              matches = publish._canonical_inventory_candidates(
+                  client,
+                  token,
+                  metadata,
+                  entries,
+              )
+              count = len(matches)
+              if count == 0:
+                  disposition = "CREATE_ALLOWED"
+              elif count == 1:
+                  disposition = "RECOVER"
+              else:
+                  disposition = "HOLD"
+              result = {
+                  "schema": "qikvrt_zenodo_readonly_recovery_inventory_v1",
+                  "repository": manifest["repository"],
+                  "execution_head": execution_head,
+                  "source_head": manifest["source_head"],
+                  "manifest_sha256": manifest["manifest_sha256"],
+                  "authorization_id": authorization["authorization_id"],
+                  "publication_id": authorization["publication_id"],
+                  "remote_consumption_ref": ref,
+                  "remote_consumption_tag_object": tag_object,
+                  "zenodo_api_base": base_url,
+                  "network_policy": "GET_ONLY",
+                  "stable_inventory_passes": 2,
+                  "canonical_match_count": count,
+                  "canonical_matches": [
+                      {"record_id": record_id, "doi": doi, "public": public is not None}
+                      for record_id, doi, public in matches
+                  ],
+                  "disposition": disposition,
+              }
+              print("QIKVRT_READONLY_RECOVERY_INVENTORY=" + json.dumps(result, sort_keys=True, separators=(",", ":")))
+              if disposition == "HOLD":
+                  raise SystemExit("HOLD: multiple canonically matching owned Zenodo depositions")
+          except Exception as exc:
+              message = str(exc).replace(token, "<redacted>") if token else str(exc)
+              result = {
+                  "schema": "qikvrt_zenodo_readonly_recovery_inventory_v1",
+                  "repository": manifest["repository"],
+                  "execution_head": execution_head,
+                  "manifest_sha256": manifest["manifest_sha256"],
+                  "authorization_id": authorization["authorization_id"],
+                  "publication_id": authorization["publication_id"],
+                  "remote_consumption_ref": ref,
+                  "remote_consumption_tag_object": tag_object,
+                  "zenodo_api_base": base_url,
+                  "network_policy": "GET_ONLY",
+                  "disposition": "HOLD",
+                  "error_type": type(exc).__name__,
+                  "error": message,
+              }
+              print("QIKVRT_READONLY_RECOVERY_INVENTORY=" + json.dumps(result, sort_keys=True, separators=(",", ":")))
+              raise
+          PY
