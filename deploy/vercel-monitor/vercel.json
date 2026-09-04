@@ -1,19 +1,14 @@
 {
   "version": 2,
-  "alias": [
-    "horizon-by-qik-vrt.vercel.app"
-  ],
+  "alias": ["horizon-by-qik-vrt.vercel.app"],
   "rewrites": [
-    {"source": "/api/state", "destination": "/api/state.js"},
-    {"source": "/api/gates", "destination": "/api/gates.js"}
+    {"source":"/api/state","destination":"/api/state.js"},
+    {"source":"/api/gates","destination":"/api/gates.js"},
+    {"source":"/api/gate-event","destination":"/api/gate-event.js"},
+    {"source":"/api/gate-stream","destination":"/api/gate-stream.js"}
   ],
-  "headers": [
-    {
-      "source": "/(.*)",
-      "headers": [
-        {"key": "Cache-Control", "value": "no-store"},
-        {"key": "X-QIKVRT-Role", "value": "MONITOR_ONLY"}
-      ]
-    }
-  ]
+  "functions": {
+    "api/gate-stream.js": {"maxDuration":300}
+  },
+  "headers": [{"source":"/(.*)","headers":[{"key":"Cache-Control","value":"no-store"},{"key":"X-QIKVRT-Role","value":"MONITOR_ONLY"},{"key":"X-QIKVRT-Polling","value":"disabled"}]}]
 }
