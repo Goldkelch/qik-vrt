@@ -15,9 +15,16 @@ export default async function handler(req, res) {
   req.on('close', () => { closed = true; });
   const base = await getRedis();
   const reader = base.duplicate();
+  reader.on('error', error => {
+    console.error('horizon stream', error?.message || error);
+  });
   await reader.connect();
   const parsed = new URL(req.url || '/', 'http://localhost');
-  const requested = String(req.headers['last-event-id'] || parsed.searchParams.get('cursor') || '$');
+  const requested = String(
+    req.headers['last-event-id']
+      || parsed.searchParams.get('cursor')
+      || '$',
+  );
   let cursor = CURSOR.test(requested) ? requested : '$';
   const heartbeat = setInterval(() => {
     if (!closed) res.write(': transport-heartbeat-only\n\n');
@@ -42,11 +49,15 @@ export default async function handler(req, res) {
   } catch (error) {
     if (!closed) {
       res.write('event: monitor-reobserve\n');
-      res.write(`data: ${JSON.stringify({ state: 'REOBSERVE', disposition: 'CONTINUE', reason: error?.message || 'STREAM_FAILURE' })}\n\n`);
+      res.write(`data: ${JSON.stringify({
+        state: 'REOBSERVE',
+        disposition: 'CONTINUE',
+        reason: error?.message || 'STREAM_FAILURE',
+      })}\n\n`);
     }
   } finally {
     clearInterval(heartbeat);
-    try { await reader.quit(); } catch {}
+    reader.destroy();
     if (!res.writableEnded) res.end();
   }
 }
