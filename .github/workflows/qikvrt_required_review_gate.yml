@@ -176,6 +176,8 @@ jobs:
               '-f',f'target_url={os.environ["GITHUB_SERVER_URL"]}/{repo}/actions/runs/{os.environ["GITHUB_RUN_ID"]}'
           ])
           print(json.dumps(receipt, sort_keys=True))
+          if state == 'failure':
+              raise SystemExit(1)
           PY
 
   plan-native-account-review:

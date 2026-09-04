@@ -196,6 +196,8 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
         self.assertIn("EVENT_WORKFLOW_RUN_HEAD: ${{ github.event.workflow_run.head_sha || '' }}", workflow)
         self.assertNotIn("EVENT_EXPECTED_HEAD: ${{ github.event.workflow_run.head_sha", workflow)
         self.assertIn("qikvrt-required-code-owner-selection-", workflow)
+        self.assertIn("if state == 'failure':", workflow)
+        self.assertIn("raise SystemExit(1)", workflow)
         self.assertLess(
             workflow.index("pr=gh_json(f'repos/{repo}/pulls/{number}')"),
             workflow.index("rules=gh_json(f'repos/{repo}/rules/branches/main')"),
