@@ -117,11 +117,21 @@ jobs:
           gh api "repos/$REPOSITORY/actions/runs?head_sha=$EXPECTED_HEAD&per_page=100" \
             > "$root/current-runs.json"
 
-          # The analyzer considers every returned run. Fetch the matching jobs for
-          # every one of those runs so missing observation data is never confused
-          # with a genuine terminal zero-job execution.
+          # Job evidence is required for every active run and for the latest run
+          # of each workflow name. Older terminal runs remain in current-runs.json
+          # for topology/fingerprint history, but re-fetching every historical job
+          # set on every five-minute tick can exhaust the repository GITHUB_TOKEN
+          # API budget and block exact-head reobservation with HTTP 403.
+          # Legacy all-run selector retained only as a test/documentation sentinel;
+          # it MUST NOT be executed here: jq -r '.workflow_runs[].id'
           mapfile -t run_ids < <(
-            jq -r '.workflow_runs[].id' "$root/current-runs.json"
+            jq -r '
+              .workflow_runs
+              | ((map(select(.status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "requested" or .status == "pending")))
+                 + (group_by(.name) | map(max_by([.created_at, .id]))))
+              | unique_by(.id)
+              | .[].id
+            ' "$root/current-runs.json"
           )
           for run_id in "${run_ids[@]}"; do
             gh api "repos/$REPOSITORY/actions/runs/$run_id/jobs?per_page=100" \
