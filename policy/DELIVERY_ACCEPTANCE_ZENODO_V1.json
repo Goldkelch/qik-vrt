@@ -1,0 +1,51 @@
+{
+  "schema": "qikvrt_delivery_acceptance_zenodo_v1",
+  "version": "1.0.0",
+  "status": "NORMATIVE_CANDIDATE",
+  "owner": "Ingolf Lohmann",
+  "scope": "All document-like deliverables for which the owner requested Zenodo publication before delivery.",
+  "rule": {
+    "trigger": "ZENODO_PUBLICATION_REQUESTED_BEFORE_DELIVERY",
+    "delivery_accepted_iff": [
+      "EXACT_CANDIDATE_BYTES_FROZEN",
+      "MACHINE_PROOF_AND_CLAIM_BOUNDARIES_COMPLETE",
+      "AUTHORIZED_ZENODO_PUBLICATION_EFFECT_EXECUTED",
+      "PUBLIC_ZENODO_RECORD_READ_BACK",
+      "PUBLIC_DOI_READ_BACK",
+      "PUBLIC_FILESET_MATCHES_FROZEN_MANIFEST",
+      "PUBLIC_METADATA_MATCHES_AUTHORIZED_METADATA"
+    ],
+    "forbidden_delivery_substitutes": [
+      "LOCAL_DRAFT",
+      "CHAT_ATTACHMENT",
+      "SANDBOX_FILE",
+      "GITHUB_COMMIT",
+      "PULL_REQUEST",
+      "WORKFLOW_ARTIFACT",
+      "ZENODO_DEPOSITION_DRAFT",
+      "RESERVED_DOI_WITHOUT_PUBLICATION",
+      "PUBLICATION_INTENT",
+      "SCHEDULED_OR_MONITORED_PUBLICATION"
+    ],
+    "on_block": "REPORT_EXACT_BLOCKER_AND_CONTINUE_ONLY_THROUGH_AUTHORIZED_SAFE_PATH; DO_NOT_CALL_THE_DOCUMENT_DELIVERED"
+  },
+  "readback_minimum": [
+    "record_id",
+    "doi",
+    "public_record_url",
+    "title",
+    "creators",
+    "publication_date",
+    "file_names",
+    "file_sizes",
+    "file_checksums"
+  ],
+  "non_equivalences": [
+    "REPOSITORY_EVIDENCE != ZENODO_PUBLICATION",
+    "ZENODO_DRAFT != ZENODO_PUBLICATION",
+    "RESERVED_DOI != PUBLISHED_DOI",
+    "PUBLICATION != PEER_REVIEW",
+    "PUBLICATION != EMPIRICAL_CONFIRMATION",
+    "DELIVERY_PREPARATION != DELIVERY_ACCEPTED"
+  ]
+}

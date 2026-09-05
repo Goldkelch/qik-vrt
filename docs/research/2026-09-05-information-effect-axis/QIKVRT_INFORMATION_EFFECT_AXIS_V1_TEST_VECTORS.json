@@ -1,0 +1,59 @@
+{
+  "id": "QIKVRT_INFORMATION_EFFECT_AXIS_V1_TEST_VECTORS",
+  "version": "1.0.0",
+  "vectors": [
+    {
+      "name": "complete_measurement_envelope",
+      "input": {
+        "value": 1.25,
+        "time": "2026-09-05T00:00:00Z",
+        "uncertainty": 0.01,
+        "unit": "V",
+        "calibration": "CAL-EXAMPLE-001",
+        "provenance": "sensor://example/1"
+      },
+      "expected_control": "NOOP",
+      "note": "Metadata completeness alone does not establish empirical truth or external effect."
+    },
+    {
+      "name": "missing_uncertainty",
+      "input": {
+        "value": 1.25,
+        "time": "2026-09-05T00:00:00Z",
+        "unit": "V",
+        "calibration": "CAL-EXAMPLE-001",
+        "provenance": "sensor://example/1"
+      },
+      "expected_control": "HOLD"
+    },
+    {
+      "name": "stale_or_unknown_readback",
+      "input": {
+        "value": 1.25,
+        "time": "2026-09-05T00:00:00Z",
+        "uncertainty": 0.01,
+        "unit": "V",
+        "calibration": "CAL-EXAMPLE-001",
+        "provenance": "sensor://example/1",
+        "effect_requested": true,
+        "effect_readback": null
+      },
+      "expected_control": "REOBSERVE",
+      "forbidden_claims": ["EFFECT_ACK", "EFFECT_ACK_DONE"]
+    },
+    {
+      "name": "authority_required",
+      "input": {
+        "value": 1.25,
+        "time": "2026-09-05T00:00:00Z",
+        "uncertainty": 0.01,
+        "unit": "V",
+        "calibration": "CAL-EXAMPLE-001",
+        "provenance": "sensor://example/1",
+        "authority_required": true,
+        "authority_receipt": null
+      },
+      "expected_control": "REQUEST_AUTHORITY"
+    }
+  ]
+}

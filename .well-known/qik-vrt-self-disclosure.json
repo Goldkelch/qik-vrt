@@ -9,7 +9,10 @@
     {"id":"transactional_workflow_verification","machine_readable":true},
     {"id":"content_disposition_evidence","machine_readable":true},
     {"id":"authority_mirror_traceability","machine_readable":true},
-    {"id":"publication_overview_discovery","machine_readable":true}
+    {"id":"publication_overview_discovery","machine_readable":true},
+    {"id":"zenodo_delivery_acceptance","machine_readable":true},
+    {"id":"mesh_self_explanation","machine_readable":true},
+    {"id":"information_evidence_effect_axis","machine_readable":true}
   ],
   "bindings": {
     "batch_002_evidence_head": "e594ce89c4a4efb7b2d8eeff82eb9ef40ec03328",
@@ -19,7 +22,22 @@
       "human_index_path": "docs/publications/index.html",
       "machine_index_path": "docs/publications/index.json",
       "maintenance_test": "python3 -B -m unittest -v tests.test_qikvrt_self_disclosure"
+    },
+    "delivery_acceptance": {
+      "policy": "policy/DELIVERY_ACCEPTANCE_ZENODO_V1.json",
+      "well_known": ".well-known/qik-vrt-delivery-contract.json",
+      "rule": "If Zenodo publication was requested before document delivery, DELIVERY_ACCEPTED requires public Zenodo DOI/record/metadata/fileset readback matching the exact frozen candidate."
+    },
+    "mesh_self_explanation": {
+      "policy": "policy/MESH_SELF_EXPLANATION_V1.json",
+      "human_contract": "docs/MESH_SELF_EXPLANATION_AND_DELIVERY.md",
+      "rule": "Every material uncertainty is either resolved by exact evidence or remains explicitly OPEN/HOLD/REOBSERVE/REQUEST_AUTHORITY; plausible inference is not resolution."
+    },
+    "information_evidence_effect_axis": {
+      "contract": "docs/research/2026-09-05-information-effect-axis/QIKVRT_INFORMATION_EFFECT_AXIS_V1.json",
+      "scientific_manuscript": "docs/research/2026-09-05-information-effect-axis/MANUSCRIPT.md",
+      "public_prose": "docs/research/2026-09-05-information-effect-axis/PROSA_ARTIKEL_FUER_ALLE.md"
     }
   },
-  "completion_claims": {"pass":false,"final_pass":false,"effect_ack_done":false}
+  "completion_claims": {"pass":false,"final_pass":false,"effect_ack_done":false,"zenodo_delivery_accepted":false}
 }
