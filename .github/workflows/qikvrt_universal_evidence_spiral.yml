@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT universal evidence spiral
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - "RESOLVE"
+      - ".well-known/qik-vrt-problem-resolution.json"
+      - "policy/UNIVERSAL_EVIDENCE_SPIRAL_RESOLVER_V1.json"
+      - "policy/RECURSIVE_AUTONOMY_EVIDENCE_SPIRAL_V1.json"
+      - "docs/UNIVERSAL_EVIDENCE_SPIRAL_RESOLVER.md"
+      - "docs/RECURSIVE_AUTONOMY_EVIDENCE_SPIRAL.md"
+      - "tools/qikvrt_universal_evidence_spiral.py"
+      - "tests/test_universal_evidence_spiral.py"
+      - ".github/workflows/qikvrt_universal_evidence_spiral.yml"
+  push:
+    branches: [main]
+    paths:
+      - "RESOLVE"
+      - ".well-known/qik-vrt-problem-resolution.json"
+      - "policy/UNIVERSAL_EVIDENCE_SPIRAL_RESOLVER_V1.json"
+      - "policy/RECURSIVE_AUTONOMY_EVIDENCE_SPIRAL_V1.json"
+      - "docs/UNIVERSAL_EVIDENCE_SPIRAL_RESOLVER.md"
+      - "docs/RECURSIVE_AUTONOMY_EVIDENCE_SPIRAL.md"
+      - "tools/qikvrt_universal_evidence_spiral.py"
+      - "tests/test_universal_evidence_spiral.py"
+      - ".github/workflows/qikvrt_universal_evidence_spiral.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Validate universal resolver policy and implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m json.tool policy/UNIVERSAL_EVIDENCE_SPIRAL_RESOLVER_V1.json >/dev/null
+          python3 -m json.tool policy/RECURSIVE_AUTONOMY_EVIDENCE_SPIRAL_V1.json >/dev/null
+          python3 -m json.tool .well-known/qik-vrt-problem-resolution.json >/dev/null
+          python3 -B -m unittest -v tests.test_universal_evidence_spiral
+      - name: Negative smoke test preserves exact-subject fail-closed behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' '{"subject":{"repository":"Goldkelch/qik-vrt"}}' > "$RUNNER_TEMP/problem.json"
+          python3 -B tools/qikvrt_universal_evidence_spiral.py "$RUNNER_TEMP/problem.json" > "$RUNNER_TEMP/receipt.json"
+          grep -F '"state": "REOBSERVE"' "$RUNNER_TEMP/receipt.json"
+          grep -F '"external_effect_claimed": false' "$RUNNER_TEMP/receipt.json"
+      - name: Recursive depth-and-breadth smoke test preserves open-frontier semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/recursive.json" <<'JSON'
+          {
+            "subject": {"repository":"Goldkelch/qik-vrt","identity":"root","head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","tree":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+            "subproblems": [
+              {"subject":{"repository":"Goldkelch/qik-vrt","identity":"child-b","head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","tree":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}},
+              {"subject":{"repository":"Goldkelch/qik-vrt","identity":"child-a","head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","tree":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}
+            ]
+          }
+          JSON
+          python3 -B tools/qikvrt_universal_evidence_spiral.py "$RUNNER_TEMP/recursive.json" --recursive --max-depth 8 --max-nodes 32 > "$RUNNER_TEMP/recursive-receipt.json"
+          grep -F '"traversal": "BREADTH_FIRST_DETERMINISTIC"' "$RUNNER_TEMP/recursive-receipt.json"
+          grep -F '"nodes_observed": 3' "$RUNNER_TEMP/recursive-receipt.json"
+          grep -F '"global_finality_claimed": false' "$RUNNER_TEMP/recursive-receipt.json"
