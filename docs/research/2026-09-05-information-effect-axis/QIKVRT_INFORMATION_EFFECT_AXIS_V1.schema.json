@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "QIKVRT_INFORMATION_EFFECT_AXIS_V1.schema.json",
+  "title": "QIK-VRT Information-Effect Axis Contract",
+  "type": "object",
+  "required": [
+    "id",
+    "version",
+    "status",
+    "canonical_statement",
+    "core_chain",
+    "non_equivalences",
+    "measurement_metadata_required",
+    "control_states",
+    "fail_closed_rules",
+    "adapter_contract",
+    "scientific_boundaries"
+  ],
+  "properties": {
+    "id": {"const": "QIKVRT_INFORMATION_EFFECT_AXIS_V1"},
+    "version": {"type": "string"},
+    "status": {"type": "string"},
+    "author": {"type": "string"},
+    "date": {"type": "string"},
+    "canonical_statement": {"type": "string"},
+    "core_chain": {"type": "array", "minItems": 5, "items": {"type": "string"}},
+    "non_equivalences": {"type": "array", "minItems": 4, "items": {"type": "string"}},
+    "measurement_metadata_required": {"type": "array", "items": {"type": "string"}},
+    "optional_measurement_metadata": {"type": "array", "items": {"type": "string"}},
+    "control_states": {
+      "type": "array",
+      "items": {"enum": ["NOOP", "HOLD", "REOBSERVE", "REQUEST_AUTHORITY"]}
+    },
+    "fail_closed_rules": {"type": "array", "items": {"type": "string"}},
+    "adapter_contract": {"type": "object"},
+    "scientific_boundaries": {"type": "object"}
+  },
+  "additionalProperties": true
+}
