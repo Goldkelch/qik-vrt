@@ -289,6 +289,7 @@ jobs:
           make test
           python3 tools/qikvrt_integrity.py verify
       - name: Commit materialized repository evidence
+        if: github.event_name != 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
