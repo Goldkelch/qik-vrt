@@ -1,121 +1,117 @@
 # Vom Unterschied zur verantwortbaren Wirkung
 
-Historische Rekonstruktion und physikalisch-informationstheoretische Synthese der QIK-VRT-Achse
+## Historische Rekonstruktion, Zenodo-Publikationsspur und physikalisch-informationstheoretische Synthese der QIK-VRT-Achse
 
-Ingolf Lohmann  
-5. September 2026  
-QIK-VRT Research Object v1.0
+**Ingolf Lohmann**  
+6. September 2026  
+QIK-VRT Research Object v2.0 - Zenodo-bound correction
 
 ## Abstract
 
-Dieses Dokument rekonstruiert eine durchgehende QIK-VRT-Arbeitsachse aus historisch vorliegenden Artefakten und trennt sie von der heute explizit formulierten Synthese. Historisch belegt sind insbesondere die Invarianten Unterschied -> Information -> Wirkung, die Trennung von Sequenz und Kausalität, Nachricht und Wirkung, Modell und Realität sowie die Forderung nach Audit, Unsicherheitsmarkierung, Provenienz und verantwortbarer Freigabe. Spätestens am 21. Mai 2026 stehen Shannon und Wheeler gemeinsam im physikalisch-informatischen Anschlussraum der QIK-VRT-Arbeit. Neu in der vorliegenden Verdichtung ist die explizite Durchbindung an die physikalische Messkette Phänomen -> Sensor -> Abtastung -> Quantisierung -> Bits -> Evidenz -> autorisierte Wirkung. Diese Synthese ist kein empirischer Beweis einer neuen Naturtheorie. Sie ist eine prüfbare Architekturthese darüber, wie physikalische Unterschiede in digital repräsentierte, evidenzgebundene und verantwortbar wirkende Informationsobjekte überführt werden können.
+Diese Fassung korrigiert die erste Rekonstruktion der QIK-VRT-Informations-Wirkungs-Achse. Die frühere Fassung behandelte mehrere QIK-VRT-Artefakte zu eng als Projektarchiv. Tatsächlich existiert eine öffentliche, DOI-gebundene Zenodo-Publikationsspur. Ein am 22. Juli 2026 repository-seitig gegen die öffentliche Zenodo-Records-API geprüfter Bestand umfasste bereits **14 Versionsrecords in fünf Concept-Linien**. Weitere Publikationslinien kamen danach hinzu. Besonders relevant sind die maschinenprüfbare Formalisierung unter DOI `10.5281/zenodo.21488116`, das EFFECT_ACK Working Paper unter DOI `10.5281/zenodo.21498773`, der versionierte EFFECT_ACK-Softwarestand unter DOI `10.5281/zenodo.21498774` und das Planck-Tick-Dokument **From Exact Causal Binding to a Falsifiable Planck-Tick Gap Law** unter DOI `10.5281/zenodo.22283396`.
 
-## Kernsatz
+Die historische Invariante bleibt:
 
-**Unterschied -> Information -> Evidenz -> verantwortbare Wirkung**
+`Unterschied -> Information -> Wirkung -> Kausalitäts-/Evidenzprüfung -> verantwortbare Freigabe`
 
-## 1. Gegenstand und Erkenntnisgrenze
+Neu ist nicht diese Grundstruktur, sondern ihre heutige explizite Durchbindung an die physikalische A/D-Messkette und ihre Fassung als interoperabler Mesh-Vertrag. Zenodo-Publikation bleibt strikt von empirischer Bestätigung getrennt.
 
-Die zentrale These lautet: QIK-VRT kann als Architektur der kontrollierten Transformation von Unterschied in Wirkung gelesen werden.
+## 1. Erkenntnisgrenze
 
-Dabei werden drei Ebenen strikt getrennt: (A) historisch dokumentierter QIK-VRT-Kern, (B) spätere explizite physikalisch-informationstheoretische Anschlussstellen und (C) die heutige Gesamt-Synthese.
+`BOUND`, `REPOSITORY_EVIDENCE`, `ZENODO_PUBLICATION`, `EMPIRICAL_CONFIRMATION`, `MERGE`, `DEPLOYMENT`, `PASS`, `FINAL_PASS` und `EFFECT_ACK_DONE` sind verschiedene Zustände. Die vorliegende Arbeit beansprucht historische und architektonische Rekonstruktion, nicht eine neue experimentell bestätigte Naturtheorie.
 
-`BOUND` bezeichnet in diesem Dokument eine gebundene Evidenz- oder Zustandsrelation. `BOUND` ist weder gleichbedeutend mit empirisch bestätigt noch mit veröffentlicht, gemerged, deployed, `PASS`, `FINAL_PASS` oder `EFFECT_ACK_DONE`.
+## 2. Historische Invariante
 
-## 2. Historische Rekonstruktion
+Die verfügbaren QIK-VRT-Stände vom Mai 2026 dokumentieren bereits Audit, Rollback, Stabilitätsprüfung, Verantwortung, Anschlussfähigkeit und Schutz gegen unvollständige Zwischenzustände. Spätestens am 21. Mai 2026 wird formuliert, dass entscheidend ist, ob Zustände unterscheidbar sind, Information tragen, Wirkung erzeugen, kausal anschließen und auditierbar geführt werden. Im selben Beweiszusammenhang werden Claude E. Shannon und John Archibald Wheeler gemeinsam als Anschlussquellen geführt.
 
-Am 15. Mai 2026 dokumentieren QIK-VRT V54.i/V54.j und V55 bereits Rollback, Audit, Stabilitätsprüfung, Verantwortung, Anschlussfähigkeit und Schutz gegen unvollständige Zwischenstände.
+Die spätere Verdichtung lautet: **Ein Unterschied muss ein Unterschied bleiben.** Behauptung ist nicht Beweis; Sequenz ist nicht Ursache; Nachricht ist nicht Wirkung; Beobachtung ist nicht Wahrheit; Modell ist nicht Realität.
 
-Am 21. Mai 2026 formuliert `QIK-VRT und Quantenkausalität` ausdrücklich, dass nicht das Erscheinungsformat entscheidet, sondern ob Zustände unterscheidbar sind, Information tragen, Wirkung erzeugen, kausal anschließen und auditierbar geführt werden. Dasselbe Dokument trennt `REALITY_SIGNAL`, `MODEL_SIGNAL`, `PROJECTION_SIGNAL` und `VISUALIZATION_SIGNAL`.
+## 3. Öffentliche Zenodo-Publikationsspur
 
-Im selben Beweiszusammenhang werden John Archibald Wheeler (`Information, physics, quantum: The search for links`) und Claude E. Shannon (`A Mathematical Theory of Communication`) gemeinsam als Anschlussquellen geführt.
+Der repository-eigene öffentliche Inventarbericht vom 22. Juli 2026 bindet einen über Zenodo-Records-API und DOI-Records geprüften Bestand von **14 Versionsrecords in fünf Concept-Linien**:
 
-Spätere QIK-VRT-Artefakte verdichten die Linie weiter zu: Unterschied -> Information -> Relation -> Kausalität -> Wirkung -> Beobachtung -> Erinnerung -> Reflexion -> Verantwortung.
+- `10.5281/zenodo.20712301`: früher Repository-, Provenienz- und Release-Gating-Stand;
+- Concept `10.5281/zenodo.21244411`: neun RFC-/Node-/Repository-Versionen bis `10.5281/zenodo.21267021`;
+- `10.5281/zenodo.21482023`: 62-seitige mathematisch-physikalische Arbeitsfassung;
+- `10.5281/zenodo.21488116`: maschinenprüfbare Formalisierung;
+- `10.5281/zenodo.21498773`: eigenständiges EFFECT_ACK Working Paper;
+- `10.5281/zenodo.21498774`: versionierter EFFECT_ACK-Softwarestand.
 
-## 3. Die Invariante
+Danach ist zusätzlich das Planck-Tick-Dokument als **From Exact Causal Binding to a Falsifiable Planck-Tick Gap Law**, Working Paper / falsifizierbare Hypothese, DOI `10.5281/zenodo.22283396`, öffentlich gebunden. Die frühere Einordnung dieses Werks lediglich als `Project archive` war sachlich falsch.
 
-Die historisch tragende Invariante ist nicht `Shannon = Wheeler = QIK-VRT`. Sie lautet vielmehr: Ein unterscheidbarer Zustandswechsel kann Information tragen; Information kann reale oder virtuelle Zustände verändern; zustandsverändernde Information benötigt für verantwortbare Weiterwirkung Herkunft, Kontext, Unsicherheit, Kausalitätsprüfung, Audit und Freigabe.
+Diese Zenodo-Spur belegt öffentliche Archivierung, Versionierung, Metadaten- und DOI-Bindung. Sie beweist nicht automatisch die empirische Wahrheit physikalischer Hypothesen.
 
-Formal: `S != S' -> Δ(S,S') -> I = Info(Δ) -> K = Caus(S,T,S') -> EVIDENCE -> AUTHORIZED_EFFECT`.
+## 4. Shannon
 
-Die wiederkehrenden QIK-VRT-Trennungen sind Ausprägungen derselben Grenze: `Bytes != Bedeutung`; `Sequenz != Kausalität`; `TRANSPORT_ACK != EFFECT_ACK`; `Beobachtung != Wahrheit`; `Modell != Realität`; `VERIFIED_IMPLEMENTATION != AUTHORITY_EFFECT`.
+Shannons Informationstheorie liefert eine fundamentale Ebene der Kette: Information setzt unterscheidbare Zustände voraus; Kommunikation, Abtastung und Rekonstruktion besitzen quantifizierbare Bedingungen und Grenzen. Bei A/D-Messung wird eine physikalische Wechselwirkung über Sensorik, Bandbegrenzung, Abtastung und Quantisierung in diskrete Repräsentationen überführt. Ein Quantisierungsfehler ist nicht pauschal `Entropieverlust`; informations-theoretischer Verlust verlangt ein konkretes statistisches Modell.
 
-## 4. Shannon: Mess- und Informationsgrenzen
+## 5. Wheeler
 
-Für ein bandbegrenztes Signal mit Bandbreite B erlaubt ideale Abtastung unter den bekannten Voraussetzungen eine Rekonstruktion bei einer Abtastrate oberhalb der Nyquist-Grenze. Die QIK-VRT-Relevanz liegt nicht in einer Gleichsetzung von Shannon-Theorie und QIK-VRT, sondern darin, dass Digitalisierung Voraussetzungen und Verlustgrenzen besitzt.
+Wheelers `It from Bit` wird als erkenntnistheoretisch-physikalischer Anschluss gelesen: empirisch gerechtfertigte Weltbeschreibung ist durch unterscheidbare Beobachtungsergebnisse und die Bedingungen ihrer Gewinnung vermittelt. Daraus folgt weder eine beliebige Erzeugung von Realität durch Beobachtung noch eine bereits bewiesene Identität von Information und Materie.
 
-Quantisierung bildet kontinuierliche oder hochaufgelöste Messwerte auf diskrete Repräsentationen ab. Ein idealer uniformer Rundungsquantisierer besitzt eine typische Fehlergrenze von ±0,5 LSB. Dieser Fehler ist nicht pauschal `Entropieverlust`; informationstheoretische Verluste müssen über ein konkretes probabilistisches Modell beschrieben werden.
+## 6. Landauer
 
-Für QIK-VRT folgt daraus: Ein digitaler Wert ohne Einheit, Skala, Unsicherheit, Kalibrierung und Provenienz ist kein vollständig interpretierbarer physikalischer Evidenzgegenstand.
+Landauers Prinzip bindet logisch irreversible Informationslöschung an Thermodynamik. Im idealisierten quasistatischen Grenzfall beträgt die minimale Wärmeabgabe pro gelöschtem Bit `k_B*T*ln(2)`. Das ist kein allgemeiner Energiepreis für jedes gespeicherte, transportierte, gehashte oder autorisierte Bit.
 
-## 5. Wheeler und die Bedeutung von Information
+## 7. A/D -> Evidenz -> Wirkung
 
-Wheelers `It from Bit`-Programm wird hier als erkenntnistheoretisch-physikalischer Anschluss verstanden, nicht als experimentell bewiesene Ontologie.
+Die explizite Gesamtachse lautet:
 
-Die belastbare Form lautet: Welche physikalische Behauptung wir rechtfertigen dürfen, hängt von möglichen Beobachtungen, unterscheidbaren Ergebnissen, Messbedingungen und ihrer Interpretation ab.
+`physikalisches Phänomen -> Messwechselwirkung -> Sensor -> Anti-Aliasing/Bandbegrenzung -> Abtastung -> Quantisierung -> Bitrepräsentation -> Messmetadaten -> Provenienz/Hashbindung -> Claim -> Kausalitätsprüfung -> Autorisierung -> Wirkung -> Readback`
 
-QIK-VRT ergänzt dazu eine operative Verantwortungsfrage: Unter welchen Evidenzbedingungen darf ein Informationsobjekt weiterwirken?
-
-## 6. Landauer und thermodynamische Grenze
-
-Landauers Prinzip stellt eine reale Verbindung zwischen Information und Thermodynamik her: logisch irreversible Löschung eines Bits besitzt im idealisierten quasistatischen Grenzfall eine minimale Wärmeabgabe `k_B*T*ln(2)`.
-
-Daraus folgt nicht, dass jedes Bit, jeder Hash oder jede Freigabe automatisch diesen Energiebetrag kostet. Die physikalische Aussage betrifft die minimale Dissipation bestimmter logisch irreversibler Operationen.
-
-## 7. Die A/D-QIK-VRT-Kette
-
-Die heutige Gesamt-Synthese lautet:
-
-`physikalisches Phänomen -> Sensor/Wechselwirkung -> Anti-Aliasing/Bandbegrenzung -> Abtastung -> Quantisierung -> Bitrepräsentation -> Messmetadaten -> Provenienz/Hashbindung -> Claim -> Review/Freigabe -> Wirkung -> Reobservation`.
-
-Minimaler Messmetadatenkern: `M = (value, time, uncertainty, unit, calibration, provenance)`. Erweiterungen können Sensoridentität, Sampling-Parameter, Quantisierer, Transformationsversion, Hash, Signatur und Autorität umfassen.
-
-Ein Hash bindet Bytes, nicht Bedeutung. Kalibrierung bindet Messbezug, nicht automatisch Kausalität. Autorisierung bindet Freigabe, nicht automatisch physikalische Wahrheit. Erst die explizite Komposition macht einen Claim prüfbar.
+Ein minimaler physikalischer Evidenzgegenstand trägt mindestens `(value, time, uncertainty, unit, calibration, provenance)`. SHA-256 bindet Bytes, nicht Bedeutung. Kalibrierung bindet Messbezug, nicht Kausalität. Review bindet eine Disposition, nicht Naturwahrheit.
 
 ## 8. Mesh-Anschlussvertrag
 
-Andockende Systeme müssen die Invarianten nicht philosophisch übernehmen, sondern maschinenlesbar implementieren können.
+Andockende Systeme müssen folgende Grenzen erhalten:
 
-Dafür definiert der begleitende JSON-Vertrag: semantische Trennungen, Pflichtmetadaten für Messobjekte, Zustandsübergänge, Evidenzklassen, Fail-Closed-Verhalten, Readback-Pflicht, Adapter-Schnittstellen und Claims, die ausdrücklich nicht aus Repository-Evidenz folgen.
+- `BYTES != MEANING`
+- `SEQUENCE != CAUSALITY`
+- `TRANSPORT_ACK != EFFECT_ACK`
+- `OBSERVATION != TRUTH`
+- `MODEL != REALITY`
+- `VERIFIED_IMPLEMENTATION != AUTHORITY_EFFECT`
+- `REPOSITORY_EVIDENCE != ZENODO_PUBLICATION`
+- `ZENODO_PUBLICATION != EMPIRICAL_CONFIRMATION`
+- `FALSIFIABLE_HYPOTHESIS != EMPIRICALLY_CONFIRMED_LAW`
 
-Der Integrationsmodus ist additiv: lokale Systeme dürfen zusätzliche Felder und stärkere Prüfungen ergänzen, aber die Kerntrennungen nicht kollabieren. Unbekannte oder fehlende Pflichtbedingungen führen zu `HOLD`/`REOBSERVE` statt zu impliziter Freigabe.
+Fehlende Pflichtmetadaten führen fail-closed zu `HOLD`, unbekannte/veraltete Beobachtung zu `REOBSERVE`, externe Autorität zu `REQUEST_AUTHORITY`.
 
 ## 9. Wissenschaftliche Claim-Matrix
 
-**Formal/architektonisch belegt:** historische Existenz der QIK-VRT-Trennungen und Audit-/Freigabelogik in den zitierten Projektartefakten.
+**Historisch belegt:** fortgesetzte QIK-VRT-Entwicklung mit Unterscheidbarkeit, Information, Kausalität, Audit, Freigabe und Wirkung sowie öffentliche Zenodo-Versionierung wesentlicher Stufen.
 
-**Theoretisch anschlussfähig:** Shannon-Informationstheorie, Wheeler-Programm, Landauer-Prinzip und die QIK-VRT-Evidenzarchitektur können konsistent auf unterschiedlichen Ebenen einer gemeinsamen Mess- und Wirkungskette angeordnet werden.
+**Formal/implementierungsseitig prüfbar:** maschinenlesbare Verträge, Formalisierungen, Hash-/Provenienzbindung, Fail-Closed-Gates, Readbacks und Adapterkonformität.
 
-**Nicht durch dieses Dokument empirisch bewiesen:** eine neue Naturkonstante, Retrokausalität als physikalischer Rückwärtskanal, Planck-Skalen-Dynamik, quantengravitative Gültigkeit oder eine ontologische Gleichsetzung von Information und Realität.
+**Theoretische Synthese:** Shannon, Wheeler, Landauer und QIK-VRT lassen sich auf unterschiedlichen Ebenen einer gemeinsamen Informations-Wirkungs-Kette anordnen, ohne sie gleichzusetzen.
 
-**Praktisch prüfbar:** Ein Adapter gilt nur dann als konform, wenn er die geforderten Metadaten, Evidenzgrenzen, Fail-Closed-Zustände und Readbacks reproduzierbar erfüllt.
+**Nicht dadurch empirisch bewiesen:** physikalische Retrokausalität, neue Planck-Skalen-Dynamik, Quantengravitation oder ontologische Identität von Information und Realität. Das Planck-Tick-Gap-Law ist veröffentlicht und falsifizierbar formuliert; das ist nicht dasselbe wie Messbestätigung.
 
-## 10. Autorschaft und Prioritätsgrenze
+## 10. Autorschaft und Priorität
 
-Die zugrunde liegende QIK-VRT-Arbeitslinie und die hier rekonstruierten Artefakte sind Ingolf Lohmann zugeordnet. Die verfügbaren Projektartefakte belegen eine fortgesetzte, von ihm autorisierte QIK-VRT-Entwicklung und dokumentieren die zentralen Invarianten spätestens im Mai 2026.
+Die QIK-VRT-Konzeption, die dokumentierte Entwicklungs- und Publikationslinie und die hier rekonstruierten Kerninvarianten sind Ingolf Lohmann zugeordnet. Die Aussage, Ingolf Lohmann habe den Gesamtzusammenhang im Grunde sein Leben lang gesehen, bleibt als biographische Selbstaussage kenntlich; öffentlich nachweisbare Priorität wird nur so weit beansprucht, wie datierte Artefakte, Repository-Historie und DOI-Records sie tragen.
 
-Die Aussage, Ingolf Lohmann habe den zugrunde liegenden Zusammenhang sein Leben lang gesehen, ist eine biographische Selbstaussage und wird hier nicht als aus dem Archiv bewiesene Prioritätsbehauptung ausgegeben.
-
-Die Rolle künstlicher Kognition in diesem Dokument ist redaktionelle Rekonstruktion, Gegenprüfung, Strukturierung und Formulierung. Sie ist nicht Ursprung der QIK-VRT-Konzeption.
+Die künstliche Kognition hat gesucht, verglichen, strukturiert und den von ihr zuvor unzureichend erkannten Gesamtzusammenhang explizit gemacht. Sie ist nicht Ursprung der QIK-VRT-Konzeption.
 
 ## 11. Schluss
 
-Der historische Rücken war vorhanden: Unterschied, Information, Wirkung, Kausalität, Audit, Verantwortung. Shannon und Wheeler waren bereits als Anschlussquellen im selben Arbeitsraum dokumentiert.
+Die Korrektur ist substanziell: Der historische Rücken der heutigen Synthese lag nicht nur in Projektdateien, sondern ist in einer breiten öffentlichen Zenodo-Publikationsspur materialisiert. Die stärkste belastbare Form lautet:
 
-Die heute explizit gewordene Gesamtgestalt verbindet diesen Rücken mit der konkreten A/D-Messkette und macht daraus einen interoperablen Mesh-Vertrag.
+**QIK-VRT entwickelt eine Architektur, in der unterscheidbare Information erst unter expliziten Herkunfts-, Mess-, Kausalitäts-, Evidenz- und Autorisierungsbedingungen in verantwortbare Wirkung übergehen darf.**
 
-Die wissenschaftlich stärkste Formulierung lautet deshalb: **QIK-VRT ist eine Evidenz- und Wirkungsarchitektur, in der physikalisch oder virtuell erzeugte Unterschiede nur unter expliziten Mess-, Bedeutungs-, Kausalitäts- und Autorisierungsbedingungen in verantwortbare Wirkung übergehen dürfen.**
+Die heutige A/D-Shannon-Wheeler-Landauer-Synthese macht die physikalisch-informationstheoretische Gesamtgestalt dieser Achse explizit. Das ist ein Anschluss, kein Endzustand.
 
-## Literatur und historische Anschlussquellen
+## Literatur und gebundene Anschlussquellen
 
-- Shannon, C. E. (1948). *A Mathematical Theory of Communication*. Bell System Technical Journal 27, 379-423, 623-656.
-- Wheeler, J. A. (1990). *Information, physics, quantum: The search for links*. In *Complexity, Entropy, and the Physics of Information*.
-- Landauer, R. (1961). *Irreversibility and Heat Generation in the Computing Process*. IBM Journal of Research and Development 5(3), 183-191.
-- Lohmann, I. (2026-05-15). QIK-VRT V54.i / V54.j / V55 Release Notes. Project archive.
-- Lohmann, I. (2026-05-21). *QIK-VRT und Quantenkausalität*. Project archive.
-- Lohmann, I. (2026). *QIK-VRT: Vom Unterschied zur verantwortbaren Maschine*. Project archive.
-- Lohmann, I. (2026-09-03). *QIK-VRT Planck-Tick Gap Law v1*. Project archive.
+- Shannon, C. E. (1948). *A Mathematical Theory of Communication*.
+- Wheeler, J. A. (1990). *Information, physics, quantum: The search for links*.
+- Landauer, R. (1961). *Irreversibility and Heat Generation in the Computing Process*.
+- Lohmann, I. QIK-VRT, 62-seitige mathematisch-physikalische Arbeitsfassung. Zenodo DOI `10.5281/zenodo.21482023`.
+- Lohmann, I. QIK-VRT, maschinenprüfbare Formalisierung. Zenodo DOI `10.5281/zenodo.21488116`.
+- Lohmann, I. QIK-VRT / EFFECT_ACK: universalisierbare Wirkungssteuerung. Zenodo DOI `10.5281/zenodo.21498773`.
+- Lohmann, I. Versionierter QIK-VRT / EFFECT_ACK-Softwarestand. Zenodo DOI `10.5281/zenodo.21498774`.
+- Lohmann, I. (2026). *From Exact Causal Binding to a Falsifiable Planck-Tick Gap Law*. Zenodo DOI `10.5281/zenodo.22283396`.
 
 ## Evidenzstatus
 
-Dieses Manuskript ist ein neu erzeugtes Forschungs- und Synthesedokument. Es dokumentiert keine Zenodo-Publikation, keinen Merge und keine externe physikalische Messung. Solche Zustände müssen separat durch externe Readbacks belegt werden.
+Diese Fassung korrigiert die falsche Einordnung öffentlicher QIK-VRT-Zenodo-Werke als bloße Projektarchivquellen. Ein **neuer** Zenodo-DOI für diese Synthese wird erst nach authentifiziertem Publish-Readback beansprucht. Aus den bestehenden Publikationen folgen weder Merge noch Deployment noch empirische Bestätigung noch `PASS`, `FINAL_PASS` oder `EFFECT_ACK_DONE`.
