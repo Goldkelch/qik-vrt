@@ -91,7 +91,6 @@ class AphorismCorpusV2Tests(unittest.TestCase):
             "command -v xelatex",
             "command -v pdfinfo",
             "command -v pdftotext",
-            "command -v pdftoppm",
             "command -v pdffonts",
             "xelatex --version",
             "dpkg-query --show",
@@ -110,6 +109,7 @@ class AphorismCorpusV2Tests(unittest.TestCase):
         )
         commit_step = workflow.index("- name: Commit materialized repository evidence")
         block = workflow[commit_step:]
+        self.assertIn("if: github.event_name != 'pull_request'", block)
         for token in (
             'source_head="$(git rev-parse --verify HEAD^{commit})"',
             'git ls-remote --heads origin "refs/heads/$TARGET_REF"',
@@ -119,6 +119,10 @@ class AphorismCorpusV2Tests(unittest.TestCase):
             'git push origin "HEAD:$TARGET_REF"',
         ):
             self.assertIn(token, block)
+        self.assertLess(
+            block.index("if: github.event_name != 'pull_request'"),
+            block.index("git commit -m \"ci: materialize repository evidence\""),
+        )
         self.assertLess(
             block.index("BLOCK: target ref advanced before repository evidence persistence"),
             block.index("git commit -m \"ci: materialize repository evidence\""),
