@@ -1,0 +1,85 @@
+{
+  "schema": "qikvrt_neutron_star_mesh_architecture_v1",
+  "version": 1,
+  "target": "Motorola 68000 virtual execution model",
+  "model_kind": "TWO_DIMENSIONAL_BOUNDED_MESH_SCHEDULER",
+  "reuse_bindings": [
+    "runtime/m68000/QIKVRT_CIRCULAR_SPARK_ARCHITECTURE_V2.json",
+    "runtime/m68000/QIKVRT_SPARK_ARCHITECTURE_V1.json",
+    "state/mesh/QIKVRT_REAL_MESH_V1.json"
+  ],
+  "axes": {
+    "breadth": {
+      "name": "ANGULAR_SECTORS",
+      "range": [1, 256],
+      "scales_with": "transport and processing demand",
+      "meaning": "parallel bounded work"
+    },
+    "depth": {
+      "name": "RADIAL_SHELLS",
+      "range": [1, 8],
+      "scales_with": "evidence and reobservation level",
+      "meaning": "ordered verification depth"
+    }
+  },
+  "variable_bitrate": {
+    "carrier_width_bits": [8, 16, 32, 64, 128, 256],
+    "selection": "smallest admissible carrier after bounded breadth allocation",
+    "m68000_physical_data_register_bits": 32,
+    "wide_carrier_rule": "ordered 32-bit segmentation with total SHA-256 identity",
+    "capacity_rule": "sector_count * carrier_width_bits * quantum_hz >= requested_transport_bps",
+    "arithmetic": "BOUNDED_INTEGER_ONLY"
+  },
+  "adda_signal_contract": {
+    "directions": ["AD_INWARD", "DA_OUTWARD"],
+    "independent_quantities": [
+      "sample_rate_hz",
+      "sample_bits",
+      "transport_bps"
+    ],
+    "raw_signal_rule": "sample_rate_hz * sample_bits * channels",
+    "encoding": "LOSSLESS_FRAMED_V1",
+    "drop_policy": "NONE",
+    "admission_rule": "transport_bps >= raw_signal_bps",
+    "precision_rule": "BITRATE_ADAPTATION_MUST_NOT_REDUCE_EVIDENTIARY_PRECISION"
+  },
+  "register_abi": {
+    "D0": "decision",
+    "D1": "angular sector",
+    "D2": "radial shell",
+    "D3": "preserved 8-bit witness",
+    "A0": "payload segment address",
+    "A1": "receipt address"
+  },
+  "topological_analogy": {
+    "core": "stable D3 witness",
+    "radial_shells": "increasing verification depth",
+    "angular_sectors": "parallel processing breadth",
+    "pressure_feedback": "backpressure and fail-closed admission",
+    "rotation": "event-driven work-cycle progression"
+  },
+  "required_invariants": [
+    "BREADTH_AND_DEPTH_SCALE_INDEPENDENTLY",
+    "INCREASED_DEMAND_NEVER_REDUCES_BOUNDED_CAPACITY",
+    "INCREASED_EVIDENCE_LEVEL_NEVER_REDUCES_DEPTH",
+    "D3_WITNESS_PRESERVED_ACROSS_ALL_VIRTUAL_CELLS",
+    "WIDE_CARRIERS_SEGMENTED_INTO_ORDERED_M68000_WORDS",
+    "SAMPLE_RATE_SAMPLE_BITS_AND_TRANSPORT_BITRATE_REMAIN_DISTINCT",
+    "NO_FLOATING_POINT_OR_SILENT_FRAME_DROP",
+    "PREDECESSOR_EVIDENCE_TRANSFER_FORBIDDEN",
+    "POST_DISPATCH_DEEP_REOBSERVATION_REQUIRED"
+  ],
+  "physics_boundaries": [
+    "VIRTUAL_NEUTRON_STAR_TOPOLOGY != ASTROPHYSICAL_NEUTRON_STAR_SIMULATION",
+    "NEUTRON_STAR_MATTER != ALL_QUANTUM_CORRELATIONS_MANIFESTED_AS_MATTER",
+    "ARCHITECTURE_ANALOGY != EMPIRICAL_CORRESPONDENCE",
+    "VIRTUAL_M68000_EXECUTION != PHYSICAL_M68000_EXECUTION"
+  ],
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "PHYSICAL_NEUTRON_STAR_MODEL_VALIDATED": false,
+    "PHYSICAL_M68000_EXECUTION": false
+  }
+}

@@ -1,0 +1,81 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT base drift observer
+run-name: QIKVRT base drift observer main=${{ github.sha }}
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: qikvrt-base-drift-observer-${{ github.repository }}
+  cancel-in-progress: true
+
+jobs:
+  observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out trusted main observer code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Observe every open main-targeting PR against exact current main
+        id: observe
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          CURRENT_MAIN_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/${REPOSITORY}/pulls?state=open&base=main&per_page=100" \
+            --jq '.[]' | jq -s '.' > /tmp/open-prs.json
+          python3 -B tools/qikvrt_base_drift_observer.py \
+            --repository "$REPOSITORY" \
+            --current-main "$CURRENT_MAIN_SHA" \
+            --pull-requests-json /tmp/open-prs.json \
+            --output /tmp/base-drift-observations.json
+
+          python3 -B - <<'PY'
+          import json, os, subprocess
+          values=json.load(open('/tmp/base-drift-observations.json',encoding='utf-8'))
+          repo=os.environ['REPOSITORY']
+          for item in values['observations']:
+              if item.get('first_blocker') != 'BASE_DRIFT':
+                  continue
+              head=item['head_sha']
+              base=item['base_sha']
+              main=item['current_main_sha']
+              description=f"BASE_DRIFT base={base[:12]} main={main[:12]}; history-preserving rebind required"
+              payload=json.dumps({
+                  'state':'pending',
+                  'context':'QIKVRT base drift observer',
+                  'description':description,
+              })
+              subprocess.run(
+                  ['gh','api','--method','POST',f'repos/{repo}/statuses/{head}','--input','-'],
+                  input=payload,text=True,check=True,
+              )
+          PY
+
+      - name: Preserve bounded base-drift observation set
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-base-drift-${{ github.sha }}
+          path: /tmp/base-drift-observations.json
+          if-no-files-found: error
+          retention-days: 90

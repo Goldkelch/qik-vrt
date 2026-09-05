@@ -1,0 +1,109 @@
+{
+  "schema": "qikvrt_github_platform_continuous_monitor_policy_v1",
+  "state": "ACTIVE_POLICY_CANDIDATE",
+  "scope": [
+    "github_actions",
+    "github_api"
+  ],
+  "material_effect_classes": [
+    "RATE_LIMITS",
+    "REVIEW_ROUTING",
+    "WORKFLOW_EXECUTION_STATE",
+    "EXACT_HEAD_REOBSERVATION",
+    "CARRIER_STATE"
+  ],
+  "loop_contract": {
+    "repository_native": true,
+    "continuous": true,
+    "allowed_infinite_loops": 1,
+    "loop_identity": "QIKVRT_GITHUB_PLATFORM_CONTINUOUS_MONITOR",
+    "all_other_repository_control_paths": "EVENT_DRIVEN_OR_FINITE",
+    "polling_elsewhere": "FORBIDDEN",
+    "second_infinite_loop": "FAIL_CLOSED",
+    "unclassified_loop_semantics": "FAIL_CLOSED"
+  },
+  "propagation_contract": {
+    "scope": "ENTIRE_REPOSITORY_CONTROL_PLANE",
+    "transitive": true,
+    "bit_complete_intent": true,
+    "applies_to": [
+      "workflows",
+      "reusable_workflows",
+      "actions",
+      "scripts",
+      "dispatchers",
+      "watchdogs",
+      "review_routing",
+      "workflow_state_observers",
+      "exact_head_reobservation",
+      "authority_mirror_control_paths",
+      "generated_repository_control_artifacts"
+    ],
+    "required_invariant": "EXACTLY_ONE_INFINITE_LOOP",
+    "required_loop_identity": "QIKVRT_GITHUB_PLATFORM_CONTINUOUS_MONITOR",
+    "all_other_paths": "EVENT_DRIVEN_OR_FINITE",
+    "polling_outside_required_loop": "FORBIDDEN",
+    "inheritance": "MANDATORY_FOR_SUCCESSORS_AND_GENERATED_CONTROL_ARTIFACTS",
+    "unknown_or_unbound_path": "HOLD_FAIL_CLOSED",
+    "semantic_escape_from_repository_control_loop": "FORBIDDEN"
+  },
+  "enforcement_contract": {
+    "repository_candidate_must_preserve_invariant": true,
+    "successor_candidate_must_preserve_invariant": true,
+    "generated_control_artifact_must_preserve_invariant": true,
+    "violation_disposition": "HOLD",
+    "violation_is_not_retryable_polling": true,
+    "repair_mode": "FINITE_OR_EVENT_DRIVEN_ONLY",
+    "proof_obligation": "EXACT_SUBJECT_AND_EXACT_HEAD_REOBSERVATION",
+    "absence_of_evidence": "NOT_COMPLIANT"
+  },
+  "alert_contract": {
+    "only_material_changes": true,
+    "separate_platform_news_from_repository_evidence": true,
+    "require_likely_repository_impact": true,
+    "require_smallest_safe_mitigation": true,
+    "deduplicate_unchanged_state": true,
+    "unchanged_state_output": "FORBIDDEN",
+    "heartbeat_without_material_delta": "FORBIDDEN",
+    "repeat_success_without_state_change": "FORBIDDEN",
+    "silence_is_required_for_identical_state": true,
+    "emit_only_on": [
+      "EXACT_HEAD_OR_TREE_CHANGE",
+      "REVIEW_ROUTING_CHANGE",
+      "WORKFLOW_FIRST_FAILURE",
+      "WORKFLOW_RECOVERY",
+      "WORKFLOW_EXECUTION_STATE_CHANGE",
+      "CARRIER_OPEN_CLOSE_OR_SUCCESSOR_CHANGE",
+      "MATERIAL_RATE_LIMIT_STATE_CHANGE",
+      "DIRECTLY_EVIDENCED_EXTERNAL_EFFECT"
+    ],
+    "deduplication_key": [
+      "repository",
+      "exact_subject",
+      "head",
+      "tree",
+      "event_or_state",
+      "root_cause_fingerprint"
+    ]
+  },
+  "client_projection_contract": {
+    "tail_f_semantics": true,
+    "repository_scope": [
+      "Goldkelch/qik-vrt",
+      "ingolf-lohmann/qik-vrt"
+    ],
+    "projection_mode": "MATERIAL_DELTA_ONLY",
+    "unchanged_sample": "NO_OUTPUT",
+    "transport_heartbeat_is_progress": false,
+    "successful_watch_run_without_state_change_is_progress": false,
+    "repository_quietness_must_not_be_reported_as_progress": true
+  },
+  "evidence_boundary": {
+    "platform_news_is_not_repository_effect": true,
+    "repository_observation_is_not_merge_or_approval": true,
+    "policy_binding_is_not_runtime_enforcement": true,
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}

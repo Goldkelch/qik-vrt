@@ -380,6 +380,7 @@ def evaluate_required_review(pr: Mapping[str, Any], rules: Sequence[Mapping[str,
         raise ReviewGateInputError("pull request must contain head and user objects")
     head_sha = _sha(head.get("sha"), "pull request head.sha")
     author_login = _login(author.get("login"), "pull request user.login")
+    pr_number = pr.get("number")
     owner_logins = _code_owners(required_code_owners)
     eligible_owners = tuple(
         owner for owner in owner_logins if owner.casefold() != author_login.casefold()
@@ -394,7 +395,6 @@ def evaluate_required_review(pr: Mapping[str, Any], rules: Sequence[Mapping[str,
             required_code_owners=owner_logins,
             eligible_code_owners=eligible_owners,
         )
-    pr_number = pr.get("number")
 
     if not native_code_owner_rule_is_enforced(rules):
         return _block(

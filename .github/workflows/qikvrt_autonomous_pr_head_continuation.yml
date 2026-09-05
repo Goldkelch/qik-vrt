@@ -39,7 +39,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: main
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
 
       - name: Set up Python
@@ -64,6 +64,7 @@ jobs:
           ' "$abi" >/dev/null
           python3 -B -m unittest -v \
             tests.test_qikvrt_pr_head_recovery \
+            tests.test_qikvrt_pr_head_event_subject \
             tests.test_qikvrt_autonomous_pr_head_continuation
 
       - name: Select at most one exact stalled internal PR head
@@ -83,7 +84,8 @@ jobs:
             echo "selected=false" >> "$GITHUB_OUTPUT"
             jq -n \
               --arg event "$GITHUB_EVENT_NAME" \
-              '{d0:1,state:"HOLD",event:$event,productive_effect:false,effect_ack:"NOT_REQUIRED",reason:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",first_causal_blocker:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",next_action:"REOBSERVE_ON_NEXT_REPOSITORY_INTERRUPT"}' \
+              --arg selection_basis "$selection_basis" \
+              '{d0:1,state:"HOLD",event:$event,selection_basis:$selection_basis,productive_effect:false,effect_ack:"NOT_REQUIRED",reason:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",first_causal_blocker:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",next_action:"REOBSERVE_ON_NEXT_REPOSITORY_INTERRUPT"}' \
               > "$root/decision-receipt.json"
             echo "HOLD/D0=1: bounded GitHub installation rate-limit backoff exhausted"
           }
@@ -134,14 +136,48 @@ jobs:
           selected_ref=""
           selected_head=""
           selected_base=""
+          selection_basis="GLOBAL_BOUNDED_DISCOVERY"
 
-          # Bounded discovery: newest 30 open PRs only, one REOBSERVE edge per run.
-          gh_read "repos/${GITHUB_REPOSITORY}/pulls?state=open&sort=updated&direction=desc&per_page=30" \
-            > "$root/open-prs.json"
-          if [ -f "$rate_limit_marker" ]; then
-            emit_rate_limit_hold
-            exit 0
-          fi
+          # Consume one exact event subject before repository-wide discovery.
+          # `git ls-remote` binds current main without spending Installation API
+          # quota. A malformed or stale exact event fails closed and is never
+          # substituted with an unrelated open PR.
+          current_main_sha="$(
+            git ls-remote --heads origin refs/heads/main | awk 'NR == 1 {print $1}'
+          )"
+          test "${#current_main_sha}" -eq 40
+          python3 -B tools/qikvrt_pr_head_event_subject.py \
+            --event "$GITHUB_EVENT_PATH" \
+            --repository "$GITHUB_REPOSITORY" \
+            --current-main "$current_main_sha" \
+            --receipt-output "$root/event-subject-receipt.json" \
+            --subjects-output "$root/event-subjects.json"
+
+          event_subject_state="$(jq -r '.state' "$root/event-subject-receipt.json")"
+          selection_basis="$(
+            jq -r '.selection_basis' "$root/event-subject-receipt.json"
+          )"
+          case "$event_subject_state" in
+            BOUND)
+              cp "$root/event-subjects.json" "$root/open-prs.json"
+              ;;
+            HOLD|HOLD_UNVERIFIED)
+              echo "selected=false" >> "$GITHUB_OUTPUT"
+              cp "$root/event-subject-receipt.json" "$root/decision-receipt.json"
+              echo "HOLD/D0=1: exact event subject failed closed before global discovery"
+              exit 0
+              ;;
+            *)
+              selection_basis="GLOBAL_BOUNDED_DISCOVERY"
+              # Bounded fallback: newest 30 open PRs only, one REOBSERVE edge per run.
+              gh_read "repos/${GITHUB_REPOSITORY}/pulls?state=open&sort=updated&direction=desc&per_page=30" \
+                > "$root/open-prs.json"
+              if [ -f "$rate_limit_marker" ]; then
+                emit_rate_limit_hold
+                exit 0
+              fi
+              ;;
+          esac
 
           while IFS=$'\t' read -r pr ref head base head_repo; do
             test -n "$pr" || continue
@@ -149,13 +185,26 @@ jobs:
               continue
             fi
 
-            # Exact live ref must still bind the PR head before any classification.
+            # Exact live head and current base must remain bound before any API
+            # hydration or classification.
             live_ref="$(git ls-remote --heads origin "refs/heads/$ref" | awk 'NR == 1 {print $1}')"
             if [ "$live_ref" != "$head" ]; then
               jq -nc \
                 --arg pr "$pr" \
                 --arg head "$head" \
-                '{pull_request:($pr|tonumber),head_sha:$head,d0:2,state:"REOBSERVE",reason:"STALE_HEAD",productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
+                --arg selection_basis "$selection_basis" \
+                '{pull_request:($pr|tonumber),head_sha:$head,d0:2,state:"REOBSERVE",reason:"STALE_HEAD",selection_basis:$selection_basis,productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
+                >> "$root/decisions.jsonl"
+              continue
+            fi
+            if [ "$base" != "$current_main_sha" ]; then
+              jq -nc \
+                --arg pr "$pr" \
+                --arg head "$head" \
+                --arg base "$base" \
+                --arg current_main "$current_main_sha" \
+                --arg selection_basis "$selection_basis" \
+                '{pull_request:($pr|tonumber),head_sha:$head,base_sha:$base,current_main_sha:$current_main,d0:1,state:"HOLD",reason:"BASE_DRIFT",first_causal_blocker:"BASE_DRIFT",next_action:"HISTORY_PRESERVING_REBIND_TO_CURRENT_MAIN",selection_basis:$selection_basis,productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
                 >> "$root/decisions.jsonl"
               continue
             fi
@@ -180,7 +229,12 @@ jobs:
               test -n "$run_id" || continue
               jobs_total=0
               case "$conclusion" in
-                action_required|cancelled|failure|startup_failure|timed_out)
+                action_required)
+                  # GitHub's action_required conclusion is the zero-job admission
+                  # boundary itself; do not spend one Installation API read per run.
+                  jobs_total=0
+                  ;;
+                cancelled|failure|startup_failure|timed_out)
                   jobs_total="$(gh_read "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=1" --jq '.total_count')"
                   if [ -f "$rate_limit_marker" ]; then
                     break
@@ -229,7 +283,8 @@ jobs:
               --arg ref "$ref" \
               --arg head "$head" \
               --arg base "$base" \
-              '. + {pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base}' \
+              --arg selection_basis "$selection_basis" \
+              '. + {pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base,selection_basis:$selection_basis}' \
               "$root/decision-${pr}.json" >> "$root/decisions.jsonl"
 
             d0="$(jq -r '.d0' "$root/decision-${pr}.json")"
@@ -253,15 +308,17 @@ jobs:
           if [ -z "$selected_pr" ]; then
             echo "selected=false" >> "$GITHUB_OUTPUT"
             if jq -e 'select(.d0 == 1)' "$root/decisions.jsonl" >/dev/null 2>&1; then
-              jq -n \
+              jq -s \
                 --arg event "$GITHUB_EVENT_NAME" \
-                '{d0:1,state:"HOLD",event:$event,productive_effect:false,effect_ack:"NOT_REQUIRED",reason:"NO_REOBSERVE_EDGE_WITH_ACTIVE_OR_ADVERSE_WORK"}' \
-                > "$root/decision-receipt.json"
+                --arg selection_basis "$selection_basis" \
+                'map(select(.d0 == 1))[0] + {event:$event,selection_basis:$selection_basis,productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
+                "$root/decisions.jsonl" > "$root/decision-receipt.json"
               echo "HOLD/D0=1: active or adverse exact-head work prevents dispatch"
             else
               jq -n \
                 --arg event "$GITHUB_EVENT_NAME" \
-                '{d0:0,state:"NOOP",event:$event,productive_effect:false,effect_ack:"NOT_REQUIRED",reason:"NO_REOBSERVE_EDGE"}' \
+                --arg selection_basis "$selection_basis" \
+                '{d0:0,state:"NOOP",event:$event,selection_basis:$selection_basis,productive_effect:false,effect_ack:"NOT_REQUIRED",reason:"NO_REOBSERVE_EDGE"}' \
                 > "$root/decision-receipt.json"
               echo "NOOP/D0=0: no stalled internal PR head requires reobservation"
             fi
@@ -270,7 +327,9 @@ jobs:
 
           # Final exact reobservation immediately before exposing the REOBSERVE edge.
           live_ref="$(git ls-remote --heads origin "refs/heads/$selected_ref" | awk 'NR == 1 {print $1}')"
+          live_main="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 {print $1}')"
           test "$live_ref" = "$selected_head"
+          test "$live_main" = "$selected_base"
           echo "selected=true" >> "$GITHUB_OUTPUT"
           echo "pr=$selected_pr" >> "$GITHUB_OUTPUT"
           echo "ref=$selected_ref" >> "$GITHUB_OUTPUT"
@@ -281,7 +340,9 @@ jobs:
             --arg pr "$selected_pr" \
             --arg ref "$selected_ref" \
             --arg head "$selected_head" \
-            '{d0:2,state:"REOBSERVE",event:$event,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,productive_effect:false,effect_ack:"NOT_REQUIRED",reason:"ZERO_JOB_ACTION_REQUIRED"}' \
+            --arg base "$selected_base" \
+            --arg selection_basis "$selection_basis" \
+            '{d0:2,state:"REOBSERVE",event:$event,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base,selection_basis:$selection_basis,productive_effect:false,effect_ack:"NOT_REQUIRED",reason:"ZERO_JOB_ACTION_REQUIRED"}' \
             > "$root/decision-receipt.json"
 
       - name: Dispatch exact-head REOBSERVE continuation
@@ -314,7 +375,9 @@ jobs:
           trap publish_dispatch_error EXIT
 
           live_ref="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
+          live_main="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 {print $1}')"
           test "$live_ref" = "$HEAD_SHA"
+          test "$live_main" = "$BASE_SHA"
 
           # Publish pending first. A concurrent invocation therefore HOLDs instead
           # of dispatching a second verifier for the same exact head.
@@ -328,7 +391,9 @@ jobs:
           # D0=2 permits fresh observation/verifier execution only. It does not
           # merge, publish, deploy, or assert EFFECT_ACK_DONE.
           live_ref="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
+          live_main="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 {print $1}')"
           test "$live_ref" = "$HEAD_SHA"
+          test "$live_main" = "$BASE_SHA"
           jq -n \
             --arg repository "$GITHUB_REPOSITORY" \
             --arg pr "$PR_NUMBER" \
@@ -347,7 +412,9 @@ jobs:
             qikvrt_requested_review_contract.yml
           do
             live_ref="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
+            live_main="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 {print $1}')"
             test "$live_ref" = "$HEAD_SHA"
+            test "$live_main" = "$BASE_SHA"
             gh api --method POST \
               "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/dispatches" \
               -f ref="$HEAD_REF"

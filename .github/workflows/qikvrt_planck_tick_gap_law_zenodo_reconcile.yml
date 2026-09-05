@@ -1,0 +1,420 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: Reconcile Planck-tick gap law Zenodo record to exact Trusted Main
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/qikvrt_planck_tick_gap_law_zenodo_reconcile.yml"
+      - "release/planck-tick-gap-law-zenodo-v1/zenodo-publication.json"
+      - "release/planck-tick-gap-law-zenodo-v1/ZENODO_METADATA.json"
+      - "docs/research/2026-09-03-planck-tick-gap-law/QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex"
+      - "docs/research/2026-09-03-planck-tick-gap-law/README.md"
+      - "physics/planck_tick_gap_law_v1.json"
+      - "state/delivery/ACTIVE_DELIVERY_OBLIGATIONS_V1.json"
+      - "state/delivery/requests/ZENODO_PLANCK_TICK_GAP_LAW_V1.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-planck-tick-gap-law-zenodo-current-main-reconcile
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    if: github.repository == 'Goldkelch/qik-vrt' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      ZENODO_API_BASE: https://zenodo.org/api
+      RECORD_ID: "22283396"
+      PUBLICATION_RECEIPT_PATH: release/planck-tick-gap-law-zenodo-v1/zenodo-publication.json
+      RECONCILIATION_RECEIPT_PATH: release/planck-tick-gap-law-zenodo-v1/zenodo-current-main-reconciliation.json
+      REQUEST_PATH: state/delivery/requests/ZENODO_PLANCK_TICK_GAP_LAW_V1.json
+      OBLIGATIONS_PATH: state/delivery/ACTIVE_DELIVERY_OBLIGATIONS_V1.json
+      META_PATH: release/planck-tick-gap-law-zenodo-v1/ZENODO_METADATA.json
+      TEX_PATH: docs/research/2026-09-03-planck-tick-gap-law/QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex
+      README_PATH: docs/research/2026-09-03-planck-tick-gap-law/README.md
+      CONTRACT_PATH: physics/planck_tick_gap_law_v1.json
+    steps:
+      - name: Check out exact triggering Trusted Main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact current Main head and tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          local_head="$(git rev-parse --verify HEAD^{commit})"
+          local_tree="$(git rev-parse --verify HEAD^{tree})"
+          remote_main="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          test "$local_head" = "$GITHUB_SHA"
+          test "$remote_main" = "$GITHUB_SHA"
+          printf '%s\n' "$local_head" > /tmp/qikvrt-exact-main-head
+          printf '%s\n' "$local_tree" > /tmp/qikvrt-exact-main-tree
+
+      - name: Verify bound request and existing publication receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e '
+            .schema == "qikvrt_external_delivery_request_v1" and
+            .id == "ZENODO_PLANCK_TICK_GAP_LAW_V1" and
+            .platform == "zenodo" and
+            .authority.authorization == "AUTHORIZED_EXTERNAL_PUBLICATION_EFFECT" and
+            .preconditions.exact_main_reobservation_required == true and
+            .preconditions.predecessor_evidence_transfer == false and
+            .effect_ack.required == true and
+            .effect_ack.readback_required == true
+          ' "$REQUEST_PATH" >/dev/null
+          jq -e '
+            .schema == "qikvrt_planck_tick_gap_law_zenodo_publication_v1" and
+            .state == "published" and
+            .record_id == 22283396 and
+            .doi == "10.5281/zenodo.22283396" and
+            .scientific_boundary.EMPIRICAL_CORRESPONDENCE == false and
+            .scientific_boundary.INDEPENDENT_REPRODUCTION == false and
+            .scientific_boundary.PASS == false and
+            .scientific_boundary.FINAL_PASS == false and
+            .scientific_boundary.EFFECT_ACK_DONE == false
+          ' "$PUBLICATION_RECEIPT_PATH" >/dev/null
+          jq -e '
+            .schema == "qikvrt_active_delivery_obligations_v1" and
+            .repository == "Goldkelch/qik-vrt" and
+            any(.obligations[];
+              .id == "PLANCK_TICK_GAP_LAW_TO_ZENODO_V1" and
+              .main_reobservation.required == true and
+              .main_reobservation.binding == "EXACT_MAIN_HEAD" and
+              .delivery.effect_ack_required == true)
+          ' "$OBLIGATIONS_PATH" >/dev/null
+
+      - name: Install deterministic TeX runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            texlive-latex-base texlive-latex-recommended texlive-latex-extra \
+            texlive-fonts-recommended texlive-science lmodern
+
+      - name: Rebuild exact publication files from current Main
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=.qikvrt/planck-tick-zenodo-current-main
+          mkdir -p "$out"
+          cp "$TEX_PATH" "$out/QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex"
+          cp "$README_PATH" "$out/README.md"
+          cp "$CONTRACT_PATH" "$out/planck_tick_gap_law_v1.json"
+          cp "$META_PATH" "$out/ZENODO_METADATA.json"
+          (
+            cd "$out"
+            export SOURCE_DATE_EPOCH=1788415200
+            pdflatex -interaction=nonstopmode -halt-on-error QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex
+            pdflatex -interaction=nonstopmode -halt-on-error QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex
+            test -s QIKVRT_Planck_Tick_Gap_Law_2026-09-03.pdf
+            sha256sum \
+              QIKVRT_Planck_Tick_Gap_Law_2026-09-03.pdf \
+              QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex \
+              README.md planck_tick_gap_law_v1.json ZENODO_METADATA.json \
+              > SHA256SUMS.txt
+          )
+
+      - name: GET public Zenodo record and verify downloaded bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          import subprocess
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+
+          api = os.environ["ZENODO_API_BASE"].rstrip("/")
+          record_id = int(os.environ["RECORD_ID"])
+          publication_receipt_path = Path(os.environ["PUBLICATION_RECEIPT_PATH"])
+          request_path = Path(os.environ["REQUEST_PATH"])
+          obligations_path = Path(os.environ["OBLIGATIONS_PATH"])
+          output_path = Path(os.environ["RECONCILIATION_RECEIPT_PATH"])
+          build_root = Path(".qikvrt/planck-tick-zenodo-current-main")
+
+          def get_json(url):
+              request = Request(
+                  url,
+                  method="GET",
+                  headers={
+                      "Accept": "application/json",
+                      "User-Agent": "qik-vrt-zenodo-current-main-reconcile/1",
+                  },
+              )
+              with urlopen(request, timeout=120) as response:
+                  return json.loads(response.read().decode("utf-8"))
+
+          def get_bytes(url):
+              request = Request(
+                  url,
+                  method="GET",
+                  headers={
+                      "Accept": "application/octet-stream",
+                      "User-Agent": "qik-vrt-zenodo-current-main-reconcile/1",
+                  },
+              )
+              with urlopen(request, timeout=120) as response:
+                  return response.read()
+
+          def read_remote_main():
+              completed = subprocess.run(
+                  ["git", "ls-remote", "origin", "refs/heads/main"],
+                  text=True,
+                  capture_output=True,
+                  check=True,
+              )
+              fields = completed.stdout.strip().split()
+              head = fields[0] if fields else ""
+              if not re.fullmatch(r"[0-9a-f]{40}", head):
+                  raise SystemExit("TRUSTED_MAIN_READBACK_INVALID")
+              return head
+
+          publication = json.loads(
+              publication_receipt_path.read_text(encoding="utf-8")
+          )
+          delivery_request = json.loads(request_path.read_text(encoding="utf-8"))
+          obligations = json.loads(obligations_path.read_text(encoding="utf-8"))
+          record = get_json(f"{api}/records/{record_id}")
+
+          observed_id = int(record.get("id") or record.get("record_id") or 0)
+          pids = record.get("pids") or {}
+          doi = (
+              record.get("doi")
+              or ((pids.get("doi") or {}).get("identifier"))
+              or ((record.get("metadata") or {}).get("doi"))
+          )
+          if observed_id != record_id:
+              raise SystemExit(f"ZENODO_RECORD_ID_MISMATCH:{observed_id}")
+          if doi != publication["doi"]:
+              raise SystemExit(f"ZENODO_DOI_MISMATCH:{doi}")
+          if (
+              (record.get("metadata") or {}).get("title")
+              != "From Exact Causal Binding to a Falsifiable Planck-Tick Gap Law"
+          ):
+              raise SystemExit("ZENODO_TITLE_MISMATCH")
+
+          files_value = record.get("files") or {}
+          if isinstance(files_value, dict):
+              entries_value = files_value.get("entries") or {}
+              public_entries = []
+              for key, value in entries_value.items():
+                  item = dict(value or {})
+                  item.setdefault("key", key)
+                  public_entries.append(item)
+          elif isinstance(files_value, list):
+              public_entries = list(files_value)
+          else:
+              raise SystemExit("ZENODO_FILES_SHAPE_UNSUPPORTED")
+
+          by_name = {
+              str(item.get("key") or item.get("filename") or item.get("name")): item
+              for item in public_entries
+          }
+          expected_receipts = {
+              item["name"]: item for item in publication["files"]
+          }
+          if set(by_name) != set(expected_receipts):
+              raise SystemExit(
+                  "ZENODO_FILESET_MISMATCH:"
+                  + json.dumps(
+                      {
+                          "observed": sorted(by_name),
+                          "expected": sorted(expected_receipts),
+                      }
+                  )
+              )
+
+          public_files = []
+          for name in sorted(expected_receipts):
+              expected = expected_receipts[name]
+              item = by_name[name]
+              links = item.get("links") or {}
+              content_url = links.get("content") or links.get("self")
+              if not content_url:
+                  content_url = (
+                      ((expected.get("zenodo") or {}).get("links") or {}).get("self")
+                  )
+              if not content_url:
+                  raise SystemExit(f"ZENODO_CONTENT_LINK_MISSING:{name}")
+              payload = get_bytes(content_url)
+              digest = hashlib.sha256(payload).hexdigest()
+              if digest != expected["sha256"]:
+                  raise SystemExit(f"ZENODO_SHA256_MISMATCH:{name}:{digest}")
+              if len(payload) != int(expected["bytes"]):
+                  raise SystemExit(f"ZENODO_SIZE_MISMATCH:{name}:{len(payload)}")
+              public_files.append(
+                  {
+                      "name": name,
+                      "bytes": len(payload),
+                      "sha256": digest,
+                      "zenodo_checksum": item.get("checksum"),
+                  }
+              )
+
+          current_build_files = []
+          for name in sorted(expected_receipts):
+              path = build_root / name
+              if not path.is_file():
+                  raise SystemExit(f"CURRENT_MAIN_BUILD_FILE_MISSING:{name}")
+              payload = path.read_bytes()
+              digest = hashlib.sha256(payload).hexdigest()
+              if digest != expected_receipts[name]["sha256"]:
+                  raise SystemExit(
+                      f"CURRENT_MAIN_BUILD_SHA256_MISMATCH:{name}:{digest}"
+                  )
+              current_build_files.append(
+                  {"name": name, "bytes": len(payload), "sha256": digest}
+              )
+
+          main_head = Path("/tmp/qikvrt-exact-main-head").read_text(
+              encoding="utf-8"
+          ).strip()
+          main_tree = Path("/tmp/qikvrt-exact-main-tree").read_text(
+              encoding="utf-8"
+          ).strip()
+          publication_head = publication["repository_head"]
+          ancestry = (
+              subprocess.run(
+                  ["git", "merge-base", "--is-ancestor", publication_head, main_head],
+                  check=False,
+              ).returncode
+              == 0
+          )
+          if not ancestry:
+              raise SystemExit("PUBLICATION_HEAD_NOT_ANCESTOR_OF_CURRENT_MAIN")
+
+          obligation = next(
+              item
+              for item in obligations["obligations"]
+              if item.get("id") == "PLANCK_TICK_GAP_LAW_TO_ZENODO_V1"
+          )
+          published_at = (
+              record.get("published") or record.get("created") or record.get("updated")
+          )
+          if not published_at:
+              raise SystemExit("ZENODO_PUBLICATION_TIME_READBACK_MISSING")
+
+          # Final fail-closed guard after every public Zenodo GET and before
+          # the reconciliation receipt is created or written.
+          post_readback_main_head = read_remote_main()
+          if post_readback_main_head != main_head:
+              raise SystemExit(
+                  "TRUSTED_MAIN_DRIFT_AFTER_ZENODO_READBACK:"
+                  f"{main_head}:{post_readback_main_head}"
+              )
+          local_after = subprocess.check_output(
+              ["git", "rev-parse", "--verify", "HEAD^{commit}"],
+              text=True,
+          ).strip()
+          if local_after != main_head:
+              raise SystemExit(
+                  f"LOCAL_HEAD_DRIFT_AFTER_ZENODO_READBACK:{main_head}:{local_after}"
+              )
+          observed_at = datetime.now(timezone.utc).isoformat()
+
+          reconciliation = {
+              "schema": (
+                  "qikvrt_planck_tick_gap_law_zenodo_"
+                  "current_main_reconciliation_v1"
+              ),
+              "state": "PUBLIC_RECORD_REOBSERVED",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "exact_trusted_main": {"head": main_head, "tree": main_tree},
+              "post_readback_main_reobservation": {
+                  "head": post_readback_main_head,
+                  "tree": main_tree,
+                  "matches_initial_exact_main": True,
+              },
+              "obligation": {
+                  "id": obligation["id"],
+                  "request": obligation["delivery"]["request"],
+                  "publication_adapter": obligation["delivery"]["adapter"],
+                  "reconciliation_adapter": (
+                      ".github/workflows/"
+                      "qikvrt_planck_tick_gap_law_zenodo_reconcile.yml"
+                  ),
+              },
+              "delivery_request": {
+                  "id": delivery_request["id"],
+                  "predecessor_evidence_transfer": delivery_request[
+                      "preconditions"
+                  ]["predecessor_evidence_transfer"],
+              },
+              "source_publication_receipt": {
+                  "path": str(publication_receipt_path),
+                  "repository_head": publication_head,
+                  "record_id": publication["record_id"],
+                  "doi": publication["doi"],
+                  "conceptdoi": publication.get("conceptdoi"),
+              },
+              "authoritative_readback": {
+                  "record_id": observed_id,
+                  "doi": doi,
+                  "conceptdoi": publication.get("conceptdoi"),
+                  "published_at": published_at,
+                  "observed_at": observed_at,
+                  "public_files": public_files,
+              },
+              "current_main_rebuild": {
+                  "source_date_epoch": 1788415200,
+                  "files": current_build_files,
+              },
+              "correspondence": {
+                  "publication_head_is_ancestor_of_exact_main": True,
+                  "public_download_sha256_matches_publication_receipt": True,
+                  "exact_main_rebuild_sha256_matches_publication_receipt": True,
+                  "post_readback_main_matches_initial_exact_main": True,
+                  "second_zenodo_record_created": False,
+              },
+              "scientific_boundary": {
+                  "EMPIRICAL_CORRESPONDENCE": False,
+                  "INDEPENDENT_REPRODUCTION": False,
+                  "PASS": False,
+                  "FINAL_PASS": False,
+                  "EFFECT_ACK_DONE": False,
+              },
+          }
+          output_path.parent.mkdir(parents=True, exist_ok=True)
+          output_path.write_text(
+              json.dumps(reconciliation, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(reconciliation, indent=2, sort_keys=True))
+          PY
+
+      - name: Record repository-persistence handoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$RECONCILIATION_RECEIPT_PATH"
+          {
+            printf 'Exact-Main Zenodo reconciliation was generated read-only.\n'
+            printf 'EXACT_MAIN=%s\n' "$GITHUB_SHA"
+            printf 'RECEIPT_PATH=%s\n' "$RECONCILIATION_RECEIPT_PATH"
+            printf 'The retained artifact is the input for a separate repository persistence PR.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve exact-Main reconciliation artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: planck-tick-gap-law-zenodo-current-main-${{ github.run_id }}
+          path: release/planck-tick-gap-law-zenodo-v1/zenodo-current-main-reconciliation.json
+          if-no-files-found: error
+          retention-days: 90
