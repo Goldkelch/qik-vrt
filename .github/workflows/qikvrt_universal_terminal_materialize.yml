@@ -161,7 +161,11 @@ jobs:
 
           remote_before="$(git ls-remote --heads origin "refs/heads/$branch" | awk '{print $1}')"
           if [ -n "$remote_before" ]; then
-            git push --force-with-lease="refs/heads/$branch:$remote_before" origin "HEAD:refs/heads/$branch"
+            if [ "$remote_before" != "$candidate_sha" ]; then
+              echo "HOLD_UNVERIFIED existing candidate branch differs remote=$remote_before candidate=$candidate_sha; refusing history rewrite"
+              echo 'persisted=false' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           else
             git push origin "HEAD:refs/heads/$branch"
           fi
