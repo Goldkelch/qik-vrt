@@ -1,0 +1,80 @@
+{
+  "schema": "qikvrt_universal_evidence_spiral_resolver_v1",
+  "version": 1,
+  "status": "NORMATIVE_PROPOSAL",
+  "purpose": "Map every repository problem to one exact subject, explicit dependencies, bounded candidate moves, one admissible next transition, and a mandatory readback without collapsing evidence, authority, or external effects.",
+  "roots": [
+    "Issue #731 Dynamic Simplex Optimization",
+    "Issue #854 reflexive error correction and prevention",
+    "QIK-VRT Evidence Spiral",
+    "D0 four-state ABI"
+  ],
+  "loop": [
+    "OBSERVE",
+    "BIND_EXACT_SUBJECT",
+    "CLASSIFY_CLAIMS_AND_BOUNDARIES",
+    "DECOMPOSE_TRUE_DEPENDENCIES",
+    "PARALLELIZE_ONLY_INDEPENDENT_READS",
+    "ENUMERATE_BOUNDED_MOVES",
+    "REJECT_INVARIANT_VIOLATIONS",
+    "SELECT_SMALLEST_CAUSALLY_JUSTIFIED_MOVE",
+    "EXECUTE_ONLY_WITHIN_DELEGATED_AUTHORITY",
+    "REOBSERVE_EFFECT",
+    "COMPARE_CAUSAL_DELTA",
+    "PERSIST_RECEIPT",
+    "EMIT_SUCCESSOR_STATE"
+  ],
+  "hard_non_equivalences": [
+    "CAUSALITY != SEQUENCE",
+    "ACTIVITY != EFFECT",
+    "TRANSPORT_ACK != EFFECT_ACK",
+    "BYTES != MEANING",
+    "OBSERVATION != TRUTH",
+    "MODEL != REALITY",
+    "IDENTITY != EQUALITY",
+    "VERIFIED_IMPLEMENTATION != AUTHORITY_EFFECT",
+    "REPOSITORY_EVIDENCE != EXTERNAL_PUBLICATION",
+    "EXTERNAL_PUBLICATION != EMPIRICAL_CONFIRMATION",
+    "PREDECESSOR_EVIDENCE != CURRENT_SUBJECT_EVIDENCE"
+  ],
+  "objective_order": [
+    "DETERMINISTIC_CORRECTNESS",
+    "FALSE_AUTHORITY_OR_EFFECT_INFERENCE",
+    "SELF_CONTINUATION_LIVENESS",
+    "EXACT_BINDING_AND_REPRODUCIBILITY",
+    "DUPLICATE_OR_STALE_WORK",
+    "LATENCY_AND_RESOURCE_WASTE",
+    "IMPLEMENTATION_SIMPLICITY",
+    "TESTABILITY_AND_OBSERVABILITY",
+    "PUBLICATION_WORTHINESS"
+  ],
+  "d0": {
+    "0": "NOOP",
+    "1": "HOLD",
+    "2": "REOBSERVE",
+    "3": "REQUEST_AUTHORITY"
+  },
+  "mandatory_subject_fields": ["repository", "identity", "head", "tree"],
+  "mandatory_move_fields": ["id", "objective", "action", "authority", "expected_readback"],
+  "activity_only_fields_excluded_from_causal_fingerprint": [
+    "observed_at",
+    "updated_at",
+    "run_count",
+    "comment_count",
+    "retry_count",
+    "queue_position"
+  ],
+  "selection_rules": [
+    "Reject a move that transfers evidence from a different subject.",
+    "Reject a move that weakens a hard non-equivalence or widens authority.",
+    "Reject a move whose required dependency is unresolved.",
+    "If the subject binding is stale, emit REOBSERVE before any mutation.",
+    "If the best otherwise-admissible move requires unavailable external authority, emit REQUEST_AUTHORITY.",
+    "Execute at most one mutating move per cycle.",
+    "Independent read-only observations may execute in parallel and must merge deterministically.",
+    "Every executed move requires an explicit expected readback and a successor receipt.",
+    "A repair is incomplete until at least one executable prevention mechanism is bound where technically possible."
+  ],
+  "completion_rule": "A local problem cycle may terminate when the declared closure predicate is satisfied on the exact current subject. New evidence creates a successor cycle; local closure never implies global finality.",
+  "external_effect_rule": "Repository-native resolution may prepare or route an external effect, but publication, deployment, merge, physical action, approval, PASS, FINAL_PASS, or EFFECT_ACK_DONE require their own authoritative effect and readback evidence."
+}
