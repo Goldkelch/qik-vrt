@@ -1,10 +1,10 @@
 {
   "$schema": "./QIKVRT_INFORMATION_EFFECT_AXIS_V1.schema.json",
   "id": "QIKVRT_INFORMATION_EFFECT_AXIS_V1",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "status": "PROPOSED_REVIEW_CARRIER",
   "author": "Ingolf Lohmann",
-  "date": "2026-09-05",
+  "date": "2026-09-06",
   "canonical_statement": "QIK-VRT controls the transformation of distinguishable state differences into evidence-bound, authorized effects.",
   "core_chain": [
     "PHYSICAL_OR_VIRTUAL_STATE",
@@ -26,7 +26,9 @@
     "MODEL != REALITY",
     "VERIFIED_IMPLEMENTATION != AUTHORITY_EFFECT",
     "BOUND != EMPIRICALLY_CONFIRMED",
-    "REPOSITORY_EVIDENCE != PUBLICATION"
+    "REPOSITORY_EVIDENCE != ZENODO_PUBLICATION",
+    "ZENODO_PUBLICATION != EMPIRICAL_CONFIRMATION",
+    "FALSIFIABLE_HYPOTHESIS != EMPIRICALLY_CONFIRMED_LAW"
   ],
   "measurement_metadata_required": [
     "value",
@@ -60,7 +62,8 @@
     "unknown_causal_binding -> HOLD_or_REOBSERVE",
     "effect_without_readback -> not_EFFECT_ACK",
     "model_presented_as_reality -> BLOCK_or_HOLD",
-    "repository_validation_without_external_readback -> no_external_effect_claim"
+    "repository_validation_without_external_readback -> no_external_effect_claim",
+    "zenodo_publication_without_empirical_measurement -> no_empirical_confirmation_claim"
   ],
   "adapter_contract": {
     "input": "measurement_or_information_object",
@@ -69,13 +72,32 @@
     "must_mark_uncertainty": true,
     "must_expose_claim_boundary": true,
     "must_support_readback": true,
+    "must_preserve_publication_vs_empirical_boundary": true,
     "extensions_allowed": true,
     "core_semantics_may_be_weakened": false
+  },
+  "public_prior_art": {
+    "manifest": "./QIKVRT_ZENODO_PRIOR_ART_V1.json",
+    "inventory_2026_07_22": {
+      "version_records": 14,
+      "concept_lines": 5
+    },
+    "anchors": [
+      "10.5281/zenodo.20712301",
+      "10.5281/zenodo.21267021",
+      "10.5281/zenodo.21482023",
+      "10.5281/zenodo.21488116",
+      "10.5281/zenodo.21498773",
+      "10.5281/zenodo.21498774",
+      "10.5281/zenodo.22283396"
+    ]
   },
   "scientific_boundaries": {
     "shannon": "information/sampling/communication theory connection; not identical to QIK-VRT",
     "wheeler": "interpretive research program relating information and physics; not treated as experimentally proven ontology",
     "landauer": "thermodynamic lower bound for logically irreversible erasure under stated assumptions; not a cost assigned to every bit",
-    "qik_vrt": "evidence, causality, authorization and effect-boundary architecture"
+    "qik_vrt": "evidence, causality, authorization and effect-boundary architecture",
+    "zenodo": "public archival/publication evidence and DOI binding; not empirical confirmation",
+    "planck_tick_gap_law": "published falsifiable physical hypothesis at DOI 10.5281/zenodo.22283396; empirical correspondence remains a separate state"
   }
 }
