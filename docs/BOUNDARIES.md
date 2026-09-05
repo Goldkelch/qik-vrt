@@ -16,3 +16,21 @@ INDEPENDENT_REPRODUCTION = OPEN
 Remote evidence is scoped to the named commit, tree, document, and workflow
 runs. It must not be generalized to every archived file, future branch state,
 external integration, or scientific claim.
+
+## Epistemic fail-closed boundary
+
+The human-authored principle in
+`docs/SELBSTERHALT_EVIDENZGRENZEN_FAIL_CLOSED_INTELLIGENZ.md` makes the
+observation boundary explicit:
+
+```text
+OBSERVATION_UNAVAILABLE
+→ HOLD
+```
+
+A related observation MUST NOT substitute for a required observation unless an
+explicitly evidenced transformation rule justifies that substitution. Generated
+plausibility, semantic similarity, historical evidence, and adjacent repository
+objects do not independently authorize continuation across an open evidence edge.
+This is an epistemic control boundary; it does not itself establish merge,
+approval, deployment, publication, PASS, FINAL_PASS, or EFFECT_ACK_DONE.
