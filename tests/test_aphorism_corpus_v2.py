@@ -91,6 +91,7 @@ class AphorismCorpusV2Tests(unittest.TestCase):
             "command -v xelatex",
             "command -v pdfinfo",
             "command -v pdftotext",
+            "command -v pdftoppm",
             "command -v pdffonts",
             "xelatex --version",
             "dpkg-query --show",
