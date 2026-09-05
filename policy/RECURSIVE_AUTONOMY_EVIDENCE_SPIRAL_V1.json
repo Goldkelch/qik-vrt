@@ -1,0 +1,43 @@
+{
+  "schema": "qikvrt_recursive_autonomy_v1",
+  "version": 1,
+  "status": "NORMATIVE_PROPOSAL",
+  "purpose": "Define autonomy as recursive self-application of the universal Evidence-Spiral resolver across causal depth and independent breadth until the frontier no longer carries under the declared evidence and authority boundaries.",
+  "recursion": {
+    "depth": "Apply the same resolver contract to every successor subproblem produced by the current exact subject.",
+    "breadth": "Observe all causally independent subproblems on the same frontier and merge their read-only evidence deterministically.",
+    "traversal": "BREADTH_FIRST_DETERMINISTIC",
+    "default_max_depth": 32,
+    "default_max_nodes": 1024,
+    "polling_elsewhere": "FORBIDDEN",
+    "successor_driven": true
+  },
+  "termination": {
+    "local_fixpoint": "No node on the observed frontier has ACTION, REOBSERVE, HOLD, or REQUEST_AUTHORITY and no successor remains queued.",
+    "open_frontier": "At least one node still requires action, readback, authority, unresolved dependency resolution, or a declared resource bound was reached.",
+    "global_finality_claim": false,
+    "resource_limit_behavior": "HOLD_OPEN_FRONTIER"
+  },
+  "cycle_control": {
+    "key": "causal_fingerprint",
+    "activity_noise_excluded": true,
+    "duplicate_behavior": "CAUSAL_CYCLE_DEDUPLICATED"
+  },
+  "mutation": {
+    "per_node_budget": 1,
+    "parallel_mutations": "FORBIDDEN_UNLESS_INDEPENDENCE_AND_AUTHORITY_ARE_EXPLICITLY_PROVEN",
+    "read_only_parallelism": "ALLOWED_FOR_INDEPENDENT_FRONTIER_NODES",
+    "expected_readback_required": true
+  },
+  "hard_boundaries": [
+    "PREDECESSOR_EVIDENCE != CURRENT_SUBJECT_EVIDENCE",
+    "ACTIVITY != EFFECT",
+    "SEQUENCE != CAUSALITY",
+    "TRANSPORT_ACK != EFFECT_ACK",
+    "REPOSITORY_EVIDENCE != EXTERNAL_PUBLICATION",
+    "EXTERNAL_PUBLICATION != EMPIRICAL_CONFIRMATION",
+    "LOCAL_FIXPOINT != GLOBAL_FINALITY"
+  ],
+  "autonomy_rule": "Continue recursively and breadth-wise whenever the exact current evidence exposes a causally justified successor within delegated authority. Stop only at a local fixpoint or a fail-closed open frontier whose blocker is explicit and bound.",
+  "self_application_rule": "The resolver, its workflows, policies, receipts, and persistence mechanisms are themselves ordinary subjects of the same resolver and may not claim exemption from exact binding, readback, prevention, or successor semantics."
+}
