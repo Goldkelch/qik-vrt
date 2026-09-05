@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT Planck-tick publication render gate
+
+on:
+  pull_request:
+    paths:
+      - 'docs/research/2026-09-03-planck-tick-gap-law/QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex'
+      - 'physics/planck_tick_gap_law_v1.json'
+      - 'release/planck-tick-gap-law-arxiv-v1/**'
+      - 'tools/validate_planck_tick_gap_law_publication.py'
+      - '.github/workflows/qikvrt_planck_tick_publication_render_gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  render-and-cross-artifact:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install TeX runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            texlive-latex-base texlive-latex-recommended texlive-latex-extra \
+            texlive-fonts-recommended texlive-science lmodern
+      - name: Reject render and representation defects
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/validate_planck_tick_gap_law_publication.py
