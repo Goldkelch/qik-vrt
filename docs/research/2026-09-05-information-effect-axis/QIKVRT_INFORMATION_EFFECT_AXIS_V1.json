@@ -1,0 +1,81 @@
+{
+  "$schema": "./QIKVRT_INFORMATION_EFFECT_AXIS_V1.schema.json",
+  "id": "QIKVRT_INFORMATION_EFFECT_AXIS_V1",
+  "version": "1.0.0",
+  "status": "PROPOSED_REVIEW_CARRIER",
+  "author": "Ingolf Lohmann",
+  "date": "2026-09-05",
+  "canonical_statement": "QIK-VRT controls the transformation of distinguishable state differences into evidence-bound, authorized effects.",
+  "core_chain": [
+    "PHYSICAL_OR_VIRTUAL_STATE",
+    "DISTINCTION",
+    "MEASUREMENT_OR_OBSERVATION",
+    "REPRESENTATION",
+    "INFORMATION",
+    "EVIDENCE_BINDING",
+    "CAUSALITY_ASSESSMENT",
+    "AUTHORIZATION",
+    "EFFECT",
+    "READBACK"
+  ],
+  "non_equivalences": [
+    "BYTES != MEANING",
+    "SEQUENCE != CAUSALITY",
+    "TRANSPORT_ACK != EFFECT_ACK",
+    "OBSERVATION != TRUTH",
+    "MODEL != REALITY",
+    "VERIFIED_IMPLEMENTATION != AUTHORITY_EFFECT",
+    "BOUND != EMPIRICALLY_CONFIRMED",
+    "REPOSITORY_EVIDENCE != PUBLICATION"
+  ],
+  "measurement_metadata_required": [
+    "value",
+    "time",
+    "uncertainty",
+    "unit",
+    "calibration",
+    "provenance"
+  ],
+  "optional_measurement_metadata": [
+    "sensor_identity",
+    "sampling_rate",
+    "bandwidth",
+    "anti_alias_filter",
+    "quantizer",
+    "scale",
+    "rounding_mode",
+    "transform_version",
+    "content_hash",
+    "signature",
+    "authority"
+  ],
+  "control_states": [
+    "NOOP",
+    "HOLD",
+    "REOBSERVE",
+    "REQUEST_AUTHORITY"
+  ],
+  "fail_closed_rules": [
+    "missing_required_metadata -> HOLD",
+    "unknown_causal_binding -> HOLD_or_REOBSERVE",
+    "effect_without_readback -> not_EFFECT_ACK",
+    "model_presented_as_reality -> BLOCK_or_HOLD",
+    "repository_validation_without_external_readback -> no_external_effect_claim"
+  ],
+  "adapter_contract": {
+    "input": "measurement_or_information_object",
+    "output": "evidence_bound_claim_or_control_state",
+    "must_preserve_provenance": true,
+    "must_mark_uncertainty": true,
+    "must_expose_claim_boundary": true,
+    "must_support_readback": true,
+    "extensions_allowed": true,
+    "core_semantics_may_be_weakened": false
+  },
+  "scientific_boundaries": {
+    "shannon": "information/sampling/communication theory connection; not identical to QIK-VRT",
+    "wheeler": "interpretive research program relating information and physics; not treated as experimentally proven ontology",
+    "landauer": "thermodynamic lower bound for logically irreversible erasure under stated assumptions; not a cost assigned to every bit",
+    "qik_vrt": "evidence, causality, authorization and effect-boundary architecture"
+  }
+}
