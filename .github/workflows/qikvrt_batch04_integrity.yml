@@ -7,6 +7,7 @@ on:
       - main
       - agent/formalization-cache-hmi-batch04
       - agent/manuscript-formalization-v2-completion
+      - docs/information-effect-axis-v1
   pull_request:
     branches:
       - main
@@ -36,10 +37,11 @@ jobs:
     timeout-minutes: 30
     env:
       TARGET_REF: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+      EXPECTED_HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ env.TARGET_REF }}
+          ref: ${{ env.EXPECTED_HEAD }}
           fetch-depth: 2
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
@@ -289,6 +291,7 @@ jobs:
           make test
           python3 tools/qikvrt_integrity.py verify
       - name: Commit materialized repository evidence
+        if: github.event_name != 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
