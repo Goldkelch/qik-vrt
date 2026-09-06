@@ -1,0 +1,91 @@
+name: QIKVRT VRTCore H3 Zenodo one-shot
+
+on:
+  push:
+    branches: [publication/vrtcore-h3-zenodo-once]
+    paths: [state/publication/VRTCORE_H3_ZENODO_EXECUTE.json]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-vrtcore-h3-zenodo-once
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: zenodo-production
+    env:
+      EXECUTION_HEAD: 8077191c047ef64631d9c92905d98a537b030f39
+      MANIFEST_PATH: release/vrtcore-relational-h3-publication-2026-08-02/publish-request.json
+      EVIDENCE_PATH: release/vrtcore-relational-h3-publication-2026-08-02/zenodo-publication.json
+      RECEIPT_BRANCH: receipt/vrtcore-h3-zenodo-${{ github.run_id }}
+      ZENODO_API_BASE: https://zenodo.org/api
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONNOUSERSITE: '1'
+    steps:
+      - name: Checkout exact authorized execution head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXECUTION_HEAD }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact VRTCore controls and absence of prior receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXECUTION_HEAD"
+          test ! -e "$EVIDENCE_PATH"
+          python3 -B tools/qikvrt_vrtcore_zenodo_publication_controls.py --check
+          GITHUB_REPOSITORY="$GITHUB_REPOSITORY" GITHUB_SHA="$EXECUTION_HEAD" python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+          from tools import qikvrt_zenodo_publish as publish
+          root = Path.cwd().resolve()
+          manifest_path = root / os.environ['MANIFEST_PATH']
+          manifest = publish.load_manifest(manifest_path, root)
+          head = publish._validate_repository_source_head(root, manifest_path, manifest)
+          publish._validate_origin_repository(root, manifest['repository'])
+          if head != os.environ['EXECUTION_HEAD']:
+              raise SystemExit('BLOCK: execution head differs')
+          print('H3_ZENODO_PREFLIGHT=VALID')
+          PY
+
+      - name: Execute generic publisher and public byte readback
+        id: publish
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set +e
+          GITHUB_SHA="$EXECUTION_HEAD" python3 -B tools/qikvrt_zenodo_publish.py --manifest "$MANIFEST_PATH"
+          status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Persist publication or recovery receipt
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "$EVIDENCE_PATH"
+          python3 -B tools/qikvrt_integrity.py generate
+          git config user.name 'qik-vrt-zenodo-publication[bot]'
+          git config user.email 'qik-vrt-zenodo-publication[bot]@users.noreply.github.com'
+          git switch -c "$RECEIPT_BRANCH"
+          git add -- "$EVIDENCE_PATH" REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git diff --cached --check
+          git commit -m 'zenodo: persist VRTCore H3 publication receipt'
+          git push origin "HEAD:refs/heads/$RECEIPT_BRANCH"
+
+      - name: Enforce publisher result
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.publish.outputs.status }}" = '0'
