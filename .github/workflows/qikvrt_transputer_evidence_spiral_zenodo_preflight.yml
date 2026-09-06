@@ -4,17 +4,9 @@
 name: QIKVRT Transputer evidence-spiral Zenodo preflight
 
 on:
-  push:
-    branches:
-      - docs/information-effect-axis-v1
-    paths:
-      - .github/workflows/qikvrt_transputer_evidence_spiral_zenodo_preflight.yml
   pull_request:
-    branches:
-      - main
+    branches: [main]
     types: [opened, synchronize, reopened]
-    paths:
-      - .github/workflows/qikvrt_transputer_evidence_spiral_zenodo_preflight.yml
 
 permissions:
   contents: read
@@ -38,16 +30,14 @@ jobs:
         with:
           fetch-depth: 2
           persist-credentials: false
-
+      - name: Verify universal request-obligation closure contract
+        run: python3 -B -m unittest -v tests.test_request_obligation_closure
       - name: Verify exact target identity
-        shell: bash
         run: |
           set -euo pipefail
           test "$TARGET_PDF_SHA256" = '78c845bb2bd078d9aeff2657865fc8b877aacf97987b64b817bd7e8856cf0536'
           test "$TARGET_PDF_BYTES" = '243720'
-
       - name: Verify repository publication capability
-        shell: bash
         run: |
           set -euo pipefail
           test -f tools/qikvrt_zenodo_publish.py
@@ -55,18 +45,15 @@ jobs:
           test -f policy/zenodo-machine-proof-policy-v2.json
           test -f runtime/capabilities/ZENODO_PUBLICATION_CAPABILITY.json
           python3 -B tools/qikvrt_tool_cache.py verify
-
       - name: Verify production credential is provisioned without disclosure
-        shell: bash
         env:
           ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           test -n "${ZENODO_ACCESS_TOKEN:-}"
           printf '%s\n' 'ZENODO_PRODUCTION_CREDENTIAL=PROVISIONED'
-
-      - name: Report exact next boundary
-        shell: bash
+      - name: Report obligation state without false completion
         run: |
           printf '%s\n' "QIKVRT_ZENODO_PREFLIGHT=PASS pdf_sha256=$TARGET_PDF_SHA256 pdf_bytes=$TARGET_PDF_BYTES"
-          printf '%s\n' 'NEXT=materialize exact reviewed files plus v2 proof/return/authorization controls, then invoke existing generic publisher'
+          printf '%s\n' 'REQUEST_OBLIGATION=ZENODO_PUBLICATION_AND_PUBLIC_BYTE_READBACK state=OPEN'
+          printf '%s\n' 'PRECHECK_IS_NOT_REQUEST_COMPLETION=true'
