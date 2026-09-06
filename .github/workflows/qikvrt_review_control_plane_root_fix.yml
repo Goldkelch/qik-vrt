@@ -15,9 +15,7 @@ concurrency:
 
 jobs:
   materialize-root-fix:
-    if: >-
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      startsWith(github.event.pull_request.head.ref, 'fix/review-control-plane-subject-isolation')
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
