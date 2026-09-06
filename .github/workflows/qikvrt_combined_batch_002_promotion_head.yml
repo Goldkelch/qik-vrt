@@ -40,7 +40,11 @@ jobs:
           import json
           d=json.load(open('.well-known/qik-vrt-self-disclosure.json'))
           assert d['state']=='AVAILABLE'
-          assert d['completion_claims']=={'pass':False,'final_pass':False,'effect_ack_done':False}
+          claims=d['completion_claims']
+          assert claims['pass'] is False
+          assert claims['final_pass'] is False
+          assert claims['effect_ack_done'] is False
+          assert claims['zenodo_delivery_accepted'] is False
           r=json.load(open('release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/public-candidate-byte-freeze/PUBLIC_CANDIDATE_BYTE_FREEZE_RECEIPT.json'))
           assert r['record_count']==6 and r['file_count']==70
           assert r['completion_claims']['candidate_byte_freeze_complete'] is True
