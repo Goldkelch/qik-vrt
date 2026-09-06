@@ -1,23 +1,47 @@
-# Delivery and Mesh rule for this research carrier
+# Delivery and Mesh Rule
 
-This carrier is subject to the repository-wide contracts:
+## Subject
 
-- `policy/DELIVERY_ACCEPTANCE_ZENODO_V1.json`
-- `policy/MESH_SELF_EXPLANATION_V1.json`
-- `docs/MESH_SELF_EXPLANATION_AND_DELIVERY.md`
-- `.well-known/qik-vrt-delivery-contract.json`
-- `.well-known/qik-vrt-self-disclosure.json`
+`qikvrt-information-evidence-effect-axis-v3-transputer-mesh-bridge`
 
-## Delivery acceptance
+## Repository carrier
 
-Because the owner requested Zenodo publication for this document before delivery, this research carrier MUST NOT be represented as an accepted document delivery until the exact frozen candidate has been published on production Zenodo and the public DOI, record, metadata, file names, file sizes and checksums have been read back and matched.
+The repository carrier now includes the scientific information/evidence/effect manuscript, the focused transputer-to-evidence-mesh scientific bridge, the original public prose article, the transputer-to-evidence-mesh public prose companion, the machine-readable contract, schema, test vectors, prior-art inventory and Zenodo metadata.
 
-Repository commits, pull requests, workflow artifacts, local PDFs/DOCX/ZIPs, deposit drafts, reserved DOIs and publication intent are preparation/evidence only.
+## Boundary invariant
 
-## Self-explaining continuation
+**No transition may claim more than its boundary actually carries.**
 
-Any downstream Mesh node touching this carrier must guide the consumer through subject, scope, claim class, evidence, non-equivalences, uncertainty, smallest safe next action and readback. Every material unresolved point remains visibly `OPEN`, `HOLD`, `REOBSERVE` or `REQUEST_AUTHORITY`; it may not be hidden behind plausible prose.
+This applies across:
 
-## Current acceptance state
+- compute boundaries,
+- serialization boundaries,
+- numeric scale and quantization boundaries,
+- ADC measurement boundaries,
+- DAC/actuator effect boundaries,
+- recursive Mesh boundaries,
+- authority boundaries,
+- singularity/model-domain boundaries,
+- publication boundaries.
 
-`DELIVERY_ACCEPTED = false` until a public Zenodo publication readback for the exact successor candidate establishes all mandatory conditions.
+## Delivery precedence
+
+Repository preparation is not delivery.
+
+A new Zenodo publication is not established until the exact publication candidate has passed the applicable repository and review precedence, an authenticated publication effect has occurred, and the public Zenodo record has been read back with matching DOI, metadata, fileset, file sizes and checksums.
+
+Accordingly:
+
+`REPOSITORY_EVIDENCE != ZENODO_PUBLICATION`
+
+`ZENODO_PUBLICATION != EMPIRICAL_CONFIRMATION`
+
+`TRANSPORT_ACK != EFFECT_ACK`
+
+`COMMAND != OBSERVED_EFFECT`
+
+## Fail-closed rule
+
+Any head mutation invalidates predecessor exact-head validation and review binding for the successor. Missing or stale evidence yields `HOLD` or `REOBSERVE`; external publication authority yields `REQUEST_AUTHORITY` until the authorized effect and readback exist.
+
+No repository-local operation may be called `PASS`, `FINAL_PASS`, publication, empirical confirmation or `EFFECT_ACK_DONE` without the corresponding direct evidence.
