@@ -907,10 +907,10 @@ def materialize_git_history(
     remote = root / TEST_REMOTE_RELATIVE
     remote.parent.mkdir(parents=True, exist_ok=True)
     run_git(root, "init", "--quiet", "--bare", str(remote))
-    run_git(remote, "config", "gc.auto", "0")
-    run_git(remote, "config", "gc.autoDetach", "false")
-    run_git(remote, "config", "receive.autogc", "false")
-    run_git(remote, "symbolic-ref", "HEAD", "refs/heads/main")
+    run_git(root, "--git-dir", str(remote), "config", "gc.auto", "0")
+    run_git(root, "--git-dir", str(remote), "config", "gc.autoDetach", "false")
+    run_git(root, "--git-dir", str(remote), "config", "receive.autogc", "false")
+    run_git(root, "--git-dir", str(remote), "symbolic-ref", "HEAD", "refs/heads/main")
     run_git(root, "remote", "add", "origin", str(remote))
     run_git(
         root,
