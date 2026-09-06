@@ -10,6 +10,7 @@ on:
       - 'tools/qikvrt_build_snap.py'
       - 'tools/qikvrt_real_mesh_system_verification.py'
       - 'tests/test_qikvrt_snap_mesh.py'
+      - 'tests/test_qikvrt_snap_checkout_location.py'
       - 'runtime/toolchains/SNAP.lock.json'
       - 'runtime/toolchains/TOOLCHAIN.lock.tsv'
       - 'runtime/toolchains/CACHE_REGISTRY.json'
@@ -32,6 +33,7 @@ on:
       - 'tools/qikvrt_build_snap.py'
       - 'tools/qikvrt_real_mesh_system_verification.py'
       - 'tests/test_qikvrt_snap_mesh.py'
+      - 'tests/test_qikvrt_snap_checkout_location.py'
       - 'runtime/toolchains/SNAP.lock.json'
       - 'runtime/toolchains/TOOLCHAIN.lock.tsv'
       - 'runtime/toolchains/CACHE_REGISTRY.json'
@@ -122,8 +124,14 @@ jobs:
           persist-credentials: false
 
       - name: Build and self-test the real native SNAP backend
+        shell: bash
         run: |
-          python3 -B tools/qikvrt_build_snap.py --source .qikvrt/snap-source \
+          set -euo pipefail
+          # A nested Git checkout is not a repository-inventory file. Keep the
+          # pinned dependency outside GITHUB_WORKSPACE before integrity checks.
+          snap_workdir="$(mktemp -d "$RUNNER_TEMP/qikvrt-snap-source.XXXXXX")"
+          mv .qikvrt/snap-source "$snap_workdir/source"
+          python3 -B tools/qikvrt_build_snap.py --source "$snap_workdir/source" \
             --output .qikvrt/real-mesh/snap/qikvrt-snap
 
       - name: Require real SNAP in adapter integration tests
@@ -133,7 +141,7 @@ jobs:
           test -x .qikvrt/real-mesh/snap/qikvrt-snap
           QIKVRT_SNAP_BACKEND="$PWD/.qikvrt/real-mesh/snap/qikvrt-snap" \
             PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
-            python3 -B -m unittest discover -s tests -p test_qikvrt_snap_mesh.py -v
+            python3 -B -m unittest discover -s tests -p 'test_qikvrt_snap_*.py' -v
 
       - name: Analyze the exact current-head Mesh receipt with SNAP
         run: |
