@@ -57,5 +57,37 @@ class PullRequestHeadMutationBoundaryTests(unittest.TestCase):
         self.assertIn('git push origin "HEAD:$TARGET_REF"', block)
 
 
+    def test_primary_materializer_admits_publication_branch_push(self) -> None:
+        text = (WORKFLOWS / "qikvrt_batch04_integrity.yml").read_text(encoding="utf-8")
+        push = text.split("  push:\n", 1)[1].split("  pull_request:\n", 1)[0]
+        self.assertIn("      - docs/information-effect-axis-v1\n", push)
+        self.assertIn("github.actor != 'github-actions[bot]'", text)
+        self.assertNotIn("pull_request_target:", text)
+
+    def test_primary_materializer_pins_checkout_to_event_head(self) -> None:
+        text = (WORKFLOWS / "qikvrt_batch04_integrity.yml").read_text(encoding="utf-8")
+        self.assertIn(
+            "EXPECTED_HEAD: ${{ github.event_name == 'pull_request' && "
+            "github.event.pull_request.head.sha || github.sha }}",
+            text,
+        )
+        self.assertIn("ref: ${{ env.EXPECTED_HEAD }}", text)
+        self.assertNotIn("ref: ${{ env.TARGET_REF }}", text)
+
+    def test_primary_materializer_retains_gate_and_drift_guards(self) -> None:
+        text = (WORKFLOWS / "qikvrt_batch04_integrity.yml").read_text(encoding="utf-8")
+        marker = "- name: Commit materialized repository evidence"
+        before, persist = text.split(marker, 1)
+        self.assertIn("make test", before)
+        self.assertIn("python3 tools/qikvrt_integrity.py verify", before)
+        self.assertIn('if [ "$remote_head" != "$source_head" ]; then', persist)
+        self.assertIn('if [ "$remote_head_after_commit" != "$source_head" ]; then', persist)
+        self.assertIn('git push origin "HEAD:$TARGET_REF"', persist)
+        self.assertNotIn("--force", persist)
+        self.assertIn("if: github.event_name != 'pull_request'", persist)
+        self.assertIn("permissions:\n  contents: write\n", text)
+        self.assertIn("cancel-in-progress: false", text)
+
+
 if __name__ == "__main__":
     unittest.main()
