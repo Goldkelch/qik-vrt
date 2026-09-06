@@ -5,6 +5,17 @@ on:
     paths:
       - '.github/workflows/qikvrt_real_mesh.yml'
       - 'tools/qikvrt_real_mesh.py'
+      - 'tools/qikvrt_snap_mesh.py'
+      - 'tools/qikvrt_snap_mesh.cpp'
+      - 'tools/qikvrt_build_snap.py'
+      - 'tools/qikvrt_real_mesh_system_verification.py'
+      - 'tests/test_qikvrt_snap_mesh.py'
+      - 'tests/test_qikvrt_snap_checkout_location.py'
+      - 'runtime/toolchains/SNAP.lock.json'
+      - 'runtime/toolchains/TOOLCHAIN.lock.tsv'
+      - 'runtime/toolchains/CACHE_REGISTRY.json'
+      - 'runtime/toolchains/CACHE_COVERAGE.json'
+      - 'third_party/snap/**'
       - 'tests/test_qikvrt_real_mesh.py'
       - 'state/mesh/QIKVRT_REAL_MESH_V1.json'
       - 'docs/architecture/QIKVRT_REAL_MESH_V1.md'
@@ -17,6 +28,17 @@ on:
     paths:
       - '.github/workflows/qikvrt_real_mesh.yml'
       - 'tools/qikvrt_real_mesh.py'
+      - 'tools/qikvrt_snap_mesh.py'
+      - 'tools/qikvrt_snap_mesh.cpp'
+      - 'tools/qikvrt_build_snap.py'
+      - 'tools/qikvrt_real_mesh_system_verification.py'
+      - 'tests/test_qikvrt_snap_mesh.py'
+      - 'tests/test_qikvrt_snap_checkout_location.py'
+      - 'runtime/toolchains/SNAP.lock.json'
+      - 'runtime/toolchains/TOOLCHAIN.lock.tsv'
+      - 'runtime/toolchains/CACHE_REGISTRY.json'
+      - 'runtime/toolchains/CACHE_COVERAGE.json'
+      - 'third_party/snap/**'
       - 'tests/test_qikvrt_real_mesh.py'
       - 'state/mesh/QIKVRT_REAL_MESH_V1.json'
       - 'docs/architecture/QIKVRT_REAL_MESH_V1.md'
@@ -84,6 +106,51 @@ jobs:
           assert receipt['completion_claims']['authority_mirror_synchronization'] is False
           assert receipt['external_effect'] == 'NONE'
           PY
+
+      - name: Verify Mesh receipt before topology analysis
+        run: |
+          python3 -B tools/qikvrt_real_mesh_system_verification.py verify \
+            --receipt .qikvrt/real-mesh/QIKVRT_REAL_MESH_EXECUTION_RECEIPT_V1.json
+
+      - name: Verify declared SNAP tool and provisioning contracts
+        run: python3 -B tools/qikvrt_tool_cache.py verify
+
+      - name: Provision exact pinned SNAP source without stored credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: snap-stanford/snap
+          ref: 6924a035aabd1ce0a547b94e995e142f29eb5040
+          path: .qikvrt/snap-source
+          persist-credentials: false
+
+      - name: Build and self-test the real native SNAP backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A nested Git checkout is not a repository-inventory file. Keep the
+          # pinned dependency outside GITHUB_WORKSPACE before integrity checks.
+          snap_workdir="$(mktemp -d "$RUNNER_TEMP/qikvrt-snap-source.XXXXXX")"
+          mv .qikvrt/snap-source "$snap_workdir/source"
+          python3 -B tools/qikvrt_build_snap.py --source "$snap_workdir/source" \
+            --output .qikvrt/real-mesh/snap/qikvrt-snap
+
+      - name: Require real SNAP in adapter integration tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x .qikvrt/real-mesh/snap/qikvrt-snap
+          QIKVRT_SNAP_BACKEND="$PWD/.qikvrt/real-mesh/snap/qikvrt-snap" \
+            PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest discover -s tests -p 'test_qikvrt_snap_*.py' -v
+
+      - name: Analyze the exact current-head Mesh receipt with SNAP
+        run: |
+          python3 -B tools/qikvrt_snap_mesh.py \
+            --receipt .qikvrt/real-mesh/QIKVRT_REAL_MESH_EXECUTION_RECEIPT_V1.json \
+            --expected-head "$(git rev-parse --verify HEAD^{commit})" \
+            --expected-tree "$(git rev-parse --verify HEAD^{tree})" \
+            --backend .qikvrt/real-mesh/snap/qikvrt-snap \
+            --output .qikvrt/real-mesh/SNAP_ANALYSIS.json
 
       - name: Verify repository-native integrity
         run: python3 -B tools/qikvrt_integrity.py verify
