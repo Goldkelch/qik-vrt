@@ -7,6 +7,7 @@ by the Product Owner and its machine-readable claim disposition.
 
 - `QIKVRT_QUANTITATIVER_VERGLEICHSARTIKEL_DE_2026-08-29.md` — primary article.
 - `CLAIM_MATRIX.json` — typed disposition of the article's central claims.
+- `INTEGER_DGEMM_BENCHMARK.json` — one local, hash-bound reference-path run.
 
 ## Evidence boundary
 
@@ -31,6 +32,11 @@ The article distinguishes the still-open PR #912 VHDL/codec candidate from the
 older simulated VHDL scope already described in the repository. PR #912's
 serial-frame arithmetic is not a physical board measurement and its RTL is not
 the full Effect-Acknowledgement protocol.
+
+The integer-DGEMM artifact records a portable binary64-to-INT8-limb reference
+path and a native Python reference comparison. Its timings are environment
+specific; native INT8 hardware, QIK-VRT speedup, energy savings, bit identity
+and IEEE-754 status-flag identity remain unclaimed.
 
 The article records PR #914's typed-executor repair as a draft exact-head
 candidate. That candidate is not Authority-main until separately reviewed and
