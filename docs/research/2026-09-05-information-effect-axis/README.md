@@ -1,10 +1,18 @@
-# QIK-VRT Information -> Evidence -> Effect Axis v2
+# QIK-VRT Information -> Evidence -> Effect Axis v2.1
 
 Status: `PROPOSED_REVIEW_CARRIER`
 
-This research object makes an existing QIK-VRT invariant explicit for downstream Mesh systems and corrects the predecessor carrier against the already-public Zenodo corpus:
+This research object makes an existing QIK-VRT invariant explicit for downstream Mesh systems, corrects the predecessor carrier against the already-public Zenodo corpus, and adds the transputer/scaling/AD-DA/singularity bridge:
 
 `distinction -> information -> evidence binding -> causality assessment -> authorization -> effect -> readback`
+
+The additional architectural chain is:
+
+`compute scaling -> state scaling -> evidence scaling -> authority scaling -> effect scaling`
+
+under the invariant:
+
+**No transition may claim more than its boundary actually carries.**
 
 ## Public Zenodo prior-art binding
 
@@ -12,7 +20,7 @@ A repository-native inventory dated 2026-07-22 records a public Zenodo corpus al
 
 - `10.5281/zenodo.20712301` — early repository/provenance/release-gating version;
 - concept `10.5281/zenodo.21244411`, nine RFC/node/repository versions through `10.5281/zenodo.21267021`;
-- `10.5281/zenodo.21482023` — 62-page mathematical-physical working version;
+- `10.5281/zenodo.21482023` — mathematical-physical working version;
 - `10.5281/zenodo.21488116` — machine-verifiable formalization;
 - `10.5281/zenodo.21498773` — EFFECT_ACK working paper;
 - `10.5281/zenodo.21498774` — versioned EFFECT_ACK software;
@@ -20,11 +28,28 @@ A repository-native inventory dated 2026-07-22 records a public Zenodo corpus al
 
 `QIKVRT_ZENODO_PRIOR_ART_V1.json` carries the machine-readable subset used by this synthesis. It is intentionally non-exhaustive beyond the explicitly bound records; later or additional public records remain discoverable without being silently inferred here.
 
+## Transputer-to-evidence-mesh bridge
+
+The added bridge treats the INMOS transputer and Atari Transputer Workstation as historical comparison architectures, not as predecessors that already implemented QIK-VRT. The historically supported continuity is the use of local compute nodes with explicit communication boundaries. QIK-VRT extends the architecture question to state semantics, evidence, authority, physical effect and readback.
+
+The bridge connects:
+
+- local compute and explicit channels;
+- distributed serialization and canonical state identity;
+- numeric scale, fixed point and quantization;
+- ADC measurement envelopes;
+- DAC/actuator effect attempts and physical readback;
+- recursive Mesh composition;
+- explicit classification of singularities, model boundaries and numerical pathologies.
+
+It does **not** equate these domains physically. Their common structure is the disciplined analysis of mappings between state spaces and of the evidence carried across each mapping.
+
 ## Mandatory semantic boundaries
 
 - `BYTES != MEANING`
 - `SEQUENCE != CAUSALITY`
 - `TRANSPORT_ACK != EFFECT_ACK`
+- `COMMAND != OBSERVED_EFFECT`
 - `OBSERVATION != TRUTH`
 - `MODEL != REALITY`
 - `VERIFIED_IMPLEMENTATION != AUTHORITY_EFFECT`
@@ -54,22 +79,27 @@ No repository-only success may be projected as merge, deployment, new publicatio
 
 ## Scientific positioning
 
-Shannon, Wheeler, Landauer and QIK-VRT occupy different layers.
+Shannon, Wheeler, Landauer, the historical transputer architecture and QIK-VRT occupy different layers.
 
 - Shannon: communication/information and sampling constraints.
 - Wheeler: an information-and-physics research program / interpretation.
 - Landauer: thermodynamic cost bound for logically irreversible erasure under stated assumptions.
+- INMOS/Transputer: explicit local compute and communication architecture.
 - QIK-VRT: evidence, causality, authorization and effect-boundary architecture.
 
-The point is interoperability, not equation-by-slogan.
+The point is interoperability and structural comparison, not equation-by-slogan.
 
 ## Files
 
-- `MANUSCRIPT.md` — corrected scientific synthesis with public Zenodo publication history.
+- `MANUSCRIPT.md` — canonical scientific synthesis, now including the transputer/scaling/AD-DA/singularity bridge.
+- `TRANSPUTER_TO_EVIDENCE_MESH.md` — focused scientific bridge from historical parallel compute to evidence-bound Mesh architecture.
+- `PROSA_ARTIKEL_FUER_ALLE.md` — original public read-aloud bridge from distinction to responsible effect.
+- `PROSA_TRANSPUTER_ZUM_EVIDENZ_MESH.md` — public prose companion explaining the transputer-to-evidence-mesh bridge.
 - `QIKVRT_INFORMATION_EFFECT_AXIS_V1.json` — machine-readable Mesh contract.
 - `QIKVRT_INFORMATION_EFFECT_AXIS_V1.schema.json` — JSON Schema.
 - `QIKVRT_INFORMATION_EFFECT_AXIS_V1_TEST_VECTORS.json` — fail-closed examples.
 - `QIKVRT_ZENODO_PRIOR_ART_V1.json` — explicit public Zenodo prior-art anchors.
 - `ZENODO_METADATA.json` — metadata for a possible new synthesis deposit; existing DOI anchors are references, not the new record DOI.
+- `DELIVERY_ACCEPTANCE_STATE.json` — fail-closed publication/readback acceptance boundary.
 
 Author / Product & Code Owner: Ingolf Lohmann.
