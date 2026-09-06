@@ -1305,8 +1305,6 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             "tree": self.snapshot(tree_sha="2" * 40),
             "base": self.snapshot(base_sha="3" * 40),
             "base-tree": self.snapshot(base_tree_sha="4" * 40),
-            "current-main": self.snapshot(current_main_sha="5" * 40),
-            "current-main-tree": self.snapshot(current_main_tree_sha="6" * 40),
             "base-ref": self.snapshot(base_ref="release"),
             "scope": self.snapshot(
                 changed_files=changed_scope,
