@@ -1,7 +1,9 @@
 {
-  "schema": "qikvrt-ai-task-router/1.0",
+  "schema": "qikvrt-ai-task-router/1.1",
   "purpose": "Shortest repository-native routing map from user intent to existing capabilities. This file is discovery infrastructure only; it does not grant authority or weaken any gate.",
   "routing_rule": "After /AI and AI_CONTEXT.json bootstrap, resolve the requested task here before creating parallel machinery or concluding that a capability is absent.",
+  "causal_effect_chain": "policy/CAUSAL_EFFECT_CHAIN_V1.json",
+  "causal_chain_required": true,
   "reuse_before_create": true,
   "routes": {
     "zenodo_publication": {
@@ -24,6 +26,7 @@
       "credential": "ZENODO_ACCESS_TOKEN via GitHub Actions secret only",
       "resolution_sequence": [
         "Locate the exact publication candidate and its repository carrier.",
+        "Read policy/CAUSAL_EFFECT_CHAIN_V1.json and preserve its sole admissible effect chain.",
         "Read the generic Zenodo capability before inspecting document-specific workflows.",
         "Locate or materialize the candidate-bound v2 manifest, complete claim matrix, machine-proof bundle and prepublication-return receipt required by policy.",
         "Verify candidate bytes and Git blob identities against the manifest.",
@@ -36,7 +39,8 @@
         "Do not invent a new publisher when the generic v2 capability satisfies the task.",
         "Do not use legacy v1 manifests for a new production mutation.",
         "Do not infer missing capability merely because the current chat executor lacks a direct Zenodo connector.",
-        "Do not claim publication from preflight, token presence, upload transport, repository preparation or workflow success alone."
+        "Do not claim publication from preflight, token presence, upload transport, repository preparation or workflow success alone.",
+        "Do not bypass OBSERVE -> BIND -> VERIFY -> AUTHORIZE -> EFFECT -> READBACK -> PERSIST by returning after a merely described next step."
       ],
       "effect_boundary": "Repository routing and preparation are not Zenodo publication. Publication requires the separately authorized external mutation and public readback defined by the capability and policy."
     }
