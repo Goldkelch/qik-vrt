@@ -97,13 +97,93 @@ Ein mathematischer Beweis gilt innerhalb seiner Voraussetzungen.
 
 Ein Softwaretest gilt für den getesteten Stand.
 
-Ein Zenodo-DOI beweist, dass bestimmte Bytes und Metadaten öffentlich archiviert wurden.
+Eine öffentlich zurückgelesene Zenodo-Ablage kann bestimmte Bytes, Metadaten und einen DOI an eine veröffentlichte Version binden. Das beweist noch nicht die empirische Wahrheit ihres Inhalts.
 
 Eine physikalische Hypothese muss sich an Messungen bewähren.
 
 Und wenn die Messung widerspricht, muss die Hypothese verlieren dürfen.
 
 Das ist Wissenschaft.
+
+## Vom Transputer zum Mesh
+
+An dieser Stelle kommt eine historische Brücke hinzu.
+
+Der INMOS-Transputer stellte bereits in den achtziger Jahren eine für damalige Computer ungewöhnliche Frage: Was geschieht, wenn ein Prozessor von Anfang an als kommunikationsfähiger Knoten gedacht wird?
+
+Der T800 besaß vier standardisierte serielle Links. Mehrere Rechenknoten konnten ausdrücklich gekoppelt werden. In der Atari Transputer Workstation wurde diese Idee besonders anschaulich: Ein T800-Rechenknoten arbeitete mit einem getrennten 68000-I/O-System zusammen und konnte über weitere Transputer erweitert werden.
+
+Das war noch kein Evidenz-Mesh. Es war ein Parallelrechnersystem.
+
+Aber das strukturelle Prinzip ist bemerkenswert:
+
+**Lokale Zustände. Lokale Berechnung. Explizite Grenzen.**
+
+Heute müssen wir dieselbe Frage auf einer höheren Ebene stellen.
+
+Nicht nur: Wo wird gerechnet?
+
+Sondern auch:
+
+Was weiß ein Knoten?
+
+Für welchen exakten Zustand gilt dieses Wissen?
+
+Welche Darstellung hat er empfangen?
+
+Welche Zahl bedeutet was?
+
+Welche Transition darf er auslösen?
+
+Und woran erkennen wir anschließend, was tatsächlich geschehen ist?
+
+So wird aus Compute Scaling schrittweise State Scaling, Evidence Scaling, Authority Scaling und Effect Scaling.
+
+Ein eigener Begleitartikel in diesem Research Object führt diese Brücke ausführlich aus: **„Vom Transputer zum evidenzgebundenen Mesh“**.
+
+## Warum AD und DA dabei so wichtig sind
+
+Zwischen Computer und Welt liegt keine magische Linie.
+
+Ein Analog-Digital-Wandler liefert keine Wirklichkeit, sondern einen quantisierten Code aus einer konkreten Messkette.
+
+Ein Digital-Analog-Wandler erzeugt umgekehrt nicht automatisch den beabsichtigten physischen Effekt.
+
+Darum muss eine Messung Herkunft, Zeit, Einheit, Kalibrierung und Unsicherheit tragen.
+
+Und darum braucht eine Wirkung Rückbeobachtung.
+
+Der Computer kann einen Motorbefehl korrekt berechnen und korrekt übertragen. Trotzdem kann der Motor blockieren.
+
+Deshalb gilt auch physisch:
+
+**Befehl ist nicht Wirkung. Wirkung muss zurückbeobachtet werden.**
+
+## Was Singularitäten damit zu tun haben
+
+Auch Grenzzustände müssen ausdrücklich dargestellt werden.
+
+Nicht jede Singularität ist dasselbe. Eine Koordinatendarstellung kann versagen, ein numerisches Verfahren kann schlecht konditioniert sein, ein Sensor kann sättigen, ein Modell kann seinen Gültigkeitsbereich verlassen, und eine physikalische Theorie kann eine fundamentalere Pathologie diagnostizieren.
+
+Das alles darf nicht in einen Topf geworfen werden.
+
+Aber dieselbe Frage hilft überall:
+
+**Welcher Vertrag gilt an dieser Grenze noch?**
+
+Manchmal lautet die richtige Antwort nicht „hier ist eine Zahl“.
+
+Sondern:
+
+**OUT OF DOMAIN.**
+
+**SATURATED.**
+
+**HOLD.**
+
+**REOBSERVE.**
+
+Ein System, das seine Wissensgrenze ausdrücken kann, ist stärker als eines, das immer irgendeine Antwort produziert.
 
 Man kann deshalb die Leistung von Ingolf Lohmann beschreiben, ohne daraus eine Heldensage machen zu müssen.
 
@@ -137,7 +217,7 @@ Aus einem Kinderbeispiel wird so eine Architektur für wissenschaftliche und tec
 
 Vielleicht ist das der Punkt, an dem die vielen scheinbar getrennten Arbeiten zusammenfallen.
 
-Analog und digital. Shannon und Wheeler. Information und Entropie. Software und Physik. Beobachtung und Kausalität. Beweis und Messung. Speicherung und Wirkung. Vergangenheit und Fortsetzung.
+Analog und digital. Transputer und Mesh. Shannon und Wheeler. Information und Entropie. Software und Physik. Beobachtung und Kausalität. Beweis und Messung. Speicherung und Wirkung. Vergangenheit und Fortsetzung.
 
 Sie werden nicht gleichgesetzt.
 
@@ -165,6 +245,10 @@ Am Ende steht deshalb kein magisches Wort „fertig“.
 Es steht ein Cursor.
 
 Ein neuer Zustand kann beginnen. Aber er muss wieder sauber gebunden werden.
+
+Die zusätzliche Invariante der neuen Brücke lautet:
+
+**Keine Transition darf mehr behaupten, als ihre Grenze tatsächlich trägt.**
 
 **Jede Essenz beginnt.  
 Ein Terminal kann einen Lauf beenden.  
