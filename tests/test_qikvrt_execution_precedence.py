@@ -6,6 +6,7 @@ import unittest
 from tools.qikvrt_execution_precedence import next_eligible, validate_policy
 
 POLICY = Path("policy/QIKVRT_EXECUTION_PRECEDENCE_V1.json")
+EVIDENCE_STATE = Path("state/delivery/EVIDENCE_SPIRAL_INTEGRATION_V1.json")
 
 
 class ExecutionPrecedenceTests(unittest.TestCase):
@@ -17,6 +18,14 @@ class ExecutionPrecedenceTests(unittest.TestCase):
         validate_policy(self.policy)
         self.assertEqual(self.policy["semantics"]["unspecified_relation"], "HOLD_UNVERIFIED")
         self.assertFalse(self.policy["semantics"]["predecessor_evidence_transfer"])
+
+    def test_current_publication_binding_matches_active_evidence_subject(self):
+        evidence = json.loads(EVIDENCE_STATE.read_text(encoding="utf-8"))
+        current_subject = evidence["precedence_state"]["current_subject"]
+        self.assertEqual(
+            self.policy["current_publication_binding"]["integration_pr"],
+            current_subject["pull_request"],
+        )
 
     def test_first_step_is_manifest_latest_knowledge(self):
         result = next_eligible(self.policy, {})
