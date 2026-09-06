@@ -1,7 +1,7 @@
 {
   "$schema": "./QIKVRT_INFORMATION_EFFECT_AXIS_V1.schema.json",
   "id": "QIKVRT_INFORMATION_EFFECT_AXIS_V1",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "status": "PROPOSED_REVIEW_CARRIER",
   "author": "Ingolf Lohmann",
   "date": "2026-09-06",
@@ -18,10 +18,19 @@
     "EFFECT",
     "READBACK"
   ],
+  "scaling_chain": [
+    "COMPUTE_SCALING",
+    "STATE_SCALING",
+    "EVIDENCE_SCALING",
+    "AUTHORITY_SCALING",
+    "EFFECT_SCALING"
+  ],
+  "boundary_invariant": "NO_TRANSITION_MAY_CLAIM_MORE_THAN_ITS_BOUNDARY_ACTUALLY_CARRIES",
   "non_equivalences": [
     "BYTES != MEANING",
     "SEQUENCE != CAUSALITY",
     "TRANSPORT_ACK != EFFECT_ACK",
+    "COMMAND != OBSERVED_EFFECT",
     "OBSERVATION != TRUTH",
     "MODEL != REALITY",
     "VERIFIED_IMPLEMENTATION != AUTHORITY_EFFECT",
@@ -51,6 +60,31 @@
     "signature",
     "authority"
   ],
+  "node_contract": {
+    "state": "S",
+    "evidence": "K",
+    "authority": "A",
+    "input_contract": "I",
+    "output_contract": "O",
+    "transition_contract": "T",
+    "readback_contract": "R"
+  },
+  "boundary_contract": {
+    "encoder": "E",
+    "decoder": "D",
+    "schema": "Sigma",
+    "version": "V",
+    "unit_or_scale": "U",
+    "provenance": "P",
+    "temporal_or_causal_validity": "tau"
+  },
+  "singularity_classification": [
+    "MATHEMATICAL_SINGULARITY",
+    "COORDINATE_OR_REPRESENTATION_SINGULARITY",
+    "NUMERICAL_PATHOLOGY_OR_ILL_CONDITIONING",
+    "MODEL_DOMAIN_BOUNDARY",
+    "PHYSICAL_SINGULARITY_DIAGNOSIS"
+  ],
   "control_states": [
     "NOOP",
     "HOLD",
@@ -62,6 +96,8 @@
     "unknown_causal_binding -> HOLD_or_REOBSERVE",
     "effect_without_readback -> not_EFFECT_ACK",
     "model_presented_as_reality -> BLOCK_or_HOLD",
+    "out_of_domain_transition -> HOLD",
+    "saturated_or_non_observable_measurement -> HOLD_or_REOBSERVE",
     "repository_validation_without_external_readback -> no_external_effect_claim",
     "zenodo_publication_without_empirical_measurement -> no_empirical_confirmation_claim"
   ],
@@ -75,6 +111,11 @@
     "must_preserve_publication_vs_empirical_boundary": true,
     "extensions_allowed": true,
     "core_semantics_may_be_weakened": false
+  },
+  "historical_bridge": {
+    "transputer": "historical comparison architecture for local compute plus explicit communication; not claimed as QIK-VRT predecessor implementation",
+    "atari_atw": "historical system example separating T800 compute, Motorola 68000 I/O, and expandable transputer farm nodes",
+    "claim_scope": "structural architecture comparison only"
   },
   "public_prior_art": {
     "manifest": "./QIKVRT_ZENODO_PRIOR_ART_V1.json",
@@ -96,6 +137,7 @@
     "shannon": "information/sampling/communication theory connection; not identical to QIK-VRT",
     "wheeler": "interpretive research program relating information and physics; not treated as experimentally proven ontology",
     "landauer": "thermodynamic lower bound for logically irreversible erasure under stated assumptions; not a cost assigned to every bit",
+    "transputer": "historical explicit-communication compute architecture; not an evidence or effect-ack system",
     "qik_vrt": "evidence, causality, authorization and effect-boundary architecture",
     "zenodo": "public archival/publication evidence and DOI binding; not empirical confirmation",
     "planck_tick_gap_law": "published falsifiable physical hypothesis at DOI 10.5281/zenodo.22283396; empirical correspondence remains a separate state"
