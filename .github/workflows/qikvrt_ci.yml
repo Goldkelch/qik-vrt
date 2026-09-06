@@ -1,186 +1,143 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
-
 name: QIKVRT CI
 
 on:
   push:
-    branches-ignore:
-      - automation/effect-ack-universality-reserve-20260722
-      - automation/effect-ack-universality-finalize-20260722
-      - qikvrt/mesh-review-ledger-v1
-  pull_request:
-  workflow_dispatch:
+    branches:
+      - evidence/planck-zenodo-readback-main-7b58fd26
 
 permissions:
   contents: read
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-      - name: Full compile, launcher, protocol, handler, security and TCP/IP tests
-        id: full_test
-        continue-on-error: true
-        shell: bash
-        run: |
-          set +e
-          diagnostics=.qikvrt/runtime/ci-diagnostics
-          mkdir -p "$diagnostics"
-          make test > "$diagnostics/MAKE_TEST_FULL.log" 2>&1
-          status=$?
-          {
-            printf 'MAKE_TEST_EXIT=%s\n' "$status"
-            printf '%s\n' '--- LAST 500 LINES ---'
-            tail -n 500 "$diagnostics/MAKE_TEST_FULL.log"
-            printf '%s\n' '--- WORKTREE STATUS ---'
-            git status --short --untracked-files=all
-            printf '%s\n' '--- INTEGRITY MANIFEST DELTA ---'
-            python3 -B - <<'PY'
-          import json
-          from pathlib import Path
-          from tools import qikvrt_integrity as integrity
-
-          stored = json.loads(Path(integrity.MANIFEST_NAME).read_text(encoding='utf-8'))
-          _manifest, _index, _detached, expected = integrity.build_outputs()
-          old = {entry['path']: entry for entry in stored['files']}
-          new = {entry['path']: entry for entry in expected['files']}
-          print('added=' + json.dumps(sorted(new.keys() - old.keys())))
-          print('removed=' + json.dumps(sorted(old.keys() - new.keys())))
-          changed = sorted(
-              path for path in old.keys() & new.keys()
-              if old[path] != new[path]
-          )
-          print('changed=' + json.dumps(changed))
-          for path in changed[:50]:
-              before = old[path]
-              after = new[path]
-              print(json.dumps({'path': path, 'stored': before, 'expected': after}, sort_keys=True))
-          PY
-          } > "$diagnostics/MAKE_TEST_DIAGNOSTICS.log" 2>&1
-          mkdir -p audit/ci-diagnostics
-          cp "$diagnostics/MAKE_TEST_DIAGNOSTICS.log" \
-            audit/ci-diagnostics/MAKE_TEST_DIAGNOSTICS.log
-          cat "$diagnostics/MAKE_TEST_DIAGNOSTICS.log"
-          exit "$status"
-      - name: Upload audit
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: qikvrt-ci-audit
-          retention-days: 30
-          path: |
-            audit/**
-            .qikvrt/**
-          if-no-files-found: warn
-          include-hidden-files: true
-      - name: Enforce full repository test result
-        if: steps.full_test.outcome == 'failure'
-        shell: bash
-        run: |
-          cat audit/ci-diagnostics/MAKE_TEST_DIAGNOSTICS.log
-          exit 1
-
-  quantum-causal-vhdl:
+  zenodo-public-readback:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    env:
-      EVIDENCE_ROOT: /tmp/qikvrt-quantum-causal-neutron-star-ci
+    timeout-minutes: 10
     steps:
-      - name: Check out exact candidate
+      - name: Checkout exact evidence carrier
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 0
+          ref: ${{ github.sha }}
+          fetch-depth: 1
           persist-credentials: false
-      - name: Detect inside-out VHDL carrier
-        id: detect
+
+      - name: Fresh GET Zenodo record DOI registry resolver and published bytes
         shell: bash
         run: |
           set -euo pipefail
-          required=(
-            state/fixpoints/QIKVRT_QUANTUM_CAUSAL_NEUTRON_STAR_EVIDENCE_FIXPOINT_SET_V1.json
-            hardware/vhdl/qikvrt_metatransistor_pkg.vhd
-            hardware/vhdl/qikvrt_metatransistor.vhd
-            hardware/vhdl/qikvrt_neutron_star_mesh.vhd
-            hardware/vhdl/tb_qikvrt_metatransistor.vhd
-            tools/qikvrt_quantum_causal_neutron_star_fixpoint.py
-            tests/test_qikvrt_quantum_causal_neutron_star_fixpoint.py
-          )
-          present=true
-          for path in "${required[@]}"; do
-            if [ ! -f "$path" ]; then
-              present=false
-            fi
-          done
-          echo "present=$present" >> "$GITHUB_OUTPUT"
-          printf 'INSIDE_OUT_VHDL_PRESENT=%s\n' "$present"
-      - name: Provision and bind GHDL
-        if: steps.detect.outputs.present == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$EVIDENCE_ROOT"
-          if ! command -v ghdl >/dev/null 2>&1; then
-            sudo apt-get update
-            candidate="$(apt-cache policy ghdl | awk '/Candidate:/ {print $2}')"
-            test -n "$candidate"
-            test "$candidate" != '(none)'
-            printf 'APT_CANDIDATE=%s\n' "$candidate" \
-              | tee "$EVIDENCE_ROOT/ghdl-package.txt"
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-              --no-install-recommends "ghdl=$candidate"
-          fi
-          command -v ghdl | tee -a "$EVIDENCE_ROOT/ghdl-package.txt"
-          ghdl --version | tee "$EVIDENCE_ROOT/ghdl-version.txt"
-      - name: Validate analyze elaborate and execute inside-out VHDL
-        if: steps.detect.outputs.present == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$EVIDENCE_ROOT"
-          python3 -B tools/qikvrt_quantum_causal_neutron_star_fixpoint.py validate \
-            | tee "$EVIDENCE_ROOT/validation.json"
-          python3 -B -m unittest -v \
-            tests.test_qikvrt_quantum_causal_neutron_star_fixpoint
-          work="$RUNNER_TEMP/qikvrt-ghdl-ci-work"
-          mkdir -p "$work"
-          pushd "$work" >/dev/null
-          ghdl -a --std=08 "$GITHUB_WORKSPACE/hardware/vhdl/qikvrt_metatransistor_pkg.vhd"
-          ghdl -a --std=08 "$GITHUB_WORKSPACE/hardware/vhdl/qikvrt_metatransistor.vhd"
-          ghdl -a --std=08 "$GITHUB_WORKSPACE/hardware/vhdl/qikvrt_neutron_star_mesh.vhd"
-          ghdl -a --std=08 "$GITHUB_WORKSPACE/hardware/vhdl/tb_qikvrt_metatransistor.vhd"
-          ghdl -e --std=08 tb_qikvrt_metatransistor
-          ghdl -r --std=08 tb_qikvrt_metatransistor
-          popd >/dev/null
-          cat > "$EVIDENCE_ROOT/vhdl-toolchain.json" <<'JSON'
-          {
-            "analysis": "OBSERVED_SUCCESS",
-            "elaboration": "OBSERVED_SUCCESS",
-            "schema": "qikvrt.vhdl-toolchain-observation.v1",
-            "synthesis": "NOT_CLAIMED",
-            "testbench": "OBSERVED_SUCCESS"
+          python3 -I -S -B - <<'PY'
+          import hashlib
+          import json
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          receipt = json.loads(Path('release/planck-tick-gap-law-zenodo-v1/zenodo-publication.json').read_text(encoding='utf-8'))
+          record_id = str(receipt['record_id'])
+          doi = str(receipt['doi'])
+          if record_id != '22283396' or doi != '10.5281/zenodo.22283396':
+              raise SystemExit('BLOCK: repository receipt identity changed')
+
+          ua = 'qik-vrt-zenodo-public-readback/1.0 (+https://github.com/Goldkelch/qik-vrt)'
+          def get(url, accept='*/*', max_bytes=64 * 1024 * 1024):
+              req = urllib.request.Request(url, headers={'User-Agent': ua, 'Accept': accept}, method='GET')
+              with urllib.request.urlopen(req, timeout=120) as response:
+                  payload = response.read(max_bytes + 1)
+                  if len(payload) > max_bytes:
+                      raise SystemExit('BLOCK: response too large: ' + url)
+                  return int(response.status), str(response.geturl()), payload
+
+          zenodo_url = f'https://zenodo.org/api/records/{record_id}'
+          z_status, z_final, z_raw = get(zenodo_url, 'application/json', 8 * 1024 * 1024)
+          record = json.loads(z_raw.decode('utf-8'))
+          observed_id = str(record.get('id') or record.get('record_id') or '')
+          metadata = record.get('metadata') or {}
+          pids = record.get('pids') or {}
+          observed_doi = str(record.get('doi') or metadata.get('doi') or (pids.get('doi') or {}).get('identifier') or '')
+          if z_status != 200 or observed_id != record_id or observed_doi.lower() != doi.lower():
+              raise SystemExit(f'BLOCK: Zenodo identity mismatch status={z_status} id={observed_id!r} doi={observed_doi!r}')
+
+          files_node = record.get('files') or []
+          public_rows = {}
+          if isinstance(files_node, list):
+              for row in files_node:
+                  name = str(row.get('key') or row.get('filename') or row.get('name') or '')
+                  if name:
+                      public_rows[name] = row
+          elif isinstance(files_node, dict):
+              entries = files_node.get('entries') or {}
+              if isinstance(entries, dict):
+                  for name, row in entries.items():
+                      public_rows[str(name)] = row or {}
+              elif isinstance(entries, list):
+                  for row in entries:
+                      name = str(row.get('key') or row.get('filename') or row.get('name') or '')
+                      if name:
+                          public_rows[name] = row
+
+          expected = {str(row['name']): row for row in receipt['files']}
+          if set(public_rows) != set(expected):
+              raise SystemExit('BLOCK: public inventory mismatch')
+
+          verified_files = []
+          for name in sorted(expected):
+              row = public_rows[name]
+              links = row.get('links') or {}
+              content_url = links.get('content') or f'https://zenodo.org/api/records/{record_id}/files/{urllib.parse.quote(name, safe="")}/content'
+              status, final_url, payload = get(content_url)
+              sha256 = hashlib.sha256(payload).hexdigest()
+              md5 = hashlib.md5(payload).hexdigest()
+              exp_sha = str(expected[name]['sha256'])
+              exp_bytes = int(expected[name]['bytes'])
+              if status != 200 or len(payload) != exp_bytes or sha256 != exp_sha:
+                  raise SystemExit(f'BLOCK: public byte mismatch {name}')
+              checksum = str(row.get('checksum') or '')
+              if checksum and checksum.lower() not in {f'md5:{md5}'.lower(), f'sha256:{sha256}'.lower()}:
+                  raise SystemExit(f'BLOCK: public checksum mismatch {name}')
+              verified_files.append({'name': name, 'bytes': len(payload), 'sha256': sha256, 'zenodo_checksum': checksum, 'content_status': status})
+
+          datacite_url = 'https://api.datacite.org/dois/' + urllib.parse.quote(doi, safe='')
+          dc_status, dc_final, dc_raw = get(datacite_url, 'application/vnd.api+json', 4 * 1024 * 1024)
+          dc = json.loads(dc_raw.decode('utf-8'))
+          dc_data = dc.get('data') or {}
+          dc_attrs = dc_data.get('attributes') or {}
+          dc_id = str(dc_data.get('id') or dc_attrs.get('doi') or '')
+          if dc_status != 200 or dc_id.lower() != doi.lower():
+              raise SystemExit(f'BLOCK: DataCite DOI mismatch status={dc_status} id={dc_id!r}')
+
+          resolver_url = 'https://doi.org/' + doi
+          r_status, r_final, _ = get(resolver_url, 'text/html,application/xhtml+xml', 8 * 1024 * 1024)
+          if r_status != 200 or record_id not in r_final:
+              raise SystemExit(f'BLOCK: DOI resolver mismatch status={r_status} final={r_final!r}')
+
+          result = {
+              'schema': 'qikvrt_planck_tick_gap_law_zenodo_fresh_public_readback_v1',
+              'status': 'PUBLIC_RECORD_DOI_AND_BYTES_VERIFIED',
+              'readback_carrier_sha': '${{ github.sha }}',
+              'exact_main_parent': '7b58fd26d25bbfafb42d1d01d1961cf707cbf5fe',
+              'repository_publication_receipt_head': receipt.get('repository_head'),
+              'record_id': record_id,
+              'doi': doi,
+              'conceptdoi': receipt.get('conceptdoi'),
+              'zenodo': {'status': z_status, 'final_url': z_final, 'observed_id': observed_id, 'observed_doi': observed_doi, 'title': metadata.get('title'), 'publication_date': metadata.get('publication_date'), 'created': record.get('created'), 'updated': record.get('updated')},
+              'datacite': {'status': dc_status, 'id': dc_id, 'state': dc_attrs.get('state'), 'registered': dc_attrs.get('registered'), 'published': dc_attrs.get('published'), 'url': dc_attrs.get('url')},
+              'doi_resolver': {'status': r_status, 'final_url': r_final},
+              'files': verified_files,
+              'completion_claims': {'EMPIRICAL_CORRESPONDENCE': False, 'INDEPENDENT_REPRODUCTION': False, 'PASS': False, 'FINAL_PASS': False, 'EFFECT_ACK_DONE': False},
           }
-          JSON
-      - name: Reobserve immutable exact candidate
-        if: steps.detect.outputs.present == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          expected='${{ github.event.pull_request.head.sha || github.sha }}'
-          test "$(git rev-parse --verify HEAD^{commit})" = "$expected"
-          git status --porcelain=v1 --untracked-files=all \
-            | tee "$EVIDENCE_ROOT/worktree-status.txt"
-          test ! -s "$EVIDENCE_ROOT/worktree-status.txt"
-      - name: Preserve inside-out VHDL evidence
-        if: always() && steps.detect.outputs.present == 'true'
+          out = Path('.qikvrt/zenodo-readback-22283396.json')
+          out.parent.mkdir(parents=True, exist_ok=True)
+          out.write_text(json.dumps(result, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          print('QIKVRT_ZENODO_READBACK=' + json.dumps(result, sort_keys=True, separators=(',', ':')))
+          PY
+
+      - name: Preserve fresh readback artifact
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: qikvrt-quantum-causal-neutron-star-ci-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ env.EVIDENCE_ROOT }}
-          retention-days: 30
-          if-no-files-found: error
+          name: qikvrt-planck-zenodo-public-readback-${{ github.run_id }}
+          path: .qikvrt/zenodo-readback-22283396.json
+          if-no-files-found: warn
+          retention-days: 90
+          include-hidden-files: true
