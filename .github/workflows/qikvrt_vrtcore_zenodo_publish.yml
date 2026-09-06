@@ -5,7 +5,9 @@ name: Publish one causally ordered VRTCore stage to Zenodo
 
 on:
   push:
-    branches: [publication/vrtcore-smg-h5-v1]
+    branches:
+      - publication/vrtcore-smg-h5-v1
+      - publication/vrtcore-smg-h5-v2
     paths: [.github/workflows/qikvrt_vrtcore_zenodo_publish.yml]
 
 permissions:
@@ -39,7 +41,10 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$GITHUB_REF_NAME" = 'publication/vrtcore-smg-h5-v1'
+          case "$GITHUB_REF_NAME" in
+            publication/vrtcore-smg-h5-v1|publication/vrtcore-smg-h5-v2) ;;
+            *) exit 70 ;;
+          esac
           test -f "$MANIFEST_PATH"
           test ! -e "$EVIDENCE_PATH"
           python3 -B tools/qikvrt_vrtcore_zenodo_publication_controls.py --check
