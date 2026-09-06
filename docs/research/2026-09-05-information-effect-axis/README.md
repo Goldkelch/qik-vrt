@@ -32,15 +32,7 @@ A repository-native inventory dated 2026-07-22 records a public Zenodo corpus al
 
 The added bridge treats the INMOS transputer and Atari Transputer Workstation as historical comparison architectures, not as predecessors that already implemented QIK-VRT. The historically supported continuity is the use of local compute nodes with explicit communication boundaries. QIK-VRT extends the architecture question to state semantics, evidence, authority, physical effect and readback.
 
-The bridge connects:
-
-- local compute and explicit channels;
-- distributed serialization and canonical state identity;
-- numeric scale, fixed point and quantization;
-- ADC measurement envelopes;
-- DAC/actuator effect attempts and physical readback;
-- recursive Mesh composition;
-- explicit classification of singularities, model boundaries and numerical pathologies.
+The bridge connects local compute and explicit channels, distributed serialization and canonical state identity, numeric scale/fixed point/quantization, ADC measurement envelopes, DAC/actuator effect attempts and physical readback, recursive Mesh composition, and explicit classification of singularities, model boundaries and numerical pathologies.
 
 It does **not** equate these domains physically. Their common structure is the disciplined analysis of mappings between state spaces and of the evidence carried across each mapping.
 
@@ -91,7 +83,7 @@ The point is interoperability and structural comparison, not equation-by-slogan.
 
 ## Files
 
-- `MANUSCRIPT.md` — canonical scientific synthesis, now including the transputer/scaling/AD-DA/singularity bridge.
+- `MANUSCRIPT.md` — canonical scientific synthesis including the transputer/scaling/AD-DA/singularity bridge.
 - `TRANSPUTER_TO_EVIDENCE_MESH.md` — focused scientific bridge from historical parallel compute to evidence-bound Mesh architecture.
 - `PROSA_ARTIKEL_FUER_ALLE.md` — public read-aloud bridge from distinction to responsible effect, now linked to the transputer/AD-DA extension.
 - `PROSA_TRANSPUTER_ZUM_EVIDENZ_MESH.md` — public prose companion explaining the transputer-to-evidence-mesh bridge.
