@@ -73,6 +73,8 @@ REOBSERVATION_PROGRESS_FIELDS = frozenset({
     "first_blocker",
     "detail",
     # Trusted-main tip is observation progress, not immutable candidate identity.
+    # Reobservation still must fail closed if the decision input moves, because
+    # the current main head is a causal input to the review policy itself.
     "current_main_sha",
     "current_main_tree_sha",
     "evidence_fingerprint",
@@ -84,6 +86,10 @@ REOBSERVATION_PROGRESS_FIELDS = frozenset({
     "active_writers_observed",
     "derived_action",
     "receipt_payload_sha256",
+})
+REOBSERVATION_DECISION_INPUT_FIELDS = frozenset({
+    "current_main_sha",
+    "current_main_tree_sha",
 })
 REPOSITORY_FEEDBACK_PROGRESS_FIELDS = frozenset({
     "receipt_path",
@@ -3016,13 +3022,17 @@ def verify_current_receipt(
     claimed_payload_sha256 = sealed_payload.pop("receipt_payload_sha256", None)
     expected_binding = _historical_receipt_binding(expected)
     fresh_binding = _historical_receipt_binding(fresh)
+    main_tip_binding = all(
+        expected.get(field) == fresh.get(field)
+        for field in REOBSERVATION_DECISION_INPUT_FIELDS
+    )
     checks = {
         "expected_receipt_self_seal": claimed_payload_sha256 == _canonical_sha256(sealed_payload),
         "stored_receipt_parses_as_expected": stored_receipt == dict(expected),
         "stored_receipt_bytes": expected_receipt_bytes == _pretty_json_bytes(expected),
         "repository": expected.get("repository") == repository,
         "pr_number": expected.get("pr_number") == pr_number,
-        "causal_binding": expected_binding == fresh_binding,
+        "causal_binding": expected_binding == fresh_binding and main_tip_binding,
         "diff_sha256": expected.get("diff_sha256") == hashlib.sha256(diff).hexdigest(),
         "diff_bytes": expected.get("diff_bytes") == len(diff),
         "stored_diff_bytes": expected_diff == diff,
