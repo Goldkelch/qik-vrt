@@ -93,13 +93,18 @@ The point is interoperability and structural comparison, not equation-by-slogan.
 
 - `MANUSCRIPT.md` — canonical scientific synthesis, now including the transputer/scaling/AD-DA/singularity bridge.
 - `TRANSPUTER_TO_EVIDENCE_MESH.md` — focused scientific bridge from historical parallel compute to evidence-bound Mesh architecture.
-- `PROSA_ARTIKEL_FUER_ALLE.md` — original public read-aloud bridge from distinction to responsible effect.
+- `PROSA_ARTIKEL_FUER_ALLE.md` — public read-aloud bridge from distinction to responsible effect, now linked to the transputer/AD-DA extension.
 - `PROSA_TRANSPUTER_ZUM_EVIDENZ_MESH.md` — public prose companion explaining the transputer-to-evidence-mesh bridge.
-- `QIKVRT_INFORMATION_EFFECT_AXIS_V1.json` — machine-readable Mesh contract.
+- `QIKVRT_INFORMATION_EFFECT_AXIS_V1.json` — machine-readable Mesh contract including scaling and boundary contracts.
 - `QIKVRT_INFORMATION_EFFECT_AXIS_V1.schema.json` — JSON Schema.
-- `QIKVRT_INFORMATION_EFFECT_AXIS_V1_TEST_VECTORS.json` — fail-closed examples.
+- `QIKVRT_INFORMATION_EFFECT_AXIS_V1_TEST_VECTORS.json` — fail-closed examples including transport/effect, saturation and out-of-domain boundaries.
 - `QIKVRT_ZENODO_PRIOR_ART_V1.json` — explicit public Zenodo prior-art anchors.
 - `ZENODO_METADATA.json` — metadata for a possible new synthesis deposit; existing DOI anchors are references, not the new record DOI.
 - `DELIVERY_ACCEPTANCE_STATE.json` — fail-closed publication/readback acceptance boundary.
+- `DELIVERY_AND_MESH_RULE.md` — publication and Mesh boundary rule.
+
+## Publication state
+
+The repository publication candidate is prepared, but each head mutation resets exact-head validation and review binding. A new Zenodo publication is not asserted until the applicable exact-head gates and review precedence complete, an authenticated publication effect occurs, and the public Zenodo record is read back with matching DOI, metadata, fileset, sizes and checksums.
 
 Author / Product & Code Owner: Ingolf Lohmann.
