@@ -1,0 +1,99 @@
+name: QIKVRT exact approved Transputer PDF recover from refs
+
+on:
+  push:
+    branches:
+      - publication/transputer-evidence-spiral-zenodo-v2
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: qikvrt-transputer-exact-pdf-recover-refs
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Recover only the exact frozen PDF bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_sha='78c845bb2bd078d9aeff2657865fc8b877aacf97987b64b817bd7e8856cf0536'
+          expected_blob='3a713fe4ac15a61a59514a9287472f6c9fe15462'
+          expected_size='243720'
+          target='docs/research/2026-09-05-information-effect-axis/publication/Vom_Transputer_zur_Evidenzspirale.pdf'
+          sidecar="${target}.sha256"
+
+          valid_target() {
+            [ -f "$target" ] &&
+            [ "$(stat -c%s "$target")" = "$expected_size" ] &&
+            [ "$(sha256sum "$target" | awk '{print $1}')" = "$expected_sha" ] &&
+            [ "$(git hash-object "$target")" = "$expected_blob" ]
+          }
+
+          if ! valid_target; then
+            rm -f "$target" "$sidecar"
+            git fetch origin \
+              '+refs/heads/*:refs/remotes/origin/*' \
+              '+refs/tags/*:refs/tags/*' \
+              '+refs/pull/*/head:refs/remotes/pull/*/head' || true
+
+            if git cat-file -e "${expected_blob}^{blob}" 2>/dev/null; then
+              mkdir -p "$(dirname "$target")"
+              git cat-file blob "$expected_blob" > "$target"
+            fi
+          fi
+
+          if ! valid_target; then
+            rm -f "$target" "$sidecar"
+            rm -rf /tmp/qikvrt-preflight && mkdir -p /tmp/qikvrt-preflight
+            gh run download 34057976716 --repo "$GITHUB_REPOSITORY" --dir /tmp/qikvrt-preflight || true
+            found=''
+            while IFS= read -r -d '' f; do
+              [ "$(stat -c%s "$f")" = "$expected_size" ] || continue
+              [ "$(sha256sum "$f" | awk '{print $1}')" = "$expected_sha" ] || continue
+              [ "$(git hash-object "$f")" = "$expected_blob" ] || continue
+              found="$f"
+              break
+            done < <(find /tmp/qikvrt-preflight -type f -print0)
+            [ -n "$found" ] || { echo 'EXACT_PDF_NOT_FOUND_IN_REFS_OR_PREFLIGHT_ARTIFACTS'; exit 42; }
+            mkdir -p "$(dirname "$target")"
+            cp "$found" "$target"
+          fi
+
+          valid_target || exit 43
+          printf '%s  %s\n' "$expected_sha" 'Vom_Transputer_zur_Evidenzspirale.pdf' > "$sidecar"
+
+          rm -f .github/workflows/qikvrt_transputer_exact_pdf_recover_refs.yml
+          rm -f .github/workflows/qikvrt_transputer_exact_pdf_recover.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet || git commit -m 'publication: materialize exact owner-approved Transputer PDF'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+          if [ ! -f .github/workflows/qikvrt_transputer_exact_pdf_carrier.yml ]; then
+            git fetch origin main
+            mapfile -t changed < <(git diff --name-only origin/main...HEAD | sort)
+            [ "${#changed[@]}" -eq 2 ] || exit 44
+            [ "${changed[0]}" = "$target" ] || exit 45
+            [ "${changed[1]}" = "$sidecar" ] || exit 46
+            pr="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$GITHUB_REF_NAME" --base main --state open --json number --jq '.[0].number // empty')"
+            if [ -z "$pr" ]; then
+              gh pr create \
+                --repo "$GITHUB_REPOSITORY" \
+                --base main \
+                --head "$GITHUB_REF_NAME" \
+                --title 'publication: exact owner-approved Transputer evidence-spiral PDF' \
+                --body $'Exact publication carrier only.\n\nBound candidate:\n- file: Vom_Transputer_zur_Evidenzspirale.pdf\n- bytes: 243720\n- sha256: 78c845bb2bd078d9aeff2657865fc8b877aacf97987b64b817bd7e8856cf0536\n- git blob: 3a713fe4ac15a61a59514a9287472f6c9fe15462\n- source authorization: issue comment 5556176261\n\nRepository preparation only; not Zenodo publication, DOI readback, PASS, FINAL_PASS, or EFFECT_ACK_DONE.'
+            fi
+          fi
