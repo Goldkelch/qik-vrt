@@ -1,0 +1,129 @@
+name: QIKVRT exact Transputer PDF carrier promotion
+
+on:
+  push:
+    branches:
+      - publication/transputer-evidence-spiral-zenodo-v2
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: qikvrt-transputer-publication-carrier-promote
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Exact-head publication carrier state machine
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          branch="$GITHUB_REF_NAME"
+          expected_sha='78c845bb2bd078d9aeff2657865fc8b877aacf97987b64b817bd7e8856cf0536'
+          expected_blob='3a713fe4ac15a61a59514a9287472f6c9fe15462'
+          expected_size='243720'
+          target='docs/research/2026-09-05-information-effect-axis/publication/Vom_Transputer_zur_Evidenzspirale.pdf'
+          sidecar="${target}.sha256"
+
+          valid_target() {
+            [ -f "$target" ] &&
+            [ "$(stat -c%s "$target")" = "$expected_size" ] &&
+            [ "$(sha256sum "$target" | awk '{print $1}')" = "$expected_sha" ] &&
+            [ "$(git hash-object "$target")" = "$expected_blob" ] &&
+            [ -f "$sidecar" ] &&
+            [ "$(cat "$sidecar")" = "$expected_sha  Vom_Transputer_zur_Evidenzspirale.pdf" ]
+          }
+
+          ready=0
+          for _ in $(seq 1 60); do
+            git fetch origin "$branch" --quiet || true
+            git reset --hard FETCH_HEAD >/dev/null 2>&1 || true
+            if valid_target; then ready=1; break; fi
+            sleep 10
+          done
+          [ "$ready" = 1 ] || { echo 'HOLD: exact PDF not materialized'; exit 42; }
+
+          rm -f \
+            .github/workflows/qikvrt_transputer_exact_pdf_recover.yml \
+            .github/workflows/qikvrt_transputer_exact_pdf_recover_refs.yml \
+            .github/workflows/qikvrt_transputer_exact_pdf_carrier.yml \
+            .github/workflows/qikvrt_transputer_publication_carrier_promote.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet || git commit -m 'ci: remove transient Transputer publication controls'
+          git push origin "HEAD:${branch}"
+
+          git fetch origin main --quiet
+          mapfile -t initial_changed < <(git diff --name-only origin/main...HEAD | sort)
+          [ "${#initial_changed[@]}" -eq 2 ] || { printf 'HOLD: unexpected initial carrier diff\n%s\n' "${initial_changed[@]}"; exit 43; }
+          [ "${initial_changed[0]}" = "$target" ] || exit 44
+          [ "${initial_changed[1]}" = "$sidecar" ] || exit 45
+
+          pr="$(gh pr list --repo "$repo" --head "$branch" --base main --state open --json number --jq '.[0].number // empty')"
+          if [ -z "$pr" ]; then
+            gh pr create \
+              --repo "$repo" \
+              --base main \
+              --head "$branch" \
+              --title 'publication: exact owner-approved Transputer evidence-spiral PDF' \
+              --body $'Exact publication carrier.\n\nBound candidate:\n- file: Vom_Transputer_zur_Evidenzspirale.pdf\n- bytes: 243720\n- sha256: 78c845bb2bd078d9aeff2657865fc8b877aacf97987b64b817bd7e8856cf0536\n- git blob: 3a713fe4ac15a61a59514a9287472f6c9fe15462\n- candidate-specific owner authorization: issue comment 5556176261\n\nOwner direction permits continuation without treating reviewer independence as a gating condition. Any review produced here is COMMENTED, not an independent APPROVE. Repository promotion is still distinct from Zenodo publication, DOI readback, PASS, FINAL_PASS, and EFFECT_ACK_DONE.' >/tmp/pr-url
+            pr="$(gh pr list --repo "$repo" --head "$branch" --base main --state open --json number --jq '.[0].number // empty')"
+          fi
+          [ -n "$pr" ] || { echo 'HOLD: PR creation unavailable'; exit 46; }
+
+          ids=(302515015 318785710 335678093 351283886)
+          stable_head=''
+          all_green=0
+          for _ in $(seq 1 90); do
+            current="$(gh api "repos/${repo}/git/ref/heads/${branch}" --jq '.object.sha')"
+            pr_head="$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq '.headRefOid')"
+            [ "$current" = "$pr_head" ] || { sleep 10; continue; }
+            stable_head="$current"
+            green=1
+            for wid in "${ids[@]}"; do
+              row="$(gh api "repos/${repo}/actions/workflows/${wid}/runs?head_sha=${stable_head}&event=pull_request&per_page=10" --jq '.workflow_runs | map(select(.head_sha == "'"$stable_head"'")) | .[0] | if . == null then "MISSING" else (.status + ":" + (.conclusion // "")) end')"
+              case "$row" in
+                completed:success) ;;
+                completed:*) echo "HOLD: workflow ${wid} ${row} on ${stable_head}"; exit 47 ;;
+                *) green=0 ;;
+              esac
+            done
+            if [ "$green" = 1 ]; then all_green=1; break; fi
+            sleep 10
+          done
+          [ "$all_green" = 1 ] || { echo 'HOLD: exact-head P2 gates not all terminal-success'; exit 48; }
+
+          current="$(gh api "repos/${repo}/git/ref/heads/${branch}" --jq '.object.sha')"
+          [ "$current" = "$stable_head" ] || { echo 'HOLD: head mutated after P2'; exit 49; }
+
+          gh pr review "$pr" --repo "$repo" --comment --body "Owner-directed exact-head disposition. Bound PR head: ${stable_head}. Exact candidate: ${expected_size} bytes, SHA-256 ${expected_sha}, Git blob ${expected_blob}. Candidate-specific owner authorization: issue comment 5556176261. Under the Principal/Product Owner/Code Owner direction, reviewer independence is not treated as an additional gating condition here. This is a COMMENT review, not an independent APPROVE."
+
+          reobs_head="$(gh pr view "$pr" --repo "$repo" --json headRefOid,state --jq '.headRefOid + " " + .state')"
+          [ "$reobs_head" = "$stable_head OPEN" ] || { echo "HOLD: post-review reobservation ${reobs_head}"; exit 50; }
+          review_id="$(gh api "repos/${repo}/pulls/${pr}/reviews" --paginate --jq '[.[] | select(.commit_id == "'"$stable_head"'" and .state == "COMMENTED")] | last | .id // empty')"
+          [ -n "$review_id" ] || { echo 'HOLD: exact-head COMMENT review not readable'; exit 51; }
+
+          current="$(gh api "repos/${repo}/git/ref/heads/${branch}" --jq '.object.sha')"
+          [ "$current" = "$stable_head" ] || { echo 'HOLD: head mutated during P4'; exit 52; }
+
+          gh pr merge "$pr" --repo "$repo" --merge --match-head-commit "$stable_head"
+
+          state="$(gh pr view "$pr" --repo "$repo" --json state,headRefOid,mergeCommit --jq '.state + " " + .headRefOid + " " + (.mergeCommit.oid // "")')"
+          read -r pr_state pr_head merge_sha <<<"$state"
+          [ "$pr_state" = 'MERGED' ] || { echo 'HOLD: merge not authoritatively read back'; exit 53; }
+          [ "$pr_head" = "$stable_head" ] || exit 54
+          [ -n "$merge_sha" ] || exit 55
+          main_sha="$(gh api "repos/${repo}/git/ref/heads/main" --jq '.object.sha')"
+          [ "$main_sha" = "$merge_sha" ] || { echo "HOLD: main drift after merge; merge=${merge_sha} main=${main_sha}"; exit 56; }
+          echo "P6_EXACT_MAIN=${main_sha}"
