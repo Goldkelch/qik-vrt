@@ -43,8 +43,41 @@
     "ARXIV_AUTHENTICATED_SUBMISSION_STATUS_READBACK",
     "ARXIV_LATER_PUBLIC_ID_VERSION_READBACK"
   ],
+  "precedence_state": {
+    "schema": "qikvrt_evidence_spiral_precedence_state_v1",
+    "policy": "policy/QIKVRT_EXECUTION_PRECEDENCE_V1.json",
+    "current_subject": {
+      "pull_request": 1004,
+      "head_ref": "docs/information-effect-axis-v1",
+      "head_sha": "d4966a31d5ca33c3f2c0a043ab492f0711e8c369",
+      "state": "P2_VALIDATE_EXACT_INTEGRATION_HEAD",
+      "status": "FRESH_VALIDATION_IN_PROGRESS"
+    },
+    "excluded_evidence": {
+      "run_id": 34006282871,
+      "workflow": "QIKVRT repository evidence materialization",
+      "pull_request": 1007,
+      "head_ref": "publication/transputer-evidence-spiral-zenodo-preflight",
+      "head_sha": "f1ee8ee4b700d0862725f860bf7c568955a0c73d",
+      "conclusion": "success",
+      "reason": "Run is bound to PR #1007 and cannot validate or open review for PR #1004."
+    },
+    "successor_gates": {
+      "P3_REVIEW_EXACT_INTEGRATION_HEAD": "BLOCKED_UNTIL_TERMINAL_READBACK_OF_CURRENT_EXACT_HEAD",
+      "P4_REOBSERVE_POST_REVIEW_EXACT_HEAD": "BLOCKED",
+      "P5_LEGITIMATE_PROMOTION_TO_TRUSTED_MAIN": "BLOCKED",
+      "P6_REOBSERVE_EXACT_TRUSTED_MAIN_HEAD": "BLOCKED",
+      "P7_DERIVE_BOUND_EXTERNAL_OBLIGATIONS": "BLOCKED"
+    },
+    "zenodo": {
+      "publication_allowed": false,
+      "blocked_through": "P6_AND_P7_BINDING"
+    }
+  },
   "publication_state": {
     "integration_materialized_on_candidate_branch": true,
+    "precedence_state": "P2_VALIDATE_EXACT_INTEGRATION_HEAD",
+    "fresh_validation": "IN_PROGRESS",
     "reviewed": false,
     "trusted_main_promoted": false,
     "fresh_main_reobserved": false,
