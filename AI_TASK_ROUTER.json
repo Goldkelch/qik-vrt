@@ -1,0 +1,52 @@
+{
+  "schema": "qikvrt-ai-task-router/1.1",
+  "purpose": "Shortest repository-native routing map from user intent to existing capabilities. This file is discovery infrastructure only; it does not grant authority or weaken any gate.",
+  "routing_rule": "After /AI and AI_CONTEXT.json bootstrap, resolve the requested task here before creating parallel machinery or concluding that a capability is absent.",
+  "causal_effect_chain": "policy/CAUSAL_EFFECT_CHAIN_V1.json",
+  "causal_chain_required": true,
+  "reuse_before_create": true,
+  "routes": {
+    "zenodo_publication": {
+      "intent_examples": [
+        "publish on Zenodo",
+        "upload to Zenodo",
+        "create or publish DOI record",
+        "publish this scientific document"
+      ],
+      "primary_capability": "runtime/capabilities/ZENODO_PUBLICATION_CAPABILITY.json",
+      "generic_implementation": "tools/qikvrt_zenodo_publish.py",
+      "machine_proof_gate": "tools/qikvrt_zenodo_machine_proof.py",
+      "transport": "tools/qikvrt_zenodo_actions.py",
+      "production_policy": "policy/zenodo-machine-proof-policy-v2.json",
+      "human_contract": "policy/ZENODO_MACHINE_PROOF_BEFORE_PUBLICATION.md",
+      "proof_bundle_schema": "policy/qikvrt-zenodo-machine-proof-bundle-v2.schema.json",
+      "return_receipt_schema": "policy/qikvrt-prepublication-return-receipt-v2.schema.json",
+      "manifest_schema": "qikvrt_zenodo_publication_manifest_v2",
+      "invocation": "python -B tools/qikvrt_zenodo_publish.py --manifest <repository-relative-manifest.json>",
+      "credential": "ZENODO_ACCESS_TOKEN via GitHub Actions secret only",
+      "resolution_sequence": [
+        "Locate the exact publication candidate and its repository carrier.",
+        "Read policy/CAUSAL_EFFECT_CHAIN_V1.json and preserve its sole admissible effect chain.",
+        "Read the generic Zenodo capability before inspecting document-specific workflows.",
+        "Locate or materialize the candidate-bound v2 manifest, complete claim matrix, machine-proof bundle and prepublication-return receipt required by policy.",
+        "Verify candidate bytes and Git blob identities against the manifest.",
+        "Resolve the exact natural-person authorization event and repository-wide create-only consumption-ref precondition.",
+        "Use the generic publisher; reuse an existing authorized workflow only as an execution wrapper around that capability.",
+        "After mutation, require public DOI/record metadata, exact fileset and byte-redownload readback before claiming publication."
+      ],
+      "anti_misrouting": [
+        "Do not treat a document-specific legacy workflow as the only Zenodo path.",
+        "Do not invent a new publisher when the generic v2 capability satisfies the task.",
+        "Do not use legacy v1 manifests for a new production mutation.",
+        "Do not infer missing capability merely because the current chat executor lacks a direct Zenodo connector.",
+        "Do not claim publication from preflight, token presence, upload transport, repository preparation or workflow success alone.",
+        "Do not bypass OBSERVE -> BIND -> VERIFY -> AUTHORIZE -> EFFECT -> READBACK -> PERSIST by returning after a merely described next step."
+      ],
+      "effect_boundary": "Repository routing and preparation are not Zenodo publication. Publication requires the separately authorized external mutation and public readback defined by the capability and policy."
+    }
+  },
+  "fallback": {
+    "rule": "If no route matches, search existing runtime/capabilities, tools, workflows, policy and release carriers before creating a new component or returning CAPABILITY_ABSENT.",
+    "capability_absent_threshold": "CAPABILITY_ABSENT may be reported only after repository-native discovery has checked the authoritative entrypoint, task router, runtime/capabilities and relevant existing tools/workflows."
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "schema": "qikvrt_causal_effect_chain_v1",
+  "id": "qikvrt-sole-admissible-causal-effect-chain-v1",
+  "status": "normative",
+  "purpose": "Force every repository task that may change repository or external state through one evidence-bound causal chain. No alternate completion path is admissible.",
+  "chain": [
+    "OBSERVE",
+    "BIND_EXACT_SUBJECT",
+    "CLASSIFY_CLAIMS_AND_BOUNDARIES",
+    "VERIFY_PRECONDITIONS",
+    "RESOLVE_AUTHORITY",
+    "EXECUTE_ONE_AUTHORIZED_EFFECT",
+    "READBACK_EFFECT",
+    "PERSIST_RECEIPT",
+    "SUCCESSOR_OR_HOLD"
+  ],
+  "invariants": {
+    "causality_is_relation_not_sequence": true,
+    "activity_is_not_effect": true,
+    "transport_ack_is_not_effect_ack": true,
+    "predecessor_evidence_transfer": false,
+    "same_subject_exact_head_binding_required": true,
+    "one_mutating_move_per_cycle": true,
+    "expected_readback_required_before_effect": true,
+    "missing_observation_means_hold": true,
+    "missing_authority_means_request_authority": true,
+    "changed_subject_or_head_resets_downstream_binding": true,
+    "effect_without_readback_may_not_be_called_done": true
+  },
+  "terminal_controls": {
+    "NOOP": "0000",
+    "HOLD": "0001",
+    "REOBSERVE": "0010",
+    "REQUEST_AUTHORITY": "0011"
+  },
+  "publication_specialization": {
+    "zenodo": {
+      "router": "AI_TASK_ROUTER.json",
+      "capability": "runtime/capabilities/ZENODO_PUBLICATION_CAPABILITY.json",
+      "proof_policy": "policy/zenodo-machine-proof-policy-v2.json",
+      "rule": "A publication effect is admissible only after exact candidate binding, proof/claim disposition, explicit natural-person authorization, one external mutation, public DOI/fileset/byte readback, and persisted receipt."
+    }
+  },
+  "forbidden_shortcuts": [
+    "DESCRIBE_NEXT_STEP_AND_RETURN",
+    "TREAT_PREFLIGHT_AS_EFFECT",
+    "TREAT_WORKFLOW_SUCCESS_AS_EXTERNAL_EFFECT",
+    "TREAT_REPOSITORY_PREPARATION_AS_PUBLICATION",
+    "REUSE_PREDECESSOR_REVIEW_OR_CHECKS_AFTER_HEAD_CHANGE",
+    "BLIND_RETRY",
+    "POLLING_OUTSIDE_EXPLICITLY_AUTHORIZED_PLATFORM_MONITOR",
+    "CLAIM_DONE_WITHOUT_EFFECT_READBACK"
+  ],
+  "entrypoint_rule": "All human and machine adapters must resolve this policy before any mutating task. A tool, workflow, agent or UI that cannot preserve the chain must stop at HOLD or REQUEST_AUTHORITY rather than choose another path."
+}
