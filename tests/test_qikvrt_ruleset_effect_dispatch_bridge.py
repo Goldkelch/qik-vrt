@@ -14,13 +14,25 @@ class RulesetEffectDispatchBridgeContractTest(unittest.TestCase):
         cls.text = WORKFLOW.read_text(encoding="utf-8")
 
     def test_bridge_is_event_driven_and_exact_upstream_bound(self):
-        self.assertIn('workflows:\n      - "QIKVRT required code-owner review"', self.text)
+        self.assertIn('"QIKVRT required code-owner review"', self.text)
+        self.assertIn('"QIKVRT requested review executor"', self.text)
         self.assertIn("types: [completed]", self.text)
         self.assertNotIn("schedule:", self.text)
         self.assertIn("UPSTREAM_RUN_ID", self.text)
         self.assertIn("qikvrt-required-code-owner-selection-${UPSTREAM_RUN_ID}-CANDIDATE", self.text)
+        self.assertIn("qikvrt-mesh-review-selection-${UPSTREAM_RUN_ID}-CANDIDATE", self.text)
         self.assertIn("qikvrt_required_code_owner_review_selection_v1", self.text)
+        self.assertIn("qikvrt_requested_review_selection_v1", self.text)
         self.assertIn("UPSTREAM_CANDIDATE_ARTIFACT_MISSING_OR_AMBIGUOUS", self.text)
+
+    def test_failed_executor_can_supply_selection_but_not_review_receipt(self):
+        self.assertIn("upstream_conclusion", self.text)
+        self.assertIn("success|failure", self.text)
+        self.assertIn("selection_basis", self.text)
+        self.assertIn("EXACT_EVENT_OR_DISPATCH", self.text)
+        self.assertIn("review_execution", self.text)
+        self.assertNotIn("mesh-review/review.json", self.text)
+        self.assertNotIn("INVALID_REVIEW_SNAPSHOT", self.text)
 
     def test_deduplicated_failure_status_is_subject_not_run_url_bound(self):
         self.assertIn("failure: CODE_OWNER_RULE_NOT_ENFORCED", self.text)
