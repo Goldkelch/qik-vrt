@@ -15,7 +15,6 @@ concurrency:
 
 jobs:
   materialize-root-fix:
-    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -26,12 +25,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Bind exact candidate marker and trusted-main repair program
+      - name: Bind same-repository candidate, exact marker and trusted-main repair program
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
+          test "$HEAD_REPOSITORY" = "$REPOSITORY"
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
           test -z "$(git status --porcelain)"
           test -f state/control-plane/QIKVRT_REVIEW_ROOT_FIX_TRIGGER
