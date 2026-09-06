@@ -875,6 +875,9 @@ jobs:
       - name: Select exactly one durable recursive review work unit
         if: steps.active.outputs.active == 'true' && steps.ledger.outputs.persisted == 'true'
         id: queue
+        env:
+          SUBJECT_PR_NUMBER: ${{ steps.select.outputs.pr }}
+          SUBJECT_HEAD_SHA: ${{ steps.decision.outputs.head }}
         shell: bash
         run: |
           set -euo pipefail
@@ -932,6 +935,13 @@ jobs:
               intent=parsed(queue_path)
               if not isinstance(intent,dict):
                   raise SystemExit(f'RECURSIVE_QUEUE_INTENT_INVALID_{queue_path}')
+              # Queue order is transport order, never causal subject routing.
+              if (
+                  intent.get('repository') != repo
+                  or str(intent.get('pr_number')) != os.environ['SUBJECT_PR_NUMBER']
+                  or intent.get('head_sha') != os.environ['SUBJECT_HEAD_SHA']
+              ):
+                  continue
               receipt_path=intent.get('receipt_path')
               diff_path=intent.get('diff_path')
               if not isinstance(receipt_path,str) or not isinstance(diff_path,str):
@@ -1159,7 +1169,9 @@ jobs:
           checks={
               'head_sha':pr.get('head',{}).get('sha') == head,
               'tree_sha':commit.get('tree',{}).get('sha') == os.environ['EXPECTED_TREE'],
-              'base_sha':pr.get('base',{}).get('sha') == os.environ['EXPECTED_BASE'],
+              # GitHub pr.base.sha is a moving branch tip, not transport identity.
+              # Fresh base drift is classified by the child review.
+              'base_ref':pr.get('base',{}).get('ref') == 'main',
               'workflow_event':run.get('event') == 'workflow_dispatch',
               'workflow_id':run.get('workflow_id') == workflow.get('id'),
               'workflow_path':str(run.get('path','')).split('@',1)[0]
