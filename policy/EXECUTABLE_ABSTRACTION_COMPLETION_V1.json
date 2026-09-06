@@ -3,85 +3,32 @@
   "version": 1,
   "owner_instruction": "Apply this principle everywhere immediately and finish all remaining work by the same principle.",
   "owner_virtue_exact": "Erst handeln, zu Ende analysieren, verifizieren und den tatsächlichen Endzustand liefern. Erst danach darf überhaupt geprüft werden, ob eine Rückfrage noch notwendig ist.",
-  "pipeline": [
-    "PROBLEM",
-    "MODEL",
-    "EXPLICIT_DISTINCTIONS",
-    "INVARIANTS",
-    "ARCHITECTURE",
-    "IMPLEMENTATION",
-    "EXECUTION",
-    "OBSERVATION",
-    "VERIFICATION",
-    "GENERALIZATION",
-    "REUSE",
-    "ORDERED_COMPLETION",
-    "ACTUAL_END_STATE",
-    "QUESTION_NECESSITY_CHECK"
-  ],
-  "hard_distinctions": [
-    "MODEL != REALITY",
-    "CODE != MODEL",
-    "EXECUTION != EFFECT",
-    "EFFECT != EFFECT_KNOWLEDGE",
-    "SEQUENCE != CAUSALITY",
-    "LATER != BETTER",
-    "QUIESCENCE != FAILURE",
-    "SINGLE_SOLUTION != ARCHITECTURE",
-    "VERIFIED_IMPLEMENTATION != AUTHORITY_EFFECT",
-    "EVIDENCE_MONOTONICITY != EVIDENCE_TRANSFERABILITY",
-    "TECHNICAL_NOISE != OWNER_DECISION",
-    "UNTRIED_MACHINE_ACTION != EXTERNAL_BLOCKER",
-    "ACTIVITY_REPORT != ACTUAL_END_STATE"
-  ],
-  "quality_contract": [
-    "ABSTRACTION",
-    "EXECUTABILITY",
-    "FALSIFIABILITY",
-    "EVIDENCE",
-    "REUSABILITY",
-    "ACTUAL_END_STATE_DELIVERY"
-  ],
+  "request_obligation_policy": "policy/REQUEST_OBLIGATION_CLOSURE_V1.json",
+  "pipeline": ["PROBLEM","MODEL","EXPLICIT_DISTINCTIONS","INVARIANTS","ARCHITECTURE","IMPLEMENTATION","EXECUTION","OBSERVATION","VERIFICATION","GENERALIZATION","REUSE","ORDERED_COMPLETION","ACTUAL_END_STATE","QUESTION_NECESSITY_CHECK"],
+  "hard_distinctions": ["MODEL != REALITY","CODE != MODEL","EXECUTION != EFFECT","EFFECT != EFFECT_KNOWLEDGE","SEQUENCE != CAUSALITY","LATER != BETTER","QUIESCENCE != FAILURE","SINGLE_SOLUTION != ARCHITECTURE","VERIFIED_IMPLEMENTATION != AUTHORITY_EFFECT","EVIDENCE_MONOTONICITY != EVIDENCE_TRANSFERABILITY","TECHNICAL_NOISE != OWNER_DECISION","UNTRIED_MACHINE_ACTION != EXTERNAL_BLOCKER","ACTIVITY_REPORT != ACTUAL_END_STATE","LOCAL_SUBGOAL_DONE != REQUEST_DONE","CHILD_EFFECT_ACK_DONE != PARENT_EFFECT_ACK_DONE"],
+  "quality_contract": ["ABSTRACTION","EXECUTABILITY","FALSIFIABILITY","EVIDENCE","REUSABILITY","ACTUAL_END_STATE_DELIVERY","REQUEST_OBLIGATION_PRESERVATION"],
   "completion_rule": {
-    "open_work_must_be": ["ACTIVE_PATH", "PRECISE_EXTERNAL_HOLD"],
+    "open_work_must_be": ["ACTIVE_PATH","PRECISE_EXTERNAL_HOLD"],
     "passive_orphan_allowed": false,
     "activity_is_progress": false,
     "retry_without_new_causal_evidence_is_progress": false,
     "owner_interrupt_for_internal_deterministic_noise": false,
     "owner_question_before_actual_end_state_allowed": false,
-    "stale_evidence_transfer": false
+    "stale_evidence_transfer": false,
+    "originating_request_obligation_loss_allowed": false,
+    "return_while_authorized_safe_next_action_exists": false,
+    "satisfied_obligation_requires_exact_effect_readback": true
   },
   "assistant_end_reaction_contract": {
     "machine_owned_work_remaining": "CONTINUE_AUTONOMOUSLY",
     "end_reaction_before_question": true,
     "question_count_max": 1,
-    "question_preconditions": [
-      "ALL_MACHINE_OWNED_ACTIONS_EXHAUSTED",
-      "ACTUAL_END_STATE_DELIVERED",
-      "NON_INFERABLE_OWNER_OR_AUTHORITY_EDGE_REMAINS"
-    ],
-    "question_payload_required": [
-      "ACTIONS_ALREADY_COMPLETED",
-      "CURRENT_EXACT_EVIDENCE",
-      "FIRST_REMAINING_BLOCKER",
-      "WHY_MACHINE_CANNOT_RESOLVE_IT",
-      "ONE_MINIMAL_OWNER_RESPONSE_THAT_RESOLVES_IT"
-    ]
+    "question_preconditions": ["ALL_MACHINE_OWNED_ACTIONS_EXHAUSTED","ACTUAL_END_STATE_DELIVERED","NON_INFERABLE_OWNER_OR_AUTHORITY_EDGE_REMAINS"],
+    "question_payload_required": ["ACTIONS_ALREADY_COMPLETED","CURRENT_EXACT_EVIDENCE","FIRST_REMAINING_BLOCKER","WHY_MACHINE_CANNOT_RESOLVE_IT","ONE_MINIMAL_OWNER_RESPONSE_THAT_RESOLVES_IT"]
   },
   "optimization_rule": "A proven reusable repair pattern MUST be generalized to every causally equivalent work unit unless an explicit invariant, authority, scope, or evidence boundary prevents reuse.",
-  "terminal_rule": "A bounded work ring closes only after result collection, deterministic persistence, release of unnecessary resources, reobservation of the next executable state, and delivery of the actual end state before any question-necessity check.",
-  "fail_closed": [
-    "NO_EXPLICIT_INVARIANTS_NO_GENERALIZATION",
-    "NO_EXECUTION_NO_EXECUTION_CLAIM",
-    "NO_OBSERVATION_NO_EFFECT_KNOWLEDGE",
-    "NO_FRESH_BINDING_NO_CURRENT_VERIFICATION",
-    "NO_CAUSAL_PROGRESS_NO_ACTIVITY_COMMIT",
-    "NO_ACCEPTANCE_EVIDENCE_NO_COMPLETION",
-    "NO_AUTHORITY_NO_AUTHORITY_EFFECT",
-    "NO_ACTUAL_END_STATE_NO_OWNER_QUESTION",
-    "MACHINE_OWNED_WORK_REMAINING_CONTINUE_AUTONOMOUSLY",
-    "NO_FALSE_PASS"
-  ],
+  "terminal_rule": "A bounded work ring closes only after result collection, deterministic persistence, release of unnecessary resources, reobservation of the next executable state, and delivery of the actual end state before any question-necessity check. The originating request remains live until every bound obligation is satisfied by exact effect readback or a precise irreducible HOLD is evidenced.",
+  "fail_closed": ["NO_EXPLICIT_INVARIANTS_NO_GENERALIZATION","NO_EXECUTION_NO_EXECUTION_CLAIM","NO_OBSERVATION_NO_EFFECT_KNOWLEDGE","NO_FRESH_BINDING_NO_CURRENT_VERIFICATION","NO_CAUSAL_PROGRESS_NO_ACTIVITY_COMMIT","NO_ACCEPTANCE_EVIDENCE_NO_COMPLETION","NO_AUTHORITY_NO_AUTHORITY_EFFECT","NO_ACTUAL_END_STATE_NO_OWNER_QUESTION","MACHINE_OWNED_WORK_REMAINING_CONTINUE_AUTONOMOUSLY","NO_REQUEST_OBLIGATION_LEDGER_NO_COMPLETION","NO_EXACT_EFFECT_READBACK_NO_OBLIGATION_DISCHARGE","AUTHORIZED_SAFE_NEXT_ACTION_EXISTS_CONTINUE","NO_FALSE_PASS"],
   "external_effect": "NONE",
   "pass": false,
   "final_pass": false,
