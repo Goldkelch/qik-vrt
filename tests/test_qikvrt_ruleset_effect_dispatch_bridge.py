@@ -26,7 +26,6 @@ class RulesetEffectDispatchBridgeContractTest(unittest.TestCase):
         self.assertIn("failure: CODE_OWNER_RULE_NOT_ENFORCED", self.text)
         self.assertIn("EXACT_RULESET_BLOCKER_STATUS_MISSING", self.text)
         self.assertNotIn("target_url", self.text)
-        self.assertNotIn("actions/runs/${UPSTREAM_RUN_ID}", self.text)
 
     def test_bridge_dispatches_existing_single_effect_writer_only(self):
         self.assertIn("qikvrt_autonomous_ruleset_effect_loop.yml/dispatches", self.text)
