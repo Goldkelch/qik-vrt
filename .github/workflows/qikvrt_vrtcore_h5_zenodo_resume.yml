@@ -1,0 +1,94 @@
+name: QIKVRT VRTCore H5 Zenodo resume
+
+on:
+  push:
+    branches: [publication/vrtcore-smg-h5-v1]
+    paths: [state/publication/VRTCORE_H5_ZENODO_RESUME.json]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-vrtcore-causal-zenodo-publication-v1
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: zenodo-production
+    env:
+      MANIFEST_PATH: release/vrtcore-smg-h5-publication-2026-08-02/publish-request.json
+      EVIDENCE_PATH: release/vrtcore-smg-h5-publication-2026-08-02/zenodo-publication.json
+      ZENODO_API_BASE: https://zenodo.org/api
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONNOUSERSITE: '1'
+    steps:
+      - name: Checkout exact resume head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Observe and bind exact H5 subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -f "$MANIFEST_PATH"
+          test ! -e "$EVIDENCE_PATH"
+          python3 -B tools/qikvrt_vrtcore_zenodo_publication_controls.py --check
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          python3 -B - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path(os.environ['MANIFEST_PATH'])
+          m=json.loads(p.read_text(encoding='utf-8'))
+          if m.get('schema') != 'qikvrt_zenodo_publication_manifest_v2':
+              raise SystemExit('BLOCK: H5 manifest is not production v2')
+          print('H5_CAUSAL_PREFLIGHT=PASS')
+          PY
+
+      - name: Execute one authorized H5 effect
+        id: effect
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set +e
+          python3 -B tools/qikvrt_zenodo_publish.py --manifest "$MANIFEST_PATH"
+          status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Read back public effect and persist receipt bytes
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.effect.outputs.status }}" = '0'
+          test -f "$EVIDENCE_PATH"
+          EVIDENCE_PATH="$EVIDENCE_PATH" python3 -B - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path(os.environ['EVIDENCE_PATH'])
+          e=json.loads(p.read_text(encoding='utf-8'))
+          if e.get('phase') != 'public_verified' or e.get('state') != 'published':
+              raise SystemExit('BLOCK: H5 external effect lacks public_verified readback')
+          doi=e.get('doi')
+          record=e.get('record_id')
+          if not isinstance(doi,str) or not doi.startswith('10.') or not record:
+              raise SystemExit('BLOCK: H5 public identity incomplete')
+          print(f'H5_PUBLICATION_READBACK=VERIFIED doi={doi} record_id={record}')
+          PY
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          git config user.name 'qik-vrt-zenodo-publication[bot]'
+          git config user.email 'qik-vrt-zenodo-publication[bot]@users.noreply.github.com'
+          git add -- "$EVIDENCE_PATH" REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git diff --cached --check
+          git commit -m 'zenodo: persist public-verified VRTCore H5 receipt'
+          git push origin "HEAD:$GITHUB_REF_NAME"
