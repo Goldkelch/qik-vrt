@@ -71,6 +71,20 @@ BOUNDED_LOOPBACK_MULTI_PAIR_MESSAGE_DELIVERY_ONLY != GENERAL_EFFECT_ACK_DONE
 
 Der beobachtete Effekt ist ausschließlich die angenommene, persistierte und nach Neustart rekonstruierbare Loopback-Nachrichtenzustellung. Es gibt keinen Repository-Write, keine Publikation, kein Deployment und keinen geschützten externen Effekt.
 
+## Aktive SNAP-Analyse
+
+Der bestehende Real-Mesh-Workflow wendet nach erfolgreicher Receipt-Verifikation den exakt gebundenen Stanford-SNAP-Backend-Pfad auf die im Lauf erzeugte Topologie an. Der SNAP-Schritt wird nicht aus einem statischen Beispiel gespeist, sondern aus `QIKVRT_REAL_MESH_EXECUTION_RECEIPT_V1.json` desselben exakten Heads und Trees. Er berechnet derzeit Zusammenhangskomponenten, Knotengrade, kürzeste Pfade beziehungsweise maximalen Komponentendurchmesser und unerreichbare geordnete Knotenpaare.
+
+```text
+REAL_MESH_EXECUTION
+-> RECEIPT_VERIFY
+-> SNAP_NATIVE_BUILD_AND_SELF_TEST
+-> SNAP_TOPOLOGY_ANALYSIS
+-> SNAP_ANALYSIS_RECEIPT
+```
+
+Diese Analyse ist aktiv ausführbarer Bestandteil des Akzeptanzpfads. Sie bleibt jedoch strukturelle Graphanalyse: Eine SNAP-Kante ist eine deklarierte Topologiekante und kein eigener Kausalitätsbeweis; ein berechneter Pfad ersetzt keinen frischen Node-Readback und autorisiert keine Wirkung.
+
 ## Divergenz bleibt sichtbar
 
 Die beiden Laufzeitpaare binden getrennte Authority- und Mirror-Root-Trees. Unterschiedliche Trees werden als `DIVERGED` ausgegeben. Transportfähigkeit erzeugt keine Inhaltsgleichheit und keine Synchronisationsautorität.
@@ -93,6 +107,7 @@ REAL_LOOPBACK_TCP_MULTI_HOP_DELIVERY_OBSERVED
 RETURNING_ACK_PATH_OBSERVED
 APPEND_ONLY_RESTART_PERSISTENCE_OBSERVED
 BOUNDED_LOOPBACK_EFFECT_ACK_DONE
+SNAP_NATIVE_TOPOLOGY_ANALYSIS_OBSERVED
 ```
 
 Ausdrücklich nicht abgeleitet werden:
