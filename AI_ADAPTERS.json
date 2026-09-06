@@ -1,7 +1,9 @@
 {
-  "schema": "qikvrt-ai-adapters/1.0",
+  "schema": "qikvrt-ai-adapters/1.1",
   "canonical_entrypoint": "AI",
   "generic_fallback": "Any system that can read repository files MUST read /AI first.",
+  "task_router": "AI_TASK_ROUTER.json",
+  "task_routing_rule": "After /AI bootstrap and AI_CONTEXT.json required_read_order, resolve the requested task through AI_TASK_ROUTER.json before creating parallel machinery or reporting that an existing capability is absent.",
   "adapters": [
     {"system":"OpenAI Codex","path":"AGENTS.md","mode":"native"},
     {"system":"Anthropic Claude Code","path":"CLAUDE.md","mode":"native"},
@@ -18,5 +20,5 @@
     {"system":"JetBrains Junie","path":".junie/guidelines.md","mode":"native"},
     {"system":"Kiro","path":".kiro/steering/qikvrt-ai-entry.md","mode":"native"}
   ],
-  "rule": "Adapter files are compatibility shims only. AI, AI_CONTEXT.json, and AGENTS.md remain authoritative."
+  "rule": "Adapter files are compatibility shims only. AI, AI_CONTEXT.json, and AGENTS.md remain authoritative. AI_TASK_ROUTER.json is a discovery index into existing authoritative capabilities and grants no effect authority."
 }
