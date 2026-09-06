@@ -72,6 +72,30 @@
       ],
       "version": "same-as-ffmpeg"
     },
+    "g++": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "runtime/toolchains/SNAP.lock.json",
+        "tools/qikvrt_build_snap.py",
+        "tests/test_qikvrt_snap_mesh.py",
+        ".github/workflows/qikvrt_real_mesh.yml"
+      ],
+      "cache_class": "runner-image-layer",
+      "cache_locations": [
+        "github-hosted-runner-image:ubuntu-24.04"
+      ],
+      "profiles": [
+        "snap-analysis"
+      ],
+      "provider": "pinned GitHub-hosted runner image",
+      "trusted_save": false,
+      "verification": [
+        "g++ --version bound in build receipt",
+        "C++98/OpenMP compile",
+        "native SNAP self-test"
+      ],
+      "version": "c++98-openmp"
+    },
     "gh": {
       "authority_files": [
         "runtime/toolchains/TOOLCHAIN.lock.tsv",
@@ -281,6 +305,33 @@
         "offline audio tests"
       ],
       "version": "1.13.4"
+    },
+    "snap": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "runtime/toolchains/SNAP.lock.json",
+        "tools/qikvrt_build_snap.py",
+        "tests/test_qikvrt_snap_mesh.py",
+        ".github/workflows/qikvrt_real_mesh.yml"
+      ],
+      "cache_class": "build-cache",
+      "cache_locations": [
+        ".qikvrt/real-mesh/snap",
+        "github-actions-artifact:qikvrt-real-mesh-*/snap"
+      ],
+      "profiles": [
+        "snap-analysis"
+      ],
+      "provider": "explicit pinned source checkout plus tools/qikvrt_build_snap.py",
+      "trusted_save": false,
+      "verification": [
+        "exact Git commit/tree and clean source",
+        "BSD license blob",
+        "bridge and binary SHA-256",
+        "native self-test",
+        "no untrusted binary cache restore"
+      ],
+      "version": "6924a035aabd1ce0a547b94e995e142f29eb5040"
     },
     "xelatex": {
       "authority_files": [
