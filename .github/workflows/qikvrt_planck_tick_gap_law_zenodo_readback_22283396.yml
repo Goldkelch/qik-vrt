@@ -1,0 +1,172 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT Planck Zenodo public readback 22283396
+
+"on":
+  push:
+    branches:
+      - evidence/planck-zenodo-readback-22283396
+    paths:
+      - .github/workflows/qikvrt_planck_tick_gap_law_zenodo_readback_22283396.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-planck-zenodo-readback-22283396
+  cancel-in-progress: false
+
+jobs:
+  readback:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact readback carrier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: GET Zenodo record, DOI registry and every published byte
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -I -S -B - <<'PY'
+          import hashlib
+          import json
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          receipt_path = Path('release/planck-tick-gap-law-zenodo-v1/zenodo-publication.json')
+          receipt = json.loads(receipt_path.read_text(encoding='utf-8'))
+          record_id = int(receipt['record_id'])
+          doi = str(receipt['doi'])
+          if record_id != 22283396 or doi != '10.5281/zenodo.22283396':
+              raise SystemExit('BLOCK: repository receipt identity changed')
+
+          ua = 'qik-vrt-zenodo-public-readback/1.0 (+https://github.com/Goldkelch/qik-vrt)'
+
+          def get_bytes(url, *, accept='*/*', max_bytes=64 * 1024 * 1024):
+              req = urllib.request.Request(url, headers={'User-Agent': ua, 'Accept': accept})
+              with urllib.request.urlopen(req, timeout=120) as response:
+                  data = response.read(max_bytes + 1)
+                  if len(data) > max_bytes:
+                      raise SystemExit(f'BLOCK: response too large: {url}')
+                  return response.status, response.geturl(), dict(response.headers.items()), data
+
+          zenodo_url = f'https://zenodo.org/api/records/{record_id}'
+          z_status, z_final, z_headers, z_raw = get_bytes(zenodo_url, accept='application/json', max_bytes=8 * 1024 * 1024)
+          record = json.loads(z_raw.decode('utf-8'))
+          observed_id = int(record.get('id'))
+          metadata = record.get('metadata') or {}
+          observed_doi = str(metadata.get('doi') or record.get('doi') or '')
+          if z_status != 200 or observed_id != record_id or observed_doi != doi:
+              raise SystemExit(f'BLOCK: Zenodo identity mismatch status={z_status} id={observed_id} doi={observed_doi!r}')
+
+          public_file_rows = {}
+          for row in record.get('files') or []:
+              name = str(row.get('key') or row.get('filename') or row.get('name') or '')
+              if name:
+                  public_file_rows[name] = row
+
+          expected = {str(f['name']): f for f in receipt['files']}
+          if set(public_file_rows) != set(expected):
+              raise SystemExit('BLOCK: Zenodo public file inventory differs from repository receipt: '
+                               f'public={sorted(public_file_rows)} expected={sorted(expected)}')
+
+          verified_files = []
+          for name in sorted(expected):
+              encoded = urllib.parse.quote(name, safe='')
+              content_url = f'https://zenodo.org/api/records/{record_id}/files/{encoded}/content'
+              status, final_url, headers, payload = get_bytes(content_url)
+              sha256 = hashlib.sha256(payload).hexdigest()
+              md5 = hashlib.md5(payload).hexdigest()
+              exp_sha256 = str(expected[name]['sha256'])
+              exp_bytes = int(expected[name]['bytes'])
+              if status != 200 or sha256 != exp_sha256 or len(payload) != exp_bytes:
+                  raise SystemExit(f'BLOCK: public byte mismatch for {name}: status={status} bytes={len(payload)}/{exp_bytes} sha256={sha256}/{exp_sha256}')
+              public_checksum = str(public_file_rows[name].get('checksum') or '')
+              if public_checksum and public_checksum != f'md5:{md5}':
+                  raise SystemExit(f'BLOCK: Zenodo checksum mismatch for {name}: {public_checksum} != md5:{md5}')
+              verified_files.append({
+                  'name': name,
+                  'bytes': len(payload),
+                  'sha256': sha256,
+                  'zenodo_checksum': public_checksum,
+                  'content_status': status,
+                  'content_final_url': final_url,
+              })
+
+          datacite_url = 'https://api.datacite.org/dois/' + urllib.parse.quote(doi, safe='')
+          dc_status, dc_final, dc_headers, dc_raw = get_bytes(datacite_url, accept='application/vnd.api+json', max_bytes=4 * 1024 * 1024)
+          dc = json.loads(dc_raw.decode('utf-8'))
+          dc_data = dc.get('data') or {}
+          dc_attrs = dc_data.get('attributes') or {}
+          dc_id = str(dc_data.get('id') or dc_attrs.get('doi') or '')
+          if dc_status != 200 or dc_id.lower() != doi.lower():
+              raise SystemExit(f'BLOCK: DataCite DOI readback mismatch status={dc_status} id={dc_id!r}')
+
+          resolver_url = 'https://doi.org/' + doi
+          r_status, r_final, r_headers, r_raw = get_bytes(resolver_url, accept='text/html,application/xhtml+xml', max_bytes=8 * 1024 * 1024)
+          if r_status != 200 or str(record_id) not in r_final:
+              raise SystemExit(f'BLOCK: DOI resolver mismatch status={r_status} final={r_final}')
+
+          result = {
+              'schema': 'qikvrt_planck_tick_gap_law_zenodo_fresh_public_readback_v1',
+              'status': 'PUBLIC_RECORD_DOI_AND_BYTES_VERIFIED',
+              'readback_carrier_sha': '${{ github.sha }}',
+              'repository_receipt_head': receipt.get('repository_head'),
+              'record_id': record_id,
+              'doi': doi,
+              'conceptdoi': receipt.get('conceptdoi'),
+              'zenodo': {
+                  'request_url': zenodo_url,
+                  'status': z_status,
+                  'final_url': z_final,
+                  'observed_id': observed_id,
+                  'observed_doi': observed_doi,
+                  'title': metadata.get('title'),
+                  'publication_date': metadata.get('publication_date'),
+                  'created': record.get('created'),
+                  'updated': record.get('updated'),
+              },
+              'datacite': {
+                  'request_url': datacite_url,
+                  'status': dc_status,
+                  'final_url': dc_final,
+                  'id': dc_id,
+                  'state': dc_attrs.get('state'),
+                  'registered': dc_attrs.get('registered'),
+                  'published': dc_attrs.get('published'),
+                  'url': dc_attrs.get('url'),
+              },
+              'doi_resolver': {
+                  'request_url': resolver_url,
+                  'status': r_status,
+                  'final_url': r_final,
+              },
+              'files': verified_files,
+              'scientific_boundary': {
+                  'EMPIRICAL_CORRESPONDENCE': False,
+                  'INDEPENDENT_REPRODUCTION': False,
+                  'PASS': False,
+                  'FINAL_PASS': False,
+                  'EFFECT_ACK_DONE': False,
+              },
+          }
+          out = Path('.qikvrt/zenodo-readback-22283396.json')
+          out.parent.mkdir(parents=True, exist_ok=True)
+          out.write_text(json.dumps(result, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          print('QIKVRT_ZENODO_READBACK=' + json.dumps(result, sort_keys=True, separators=(',', ':')))
+          PY
+
+      - name: Preserve fresh public readback
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-planck-zenodo-readback-22283396-${{ github.run_id }}
+          path: .qikvrt/zenodo-readback-22283396.json
+          if-no-files-found: warn
+          retention-days: 90
