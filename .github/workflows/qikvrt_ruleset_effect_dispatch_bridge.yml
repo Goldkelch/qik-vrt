@@ -1,0 +1,126 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT ruleset effect dispatch bridge
+
+on:
+  workflow_run:
+    workflows:
+      - "QIKVRT required code-owner review"
+    types: [completed]
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+  statuses: read
+
+concurrency:
+  group: qikvrt-ruleset-effect-dispatch-bridge-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch-exact-subject:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id }}
+      TRUSTED_MAIN: ${{ github.sha }}
+      REVIEW_STATUS_CONTEXT: QIKVRT required code-owner review
+    steps:
+      - name: Check out trusted Main bridge implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind one exact deduplicated ruleset subject
+        id: bind
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-ruleset-effect-dispatch"
+          rm -rf "$root"
+          mkdir -p "$root/artifact"
+
+          checkout="$(git rev-parse --verify HEAD^{commit})"
+          live_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"
+          test "$checkout" = "$live_main"
+
+          run="$(gh api "repos/${REPOSITORY}/actions/runs/${UPSTREAM_RUN_ID}")"
+          test "$(jq -r .name <<<"$run")" = "QIKVRT required code-owner review"
+          test "$(jq -r .path <<<"$run")" = ".github/workflows/qikvrt_required_review_gate.yml"
+          test "$(jq -r .conclusion <<<"$run")" = success
+          test "$(jq -r .head_branch <<<"$run")" = main
+          test "$(jq -r .head_sha <<<"$run")" = "$live_main"
+          test "$(jq -r .repository.full_name <<<"$run")" = "$REPOSITORY"
+
+          expected="qikvrt-required-code-owner-selection-${UPSTREAM_RUN_ID}-CANDIDATE"
+          artifacts="$(gh api "repos/${REPOSITORY}/actions/runs/${UPSTREAM_RUN_ID}/artifacts?per_page=100")"
+          count="$(jq --arg name "$expected" '[.artifacts[] | select(.name == $name and (.expired != true))] | length' <<<"$artifacts")"
+          if [ "$count" != 1 ]; then
+            echo "state=NOOP" >> "$GITHUB_OUTPUT"
+            echo "blocker=UPSTREAM_CANDIDATE_ARTIFACT_MISSING_OR_AMBIGUOUS" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          archive_url="$(jq -r --arg name "$expected" '.artifacts[] | select(.name == $name and (.expired != true)) | .archive_download_url' <<<"$artifacts")"
+          gh api "$archive_url" > "$root/evidence.zip"
+          unzip -q "$root/evidence.zip" -d "$root/artifact"
+          mapfile -t files < <(find "$root/artifact" -type f -name qikvrt-required-review-selection.json -print)
+          test "${#files[@]}" -eq 1
+          cp "${files[0]}" "$root/selection.json"
+
+          test "$(jq -r .schema "$root/selection.json")" = qikvrt_required_code_owner_review_selection_v1
+          test "$(jq -r .state "$root/selection.json")" = CANDIDATE
+          test "$(jq '.pr_numbers | length' "$root/selection.json")" = 1
+          pr="$(jq -r '.pr_numbers[0]' "$root/selection.json")"
+          head="$(jq -r .expected_head "$root/selection.json")"
+          [[ "$pr" =~ ^[1-9][0-9]*$ ]]
+          [[ "$head" =~ ^[0-9a-f]{40}$ ]]
+
+          pull="$(gh api "repos/${REPOSITORY}/pulls/${pr}")"
+          test "$(jq -r .state <<<"$pull")" = open
+          test "$(jq -r .base.ref <<<"$pull")" = main
+          test "$(jq -r .head.repo.full_name <<<"$pull")" = "$REPOSITORY"
+          test "$(jq -r .head.sha <<<"$pull")" = "$head"
+          head_ref="$(jq -r .head.ref <<<"$pull")"
+          test "$(gh api "repos/${REPOSITORY}/git/ref/heads/${head_ref}" --jq .object.sha)" = "$head"
+
+          statuses="$(gh api --paginate --slurp "repos/${REPOSITORY}/commits/${head}/statuses?per_page=100")"
+          exact_count="$(jq --arg context "$REVIEW_STATUS_CONTEXT" '[.[][] | select(.context == $context and .state == "failure" and .description == "failure: CODE_OWNER_RULE_NOT_ENFORCED")] | length' <<<"$statuses")"
+          if [ "$exact_count" -lt 1 ]; then
+            echo "state=NOOP" >> "$GITHUB_OUTPUT"
+            echo "blocker=EXACT_RULESET_BLOCKER_STATUS_MISSING" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          test "$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)" = "$live_main"
+          test "$(gh api "repos/${REPOSITORY}/pulls/${pr}" --jq .head.sha)" = "$head"
+          test "$(gh api "repos/${REPOSITORY}/git/ref/heads/${head_ref}" --jq .object.sha)" = "$head"
+
+          echo "state=CANDIDATE" >> "$GITHUB_OUTPUT"
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "main=$live_main" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch existing single ruleset effect writer
+        if: steps.bind.outputs.state == 'CANDIDATE'
+        env:
+          PR_NUMBER: ${{ steps.bind.outputs.pr }}
+          EXPECTED_HEAD: ${{ steps.bind.outputs.head }}
+          EXPECTED_MAIN: ${{ steps.bind.outputs.main }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)" = "$EXPECTED_MAIN"
+          test "$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)" = "$EXPECTED_HEAD"
+          jq -n --arg pr "$PR_NUMBER" --arg head "$EXPECTED_HEAD" \
+            '{ref:"main",inputs:{pr:$pr,expected_head:$head}}' \
+            | gh api --method POST \
+                "repos/${REPOSITORY}/actions/workflows/qikvrt_autonomous_ruleset_effect_loop.yml/dispatches" \
+                --input -
