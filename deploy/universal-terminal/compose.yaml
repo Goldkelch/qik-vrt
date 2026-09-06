@@ -26,7 +26,8 @@ services:
     tmpfs:
       - /tmp
       - /run
-      - /opt/qikvrt/runtime:size=256m,mode=1777
+      # Keep the image's runtime/bootstrap-profile visible on first start.
+      - /opt/qikvrt/runtime/logs:size=256m,mode=1777
     shm_size: 512m
     healthcheck:
       test: ["CMD", "/usr/local/bin/qikvrt-runtime-health"]
