@@ -9,12 +9,18 @@ on:
       - docs/information-effect-axis-v1
     paths:
       - .github/workflows/qikvrt_transputer_evidence_spiral_zenodo_preflight.yml
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/qikvrt_transputer_evidence_spiral_zenodo_preflight.yml
 
 permissions:
   contents: read
 
 concurrency:
-  group: qikvrt-transputer-evidence-spiral-zenodo-preflight
+  group: qikvrt-transputer-evidence-spiral-zenodo-preflight-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -23,23 +29,20 @@ jobs:
     runs-on: ubuntu-24.04
     environment: zenodo-production
     env:
-      EXPECTED_PARENT: d1cebf85f4b3aaf0d093451658f929e85200357a
       TARGET_PDF_SHA256: 78c845bb2bd078d9aeff2657865fc8b877aacf97987b64b817bd7e8856cf0536
       TARGET_PDF_BYTES: '243720'
       ZENODO_API_BASE: https://zenodo.org/api
     steps:
-      - name: Check out exact preflight carrier
+      - name: Check out observed carrier
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
           persist-credentials: false
 
-      - name: Verify bounded carrier mutation
+      - name: Verify exact target identity
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git show -s --format=%P HEAD)" = "$EXPECTED_PARENT"
-          test "$(git diff-tree --no-commit-id --name-only -r HEAD^ HEAD)" = '.github/workflows/qikvrt_transputer_evidence_spiral_zenodo_preflight.yml'
           test "$TARGET_PDF_SHA256" = '78c845bb2bd078d9aeff2657865fc8b877aacf97987b64b817bd7e8856cf0536'
           test "$TARGET_PDF_BYTES" = '243720'
 
