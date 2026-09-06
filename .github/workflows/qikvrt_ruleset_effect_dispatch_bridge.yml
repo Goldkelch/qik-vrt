@@ -6,6 +6,7 @@ on:
   workflow_run:
     workflows:
       - "QIKVRT required code-owner review"
+      - "QIKVRT requested review executor"
     types: [completed]
 
 permissions:
@@ -22,14 +23,15 @@ jobs:
   dispatch-exact-subject:
     if: >-
       github.ref == 'refs/heads/main' &&
-      github.event.workflow_run.conclusion == 'success'
+      (github.event.workflow_run.conclusion == 'success' ||
+       (github.event.workflow_run.name == 'QIKVRT requested review executor' &&
+        github.event.workflow_run.conclusion == 'failure'))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
       GH_TOKEN: ${{ github.token }}
       REPOSITORY: ${{ github.repository }}
       UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id }}
-      TRUSTED_MAIN: ${{ github.sha }}
       REVIEW_STATUS_CONTEXT: QIKVRT required code-owner review
     steps:
       - name: Check out trusted Main bridge implementation
@@ -53,14 +55,35 @@ jobs:
           test "$checkout" = "$live_main"
 
           run="$(gh api "repos/${REPOSITORY}/actions/runs/${UPSTREAM_RUN_ID}")"
-          test "$(jq -r .name <<<"$run")" = "QIKVRT required code-owner review"
-          test "$(jq -r .path <<<"$run")" = ".github/workflows/qikvrt_required_review_gate.yml"
-          test "$(jq -r .conclusion <<<"$run")" = success
-          test "$(jq -r .head_branch <<<"$run")" = main
-          test "$(jq -r .head_sha <<<"$run")" = "$live_main"
+          upstream_name="$(jq -r .name <<<"$run")"
+          upstream_path="$(jq -r .path <<<"$run")"
+          upstream_conclusion="$(jq -r .conclusion <<<"$run")"
           test "$(jq -r .repository.full_name <<<"$run")" = "$REPOSITORY"
 
-          expected="qikvrt-required-code-owner-selection-${UPSTREAM_RUN_ID}-CANDIDATE"
+          case "$upstream_name" in
+            "QIKVRT required code-owner review")
+              test "$upstream_path" = ".github/workflows/qikvrt_required_review_gate.yml"
+              test "$upstream_conclusion" = success
+              test "$(jq -r .head_branch <<<"$run")" = main
+              test "$(jq -r .head_sha <<<"$run")" = "$live_main"
+              expected="qikvrt-required-code-owner-selection-${UPSTREAM_RUN_ID}-CANDIDATE"
+              selection_name=qikvrt-required-review-selection.json
+              selection_schema=qikvrt_required_code_owner_review_selection_v1
+              selection_kind=required-review
+              ;;
+            "QIKVRT requested review executor")
+              test "$upstream_path" = ".github/workflows/qikvrt_requested_review_executor.yml"
+              case "$upstream_conclusion" in success|failure) ;; *) exit 1 ;; esac
+              expected="qikvrt-mesh-review-selection-${UPSTREAM_RUN_ID}-CANDIDATE"
+              selection_name=qikvrt-review-selection.json
+              selection_schema=qikvrt_requested_review_selection_v1
+              selection_kind=requested-review
+              ;;
+            *)
+              exit 1
+              ;;
+          esac
+
           artifacts="$(gh api "repos/${REPOSITORY}/actions/runs/${UPSTREAM_RUN_ID}/artifacts?per_page=100")"
           count="$(jq --arg name "$expected" '[.artifacts[] | select(.name == $name and (.expired != true))] | length' <<<"$artifacts")"
           if [ "$count" != 1 ]; then
@@ -71,14 +94,20 @@ jobs:
           archive_url="$(jq -r --arg name "$expected" '.artifacts[] | select(.name == $name and (.expired != true)) | .archive_download_url' <<<"$artifacts")"
           gh api "$archive_url" > "$root/evidence.zip"
           unzip -q "$root/evidence.zip" -d "$root/artifact"
-          mapfile -t files < <(find "$root/artifact" -type f -name qikvrt-required-review-selection.json -print)
+          mapfile -t files < <(find "$root/artifact" -type f -name "$selection_name" -print)
           test "${#files[@]}" -eq 1
           cp "${files[0]}" "$root/selection.json"
 
-          test "$(jq -r .schema "$root/selection.json")" = qikvrt_required_code_owner_review_selection_v1
+          test "$(jq -r .schema "$root/selection.json")" = "$selection_schema"
           test "$(jq -r .state "$root/selection.json")" = CANDIDATE
-          test "$(jq '.pr_numbers | length' "$root/selection.json")" = 1
-          pr="$(jq -r '.pr_numbers[0]' "$root/selection.json")"
+          if [ "$selection_kind" = required-review ]; then
+            test "$(jq '.pr_numbers | length' "$root/selection.json")" = 1
+            pr="$(jq -r '.pr_numbers[0]' "$root/selection.json")"
+          else
+            pr="$(jq -r '.candidate_pr_number // .pr_number' "$root/selection.json")"
+            test "$(jq -r .selection_basis "$root/selection.json")" = EXACT_EVENT_OR_DISPATCH
+            test "$(jq -r .review_execution "$root/selection.json")" = true
+          fi
           head="$(jq -r .expected_head "$root/selection.json")"
           [[ "$pr" =~ ^[1-9][0-9]*$ ]]
           [[ "$head" =~ ^[0-9a-f]{40}$ ]]
