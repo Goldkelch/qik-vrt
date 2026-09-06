@@ -29,38 +29,103 @@ class UniversalEvidenceSpiralTests(unittest.TestCase):
 
     def move(self, **overrides):
         value = {"id": "repair", "objective": "DETERMINISTIC_CORRECTNESS", "action": "apply bounded repair", "authority": "REPOSITORY_INTERNAL", "expected_readback": "same-subject regression becomes green", "mutating": True}
-        value.update(overrides); return value
+        value.update(overrides)
+        return value
 
     def problem(self, identity: str = "example-problem", **overrides):
-        value = {"subject": self.subject(identity)}; value.update(overrides); return value
+        value = {"subject": self.subject(identity)}
+        value.update(overrides)
+        return value
 
     def test_missing_exact_subject_reobserves(self) -> None:
         receipt = self.m.resolve({"subject": {"repository": "Goldkelch/qik-vrt"}})
-        self.assertEqual(receipt["state"], "REOBSERVE"); self.assertEqual(receipt["d0"], 2)
+        self.assertEqual(receipt["state"], "REOBSERVE")
+        self.assertEqual(receipt["d0"], 2)
+
+    def test_invalid_exact_subject_reobserves(self) -> None:
+        subject = self.subject(); subject["head"] = "not-a-head"
+        receipt = self.m.resolve({"subject": subject, "candidate_moves": [self.move()]})
+        self.assertEqual(receipt["state"], "REOBSERVE")
+        self.assertIn("head", receipt["missing"])
 
     def test_stale_subject_reobserves_before_mutation(self) -> None:
         receipt = self.m.resolve({"subject": self.subject(), "subject_state": "STALE", "candidate_moves": [self.move()]})
-        self.assertEqual(receipt["state"], "REOBSERVE"); self.assertIsNone(receipt["executed_move"])
+        self.assertEqual(receipt["state"], "REOBSERVE")
+        self.assertIsNone(receipt["executed_move"])
 
     def test_unresolved_dependency_holds(self) -> None:
         receipt = self.m.resolve({"subject": self.subject(), "dependencies": [{"id": "review", "state": "OPEN"}], "candidate_moves": [self.move()]})
-        self.assertEqual(receipt["state"], "HOLD"); self.assertEqual(receipt["dependencies"], ["review"])
+        self.assertEqual(receipt["state"], "HOLD")
+        self.assertEqual(receipt["dependencies"], ["review"])
+
+    def test_malformed_dependency_holds(self) -> None:
+        receipt = self.m.resolve({"subject": self.subject(), "dependencies": ["review"], "candidate_moves": [self.move()]})
+        self.assertEqual(receipt["state"], "HOLD")
+        self.assertEqual(receipt["dependencies"], ["MALFORMED_DEPENDENCY"])
+
+    def test_move_dependency_must_be_satisfied(self) -> None:
+        receipt = self.m.resolve({"subject": self.subject(), "candidate_moves": [self.move(dependencies=[{"id": "review", "state": "OPEN"}])]})
+        self.assertEqual(receipt["state"], "NOOP")
+        self.assertEqual(receipt["rejected_moves"][0]["reason"], "UNRESOLVED_MOVE_DEPENDENCY")
 
     def test_predecessor_evidence_transfer_is_rejected(self) -> None:
         receipt = self.m.resolve({"subject": self.subject(), "candidate_moves": [self.move(transfers_predecessor_evidence=True)]})
-        self.assertEqual(receipt["state"], "NOOP"); self.assertEqual(receipt["rejected_moves"][0]["reason"], "PREDECESSOR_EVIDENCE_TRANSFER_FORBIDDEN")
+        self.assertEqual(receipt["state"], "NOOP")
+        self.assertEqual(receipt["rejected_moves"][0]["reason"], "PREDECESSOR_EVIDENCE_TRANSFER_FORBIDDEN")
 
     def test_unreadback_external_claim_is_rejected(self) -> None:
         receipt = self.m.resolve({"subject": self.subject(), "candidate_moves": [self.move(claims_without_readback=["PUBLICATION"])]})
-        self.assertEqual(receipt["state"], "NOOP"); self.assertEqual(receipt["rejected_moves"][0]["reason"], "UNREADBACK_EXTERNAL_OR_TERMINAL_CLAIM_FORBIDDEN")
+        self.assertEqual(receipt["state"], "NOOP")
+        self.assertEqual(receipt["rejected_moves"][0]["reason"], "UNREADBACK_EXTERNAL_OR_TERMINAL_CLAIM_FORBIDDEN")
+
+    def test_claims_collection_must_be_a_list(self) -> None:
+        receipt = self.m.resolve({"subject": self.subject(), "candidate_moves": [self.move(claims_without_readback="PUBLICATION")]})
+        self.assertEqual(receipt["state"], "NOOP")
+        self.assertEqual(receipt["rejected_moves"][0]["reason"], "MALFORMED_CLAIMS_WITHOUT_READBACK")
 
     def test_authority_boundary_requests_authority(self) -> None:
         receipt = self.m.resolve({"subject": self.subject(), "candidate_moves": [self.move(authority="ZENODO_PRODUCTION")]})
-        self.assertEqual(receipt["state"], "REQUEST_AUTHORITY"); self.assertEqual(receipt["requested_authority"], "ZENODO_PRODUCTION")
+        self.assertEqual(receipt["state"], "REQUEST_AUTHORITY")
+        self.assertEqual(receipt["requested_authority"], "ZENODO_PRODUCTION")
+
+    def test_mandatory_move_fields_are_required(self) -> None:
+        for key in ("objective", "action", "authority", "mutating"):
+            with self.subTest(key=key):
+                move = self.move(); del move[key]
+                receipt = self.m.resolve({"subject": self.subject(), "candidate_moves": [move]})
+                self.assertEqual(receipt["state"], "NOOP")
+                expected = "MUTATION_CLASSIFICATION_REQUIRED" if key == "mutating" else "MALFORMED_MOVE"
+                self.assertEqual(receipt["rejected_moves"][0]["reason"], expected)
+
+    def test_expected_readback_must_be_nonempty_string(self) -> None:
+        receipt = self.m.resolve({"subject": self.subject(), "candidate_moves": [self.move(expected_readback=True)]})
+        self.assertEqual(receipt["state"], "NOOP")
+        self.assertEqual(receipt["rejected_moves"][0]["reason"], "EXPECTED_READBACK_REQUIRED")
+
+    def test_invalid_risk_is_rejected_without_exception(self) -> None:
+        receipt = self.m.resolve({"subject": self.subject(), "candidate_moves": [self.move(risk="unknown")]})
+        self.assertEqual(receipt["state"], "NOOP")
+        self.assertEqual(receipt["rejected_moves"][0]["reason"], "INVALID_RISK")
+
+    def test_duplicate_move_ids_hold_canonically(self) -> None:
+        a = self.move(action="a"); b = self.move(action="b")
+        first = self.m.resolve({"subject": self.subject(), "candidate_moves": [a, b]})
+        second = self.m.resolve({"subject": self.subject(), "candidate_moves": [b, a]})
+        self.assertEqual(first["state"], "HOLD")
+        self.assertEqual(second["state"], "HOLD")
+        self.assertEqual(first["duplicate_move_ids"], ["repair"])
+        self.assertEqual(second["duplicate_move_ids"], ["repair"])
+
+    def test_malformed_candidate_set_holds(self) -> None:
+        receipt = self.m.resolve({"subject": self.subject(), "candidate_moves": None})
+        self.assertEqual(receipt["state"], "HOLD")
+        self.assertEqual(receipt["reason"], "MALFORMED_CANDIDATE_MOVES")
 
     def test_highest_objective_wins_deterministically(self) -> None:
         receipt = self.m.resolve({"subject": self.subject(), "candidate_moves": [self.move(id="observability", objective="TESTABILITY_AND_OBSERVABILITY", risk=0), self.move(id="correctness", objective="DETERMINISTIC_CORRECTNESS", risk=10)]})
-        self.assertEqual(receipt["state"], "ACTION"); self.assertEqual(receipt["selected_move"], "correctness"); self.assertEqual(receipt["mutation_budget"], 1)
+        self.assertEqual(receipt["state"], "ACTION")
+        self.assertEqual(receipt["selected_move"], "correctness")
+        self.assertEqual(receipt["mutation_budget"], 1)
 
     def test_activity_only_noise_does_not_change_causal_fingerprint(self) -> None:
         a = {"subject": self.subject(), "run_count": 1, "updated_at": "t1"}; b = {"subject": self.subject(), "run_count": 999, "updated_at": "t2"}
@@ -70,27 +135,34 @@ class UniversalEvidenceSpiralTests(unittest.TestCase):
         root = self.problem("root", subproblems=[self.problem("b"), self.problem("a", subproblems=[self.problem("a-child")])])
         receipt = self.m.recursive_resolve(root, max_depth=8, max_nodes=32)
         identities = [(node.get("receipt") or {}).get("subject", {}).get("identity") for node in receipt["receipts"] if node.get("receipt")]
-        self.assertEqual(identities, ["root", "a", "b", "a-child"]); self.assertEqual(receipt["nodes_observed"], 4); self.assertEqual(receipt["closure"], "LOCAL_FIXPOINT")
+        self.assertEqual(identities, ["root", "a", "b", "a-child"])
+        self.assertEqual(receipt["nodes_observed"], 4)
+        self.assertEqual(receipt["closure"], "LOCAL_FIXPOINT")
 
     def test_recursive_cycle_is_deduplicated(self) -> None:
         a = self.problem("a"); root = self.problem("root", subproblems=[a, a])
         receipt = self.m.recursive_resolve(root, max_depth=8, max_nodes=32)
         reasons = [node.get("reason") for node in receipt["receipts"]]
-        self.assertIn("CAUSAL_CYCLE_DEDUPLICATED", reasons); self.assertEqual(receipt["nodes_observed"], 2)
+        self.assertIn("CAUSAL_CYCLE_DEDUPLICATED", reasons)
+        self.assertEqual(receipt["nodes_observed"], 2)
 
     def test_recursive_depth_limit_holds_instead_of_claiming_finality(self) -> None:
         root = self.problem("root", subproblems=[self.problem("child", subproblems=[self.problem("grandchild")])])
         receipt = self.m.recursive_resolve(root, max_depth=1, max_nodes=32)
-        self.assertEqual(receipt["closure"], "OPEN_FRONTIER"); self.assertIn("MAX_DEPTH_REACHED", receipt["stop_reasons"]); self.assertFalse(receipt["global_finality_claimed"])
+        self.assertEqual(receipt["closure"], "OPEN_FRONTIER")
+        self.assertIn("MAX_DEPTH_REACHED", receipt["stop_reasons"])
+        self.assertFalse(receipt["global_finality_claimed"])
 
     def test_recursive_node_limit_is_fail_closed(self) -> None:
         root = self.problem("root", subproblems=[self.problem("a"), self.problem("b")])
         receipt = self.m.recursive_resolve(root, max_depth=8, max_nodes=2)
-        self.assertEqual(receipt["closure"], "OPEN_FRONTIER"); self.assertIn("MAX_NODES_REACHED", receipt["stop_reasons"])
+        self.assertEqual(receipt["closure"], "OPEN_FRONTIER")
+        self.assertIn("MAX_NODES_REACHED", receipt["stop_reasons"])
 
     def test_recursive_action_keeps_frontier_open(self) -> None:
         root = self.problem("root", candidate_moves=[self.move()]); receipt = self.m.recursive_resolve(root)
-        self.assertEqual(receipt["closure"], "OPEN_FRONTIER"); self.assertEqual(receipt["receipts"][0]["receipt"]["state"], "ACTION")
+        self.assertEqual(receipt["closure"], "OPEN_FRONTIER")
+        self.assertEqual(receipt["receipts"][0]["receipt"]["state"], "ACTION")
 
 
 if __name__ == "__main__":
