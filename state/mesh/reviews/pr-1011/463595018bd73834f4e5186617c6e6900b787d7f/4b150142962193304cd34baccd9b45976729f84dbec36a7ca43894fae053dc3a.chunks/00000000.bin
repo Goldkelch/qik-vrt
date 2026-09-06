@@ -1,0 +1,194 @@
+diff --git a/AI_ADAPTERS.json b/AI_ADAPTERS.json
+index 868fd0da1ebd8ee12f3b36f38bb4d3cc6b98c463..2c08ffb34f386c26071fffeda480ea4e33145964 100644
+--- a/AI_ADAPTERS.json
++++ b/AI_ADAPTERS.json
+@@ -1,7 +1,10 @@
+ {
+-  "schema": "qikvrt-ai-adapters/1.0",
++  "schema": "qikvrt-ai-adapters/1.2",
+   "canonical_entrypoint": "AI",
+   "generic_fallback": "Any system that can read repository files MUST read /AI first.",
++  "task_router": "AI_TASK_ROUTER.json",
++  "causal_effect_chain": "policy/CAUSAL_EFFECT_CHAIN_V1.json",
++  "task_routing_rule": "After /AI bootstrap and AI_CONTEXT.json required_read_order, resolve AI_TASK_ROUTER.json and policy/CAUSAL_EFFECT_CHAIN_V1.json before any mutating task; no adapter may choose an alternate effect path.",
+   "adapters": [
+     {"system":"OpenAI Codex","path":"AGENTS.md","mode":"native"},
+     {"system":"Anthropic Claude Code","path":"CLAUDE.md","mode":"native"},
+@@ -18,5 +21,5 @@
+     {"system":"JetBrains Junie","path":".junie/guidelines.md","mode":"native"},
+     {"system":"Kiro","path":".kiro/steering/qikvrt-ai-entry.md","mode":"native"}
+   ],
+-  "rule": "Adapter files are compatibility shims only. AI, AI_CONTEXT.json, and AGENTS.md remain authoritative."
++  "rule": "Adapter files are compatibility shims only. AI, AI_CONTEXT.json, and AGENTS.md remain authoritative. AI_TASK_ROUTER.json is a discovery index; policy/CAUSAL_EFFECT_CHAIN_V1.json is the mandatory causal-effect ordering contract and grants no authority by itself."
+ }
+diff --git a/AI_TASK_ROUTER.json b/AI_TASK_ROUTER.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..f155218ed33d87bf8dbba69a27d681edd4cd8da4
+--- /dev/null
++++ b/AI_TASK_ROUTER.json
+@@ -0,0 +1,52 @@
++{
++  "schema": "qikvrt-ai-task-router/1.1",
++  "purpose": "Shortest repository-native routing map from user intent to existing capabilities. This file is discovery infrastructure only; it does not grant authority or weaken any gate.",
++  "routing_rule": "After /AI and AI_CONTEXT.json bootstrap, resolve the requested task here before creating parallel machinery or concluding that a capability is absent.",
++  "causal_effect_chain": "policy/CAUSAL_EFFECT_CHAIN_V1.json",
++  "causal_chain_required": true,
++  "reuse_before_create": true,
++  "routes": {
++    "zenodo_publication": {
++      "intent_examples": [
++        "publish on Zenodo",
++        "upload to Zenodo",
++        "create or publish DOI record",
++        "publish this scientific document"
++      ],
++      "primary_capability": "runtime/capabilities/ZENODO_PUBLICATION_CAPABILITY.json",
++      "generic_implementation": "tools/qikvrt_zenodo_publish.py",
++      "machine_proof_gate": "tools/qikvrt_zenodo_machine_proof.py",
++      "transport": "tools/qikvrt_zenodo_actions.py",
++      "production_policy": "policy/zenodo-machine-proof-policy-v2.json",
++      "human_contract": "policy/ZENODO_MACHINE_PROOF_BEFORE_PUBLICATION.md",
++      "proof_bundle_schema": "policy/qikvrt-zenodo-machine-proof-bundle-v2.schema.json",
++      "return_receipt_schema": "policy/qikvrt-prepublication-return-receipt-v2.schema.json",
++      "manifest_schema": "qikvrt_zenodo_publication_manifest_v2",
++      "invocation": "python -B tools/qikvrt_zenodo_publish.py --manifest <repository-relative-manifest.json>",
++      "credential": "ZENODO_ACCESS_TOKEN via GitHub Actions secret only",
++      "resolution_sequence": [
++        "Locate the exact publication candidate and its repository carrier.",
++        "Read policy/CAUSAL_EFFECT_CHAIN_V1.json and preserve its sole admissible effect chain.",
++        "Read the generic Zenodo capability before inspecting document-specific workflows.",
++        "Locate or materialize the candidate-bound v2 manifest, complete claim matrix, machine-proof bundle and prepublication-return receipt required by policy.",
++        "Verify candidate bytes and Git blob identities against the manifest.",
++        "Resolve the exact natural-person authorization event and repository-wide create-only consumption-ref precondition.",
++        "Use the generic publisher; reuse an existing authorized workflow only as an execution wrapper around that capability.",
++        "After mutation, require public DOI/record metadata, exact fileset and byte-redownload readback before claiming publication."
++      ],
++      "anti_misrouting": [
++        "Do not treat a document-specific legacy workflow as the only Zenodo path.",
++        "Do not invent a new publisher when the generic v2 capability satisfies the task.",
++        "Do not use legacy v1 manifests for a new production mutation.",
++        "Do not infer missing capability merely because the current chat executor lacks a direct Zenodo connector.",
++        "Do not claim publication from preflight, token presence, upload transport, repository preparation or workflow success alone.",
++        "Do not bypass OBSERVE -> BIND -> VERIFY -> AUTHORIZE -> EFFECT -> READBACK -> PERSIST by returning after a merely described next step."
++      ],
++      "effect_boundary": "Repository routing and preparation are not Zenodo publication. Publication requires the separately authorized external mutation and public readback defined by the capability and policy."
++    }
++  },
++  "fallback": {
++    "rule": "If no route matches, search existing runtime/capabilities, tools, workflows, policy and release carriers before creating a new component or returning CAPABILITY_ABSENT.",
++    "capability_absent_threshold": "CAPABILITY_ABSENT may be reported only after repository-native discovery has checked the authoritative entrypoint, task router, runtime/capabilities and relevant existing tools/workflows."
++  }
++}
+diff --git a/policy/CAUSAL_EFFECT_CHAIN_V1.json b/policy/CAUSAL_EFFECT_CHAIN_V1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..dbd92567e31dd39edd61970d554464ffebcad4c1
+--- /dev/null
++++ b/policy/CAUSAL_EFFECT_CHAIN_V1.json
+@@ -0,0 +1,55 @@
++{
++  "schema": "qikvrt_causal_effect_chain_v1",
++  "id": "qikvrt-sole-admissible-causal-effect-chain-v1",
++  "status": "normative",
++  "purpose": "Force every repository task that may change repository or external state through one evidence-bound causal chain. No alternate completion path is admissible.",
++  "chain": [
++    "OBSERVE",
++    "BIND_EXACT_SUBJECT",
++    "CLASSIFY_CLAIMS_AND_BOUNDARIES",
++    "VERIFY_PRECONDITIONS",
++    "RESOLVE_AUTHORITY",
++    "EXECUTE_ONE_AUTHORIZED_EFFECT",
++    "READBACK_EFFECT",
++    "PERSIST_RECEIPT",
++    "SUCCESSOR_OR_HOLD"
++  ],
++  "invariants": {
++    "causality_is_relation_not_sequence": true,
++    "activity_is_not_effect": true,
++    "transport_ack_is_not_effect_ack": true,
++    "predecessor_evidence_transfer": false,
++    "same_subject_exact_head_binding_required": true,
++    "one_mutating_move_per_cycle": true,
++    "expected_readback_required_before_effect": true,
++    "missing_observation_means_hold": true,
++    "missing_authority_means_request_authority": true,
++    "changed_subject_or_head_resets_downstream_binding": true,
++    "effect_without_readback_may_not_be_called_done": true
++  },
++  "terminal_controls": {
++    "NOOP": "0000",
++    "HOLD": "0001",
++    "REOBSERVE": "0010",
++    "REQUEST_AUTHORITY": "0011"
++  },
++  "publication_specialization": {
++    "zenodo": {
++      "router": "AI_TASK_ROUTER.json",
++      "capability": "runtime/capabilities/ZENODO_PUBLICATION_CAPABILITY.json",
++      "proof_policy": "policy/zenodo-machine-proof-policy-v2.json",
++      "rule": "A publication effect is admissible only after exact candidate binding, proof/claim disposition, explicit natural-person authorization, one external mutation, public DOI/fileset/byte readback, and persisted receipt."
++    }
++  },
++  "forbidden_shortcuts": [
++    "DESCRIBE_NEXT_STEP_AND_RETURN",
++    "TREAT_PREFLIGHT_AS_EFFECT",
++    "TREAT_WORKFLOW_SUCCESS_AS_EXTERNAL_EFFECT",
++    "TREAT_REPOSITORY_PREPARATION_AS_PUBLICATION",
++    "REUSE_PREDECESSOR_REVIEW_OR_CHECKS_AFTER_HEAD_CHANGE",
++    "BLIND_RETRY",
++    "POLLING_OUTSIDE_EXPLICITLY_AUTHORIZED_PLATFORM_MONITOR",
++    "CLAIM_DONE_WITHOUT_EFFECT_READBACK"
++  ],
++  "entrypoint_rule": "All human and machine adapters must resolve this policy before any mutating task. A tool, workflow, agent or UI that cannot preserve the chain must stop at HOLD or REQUEST_AUTHORITY rather than choose another path."
++}
+diff --git a/tests/test_causal_effect_chain_entrypoint.py b/tests/test_causal_effect_chain_entrypoint.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..b8e43b4cd329c2d5f272484f7fd8b493599eabc2
+--- /dev/null
++++ b/tests/test_causal_effect_chain_entrypoint.py
+@@ -0,0 +1,46 @@
++import json
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++
++
++def load(path):
++    return json.loads((ROOT / path).read_text(encoding="utf-8"))
++
++
++def test_causal_effect_chain_is_closed_and_ordered():
++    policy = load("policy/CAUSAL_EFFECT_CHAIN_V1.json")
++    assert policy["schema"] == "qikvrt_causal_effect_chain_v1"
++    assert policy["chain"] == [
++        "OBSERVE",
++        "BIND_EXACT_SUBJECT",
++        "CLASSIFY_CLAIMS_AND_BOUNDARIES",
++        "VERIFY_PRECONDITIONS",
++        "RESOLVE_AUTHORITY",
++        "EXECUTE_ONE_AUTHORIZED_EFFECT",
++        "READBACK_EFFECT",
++        "PERSIST_RECEIPT",
++        "SUCCESSOR_OR_HOLD",
++    ]
++    invariants = policy["invariants"]
++    assert invariants["one_mutating_move_per_cycle"] is True
++    assert invariants["expected_readback_required_before_effect"] is True
++    assert invariants["predecessor_evidence_transfer"] is False
++    assert invariants["effect_without_readback_may_not_be_called_done"] is True
++
++
++def test_ai_task_router_requires_causal_chain_before_effect():
++    router = load("AI_TASK_ROUTER.json")
++    assert router["causal_effect_chain"] == "policy/CAUSAL_EFFECT_CHAIN_V1.json"
++    assert router["causal_chain_required"] is True
++    route = router["routes"]["zenodo_publication"]
++    assert route["primary_capability"] == "runtime/capabilities/ZENODO_PUBLICATION_CAPABILITY.json"
++    assert route["production_policy"] == "policy/zenodo-machine-proof-policy-v2.json"
++    assert "public DOI/record metadata" in route["resolution_sequence"][-1]
++
++
++def test_every_declared_ai_adapter_exposes_router():
++    adapters = load("AI_ADAPTERS.json")
++    assert adapters["task_router"] == "AI_TASK_ROUTER.json"
++    assert adapters["causal_effect_chain"] == "policy/CAUSAL_EFFECT_CHAIN_V1.json"
++    assert "before any mutating task" in adapters["task_routing_rule"]
