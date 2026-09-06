@@ -1,6 +1,9 @@
 name: QIKVRT universal terminal container
 
 on:
+  push:
+    branches:
+      - fix/universal-terminal-compose-bootstrap-20260907
   pull_request:
     paths:
       - "deploy/universal-terminal/**"
@@ -15,64 +18,152 @@ permissions:
   contents: read
 
 jobs:
+  materialize-candidate:
+    # One finite, explicitly scoped candidate write. Never Main, Mirror or a PR event.
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/fix/universal-terminal-compose-bootstrap-20260907' &&
+      github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    concurrency:
+      group: qikvrt-repository-evidence-${{ github.ref_name }}
+      cancel-in-progress: false
+    env:
+      EXPECTED_HEAD: ${{ github.sha }}
+      TARGET_REF: fix/universal-terminal-compose-bootstrap-20260907
+    steps:
+      - name: Check out exact preparation subject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_HEAD }}
+          fetch-depth: 2
+      - name: Materialize only integrity and run complete repository gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR==1 {print $1}')" = "$EXPECTED_HEAD"
+          python3 -B tools/qikvrt_tool_cache.py verify
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+      - name: Persist bounded candidate successor and read back exact ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess
+          allowed = {'REPOSITORY_FILE_MANIFEST.json', 'SHA256SUMS.txt', 'REPOSITORY_FILE_MANIFEST.json.sha256'}
+          changes = subprocess.check_output(['git','diff','--name-only','-z']).decode().split('\0')
+          unexpected = set(filter(None, changes)) - allowed
+          if unexpected:
+              raise SystemExit('BLOCK unexpected materialization paths: ' + repr(sorted(unexpected)))
+          untracked = subprocess.check_output(['git','ls-files','--others','--exclude-standard','-z'])
+          if untracked.strip(b'\0'):
+              raise SystemExit('BLOCK unexpected untracked source; do not absorb it')
+          PY
+          git add -- REPOSITORY_FILE_MANIFEST.json SHA256SUMS.txt REPOSITORY_FILE_MANIFEST.json.sha256
+          if ! git diff --cached --quiet; then
+            git -c user.name='github-actions[bot]' \
+                -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+                -c commit.gpgsign=false commit -m 'ci: materialize exact terminal candidate integrity'
+            test "$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR==1 {print $1}')" = "$EXPECTED_HEAD"
+            git push origin "HEAD:refs/heads/$TARGET_REF"
+          fi
+          result="$(git rev-parse HEAD)"
+          test "$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR==1 {print $1}')" = "$result"
+          {
+            echo '### Candidate persistence readback (not final-head validation)'
+            echo "source_head=$EXPECTED_HEAD"
+            echo "result_head=$result"
+            echo "result_tree=$(git rev-parse HEAD^{tree})"
+            echo 'P2_PLUS=REQUIRES_FRESH_RESULT_HEAD_VALIDATION'
+            echo 'APPROVAL_MERGE_DEPLOYMENT_PUBLICATION_EFFECT_ACK_DONE=NOT_CLAIMED'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   build-and-smoke:
+    if: github.event_name != 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
       EXACT_SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      QIKVRT_IMAGE_TAG: ${{ github.event.pull_request.head.sha || github.sha }}
+      COMPOSE_FILE: deploy/universal-terminal/compose.yaml
+      COMPOSE_PROJECT_NAME: qikvrt-terminal-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      QIKVRT_START_URL: about:blank
     steps:
       - name: Check out exact candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ env.EXACT_SUBJECT_SHA }}
           persist-credentials: false
-      - name: Bind exact candidate
+      - name: Bind exact candidate and tool contract
+        id: bind
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXACT_SUBJECT_SHA"
+          git rev-parse HEAD^{tree} > /tmp/qikvrt-terminal-exact-tree.txt
+          python3 -B tools/qikvrt_tool_cache.py verify
       - name: Validate immutable loopback-only compose contract
+        id: contract
         run: |
           set -euo pipefail
           python3 -B -m unittest -v tests.test_qikvrt_universal_terminal_network_boundary
-          QIKVRT_BIND_ADDRESS=0.0.0.0 docker compose -f deploy/universal-terminal/compose.yaml config --format json >/tmp/qikvrt-compose.json
+          QIKVRT_BIND_ADDRESS=0.0.0.0 docker compose config --format json >/tmp/qikvrt-compose.json
           python3 - <<'PY'
           import json
+          from pathlib import PurePosixPath
           value=json.load(open('/tmp/qikvrt-compose.json',encoding='utf-8'))
           service=value['services']['qikvrt-universal-terminal']
           assert service['restart']=='unless-stopped'
+          assert service['read_only'] is True
+          assert 'ALL' in service['cap_drop']
+          assert any(item.replace('=',':')=='no-new-privileges:true' for item in service['security_opt'])
           mounts={item['target'] for item in service['volumes']}
           assert '/var/lib/qikvrt/profile' in mounts
           assert '/var/lib/qikvrt/state' in mounts
-          ports=service['ports']
-          matches=[item for item in ports if int(item['target'])==6080]
-          assert len(matches)==1, matches
-          port=matches[0]
-          assert port.get('host_ip')=='127.0.0.1', port
-          assert str(port.get('published'))=='6080', port
-          assert port.get('host_ip') not in {'0.0.0.0','::','[::]'}, port
+          assert len(service['ports'])==1
+          port=service['ports'][0]
+          assert int(port['target'])==6080
+          assert port.get('host_ip')=='127.0.0.1'
+          assert str(port.get('published'))=='6080'
+          bootstrap=PurePosixPath('/opt/qikvrt/runtime/bootstrap-profile')
+          for item in service['tmpfs']:
+              target=PurePosixPath(item.split(':',1)[0])
+              assert target!=bootstrap and target not in bootstrap.parents
           PY
-      - name: Build OCI image
-        run: docker build -f deploy/universal-terminal/Dockerfile -t qikvrt/universal-terminal:${EXACT_SUBJECT_SHA} .
-      - name: Start exact durable image
+      - name: Build OCI image from operator compose configuration
+        id: build
+        run: docker compose build
+      - name: Start exact durable image through hardened compose
+        id: start
+        run: docker compose up -d --no-build --wait --wait-timeout 120
+      - name: Reobserve actual hardening EFFECT_ACK Firefox and noVNC
+        id: observe
         run: |
           set -euo pipefail
-          docker volume create qikvrt-test-profile >/dev/null
-          docker volume create qikvrt-test-state >/dev/null
-          docker run -d --name qikvrt-terminal \
-            -p 127.0.0.1:6080:6080 \
-            -v qikvrt-test-profile:/var/lib/qikvrt/profile \
-            -v qikvrt-test-state:/var/lib/qikvrt/state \
-            qikvrt/universal-terminal:${EXACT_SUBJECT_SHA}
-      - name: Reobserve EFFECT_ACK daemon visible browser and runtime state
-        run: |
-          set -euo pipefail
-          : > /tmp/effect-ack.json
-          for i in $(seq 1 40); do
-            if docker exec qikvrt-terminal /usr/local/bin/qikvrt-runtime-health; then break; fi
-            sleep 1
-          done
-          docker exec qikvrt-terminal /usr/local/bin/qikvrt-runtime-health
-          docker exec qikvrt-terminal curl -fsS http://127.0.0.1:8771/.well-known/effect-ack > /tmp/effect-ack.json
+          cid="$(docker compose ps -q qikvrt-universal-terminal)"
+          test -n "$cid"
+          docker inspect "$cid" >/tmp/qikvrt-container-inspect.json
+          python3 - <<'PY'
+          import json
+          value=json.load(open('/tmp/qikvrt-container-inspect.json',encoding='utf-8'))[0]
+          host=value['HostConfig']
+          assert host['ReadonlyRootfs'] is True
+          assert 'ALL' in host['CapDrop']
+          assert any(item.replace('=',':')=='no-new-privileges:true' for item in host['SecurityOpt'])
+          assert set(host['PortBindings'])=={'6080/tcp'}
+          assert all(item['HostIp']=='127.0.0.1' for item in host['PortBindings']['6080/tcp'])
+          assert '/opt/qikvrt/runtime' not in host['Tmpfs']
+          assert '/opt/qikvrt/runtime/logs' in host['Tmpfs']
+          PY
+          docker compose exec -T qikvrt-universal-terminal /usr/local/bin/qikvrt-runtime-health
+          docker compose exec -T qikvrt-universal-terminal curl -fsS http://127.0.0.1:8771/.well-known/effect-ack >/tmp/effect-ack.json
           python3 - <<'PY'
           import json
           value=json.load(open('/tmp/effect-ack.json',encoding='utf-8'))
@@ -82,26 +173,24 @@ jobs:
           PY
           curl -fsS http://127.0.0.1:6080/vnc.html >/tmp/vnc.html
           grep -Eqi '<html|<!doctype html' /tmp/vnc.html
-          docker exec qikvrt-terminal test -f /var/lib/qikvrt/profile/extensions/qikvrt-ai-terminal@goldkelch.local.xpi
-          docker exec qikvrt-terminal test -f /var/lib/qikvrt/profile/.qikvrt-profile-initialized
-          docker exec qikvrt-terminal sh -lc 'printf "%s\n" durable-session-sentinel > /var/lib/qikvrt/profile/.qikvrt-restart-sentinel'
-          docker cp qikvrt-terminal:/var/lib/qikvrt/state/runtime.json /tmp/runtime-before.json
-      - name: Restart with same persistent profile and reobserve
+          docker compose exec -T qikvrt-universal-terminal test -f /var/lib/qikvrt/profile/extensions/qikvrt-ai-terminal@goldkelch.local.xpi
+          docker compose exec -T qikvrt-universal-terminal test -f /var/lib/qikvrt/profile/.qikvrt-profile-initialized
+          docker compose exec -T qikvrt-universal-terminal sh -lc 'printf "%s\n" durable-session-sentinel > /var/lib/qikvrt/profile/.qikvrt-restart-sentinel'
+          docker compose exec -T qikvrt-universal-terminal firefox-esr --version >/tmp/qikvrt-firefox-version.txt 2>&1
+          docker compose cp qikvrt-universal-terminal:/var/lib/qikvrt/state/runtime.json /tmp/runtime-before.json
+      - name: Exercise existing EffectAck contracts inside the image
+        id: protocol
         run: |
           set -euo pipefail
-          docker rm -f qikvrt-terminal >/dev/null
-          docker run -d --name qikvrt-terminal \
-            -p 127.0.0.1:6080:6080 \
-            -v qikvrt-test-profile:/var/lib/qikvrt/profile \
-            -v qikvrt-test-state:/var/lib/qikvrt/state \
-            qikvrt/universal-terminal:${EXACT_SUBJECT_SHA}
-          for i in $(seq 1 40); do
-            if docker exec qikvrt-terminal /usr/local/bin/qikvrt-runtime-health; then break; fi
-            sleep 1
-          done
-          docker exec qikvrt-terminal /usr/local/bin/qikvrt-runtime-health
-          test "$(docker exec qikvrt-terminal cat /var/lib/qikvrt/profile/.qikvrt-restart-sentinel)" = durable-session-sentinel
-          docker cp qikvrt-terminal:/var/lib/qikvrt/state/runtime.json /tmp/runtime-after.json
+          docker compose exec -T qikvrt-universal-terminal python3 -B -m unittest -v tests.test_qikvrt_effect_ack_http_terminal
+      - name: Recreate through compose with persistent profile and reobserve
+        id: restart
+        run: |
+          set -euo pipefail
+          docker compose up -d --no-build --force-recreate --wait --wait-timeout 120
+          docker compose exec -T qikvrt-universal-terminal /usr/local/bin/qikvrt-runtime-health
+          test "$(docker compose exec -T qikvrt-universal-terminal cat /var/lib/qikvrt/profile/.qikvrt-restart-sentinel)" = durable-session-sentinel
+          docker compose cp qikvrt-universal-terminal:/var/lib/qikvrt/state/runtime.json /tmp/runtime-after.json
           python3 - <<'PY'
           import json
           before=json.load(open('/tmp/runtime-before.json',encoding='utf-8'))
@@ -113,43 +202,106 @@ jobs:
           assert after['external_effect_claimed'] is False
           assert after['started_at_unix'] >= before['started_at_unix']
           PY
-      - name: Preserve exact runtime evidence
+      - name: Reobserve immutable exact candidate
+        id: final_binding
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXACT_SUBJECT_SHA"
+          test "$(git rev-parse HEAD^{tree})" = "$(cat /tmp/qikvrt-terminal-exact-tree.txt)"
+          test -z "$(git status --porcelain --untracked-files=all)"
+      - name: Export the tested candidate Docker image and bind its bytes
+        id: export_image
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qikvrt-terminal-image
+          docker image save "qikvrt/universal-terminal:$EXACT_SUBJECT_SHA" | gzip -1 > /tmp/qikvrt-terminal-image/image.tar.gz
+          docker image inspect "qikvrt/universal-terminal:$EXACT_SUBJECT_SHA" > /tmp/qikvrt-terminal-image/image-inspect.json
+          python3 - <<'PYIMAGE'
+          import hashlib,json,os,pathlib
+          root=pathlib.Path('/tmp/qikvrt-terminal-image')
+          archive=root/'image.tar.gz'
+          digest=hashlib.sha256()
+          with archive.open('rb') as handle:
+              for block in iter(lambda:handle.read(1024*1024),b''):
+                  digest.update(block)
+          image=json.loads((root/'image-inspect.json').read_text())[0]
+          receipt={
+              'schema':'qikvrt_candidate_docker_image_archive_v1',
+              'subject_head_sha':os.environ['EXACT_SUBJECT_SHA'],
+              'subject_tree_sha':pathlib.Path('/tmp/qikvrt-terminal-exact-tree.txt').read_text().strip(),
+              'format':'GZIP_COMPRESSED_DOCKER_SAVE_ARCHIVE',
+              'archive':'image.tar.gz','sha256':digest.hexdigest(),'bytes':archive.stat().st_size,
+              'image_id':image['Id'],'architecture':image['Architecture'],'os':image['Os'],
+              'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],
+              'public_deployment':False,'MC68000_execution':False,
+              'PASS':False,'FINAL_PASS':False,'EFFECT_ACK_DONE':False,
+          }
+          (root/'IMAGE_RECEIPT.json').write_text(json.dumps(receipt,indent=2,sort_keys=True)+'\n')
+          (root/'SHA256SUMS').write_text(digest.hexdigest()+'  image.tar.gz\n')
+          PYIMAGE
+      - name: Upload tested candidate image, not a deployment receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-terminal-image-${{ env.EXACT_SUBJECT_SHA }}
+          path: /tmp/qikvrt-terminal-image
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 14
+      - name: Preserve exact runtime evidence without inferring success from files
         if: always()
+        env:
+          BIND_OUTCOME: ${{ steps.bind.outcome }}
+          CONTRACT_OUTCOME: ${{ steps.contract.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          START_OUTCOME: ${{ steps.start.outcome }}
+          OBSERVE_OUTCOME: ${{ steps.observe.outcome }}
+          RESTART_OUTCOME: ${{ steps.restart.outcome }}
+          PROTOCOL_OUTCOME: ${{ steps.protocol.outcome }}
+          EXPORT_IMAGE_OUTCOME: ${{ steps.export_image.outcome }}
+          FINAL_BINDING_OUTCOME: ${{ steps.final_binding.outcome }}
         run: |
           mkdir -p /tmp/qikvrt-terminal-evidence/runtime-logs
-          docker inspect qikvrt-terminal > /tmp/qikvrt-terminal-evidence/container-inspect.json 2>/dev/null || true
-          docker logs qikvrt-terminal > /tmp/qikvrt-terminal-evidence/container.log 2>&1 || true
-          docker cp qikvrt-terminal:/opt/qikvrt/runtime/logs/. /tmp/qikvrt-terminal-evidence/runtime-logs/ 2>/dev/null || true
-          docker cp qikvrt-terminal:/var/lib/qikvrt/state/runtime.json /tmp/qikvrt-terminal-evidence/runtime-state.json 2>/dev/null || true
-          cp /tmp/runtime-before.json /tmp/qikvrt-terminal-evidence/runtime-before.json 2>/dev/null || true
-          cp /tmp/runtime-after.json /tmp/qikvrt-terminal-evidence/runtime-after.json 2>/dev/null || true
-          cp /tmp/effect-ack.json /tmp/qikvrt-terminal-evidence/effect-ack-capability.json 2>/dev/null || true
-          cp /tmp/vnc.html /tmp/qikvrt-terminal-evidence/vnc.html 2>/dev/null || true
-          cp /tmp/qikvrt-compose.json /tmp/qikvrt-terminal-evidence/compose-rendered.json 2>/dev/null || true
+          docker compose logs --no-color > /tmp/qikvrt-terminal-evidence/container.log 2>&1 || true
+          docker compose cp qikvrt-universal-terminal:/opt/qikvrt/runtime/logs/. /tmp/qikvrt-terminal-evidence/runtime-logs/ 2>/dev/null || true
+          docker image inspect "qikvrt/universal-terminal:$EXACT_SUBJECT_SHA" > /tmp/qikvrt-terminal-evidence/image-inspect.json 2>/dev/null || true
+          for file in qikvrt-container-inspect.json runtime-before.json runtime-after.json effect-ack.json vnc.html qikvrt-compose.json qikvrt-firefox-version.txt qikvrt-terminal-exact-tree.txt; do
+            if [ -f "/tmp/$file" ]; then cp "/tmp/$file" /tmp/qikvrt-terminal-evidence/; fi
+          done
+          if [ -f /tmp/qikvrt-terminal-image/IMAGE_RECEIPT.json ]; then cp /tmp/qikvrt-terminal-image/IMAGE_RECEIPT.json /tmp/qikvrt-terminal-evidence/; fi
           printf '%s\n' "$EXACT_SUBJECT_SHA" > /tmp/qikvrt-terminal-evidence/exact-head.txt
           python3 - <<'PY'
-          import json, os
-          sha=os.environ['EXACT_SUBJECT_SHA']
-          effect_ack_observed=os.path.exists('/tmp/effect-ack.json') and os.path.getsize('/tmp/effect-ack.json') > 0
-          runtime_observed=os.path.exists('/tmp/runtime-after.json')
+          import hashlib,json,os,pathlib
+          root=pathlib.Path('/tmp/qikvrt-terminal-evidence')
+          keys=('bind','contract','build','start','observe','protocol','restart','final_binding','export_image')
+          outcomes={key:os.environ.get(key.upper()+'_OUTCOME','unknown') for key in keys}
+          treefile=root/'qikvrt-terminal-exact-tree.txt'
           receipt={
             'schema':'qikvrt_universal_terminal_runtime_receipt_v2',
-            'subject_head_sha':sha,
-            'oci_build':'EXECUTED' if runtime_observed else 'UNOBSERVED',
-            'container_start':'EXECUTED' if runtime_observed else 'UNOBSERVED',
-            'durable_restart':'EXECUTED' if runtime_observed else 'UNOBSERVED',
-            'persistent_profile_readback':'OBSERVED' if runtime_observed else 'UNOBSERVED',
-            'runtime_health_readback':'OBSERVED' if runtime_observed else 'UNOBSERVED',
-            'effect_ack_capability_readback':'OBSERVED' if effect_ack_observed else 'UNOBSERVED',
-            'firefox_process_check':'EXECUTED' if runtime_observed else 'UNOBSERVED',
-            'novnc_surface_check':'EXECUTED' if os.path.exists('/tmp/vnc.html') else 'UNOBSERVED',
+            'scope':'CI_LOCAL_ONLY',
+            'subject_head_sha':os.environ['EXACT_SUBJECT_SHA'],
+            'subject_tree_sha':treefile.read_text().strip() if treefile.exists() else None,
+            'run_id':os.environ['GITHUB_RUN_ID'],
+            'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],
+            'step_outcomes':outcomes,
+            'oci_build':'EXECUTED' if outcomes['build']=='success' else 'UNOBSERVED',
+            'container_start':'EXECUTED' if outcomes['start']=='success' else 'UNOBSERVED',
+            'durable_restart':'EXECUTED' if outcomes['restart']=='success' else 'UNOBSERVED',
+            'persistent_profile_readback':'OBSERVED' if outcomes['restart']=='success' else 'UNOBSERVED',
+            'runtime_health_readback':'OBSERVED' if outcomes['restart']=='success' else 'UNOBSERVED',
+            'effect_ack_capability_readback':'OBSERVED' if outcomes['observe']=='success' else 'UNOBSERVED',
+            'firefox_process_check':'EXECUTED' if outcomes['observe']=='success' else 'UNOBSERVED',
+            'novnc_surface_check':'EXECUTED' if outcomes['observe']=='success' else 'UNOBSERVED',
             'external_arxiv_submission':'NOT_EXECUTED',
             'external_wikipedia_edit':'NOT_EXECUTED',
-            'pass':False,
-            'final_pass':False,
-            'effect_ack_done':False,
+            'public_terminal_delivery':'NOT_EXECUTED',
+            'browser_interaction':'NOT_TESTED',
+            'noVNC_javascript_ui_tested':False,
+            'effect_ack_reference_e2e':'OBSERVED_SUCCESS' if outcomes['protocol']=='success' else 'UNVERIFIED',
+            'authority_mirror_synchronization':'NOT_CLAIMED',
+            'pass':False,'final_pass':False,'effect_ack_done':False,
           }
-          open('/tmp/qikvrt-terminal-evidence/runtime-receipt.json','w',encoding='utf-8').write(json.dumps(receipt,indent=2,sort_keys=True)+"\n")
+          receipt['evidence_sha256']={str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(root.rglob('*')) if p.is_file() and p.name!='runtime-receipt.json'}
+          (root/'runtime-receipt.json').write_text(json.dumps(receipt,indent=2,sort_keys=True)+'\n',encoding='utf-8')
           PY
       - name: Upload exact runtime evidence
         if: always()
@@ -159,8 +311,6 @@ jobs:
           path: /tmp/qikvrt-terminal-evidence
           if-no-files-found: error
           retention-days: 90
-      - name: Stop container and remove test volumes
+      - name: Stop container and remove CI-only test volumes
         if: always()
-        run: |
-          docker rm -f qikvrt-terminal 2>/dev/null || true
-          docker volume rm qikvrt-test-profile qikvrt-test-state 2>/dev/null || true
+        run: docker compose down --volumes
