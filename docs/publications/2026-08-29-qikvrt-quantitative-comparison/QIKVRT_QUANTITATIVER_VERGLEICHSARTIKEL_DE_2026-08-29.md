@@ -1055,3 +1055,25 @@ Ingolf Lohmann
 - INTERPRETIVE: Analogie oder weltanschauliche Deutung.
 - PERSONAL_ACCOUNT: ausdrücklich zugeschriebene persönliche Darstellung.
 - OPEN: noch ungemessene Performance, physische Korrespondenz, unabhängige Replikation, Patententscheidung oder Marktresultat.
+## Ergänzung: konkrete Integer-Realisierung des FP64-Zielvertrags
+
+Die Repository-Referenz `tools/qikvrt_integer_dgemm.py` implementiert nun einen
+reproduzierbaren Pfad von endlichen binary64-Eingaben über signierte
+INT8-Basis-128-Slices und gebundene Integer-Produktakkumulatoren zur finalen
+binary64-Summation. Das ist ein konkreter Realisierungsbeleg für die Trennung
+von numerischem Zielvertrag und nativer Recheneinheit; es ist ausdrücklich
+keine Behauptung nativer INT8-Matrixhardware.
+
+Der zugehörige Vertrag trennt drei Fragen: numerische Abweichung gegenüber
+einer Referenzrechnung, Bitidentität und IEEE-754-Statusflags. Nur die erste
+Frage wird vom Referenzpfad bewertet; die beiden anderen gelten als nicht
+modelliert beziehungsweise separat zu prüfen. Das lokale Benchmarkartefakt
+bindet Problemgröße, Wiederholungen, Plattform und Interpreter. Es behauptet
+keinen allgemeinen QIK-VRT-Speedup und keine Energieeinsparung.
+
+Reproduktionsbefehle:
+
+```text
+python3 -B -m unittest -v tests.test_integer_dgemm
+python3 -B tools/qikvrt_integer_dgemm.py --benchmark --size 4 --repetitions 3
+```
