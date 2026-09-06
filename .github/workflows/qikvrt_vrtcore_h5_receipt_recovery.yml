@@ -1,0 +1,105 @@
+name: QIKVRT VRTCore H5 public receipt recovery
+
+on:
+  push:
+    branches: [recovery/vrtcore-h5-public-receipt-22527889-v1]
+    paths: [state/publication/VRTCORE_H5_RECEIPT_RECOVERY.json]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-vrtcore-h5-receipt-recovery-22527889
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: zenodo-production
+    env:
+      EXECUTION_HEAD: dcb20c3871c48e774e4b4bce6a73d67635a82b74
+      MANIFEST_PATH: release/vrtcore-smg-h5-publication-2026-08-02/publish-request.json
+      EVIDENCE_PATH: release/vrtcore-smg-h5-publication-2026-08-02/zenodo-publication.json
+      EXPECTED_RECORD_ID: '22527889'
+      EXPECTED_DOI: 10.5281/zenodo.22527889
+      ZENODO_API_BASE: https://zenodo.org/api
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONNOUSERSITE: '1'
+    steps:
+      - name: Checkout exact consumed H5 execution head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXECUTION_HEAD }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact consumed authorization and clean controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXECUTION_HEAD"
+          test ! -e "$EVIDENCE_PATH"
+          python3 -B tools/qikvrt_vrtcore_zenodo_publication_controls.py --check
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          git fetch --tags origin
+          tag='refs/tags/qikvrt-zenodo-auth/ec8e1eb55a7ae8fd5937455095b87e63621736107f20b0d61b1cea20f6ff4c6b'
+          test "$(git for-each-ref --format='%(objecttype)' "$tag")" = tag
+          test "$(git for-each-ref --format='%(contents)' "$tag" | sed -n 's/^execution_head=//p')" = "$EXECUTION_HEAD"
+
+      - name: Reconcile same consumed publication and public readback
+        id: reconcile
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set +e
+          GITHUB_SHA="$EXECUTION_HEAD" python3 -B tools/qikvrt_zenodo_publish.py --manifest "$MANIFEST_PATH"
+          rc=$?
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Require exact public-verified H5 identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.reconcile.outputs.rc }}" = '0'
+          test -f "$EVIDENCE_PATH"
+          EVIDENCE_PATH="$EVIDENCE_PATH" EXPECTED_RECORD_ID="$EXPECTED_RECORD_ID" EXPECTED_DOI="$EXPECTED_DOI" python3 -B - <<'PY'
+          import json, os
+          from pathlib import Path
+          e=json.loads(Path(os.environ['EVIDENCE_PATH']).read_text(encoding='utf-8'))
+          if e.get('state') != 'published' or e.get('phase') != 'public_verified':
+              raise SystemExit('BLOCK: recovered H5 receipt is not public_verified published')
+          if str(e.get('record_id')) != os.environ['EXPECTED_RECORD_ID'] or e.get('doi') != os.environ['EXPECTED_DOI']:
+              raise SystemExit('BLOCK: recovered H5 public identity differs')
+          print(f"H5_RECOVERY_READBACK=VERIFIED doi={e['doi']} record_id={e['record_id']}")
+          PY
+
+      - name: Persist receipt on isolated repository branch
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RECEIPT_BRANCH: receipt/vrtcore-h5-zenodo-22527889
+        run: |
+          set -euo pipefail
+          cp "$EVIDENCE_PATH" /tmp/h5-zenodo-publication.json
+          git fetch origin main
+          base="$(git rev-parse origin/main)"
+          git reset --hard "$base"
+          git clean -fdx
+          test ! -e "$EVIDENCE_PATH"
+          mkdir -p "$(dirname "$EVIDENCE_PATH")"
+          cp /tmp/h5-zenodo-publication.json "$EVIDENCE_PATH"
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          git config user.name 'qik-vrt-zenodo-publication[bot]'
+          git config user.email 'qik-vrt-zenodo-publication[bot]@users.noreply.github.com'
+          git switch -c "$RECEIPT_BRANCH"
+          git add -- "$EVIDENCE_PATH" REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git diff --cached --check
+          git commit -m 'zenodo: persist public-verified VRTCore H5 receipt'
+          git push origin "HEAD:refs/heads/$RECEIPT_BRANCH"
