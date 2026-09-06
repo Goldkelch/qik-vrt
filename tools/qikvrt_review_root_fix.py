@@ -25,6 +25,7 @@ def replace_exact(path: Path, old: str, new: str, label: str) -> None:
 def main() -> int:
     core = ROOT / "tools/qikvrt_requested_review_executor.py"
     workflow = ROOT / ".github/workflows/qikvrt_requested_review_executor.yml"
+    legacy_test = ROOT / "tests/test_qikvrt_requested_review_executor.py"
 
     replace_exact(
         core,
@@ -84,6 +85,14 @@ def main() -> int:
         "              'base_ref':pr.get('base',{}).get('ref') == 'main',\n"
         "              'workflow_event':run.get('event') == 'workflow_dispatch',\n",
         "TRANSPORT_BASE_IDENTITY_ANCHOR",
+    )
+
+    replace_exact(
+        legacy_test,
+        '            "current-main": self.snapshot(current_main_sha="5" * 40),\n'
+        '            "current-main-tree": self.snapshot(current_main_tree_sha="6" * 40),\n',
+        '',
+        "LEGACY_DECISION_DRIFT_PROGRESS_FIELDS_ANCHOR",
     )
 
     test = ROOT / "tests/test_qikvrt_review_control_plane_root_fix.py"
