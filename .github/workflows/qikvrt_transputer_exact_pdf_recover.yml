@@ -1,0 +1,52 @@
+name: QIKVRT exact approved Transputer PDF recover
+
+on:
+  push:
+    branches:
+      - publication/transputer-evidence-spiral-zenodo-v2
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Recover exact frozen candidate from preflight artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_sha='78c845bb2bd078d9aeff2657865fc8b877aacf97987b64b817bd7e8856cf0536'
+          expected_blob='3a713fe4ac15a61a59514a9287472f6c9fe15462'
+          expected_size='243720'
+          target='docs/research/2026-09-05-information-effect-axis/publication/Vom_Transputer_zur_Evidenzspirale.pdf'
+          rm -rf /tmp/qikvrt-preflight && mkdir -p /tmp/qikvrt-preflight
+          gh run download 34057976716 --repo "$GITHUB_REPOSITORY" --dir /tmp/qikvrt-preflight
+          found=''
+          while IFS= read -r -d '' f; do
+            [ "$(stat -c%s "$f")" = "$expected_size" ] || continue
+            [ "$(sha256sum "$f" | awk '{print $1}')" = "$expected_sha" ] || continue
+            [ "$(git hash-object "$f")" = "$expected_blob" ] || continue
+            found="$f"
+            break
+          done < <(find /tmp/qikvrt-preflight -type f -print0)
+          [ -n "$found" ] || { echo 'EXACT_PDF_NOT_FOUND_IN_PREFLIGHT_ARTIFACTS'; exit 42; }
+          mkdir -p "$(dirname "$target")"
+          cp "$found" "$target"
+          printf '%s  %s\n' "$expected_sha" 'Vom_Transputer_zur_Evidenzspirale.pdf' > "${target}.sha256"
+          [ "$(stat -c%s "$target")" = "$expected_size" ]
+          [ "$(sha256sum "$target" | awk '{print $1}')" = "$expected_sha" ]
+          [ "$(git hash-object "$target")" = "$expected_blob" ]
+          rm -f .github/workflows/qikvrt_transputer_exact_pdf_recover.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m 'publication: materialize exact owner-approved Transputer PDF'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
