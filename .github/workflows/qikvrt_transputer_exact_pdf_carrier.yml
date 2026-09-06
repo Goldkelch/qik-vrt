@@ -1,0 +1,69 @@
+name: QIKVRT exact Transputer PDF carrier
+
+on:
+  push:
+    branches:
+      - publication/transputer-evidence-spiral-zenodo-v2
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: qikvrt-transputer-exact-pdf-carrier
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify exact payload, clean transient workflows, and open carrier PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_sha='78c845bb2bd078d9aeff2657865fc8b877aacf97987b64b817bd7e8856cf0536'
+          expected_blob='3a713fe4ac15a61a59514a9287472f6c9fe15462'
+          expected_size='243720'
+          target='docs/research/2026-09-05-information-effect-axis/publication/Vom_Transputer_zur_Evidenzspirale.pdf'
+          sidecar="${target}.sha256"
+
+          [ -f "$target" ] || { echo 'EXACT_PDF_NOT_MATERIALIZED'; exit 42; }
+          [ "$(stat -c%s "$target")" = "$expected_size" ] || exit 43
+          [ "$(sha256sum "$target" | awk '{print $1}')" = "$expected_sha" ] || exit 44
+          [ "$(git hash-object "$target")" = "$expected_blob" ] || exit 45
+          [ -f "$sidecar" ] || exit 46
+          [ "$(cat "$sidecar")" = "$expected_sha  Vom_Transputer_zur_Evidenzspirale.pdf" ] || exit 47
+
+          rm -f .github/workflows/qikvrt_transputer_exact_pdf_recover.yml
+          rm -f .github/workflows/qikvrt_transputer_exact_pdf_carrier.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m 'ci: remove transient exact-PDF recovery controls'
+          fi
+
+          git fetch origin main
+          mapfile -t changed < <(git diff --name-only origin/main...HEAD | sort)
+          expected1="$target"
+          expected2="$sidecar"
+          [ "${#changed[@]}" -eq 2 ] || { printf 'UNEXPECTED_NET_DIFF\n%s\n' "${changed[@]}"; exit 48; }
+          [ "${changed[0]}" = "$expected1" ] || exit 49
+          [ "${changed[1]}" = "$expected2" ] || exit 50
+
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+          pr="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$GITHUB_REF_NAME" --base main --state open --json number --jq '.[0].number // empty')"
+          if [ -z "$pr" ]; then
+            gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
+              --base main \
+              --head "$GITHUB_REF_NAME" \
+              --title 'publication: exact owner-approved Transputer evidence-spiral PDF' \
+              --body $'Exact publication carrier only.\n\nBound candidate:\n- file: Vom_Transputer_zur_Evidenzspirale.pdf\n- bytes: 243720\n- sha256: 78c845bb2bd078d9aeff2657865fc8b877aacf97987b64b817bd7e8856cf0536\n- git blob: 3a713fe4ac15a61a59514a9287472f6c9fe15462\n- source authorization: issue comment 5556176261\n\nThis PR is repository preparation/validation only. It is not Zenodo publication, DOI readback, PASS, FINAL_PASS, or EFFECT_ACK_DONE.'
+          fi
