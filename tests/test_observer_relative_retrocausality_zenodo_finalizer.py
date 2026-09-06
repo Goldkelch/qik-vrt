@@ -306,6 +306,8 @@ class ObserverRelativeRetrocausalityZenodoFinalizerTests(unittest.TestCase):
                         "user.name=Zenodo Finalizer Test",
                         "-c",
                         "user.email=zenodo-finalizer-test@example.invalid",
+                        "-c",
+                        "commit.gpgsign=false",
                         "commit",
                         "-m",
                         "test: materialize final Zenodo controls",
