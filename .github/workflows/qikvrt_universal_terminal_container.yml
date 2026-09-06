@@ -178,6 +178,11 @@ jobs:
           docker compose exec -T qikvrt-universal-terminal sh -lc 'printf "%s\n" durable-session-sentinel > /var/lib/qikvrt/profile/.qikvrt-restart-sentinel'
           docker compose exec -T qikvrt-universal-terminal firefox-esr --version >/tmp/qikvrt-firefox-version.txt 2>&1
           docker compose cp qikvrt-universal-terminal:/var/lib/qikvrt/state/runtime.json /tmp/runtime-before.json
+      - name: Exercise existing EffectAck contracts inside the image
+        id: protocol
+        run: |
+          set -euo pipefail
+          docker compose exec -T qikvrt-universal-terminal python3 -B -m unittest -v tests.test_qikvrt_effect_ack_http_terminal
       - name: Recreate through compose with persistent profile and reobserve
         id: restart
         run: |
@@ -204,6 +209,44 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXACT_SUBJECT_SHA"
           test "$(git rev-parse HEAD^{tree})" = "$(cat /tmp/qikvrt-terminal-exact-tree.txt)"
           test -z "$(git status --porcelain --untracked-files=all)"
+      - name: Export the tested candidate Docker image and bind its bytes
+        id: export_image
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qikvrt-terminal-image
+          docker image save "qikvrt/universal-terminal:$EXACT_SUBJECT_SHA" | gzip -1 > /tmp/qikvrt-terminal-image/image.tar.gz
+          docker image inspect "qikvrt/universal-terminal:$EXACT_SUBJECT_SHA" > /tmp/qikvrt-terminal-image/image-inspect.json
+          python3 - <<'PYIMAGE'
+          import hashlib,json,os,pathlib
+          root=pathlib.Path('/tmp/qikvrt-terminal-image')
+          archive=root/'image.tar.gz'
+          digest=hashlib.sha256()
+          with archive.open('rb') as handle:
+              for block in iter(lambda:handle.read(1024*1024),b''):
+                  digest.update(block)
+          image=json.loads((root/'image-inspect.json').read_text())[0]
+          receipt={
+              'schema':'qikvrt_candidate_docker_image_archive_v1',
+              'subject_head_sha':os.environ['EXACT_SUBJECT_SHA'],
+              'subject_tree_sha':pathlib.Path('/tmp/qikvrt-terminal-exact-tree.txt').read_text().strip(),
+              'format':'GZIP_COMPRESSED_DOCKER_SAVE_ARCHIVE',
+              'archive':'image.tar.gz','sha256':digest.hexdigest(),'bytes':archive.stat().st_size,
+              'image_id':image['Id'],'architecture':image['Architecture'],'os':image['Os'],
+              'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],
+              'public_deployment':False,'MC68000_execution':False,
+              'PASS':False,'FINAL_PASS':False,'EFFECT_ACK_DONE':False,
+          }
+          (root/'IMAGE_RECEIPT.json').write_text(json.dumps(receipt,indent=2,sort_keys=True)+'\n')
+          (root/'SHA256SUMS').write_text(digest.hexdigest()+'  image.tar.gz\n')
+          PYIMAGE
+      - name: Upload tested candidate image, not a deployment receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-terminal-image-${{ env.EXACT_SUBJECT_SHA }}
+          path: /tmp/qikvrt-terminal-image
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 14
       - name: Preserve exact runtime evidence without inferring success from files
         if: always()
         env:
@@ -213,6 +256,8 @@ jobs:
           START_OUTCOME: ${{ steps.start.outcome }}
           OBSERVE_OUTCOME: ${{ steps.observe.outcome }}
           RESTART_OUTCOME: ${{ steps.restart.outcome }}
+          PROTOCOL_OUTCOME: ${{ steps.protocol.outcome }}
+          EXPORT_IMAGE_OUTCOME: ${{ steps.export_image.outcome }}
           FINAL_BINDING_OUTCOME: ${{ steps.final_binding.outcome }}
         run: |
           mkdir -p /tmp/qikvrt-terminal-evidence/runtime-logs
@@ -222,11 +267,12 @@ jobs:
           for file in qikvrt-container-inspect.json runtime-before.json runtime-after.json effect-ack.json vnc.html qikvrt-compose.json qikvrt-firefox-version.txt qikvrt-terminal-exact-tree.txt; do
             if [ -f "/tmp/$file" ]; then cp "/tmp/$file" /tmp/qikvrt-terminal-evidence/; fi
           done
+          if [ -f /tmp/qikvrt-terminal-image/IMAGE_RECEIPT.json ]; then cp /tmp/qikvrt-terminal-image/IMAGE_RECEIPT.json /tmp/qikvrt-terminal-evidence/; fi
           printf '%s\n' "$EXACT_SUBJECT_SHA" > /tmp/qikvrt-terminal-evidence/exact-head.txt
           python3 - <<'PY'
           import hashlib,json,os,pathlib
           root=pathlib.Path('/tmp/qikvrt-terminal-evidence')
-          keys=('bind','contract','build','start','observe','restart','final_binding')
+          keys=('bind','contract','build','start','observe','protocol','restart','final_binding','export_image')
           outcomes={key:os.environ.get(key.upper()+'_OUTCOME','unknown') for key in keys}
           treefile=root/'qikvrt-terminal-exact-tree.txt'
           receipt={
@@ -249,6 +295,8 @@ jobs:
             'external_wikipedia_edit':'NOT_EXECUTED',
             'public_terminal_delivery':'NOT_EXECUTED',
             'browser_interaction':'NOT_TESTED',
+            'noVNC_javascript_ui_tested':False,
+            'effect_ack_reference_e2e':'OBSERVED_SUCCESS' if outcomes['protocol']=='success' else 'UNVERIFIED',
             'authority_mirror_synchronization':'NOT_CLAIMED',
             'pass':False,'final_pass':False,'effect_ack_done':False,
           }
