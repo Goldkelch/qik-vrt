@@ -51,15 +51,13 @@ an `APPROVE` plan fail closed; no approval is posted.
 
 For one completed native technical-review run, the planner:
 
-1. permits an `APPROVE` for the exact
+1. permits an `APPROVE` only for the exact current
    `pull_request_target.review_requested` intake to the configured
-   counterpart, or for one later trusted exact executor event while that same
-   counterpart remains in the live requested-reviewer set. Every such
-   follow-up is bound through one immutable artifact whose name, receipt,
-   fingerprint, PR, head, trusted workflow identity, and live reobservation
-   agree. A non-request event without the still-live counterpart can only
-   enter the separate stale-approval retraction path; unbound receipts are no
-   effect;
+   counterpart. A later `workflow_run`, `workflow_dispatch`, issue comment,
+   label, or other re-read may record evidence but cannot reuse the live
+   requested-reviewer set to create an `APPROVE`. Those events may enter only
+   the separate stale-delegated-approval retraction path when its exact
+   preconditions hold; otherwise they are no effect;
 2. downloads the exact executor artifact and rereads its immutable ledger
    receipt, manifest, ordered packets, and ledger commit;
 3. checks byte-canonical chunk reassembly and fresh base/head/tree/diff/

@@ -119,7 +119,7 @@ class NativeAccountReviewTests(unittest.TestCase):
         self.assertEqual(missing["first_blocker"], "REVIEW_INTAKE_INVALID")
         self.assertEqual(manual["first_blocker"], "REVIEW_REQUEST_EVENT_NOT_EXACT")
 
-    def test_trusted_exact_followup_closes_a_live_request(self):
+    def test_followup_event_never_reuses_a_live_request_as_approval(self):
         for intake in (
             {"event_name": "workflow_run", "event_action": "completed"},
             {"event_name": "workflow_dispatch", "event_action": ""},
@@ -127,9 +127,9 @@ class NativeAccountReviewTests(unittest.TestCase):
         ):
             with self.subTest(intake=intake):
                 value = self.plan(receipt=self.receipt(review_intake=intake))
-                self.assertTrue(value["effect_permitted"])
-                self.assertEqual(value["event"], "APPROVE")
-                self.assertTrue(value["active_requested_counterpart_required"])
+                self.assertFalse(value["effect_permitted"])
+                self.assertEqual(value["event"], module.NO_EFFECT)
+                self.assertEqual(value["first_blocker"], "REVIEW_REQUEST_EVENT_NOT_EXACT")
 
     def test_trusted_exact_followup_requires_counterpart_to_remain_requested(self):
         intake = {"event_name": "workflow_run", "event_action": "completed"}
@@ -299,7 +299,7 @@ class NativeAccountReviewTests(unittest.TestCase):
         self.assertEqual(value["event"], "REQUEST_CHANGES")
         self.assertTrue(value["retraction_only"])
 
-    def test_exact_followup_projects_a_current_blocker_for_a_live_request(self):
+    def test_followup_event_cannot_project_a_current_blocker_as_review(self):
         intake = {
             "event_name": "pull_request_target",
             "event_action": "labeled",
@@ -307,11 +307,11 @@ class NativeAccountReviewTests(unittest.TestCase):
             "requested_target_observed": None,
         }
         value = self.plan(receipt=self.receipt(state="COMMENT_WITH_BLOCKER", review_intake=intake))
-        self.assertTrue(value["effect_permitted"])
-        self.assertEqual(value["event"], "REQUEST_CHANGES")
-        self.assertFalse(value["retraction_only"])
+        self.assertFalse(value["effect_permitted"])
+        self.assertEqual(value["event"], module.NO_EFFECT)
+        self.assertEqual(value["first_blocker"], "RETRACTION_EVENT_NOT_EXACT")
 
-    def test_comment_event_refreshes_a_live_requested_approval(self):
+    def test_comment_event_only_retracts_a_stale_delegated_approval(self):
         old = {
             "id": 1,
             "commit_id": HEAD,
@@ -330,8 +330,8 @@ class NativeAccountReviewTests(unittest.TestCase):
             reviews=[old],
         )
         self.assertTrue(value["effect_permitted"])
-        self.assertEqual(value["event"], "APPROVE")
-        self.assertFalse(value["retraction_only"])
+        self.assertEqual(value["event"], "REQUEST_CHANGES")
+        self.assertTrue(value["retraction_only"])
 
     def test_marked_comment_does_not_mask_the_last_decisive_delegated_approval(self):
         old = {
@@ -361,7 +361,7 @@ class NativeAccountReviewTests(unittest.TestCase):
         self.assertTrue(value["effect_permitted"])
         self.assertTrue(value["retraction_only"])
 
-    def test_completed_workflow_run_refreshes_a_live_requested_approval(self):
+    def test_completed_workflow_run_only_retracts_a_stale_delegated_approval(self):
         old = {
             "id": 1,
             "commit_id": HEAD,
@@ -377,8 +377,8 @@ class NativeAccountReviewTests(unittest.TestCase):
         }
         value = self.plan(receipt=self.receipt(state="APPROVE", review_intake=intake), reviews=[old])
         self.assertTrue(value["effect_permitted"])
-        self.assertEqual(value["event"], "APPROVE")
-        self.assertFalse(value["retraction_only"])
+        self.assertEqual(value["event"], "REQUEST_CHANGES")
+        self.assertTrue(value["retraction_only"])
 
     def test_same_fingerprint_dismissal_is_idempotent_and_not_overridden(self):
         comment = {
@@ -575,6 +575,10 @@ class NativeAccountReviewTests(unittest.TestCase):
         self.assertIn("executor artifact name and receipt binding differ", workflow)
         self.assertIn("executor receipt event provenance differs from the trusted run", workflow)
         self.assertIn("PRE_EFFECT_REQUESTED_REVIEWER_DRIFT", (ROOT / "tools/qikvrt_native_account_review.py").read_text(encoding="utf-8"))
+        self.assertNotIn("_exact_followup_event", (ROOT / "tools/qikvrt_native_account_review.py").read_text(encoding="utf-8"))
+        delegation = (ROOT / "state/authorization/delegations/OWNER_NATIVE_ACCOUNT_REVIEW_AUTOMATION_V1.json").read_text(encoding="utf-8")
+        self.assertIn("approve_requires_exact_current_pull_request_review_requested_event", delegation)
+        self.assertNotIn("trusted_exact_followup_with_current_requested_counterpart", delegation)
         self.assertIn("run.get('path') != trusted_path", workflow)
         self.assertIn("executor ledger commit is not reachable", workflow)
         self.assertEqual(workflow.count('tools/qikvrt_requested_review_executor.py verify'), 3)
