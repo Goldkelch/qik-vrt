@@ -79,6 +79,29 @@ class UniversalTerminalNetworkBoundaryTests(unittest.TestCase):
         self.assertIn("      - no-new-privileges:true", text)
         self.assertIn("    cap_drop:\n      - ALL", text)
 
+    def test_gateway_has_no_root_or_capability_workaround(self):
+        text = COMPOSE.read_text(encoding="utf-8")
+        gateway = text.split("\n  qikvrt-gateway:\n", 1)[1].split("\n  qikvrt-smtpd:", 1)[0]
+        self.assertIn('    user: "65534:65534"', gateway)
+        self.assertIn("    cap_drop:\n      - ALL", gateway)
+        self.assertNotIn("cap_add:", gateway)
+        self.assertIn("    read_only: true", gateway)
+        self.assertIn("      - no-new-privileges:true", gateway)
+        self.assertIn("network_mode: service:qikvrt-universal-terminal", gateway)
+        self.assertNotIn("\n    ports:", gateway)
+
+    def test_gateway_pid_and_temporary_paths_are_writable_without_chown(self):
+        text = COMPOSE.read_text(encoding="utf-8")
+        gateway = text.split("\n  qikvrt-gateway:\n", 1)[1].split("\n  qikvrt-smtpd:", 1)[0]
+        self.assertIn("      - /tmp:size=32m,mode=1777", gateway)
+        nginx = (COMPOSE.parent / "nginx.conf").read_text(encoding="utf-8")
+        self.assertIn("master_process off;", nginx)
+        self.assertIn("pid /tmp/nginx.pid;", nginx)
+        self.assertNotIn("pid /run/", nginx)
+        self.assertNotRegex(nginx, r"(?m)^\s*user\s+root\b")
+        for directive in ("client_body", "proxy", "fastcgi", "uwsgi", "scgi"):
+            self.assertRegex(nginx, rf"(?m)^  {directive}_temp_path /tmp/[^;]+;$")
+
     def test_ci_runs_compose_instead_of_a_weaker_docker_run(self):
         text = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("COMPOSE_FILE: deploy/universal-terminal/compose.yaml", text)
