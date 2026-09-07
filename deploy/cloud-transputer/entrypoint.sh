@@ -240,8 +240,10 @@ if [ -n "${QIKVRT_TERMINAL_PASSWORD:-}" ]; then
     exit 35
   fi
   TERMINAL_HASH="$(printf '%s\n' "$QIKVRT_TERMINAL_PASSWORD" | openssl passwd -6 -stdin)"
-  umask 077
-  printf '%s:%s\n' "$TERMINAL_USER" "$TERMINAL_HASH" > "$RUN_DIR/terminal.htpasswd"
+  (
+    umask 077
+    printf '%s:%s\n' "$TERMINAL_USER" "$TERMINAL_HASH" > "$RUN_DIR/terminal.htpasswd"
+  )
   TERMINAL_AUTH_DIRECTIVES="satisfy any;
       allow 127.0.0.1;
       allow ::1;
@@ -321,6 +323,7 @@ for path in (run_path,state_path):
     json.dump(value,handle,ensure_ascii=False,indent=2,sort_keys=True); handle.write('\n')
   os.replace(tmp,path)
 PY
+chmod 0644 "$RUN_DIR/runtime.json"
 
 cleanup() {
   kill "$NGINX_PID" "$FIREFOX_PID" "$NOVNC_PID" "$VNC_PID" "$XVFB_PID" \
@@ -331,6 +334,7 @@ trap cleanup INT TERM EXIT
 
 /usr/local/bin/qikvrt-cloud-transputer-health
 printf '%s\n' ready > "$RUN_DIR/ready.txt"
+chmod 0644 "$RUN_DIR/ready.txt"
 printf '%s\n' "QIKVRT cloud transputer ready: runtime=$RUNTIME_ID proxy=0.0.0.0:$PROXY_PORT stable_mesh=$MESH_PUBLIC_URL"
 
 while kill -0 "$NGINX_PID" 2>/dev/null \
