@@ -1,0 +1,407 @@
+diff --git a/.github/workflows/qikvrt_requested_review_executor.yml b/.github/workflows/qikvrt_requested_review_executor.yml
+index ef883d48d6217997e5d41e8fa2c20bbc9a50087d..159999bf6db7efdbcc262219a85d6de3529a2546 100644
+--- a/.github/workflows/qikvrt_requested_review_executor.yml
++++ b/.github/workflows/qikvrt_requested_review_executor.yml
+@@ -255,7 +255,7 @@ jobs:
+           PY
+ 
+       - name: Persist exact receipt and diff by ledger fast-forward CAS
+-        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE'
++        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE' && steps.decision.outputs.blocker != 'COMPETING_WRITER_ACTIVE'
+         id: ledger
+         env:
+           PR_NUMBER: ${{ steps.select.outputs.pr }}
+@@ -759,6 +759,12 @@ jobs:
+           print(json.dumps(report,sort_keys=True))
+           PY
+ 
++      - name: Record competing-writer hold without a ledger mutation
++        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE' && steps.decision.outputs.blocker == 'COMPETING_WRITER_ACTIVE'
++        shell: bash
++        run: |
++          echo 'HOLD_UNVERIFIED: competing writer lease is active; await its completed repository event before reobservation.'
++
+       - name: Project persisted receipt into PR comment and exact-head status
+         if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE' && steps.ledger.outputs.persisted == 'true' && steps.ledger.outputs.projection_current == 'true'
+         env:
+@@ -873,7 +879,7 @@ jobs:
+           PY
+ 
+       - name: Select exactly one durable recursive review work unit
+-        if: steps.active.outputs.active == 'true' && steps.ledger.outputs.persisted == 'true'
++        if: steps.active.outputs.active == 'true' && steps.ledger.outputs.persisted == 'true' && steps.ledger.outputs.d0 == '2'
+         id: queue
+         env:
+           SUBJECT_PR_NUMBER: ${{ steps.select.outputs.pr }}
+@@ -1183,6 +1189,15 @@ jobs:
+                   f"fp={os.environ['SUCCESSOR_FINGERPRINT']}"
+               ),
+           }
++          root=pathlib.Path('.qikvrt/mesh-review')
++          causal=json.loads(
++              (root/'reobservations/post-successor-dispatch/verification.json')
++              .read_text(encoding='utf-8')
++          )
++          checks['full_causal_binding']=(
++              causal.get('ledger_safe') is True
++              and causal.get('checks',{}).get('causal_binding') is True
++          )
+           value={
+               'schema':'qikvrt_mesh_review_successor_reobservation_v1',
+               'work_unit_id':(
+@@ -1198,15 +1213,6 @@ jobs:
+                   'EFFECT_ACK_DONE':False,'MERGE':False,
+               },
+           }
+-          root=pathlib.Path('.qikvrt/mesh-review')
+-          causal=json.loads(
+-              (root/'reobservations/post-successor-dispatch/verification.json')
+-              .read_text(encoding='utf-8')
+-          )
+-          checks['full_causal_binding']=(
+-              causal.get('ledger_safe') is True
+-              and causal.get('checks',{}).get('causal_binding') is True
+-          )
+           (root/'successor-dispatch-reobservation.json').write_text(
+               json.dumps(value,sort_keys=True,indent=2)+'\n',encoding='utf-8'
+           )
+@@ -1226,7 +1232,7 @@ jobs:
+           path: .qikvrt/mesh-review
+ 
+       - name: Enforce fail-closed ledger persistence
+-        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE' && steps.ledger.outputs.persisted != 'true'
++        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE' && steps.ledger.outputs.persisted != 'true' && steps.decision.outputs.blocker != 'COMPETING_WRITER_ACTIVE'
+         run: |
+           echo 'HOLD_UNVERIFIED: exact Mesh review receipt was not persisted by FF-CAS.'
+           exit 1
+@@ -1236,6 +1242,10 @@ jobs:
+         run: |
+           set -euo pipefail
+           cat /tmp/qikvrt-review-selection.json
++          if [ "${{ steps.select.outputs.state }}" = 'REOBSERVE_EXACT_EVENT_TARGET' ]; then
++            echo 'HOLD_UNVERIFIED: exact event target could not be reobserved; await a new repository event.'
++            exit 1
++          fi
+ 
+       - name: Bootstrap NOOP before trusted-main promotion
+         if: steps.active.outputs.active != 'true'
+diff --git a/docs/DELEGATED_NATIVE_ACCOUNT_REVIEW_AUTOMATION.md b/docs/DELEGATED_NATIVE_ACCOUNT_REVIEW_AUTOMATION.md
+index 8df4c4dba68c8d0b48dfde60892c7019a6a4b6c2..91b46bdca151d09f4492b5268560d08a4bed7a27 100644
+--- a/docs/DELEGATED_NATIVE_ACCOUNT_REVIEW_AUTOMATION.md
++++ b/docs/DELEGATED_NATIVE_ACCOUNT_REVIEW_AUTOMATION.md
+@@ -51,15 +51,13 @@ an `APPROVE` plan fail closed; no approval is posted.
+ 
+ For one completed native technical-review run, the planner:
+ 
+-1. permits an `APPROVE` for the exact
++1. permits an `APPROVE` only for the exact current
+    `pull_request_target.review_requested` intake to the configured
+-   counterpart, or for one later trusted exact executor event while that same
+-   counterpart remains in the live requested-reviewer set. Every such
+-   follow-up is bound through one immutable artifact whose name, receipt,
+-   fingerprint, PR, head, trusted workflow identity, and live reobservation
+-   agree. A non-request event without the still-live counterpart can only
+-   enter the separate stale-approval retraction path; unbound receipts are no
+-   effect;
++   counterpart. A later `workflow_run`, `workflow_dispatch`, issue comment,
++   label, or other re-read may record evidence but cannot reuse the live
++   requested-reviewer set to create an `APPROVE`. Those events may enter only
++   the separate stale-delegated-approval retraction path when its exact
++   preconditions hold; otherwise they are no effect;
+ 2. downloads the exact executor artifact and rereads its immutable ledger
+    receipt, manifest, ordered packets, and ledger commit;
+ 3. checks byte-canonical chunk reassembly and fresh base/head/tree/diff/
+diff --git a/state/authorization/delegations/OWNER_NATIVE_ACCOUNT_REVIEW_AUTOMATION_V1.json b/state/authorization/delegations/OWNER_NATIVE_ACCOUNT_REVIEW_AUTOMATION_V1.json
+index 8bf2657062b8b9ebb92932529c0eb4b6f66e4359..0b39df50904f03e0c081e6a6081d8dbf70de3606 100644
+--- a/state/authorization/delegations/OWNER_NATIVE_ACCOUNT_REVIEW_AUTOMATION_V1.json
++++ b/state/authorization/delegations/OWNER_NATIVE_ACCOUNT_REVIEW_AUTOMATION_V1.json
+@@ -49,7 +49,7 @@
+     "no_candidate_checkout_or_execution_with_account_credential",
+     "exact_open_internal_main_based_pull_request",
+     "exact_base_head_tree_and_evidence_fingerprint",
+-    "approve_requires_exact_request_event_or_trusted_exact_followup_with_current_requested_counterpart",
++    "approve_requires_exact_current_pull_request_review_requested_event",
+     "approve_requires_current_requested_counterpart_at_pre_effect_readback",
+     "immutable_ledger_receipt_and_chunk_transport_reassembly",
+     "fresh_reobservation_immediately_before_post",
+diff --git a/tests/test_qikvrt_native_account_review.py b/tests/test_qikvrt_native_account_review.py
+index 3207a139ddce2f2499e5a166b7a566522722f047..923a62fd120313c34bd1c775b31d13eba08205ed 100644
+--- a/tests/test_qikvrt_native_account_review.py
++++ b/tests/test_qikvrt_native_account_review.py
+@@ -119,7 +119,7 @@ class NativeAccountReviewTests(unittest.TestCase):
+         self.assertEqual(missing["first_blocker"], "REVIEW_INTAKE_INVALID")
+         self.assertEqual(manual["first_blocker"], "REVIEW_REQUEST_EVENT_NOT_EXACT")
+ 
+-    def test_trusted_exact_followup_closes_a_live_request(self):
++    def test_followup_event_never_reuses_a_live_request_as_approval(self):
+         for intake in (
+             {"event_name": "workflow_run", "event_action": "completed"},
+             {"event_name": "workflow_dispatch", "event_action": ""},
+@@ -127,9 +127,9 @@ class NativeAccountReviewTests(unittest.TestCase):
+         ):
+             with self.subTest(intake=intake):
+                 value = self.plan(receipt=self.receipt(review_intake=intake))
+-                self.assertTrue(value["effect_permitted"])
+-                self.assertEqual(value["event"], "APPROVE")
+-                self.assertTrue(value["active_requested_counterpart_required"])
++                self.assertFalse(value["effect_permitted"])
++                self.assertEqual(value["event"], module.NO_EFFECT)
++                self.assertEqual(value["first_blocker"], "REVIEW_REQUEST_EVENT_NOT_EXACT")
+ 
+     def test_trusted_exact_followup_requires_counterpart_to_remain_requested(self):
+         intake = {"event_name": "workflow_run", "event_action": "completed"}
+@@ -299,7 +299,7 @@ class NativeAccountReviewTests(unittest.TestCase):
+         self.assertEqual(value["event"], "REQUEST_CHANGES")
+         self.assertTrue(value["retraction_only"])
+ 
+-    def test_exact_followup_projects_a_current_blocker_for_a_live_request(self):
++    def test_followup_event_cannot_project_a_current_blocker_as_review(self):
+         intake = {
+             "event_name": "pull_request_target",
+             "event_action": "labeled",
+@@ -307,11 +307,11 @@ class NativeAccountReviewTests(unittest.TestCase):
+             "requested_target_observed": None,
+         }
+         value = self.plan(receipt=self.receipt(state="COMMENT_WITH_BLOCKER", review_intake=intake))
+-        self.assertTrue(value["effect_permitted"])
+-        self.assertEqual(value["event"], "REQUEST_CHANGES")
+-        self.assertFalse(value["retraction_only"])
++        self.assertFalse(value["effect_permitted"])
++        self.assertEqual(value["event"], module.NO_EFFECT)
++        self.assertEqual(value["first_blocker"], "RETRACTION_EVENT_NOT_EXACT")
+ 
+-    def test_comment_event_refreshes_a_live_requested_approval(self):
++    def test_comment_event_only_retracts_a_stale_delegated_approval(self):
+         old = {
+             "id": 1,
+             "commit_id": HEAD,
+@@ -330,8 +330,8 @@ class NativeAccountReviewTests(unittest.TestCase):
+             reviews=[old],
+         )
+         self.assertTrue(value["effect_permitted"])
+-        self.assertEqual(value["event"], "APPROVE")
+-        self.assertFalse(value["retraction_only"])
++        self.assertEqual(value["event"], "REQUEST_CHANGES")
++        self.assertTrue(value["retraction_only"])
+ 
+     def test_marked_comment_does_not_mask_the_last_decisive_delegated_approval(self):
+         old = {
+@@ -361,7 +361,7 @@ class NativeAccountReviewTests(unittest.TestCase):
+         self.assertTrue(value["effect_permitted"])
+         self.assertTrue(value["retraction_only"])
+ 
+-    def test_completed_workflow_run_refreshes_a_live_requested_approval(self):
++    def test_completed_workflow_run_only_retracts_a_stale_delegated_approval(self):
+         old = {
+             "id": 1,
+             "commit_id": HEAD,
+@@ -377,8 +377,8 @@ class NativeAccountReviewTests(unittest.TestCase):
+         }
+         value = self.plan(receipt=self.receipt(state="APPROVE", review_intake=intake), reviews=[old])
+         self.assertTrue(value["effect_permitted"])
+-        self.assertEqual(value["event"], "APPROVE")
+-        self.assertFalse(value["retraction_only"])
++        self.assertEqual(value["event"], "REQUEST_CHANGES")
++        self.assertTrue(value["retraction_only"])
+ 
+     def test_same_fingerprint_dismissal_is_idempotent_and_not_overridden(self):
+         comment = {
+@@ -575,6 +575,10 @@ class NativeAccountReviewTests(unittest.TestCase):
+         self.assertIn("executor artifact name and receipt binding differ", workflow)
+         self.assertIn("executor receipt event provenance differs from the trusted run", workflow)
+         self.assertIn("PRE_EFFECT_REQUESTED_REVIEWER_DRIFT", (ROOT / "tools/qikvrt_native_account_review.py").read_text(encoding="utf-8"))
++        self.assertNotIn("_exact_followup_event", (ROOT / "tools/qikvrt_native_account_review.py").read_text(encoding="utf-8"))
++        delegation = (ROOT / "state/authorization/delegations/OWNER_NATIVE_ACCOUNT_REVIEW_AUTOMATION_V1.json").read_text(encoding="utf-8")
++        self.assertIn("approve_requires_exact_current_pull_request_review_requested_event", delegation)
++        self.assertNotIn("trusted_exact_followup_with_current_requested_counterpart", delegation)
+         self.assertIn("run.get('path') != trusted_path", workflow)
+         self.assertIn("executor ledger commit is not reachable", workflow)
+         self.assertEqual(workflow.count('tools/qikvrt_requested_review_executor.py verify'), 3)
+diff --git a/tests/test_qikvrt_requested_review_executor.py b/tests/test_qikvrt_requested_review_executor.py
+index 6b91df3adfed210e874307ea5606c1dfccee44d6..5a6ba8e5e1f380e2d7b88e09479916c2ee5a721f 100644
+--- a/tests/test_qikvrt_requested_review_executor.py
++++ b/tests/test_qikvrt_requested_review_executor.py
+@@ -1382,7 +1382,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
+         self.assertFalse(report["ledger_safe"])
+         self.assertFalse(report["progress_successor"])
+ 
+-    def test_active_writer_change_is_a_nonprojectable_bound_successor(self):
++    def test_active_writer_change_requires_a_new_exact_event_observation(self):
+         waiting = self.snapshot(active_writers=[{
+             "id": 777,
+             "name": "QIKVRT repository evidence materialization",
+@@ -1414,9 +1414,11 @@ class RequestedReviewExecutorTests(unittest.TestCase):
+                 [],
+             )
+ 
+-        self.assertTrue(report["ledger_safe"])
+-        self.assertTrue(report["progress_successor"])
++        self.assertFalse(report["ledger_safe"])
++        self.assertFalse(report["progress_successor"])
+         self.assertFalse(report["exact"])
++        self.assertFalse(report["checks"]["causal_binding"])
++        self.assertEqual(report["state"], "HOLD_UNVERIFIED")
+         self.assertNotEqual(
+             expected["active_writers_observed"],
+             fresh["active_writers_observed"],
+@@ -1977,6 +1979,40 @@ class RequestedReviewExecutorTests(unittest.TestCase):
+         self.assertNotIn("e" * 40, {item["head_sha"] for item in observed})
+         self.assertEqual(gh_runs.call_count, len(MODULE.ACTIVE_WRITER_STATES))
+ 
++    def test_active_writer_observation_excludes_role_local_ledger_executor(self):
++        runs = [
++            {
++                "id": 901,
++                "name": MODULE.ROLE_LOCAL_LEDGER_WORKFLOW_NAME,
++                "status": "in_progress",
++                "head_sha": HEAD_SHA,
++                "workflow_id": 7001,
++                "path": MODULE.ROLE_LOCAL_LEDGER_WORKFLOW_PATH + "@main",
++                "event": "workflow_dispatch",
++                "run_number": 1,
++                "run_attempt": 1,
++            },
++            {
++                "id": 902,
++                "name": MODULE.ROLE_LOCAL_LEDGER_WORKFLOW_NAME,
++                "status": "in_progress",
++                "head_sha": HEAD_SHA,
++                "workflow_id": 7002,
++                "path": ".github/workflows/other-writer.yml",
++                "event": "workflow_dispatch",
++                "run_number": 1,
++                "run_attempt": 1,
++            },
++        ]
++        with mock.patch.object(MODULE, "_gh_runs", return_value=runs):
++            observed = MODULE._active_writer_observation(
++                "example/qik-vrt",
++                999,
++                {MODULE.ROLE_LOCAL_LEDGER_WORKFLOW_NAME},
++                {HEAD_SHA},
++            )
++        self.assertEqual([item["id"] for item in observed], [902])
++
+     def test_active_writer_observation_rejects_unbound_head_set(self):
+         with self.assertRaisesRegex(
+             MODULE.ReviewObservationError,
+@@ -2072,6 +2108,13 @@ class RequestedReviewExecutorTests(unittest.TestCase):
+         self.assertIn("steps.queue.outputs.needed == 'true'", text)
+         self.assertNotIn("steps.ledger.outputs.duplicate != 'true'", text)
+         self.assertIn("Select exactly one durable recursive review work unit", text)
++        self.assertIn("steps.ledger.outputs.d0 == '2'", text)
++        self.assertIn("Record competing-writer hold without a ledger mutation", text)
++        self.assertIn("steps.decision.outputs.blocker != 'COMPETING_WRITER_ACTIVE'", text)
++        self.assertIn("REOBSERVE_EXACT_EVENT_TARGET", text)
++        self.assertIn("HOLD_UNVERIFIED: exact event target could not be reobserved", text)
++        self.assertNotIn('    "active_writers_observed",', core)
++        self.assertIn("ROLE_LOCAL_LEDGER_WORKFLOW_NAME", core)
+         self.assertIn("review_queue_intent", text)
+         self.assertIn("review_queue_ack", text)
+         self.assertIn("successor_evidence_persisted", text)
+diff --git a/tests/test_qikvrt_review_control_plane_root_fix.py b/tests/test_qikvrt_review_control_plane_root_fix.py
+index 365854da71a4195810a15636584e1e23228f630f..2d53cf844158ea5867f541e2766429d68e883ce8 100644
+--- a/tests/test_qikvrt_review_control_plane_root_fix.py
++++ b/tests/test_qikvrt_review_control_plane_root_fix.py
+@@ -36,6 +36,13 @@ class RequestedReviewControlPlaneRootFixTests(unittest.TestCase):
+         self.assertIn("str(intent.get('pr_number')) != os.environ['SUBJECT_PR_NUMBER']", text)
+         self.assertIn("intent.get('head_sha') != os.environ['SUBJECT_HEAD_SHA']", text)
+ 
++    def test_successor_transport_counts_causal_binding_before_acknowledgment(self):
++        text=(ROOT/".github/workflows/qikvrt_requested_review_executor.yml").read_text()
++        self.assertLess(
++            text.index("checks['full_causal_binding']"),
++            text.index("'transport_ack_observed':all(checks.values())"),
++        )
++
+     def test_transport_does_not_bind_moving_base_tip(self):
+         text=(ROOT/".github/workflows/qikvrt_requested_review_executor.yml").read_text()
+         self.assertNotIn("'base_sha':pr.get('base',{}).get('sha') == os.environ['EXPECTED_BASE']", text)
+diff --git a/tools/qikvrt_native_account_review.py b/tools/qikvrt_native_account_review.py
+index d386357805a3477bebabba2bd3bb375fba90e0a7..55dd348c1f772e09e5c3bb70c968df100915ecf4 100644
+--- a/tools/qikvrt_native_account_review.py
++++ b/tools/qikvrt_native_account_review.py
+@@ -425,20 +425,6 @@ def _exact_retraction_event(intake: Mapping[str, Any]) -> bool:
+     )
+ 
+ 
+-def _exact_followup_event(intake: Mapping[str, Any]) -> bool:
+-    """Accept one trusted exact event that can close a still-live request."""
+-    event_name = intake.get("event_name")
+-    event_action = intake.get("event_action")
+-    if event_name == "workflow_dispatch":
+-        return event_action == ""
+-    if event_name == "pull_request_target" and event_action in {
+-        "review_requested",
+-        "review_request_removed",
+-    }:
+-        return False
+-    return _exact_retraction_event(intake)
+-
+-
+ def plan_native_account_review(
+     *,
+     repository: str,
+@@ -543,19 +529,7 @@ def plan_native_account_review(
+         and isinstance(target, str)
+         and target.casefold() == reviewer.casefold()
+     )
+-    requested_reviewers = pr_object.get("requested_reviewers")
+-    live_requested_counterpart = (
+-        isinstance(requested_reviewers, list)
+-        and any(
+-            isinstance(item, Mapping)
+-            and isinstance(item.get("login"), str)
+-            and item["login"].casefold() == reviewer.casefold()
+-            for item in requested_reviewers
+-        )
+-    )
+-    exact_active_request = exact_requested_event or (
+-        live_requested_counterpart and _exact_followup_event(intake)
+-    )
++    exact_active_request = exact_requested_event
+     stale_delegated_approval = _stale_delegated_approval_present(
+         review_list, reviewer, binding["head_sha"], binding["fingerprint"]
+     )
+@@ -589,7 +563,7 @@ def plan_native_account_review(
+                     if intake.get("event_action") == "review_requested" and isinstance(target, str)
+                     else "REVIEW_REQUEST_EVENT_NOT_EXACT"
+                 ),
+-                detail="a delegated native approval requires either the exact request event or a trusted exact follow-up while the counterpart remains requested",
++                detail="a delegated native approval requires the current exact review-request event for the counterpart",
+             )
+         )
+     if event == "REQUEST_CHANGES" and not exact_active_request and not retraction_only:
+diff --git a/tools/qikvrt_requested_review_executor.py b/tools/qikvrt_requested_review_executor.py
+index 37352e3f6305284b166b88e97a4a7504af3ac07d..d08b876cf268831165547881e7f9597e6b40627d 100644
+--- a/tools/qikvrt_requested_review_executor.py
++++ b/tools/qikvrt_requested_review_executor.py
+@@ -48,6 +48,8 @@ TRUSTED_AUTOMATION_DISCUSSION_PREFIXES = (
+     f"<!-- {LIVE_STATUS_MARKER} -->",
+ )
+ ACTIVE_WRITER_STATES = ("queued", "in_progress", "waiting", "requested", "pending")
++ROLE_LOCAL_LEDGER_WORKFLOW_NAME = "QIKVRT requested review executor"
++ROLE_LOCAL_LEDGER_WORKFLOW_PATH = ".github/workflows/qikvrt_requested_review_executor.yml"
+ REVIEW_SELECTION_SCHEMA = "qikvrt_requested_review_selection_v1"
+ REVIEW_INTAKE_SCHEMA = "qikvrt_review_intake_v1"
+ REVIEW_PRIORITY_POLICY_PATH = "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json"
+@@ -81,7 +83,6 @@ REOBSERVATION_PROGRESS_FIELDS = frozenset({
+     "diff_transport",
+     "findings",
+     "latest_workflows",
+-    "active_writers_observed",
+     "derived_action",
+     "receipt_payload_sha256",
+ })
+@@ -2792,6 +2793,11 @@ def _active_writer_observation(
+                 isinstance(run_id, int)
+                 and run_id != current_run_id
+                 and run.get("name") in writer_names
++                and not (
++                    run.get("name") == ROLE_LOCAL_LEDGER_WORKFLOW_NAME
++                    and str(run.get("path", "")).split("@", 1)[0]
++                    == ROLE_LOCAL_LEDGER_WORKFLOW_PATH
++                )
+                 and run.get("head_sha") in relevant_heads
+             ):
+                 observed[run_id] = {
