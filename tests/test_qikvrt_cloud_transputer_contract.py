@@ -43,6 +43,13 @@ class CloudTransputerContractTests(unittest.TestCase):
         for exposed in ("8080/tcp", "2222/tcp", "2525/tcp", "5353/tcp", "5353/udp", "1161/udp", "5432/tcp"):
             self.assertIn(exposed, text)
 
+    def test_postgresql_log_is_precreated_for_unprivileged_pg_ctl(self) -> None:
+        text = DOCKERFILE.read_text(encoding="utf-8")
+        path = "/opt/qikvrt/runtime/cloud-transputer-logs/postgresql.log"
+        self.assertIn(f"touch {path}", text)
+        self.assertIn(f"chown postgres:postgres {path}", text)
+        self.assertIn(f"chmod 0600 {path}", text)
+
     def test_compose_defaults_to_loopback_and_persistent_isolated_state(self) -> None:
         text = COMPOSE.read_text(encoding="utf-8")
         self.assertGreaterEqual(text.count("${QIKVRT_BIND_ADDRESS:-127.0.0.1}"), 7)

@@ -37,7 +37,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
                 /opt/qikvrt/runtime/cloud-transputer-logs \
                 /var/lib/qikvrt/profile /var/lib/qikvrt/state \
                 /var/lib/qikvrt/mirror /var/lib/qikvrt/personal-posix \
-                /var/lib/qikvrt/mail
+                /var/lib/qikvrt/mail \
+    && touch /opt/qikvrt/runtime/cloud-transputer-logs/postgresql.log \
+    && chown postgres:postgres /opt/qikvrt/runtime/cloud-transputer-logs/postgresql.log \
+    && chmod 0600 /opt/qikvrt/runtime/cloud-transputer-logs/postgresql.log
 
 WORKDIR /opt/qikvrt
 COPY . /opt/qikvrt

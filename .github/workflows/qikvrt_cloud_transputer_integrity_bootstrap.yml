@@ -1,0 +1,54 @@
+# Temporary finite bootstrap: materialize deterministic integrity on the first
+# runtime/cloud-transputer-v1 push, then remove this workflow in its own commit.
+name: QIKVRT cloud transputer integrity bootstrap
+
+on:
+  push:
+    branches: [runtime/cloud-transputer-v1]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-cloud-transputer-integrity-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  materialize-once:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact pushed head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+
+      - name: Verify cloud-transputer source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -B -m unittest -v tests.test_qikvrt_cloud_transputer_contract
+          cc -std=c90 -pedantic -Wall -Wextra -Werror -Iinclude -fsyntax-only \
+            src/effect_ack_core.c src/cloud_transputer/m68k_effect_ack_probe.c
+          sh -n deploy/cloud-transputer/entrypoint.sh \
+                deploy/cloud-transputer/runtime-health.sh \
+                deploy/cloud-transputer/authority-mirror-refresh.sh
+          python3 -m py_compile src/cloud_transputer/smtpd.py
+
+      - name: Remove finite bootstrap and regenerate exact integrity trio
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/qikvrt_cloud_transputer_integrity_bootstrap.yml
+          python3 tools/qikvrt_integrity.py generate
+          python3 tools/qikvrt_integrity.py verify
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          remote_head="$(git ls-remote --heads origin refs/heads/runtime/cloud-transputer-v1 | awk 'NR==1 {print $1}')"
+          test "$remote_head" = "$GITHUB_SHA"
+          git commit -m "evidence: materialize cloud transputer integrity"
+          git push origin HEAD:refs/heads/runtime/cloud-transputer-v1
