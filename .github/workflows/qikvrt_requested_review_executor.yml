@@ -1189,13 +1189,6 @@ jobs:
                   f"fp={os.environ['SUCCESSOR_FINGERPRINT']}"
               ),
           }
-          value={
-              'schema':'qikvrt_mesh_review_successor_reobservation_v1',
-              'work_unit_id':(
-                  f"pr-{number}/{head}/{os.environ['SUCCESSOR_FINGERPRINT']}"
-              ),
-              'workflow_run_id':int(run['id']),
-              'workflow_run_status':run.get('status'),
           root=pathlib.Path('.qikvrt/mesh-review')
           causal=json.loads(
               (root/'reobservations/post-successor-dispatch/verification.json')
