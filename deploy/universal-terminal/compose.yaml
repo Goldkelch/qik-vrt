@@ -38,8 +38,11 @@ services:
     environment:
       QIKVRT_SERVICE_MODE: gateway
     # Share only the terminal network namespace; keep the reference backend
-    # bound to 127.0.0.1 and never publish its port.
+    # bound to 127.0.0.1 and never publish its port. Run nginx itself as the
+    # unprivileged Debian nobody uid/gid so it does not need CAP_CHOWN while
+    # materializing writable temp paths on its private tmpfs.
     network_mode: service:qikvrt-universal-terminal
+    user: "65534:65534"
     depends_on:
       qikvrt-universal-terminal:
         condition: service_started
