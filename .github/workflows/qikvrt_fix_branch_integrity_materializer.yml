@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT fix branch integrity materializer
+
+on:
+  push:
+    branches:
+      - 'fix/**'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-fix-branch-integrity-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact fix-branch subject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Regenerate and verify deterministic integrity evidence
+        id: materialize
+        shell: bash
+        run: |
+          set -euo pipefail
+          observed="$(git rev-parse HEAD)"
+          test "$observed" = "${GITHUB_SHA}"
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          python3 -m unittest tests.test_integrity
+          if git diff --quiet -- REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Persist only generated integrity evidence by exact-head CAS
+        if: steps.materialize.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="refs/heads/${GITHUB_REF_NAME}"
+          remote_before="$(git ls-remote origin "$ref" | awk '{print $1}')"
+          test "$remote_before" = "${GITHUB_SHA}"
+          git config user.name 'qik-vrt-integrity-bot'
+          git config user.email 'qik-vrt-integrity-bot@users.noreply.github.com'
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git commit -m 'chore: materialize fix-branch integrity evidence'
+          commit="$(git rev-parse HEAD)"
+          git push --force-with-lease="${ref}:${GITHUB_SHA}" origin "HEAD:${ref}"
+          remote_after="$(git ls-remote origin "$ref" | awk '{print $1}')"
+          test "$remote_after" = "$commit"
+          detached="$(tr -d '\r\n' < REPOSITORY_FILE_MANIFEST.json.sha256)"
+          actual="$(sha256sum REPOSITORY_FILE_MANIFEST.json | awk '{print $1}')"
+          test "$detached" = "$actual"
+          echo "EXACT_MATERIALIZATION_COMMIT=$commit"
