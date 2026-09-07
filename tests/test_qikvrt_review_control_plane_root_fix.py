@@ -36,6 +36,13 @@ class RequestedReviewControlPlaneRootFixTests(unittest.TestCase):
         self.assertIn("str(intent.get('pr_number')) != os.environ['SUBJECT_PR_NUMBER']", text)
         self.assertIn("intent.get('head_sha') != os.environ['SUBJECT_HEAD_SHA']", text)
 
+    def test_successor_transport_counts_causal_binding_before_acknowledgment(self):
+        text=(ROOT/".github/workflows/qikvrt_requested_review_executor.yml").read_text()
+        self.assertLess(
+            text.index("checks['full_causal_binding']"),
+            text.index("'transport_ack_observed':all(checks.values())"),
+        )
+
     def test_transport_does_not_bind_moving_base_tip(self):
         text=(ROOT/".github/workflows/qikvrt_requested_review_executor.yml").read_text()
         self.assertNotIn("'base_sha':pr.get('base',{}).get('sha') == os.environ['EXPECTED_BASE']", text)
