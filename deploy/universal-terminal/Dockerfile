@@ -50,8 +50,8 @@ COPY --from=qikvrt-m68k-builder /out/m68k /opt/qikvrt/runtime/m68k
 RUN mkdir -p /opt/qikvrt/runtime/bootstrap-profile/extensions /opt/qikvrt/runtime/logs \
     /var/lib/qikvrt/profile /var/lib/qikvrt/state \
     /var/lib/qikvrt/smtp /var/lib/qikvrt/ssh /var/lib/qikvrt/postgres /var/lib/qikvrt/mirror \
-    && cd browser/firefox/qikvrt-terminal \
-    && zip -qr /opt/qikvrt/runtime/bootstrap-profile/extensions/qikvrt-ai-terminal@goldkelch.local.xpi . \
+    && (cd browser/firefox/qikvrt-terminal \
+      && zip -qr /opt/qikvrt/runtime/bootstrap-profile/extensions/qikvrt-ai-terminal@goldkelch.local.xpi .) \
     && printf '%s\n' \
       'user_pref("browser.shell.checkDefaultBrowser", false);' \
       'user_pref("browser.startup.homepage", "http://qikvrt-gateway:8080/qik-vrt/mesh/v1/");' \

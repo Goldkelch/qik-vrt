@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pathlib
 import re
+import stat
+import subprocess
+import tempfile
 import unittest
+import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEPLOY = ROOT / "deploy" / "universal-terminal"
@@ -62,12 +66,60 @@ class CloudTransputerServicePlaneTests(unittest.TestCase):
         self.assertIn("Strict ISO C90 source", source)
         self.assertNotIn("//", source)
 
+    def test_profile_packaging_preserves_workdir_for_runtime_permissions(self) -> None:
+        """Execute the real RUN body: an unscoped cd must fail, not pass a grep."""
+        dockerfile = (DEPLOY / "Dockerfile").read_text(encoding="utf-8")
+        blocks = [
+            block for block in dockerfile.split("\n\n")
+            if block.startswith("RUN mkdir -p /opt/qikvrt/runtime/bootstrap-profile/")
+        ]
+        self.assertEqual(len(blocks), 1, "locate the actual profile RUN instruction")
+        with tempfile.TemporaryDirectory(prefix="qikvrt-profile-") as temporary:
+            base = pathlib.Path(temporary)
+            repo = base / "repo"
+            extension = repo / "browser/firefox/qikvrt-terminal"
+            extension.mkdir(parents=True)
+            (extension / "manifest.json").write_text('{"manifest_version": 2}\n', encoding="utf-8")
+            deploy = repo / "deploy/universal-terminal"
+            deploy.mkdir(parents=True)
+            scripts = [
+                deploy / name for name in (
+                    "entrypoint.sh", "runtime-health.sh", "service-entrypoint.sh",
+                    "mirror-bootstrap.sh", "qikvrt_smtpd.py",
+                )
+            ]
+            binaries = base / "bin"
+            binaries.mkdir()
+            scripts.append(binaries / "qikvrt-ip-bootstrap")
+            for script in scripts:
+                script.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                script.chmod(0o644)
+            # Map only absolute image paths into the fixture; preserve every
+            # relative path and all shell control flow from the Dockerfile.
+            command = blocks[0][len("RUN "):]
+            for original, replacement in (
+                ("/opt/qikvrt", repo), ("/var/lib/qikvrt", base / "data"),
+                ("/usr/local/bin", binaries),
+            ):
+                command = command.replace(original, str(replacement))
+            result = subprocess.run(
+                ["/bin/sh", "-eu", "-c", command], cwd=repo, text=True,
+                capture_output=True, timeout=15, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            for script in scripts:
+                self.assertTrue(script.stat().st_mode & stat.S_IXUSR, str(script))
+            profile = repo / "runtime/bootstrap-profile"
+            with zipfile.ZipFile(profile / "extensions/qikvrt-ai-terminal@goldkelch.local.xpi") as archive:
+                self.assertEqual(archive.namelist(), ["manifest.json"])
+            self.assertIn("browser.startup.homepage", (profile / "user.js").read_text(encoding="utf-8"))
+
     def test_effect_ack_is_reachable_only_through_explicit_proxy_or_terminal(self) -> None:
         entrypoint = (DEPLOY / "entrypoint.sh").read_text(encoding="utf-8")
         compose = (DEPLOY / "compose.yaml").read_text(encoding="utf-8")
         self.assertIn('HTTP_HOST="${QIKVRT_HTTP_HOST:-127.0.0.1}"', entrypoint)
         self.assertIn("QIKVRT_HTTP_HOST: 0.0.0.0", compose)
-        self.assertNotIn('":8771"', compose)
+        self.assertNotIn('\":8771\"', compose)
 
     def test_sql_password_has_no_repository_default(self) -> None:
         compose = (DEPLOY / "compose.yaml").read_text(encoding="utf-8")
