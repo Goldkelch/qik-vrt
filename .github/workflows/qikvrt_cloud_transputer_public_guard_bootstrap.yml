@@ -51,34 +51,34 @@ jobs:
               raise SystemExit('BLOCK: nginx config anchor not observed once')
           entry = entry.replace(nginx_anchor, guard + nginx_anchor)
 
-          terminal_anchor = '''    location /terminal/ {\n      proxy_pass http://127.0.0.1:$NOVNC_PORT/;\n'''
-          terminal_replacement = '''    location /terminal/ {\n      $TERMINAL_AUTH_DIRECTIVES\n      proxy_pass http://127.0.0.1:$NOVNC_PORT/;\n'''
-          if entry.count(terminal_anchor) != 1:
+          old_terminal = '''    location /terminal/ {\n      proxy_pass http://127.0.0.1:$NOVNC_PORT/;\n'''
+          new_terminal = '''    location /terminal/ {\n      $TERMINAL_AUTH_DIRECTIVES\n      proxy_pass http://127.0.0.1:$NOVNC_PORT/;\n'''
+          if entry.count(old_terminal) != 1:
               raise SystemExit('BLOCK: terminal nginx location anchor not observed once')
-          entry = entry.replace(terminal_anchor, terminal_replacement)
+          entry = entry.replace(old_terminal, new_terminal)
 
-          receipt_anchor = '''    location = /.well-known/qikvrt-cloud-transputer {\n      default_type application/json;\n      alias $RUN_DIR/runtime.json;\n    }\n'''
-          receipt_replacement = '''    location = /.well-known/qikvrt-cloud-transputer {\n      default_type application/json;\n      alias $RUN_DIR/runtime.json;\n    }\n    location = /health {\n      default_type text/plain;\n      alias $RUN_DIR/ready.txt;\n    }\n'''
-          if entry.count(receipt_anchor) != 1:
+          old_receipt = '''    location = /.well-known/qikvrt-cloud-transputer {\n      default_type application/json;\n      alias $RUN_DIR/runtime.json;\n    }\n'''
+          new_receipt = '''    location = /.well-known/qikvrt-cloud-transputer {\n      default_type application/json;\n      alias $RUN_DIR/runtime.json;\n    }\n    location = /health {\n      default_type text/plain;\n      alias $RUN_DIR/ready.txt;\n    }\n'''
+          if entry.count(old_receipt) != 1:
               raise SystemExit('BLOCK: runtime receipt nginx anchor not observed once')
-          entry = entry.replace(receipt_anchor, receipt_replacement)
+          entry = entry.replace(old_receipt, new_receipt)
 
-          ready_anchor = '''/usr/local/bin/qikvrt-cloud-transputer-health\nprintf '%s\\n' "QIKVRT cloud transputer ready: runtime=$RUNTIME_ID proxy=0.0.0.0:$PROXY_PORT stable_mesh=$MESH_PUBLIC_URL"\n'''
-          ready_replacement = '''/usr/local/bin/qikvrt-cloud-transputer-health\nprintf '%s\\n' ready > "$RUN_DIR/ready.txt"\nprintf '%s\\n' "QIKVRT cloud transputer ready: runtime=$RUNTIME_ID proxy=0.0.0.0:$PROXY_PORT stable_mesh=$MESH_PUBLIC_URL"\n'''
-          if entry.count(ready_anchor) != 1:
+          old_ready = '''/usr/local/bin/qikvrt-cloud-transputer-health\nprintf '%s\\n' "QIKVRT cloud transputer ready: runtime=$RUNTIME_ID proxy=0.0.0.0:$PROXY_PORT stable_mesh=$MESH_PUBLIC_URL"\n'''
+          new_ready = '''/usr/local/bin/qikvrt-cloud-transputer-health\nprintf '%s\\n' ready > "$RUN_DIR/ready.txt"\nprintf '%s\\n' "QIKVRT cloud transputer ready: runtime=$RUNTIME_ID proxy=0.0.0.0:$PROXY_PORT stable_mesh=$MESH_PUBLIC_URL"\n'''
+          if entry.count(old_ready) != 1:
               raise SystemExit('BLOCK: post-health ready anchor not observed once')
-          entry_path.write_text(entry.replace(ready_anchor, ready_replacement), encoding='utf-8', newline='\n')
+          entry_path.write_text(entry.replace(old_ready, new_ready), encoding='utf-8', newline='\n')
 
           test_path = Path('tests/test_qikvrt_cloud_transputer_contract.py')
           tests = test_path.read_text(encoding='utf-8')
-          package_anchor = '''        for token in ("firefox-esr", "novnc", "nginx", "openssh-server", "postgresql", "dnsmasq", "snmpd", "qemu-user", "gcc-m68k-linux-gnu"):\n            self.assertIn(token, text)\n'''
-          package_replacement = '''        for token in ("firefox-esr", "novnc", "nginx", "openssh-server", "postgresql", "dnsmasq", "snmpd", "qemu-user", "gcc-m68k-linux-gnu", "openssl"):\n            self.assertIn(token, text)\n'''
-          if tests.count(package_anchor) != 1:
+          old_packages = '''        for token in ("firefox-esr", "novnc", "nginx", "openssh-server", "postgresql", "dnsmasq", "snmpd", "qemu-user", "gcc-m68k-linux-gnu"):\n            self.assertIn(token, text)\n'''
+          new_packages = '''        for token in ("firefox-esr", "novnc", "nginx", "openssh-server", "postgresql", "dnsmasq", "snmpd", "qemu-user", "gcc-m68k-linux-gnu", "openssl"):\n            self.assertIn(token, text)\n'''
+          if tests.count(old_packages) != 1:
               raise SystemExit('BLOCK: package regression anchor not observed once')
-          tests = tests.replace(package_anchor, package_replacement)
+          tests = tests.replace(old_packages, new_packages)
 
           insert_anchor = '    def test_c90_probe_uses_existing_effect_ack_core_without_false_arch_claim(self) -> None:\n'
-          method = '''    def test_public_terminal_guard_and_post_contract_health_gate(self) -> None:\n        text = ENTRYPOINT.read_text(encoding="utf-8")\n        self.assertIn("QIKVRT_TERMINAL_PASSWORD", text)\n        self.assertIn("openssl passwd -6 -stdin", text)\n        self.assertIn('auth_basic \\\"QIK-VRT Universal Terminal\\\";', text)\n        self.assertIn("auth_basic_user_file $RUN_DIR/terminal.htpasswd;", text)\n        self.assertIn("location = /health", text)\n        self.assertIn("alias $RUN_DIR/ready.txt;", text)\n        health = text.rindex("/usr/local/bin/qikvrt-cloud-transputer-health\\n")\n        ready = text.rindex("printf '%s\\\\n' ready > \\\"$RUN_DIR/ready.txt\\\"")\n        self.assertLess(health, ready)\n\n'''
+          method = '''    def test_public_terminal_guard_and_post_contract_health_gate(self) -> None:\n        text = ENTRYPOINT.read_text(encoding="utf-8")\n        self.assertIn("QIKVRT_TERMINAL_PASSWORD", text)\n        self.assertIn("openssl passwd -6 -stdin", text)\n        self.assertIn("auth_basic ", text)\n        self.assertIn("QIK-VRT Universal Terminal", text)\n        self.assertIn("auth_basic_user_file $RUN_DIR/terminal.htpasswd;", text)\n        self.assertIn("location = /health", text)\n        self.assertIn("alias $RUN_DIR/ready.txt;", text)\n        health = text.rindex("/usr/local/bin/qikvrt-cloud-transputer-health\\n")\n        ready = text.rindex('ready > "$RUN_DIR/ready.txt"')\n        self.assertLess(health, ready)\n\n'''
           if tests.count(insert_anchor) != 1:
               raise SystemExit('BLOCK: production guard regression insertion anchor not observed once')
           if method in tests:
