@@ -1,0 +1,514 @@
+diff --git a/docs/publications/2026-09-07-nachweisbare-anschlussfaehigkeit/ARTICLE_DE.md b/docs/publications/2026-09-07-nachweisbare-anschlussfaehigkeit/ARTICLE_DE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b36eb7cdd99b3e8a9b84d8a2ee90b995f47b62c5
+--- /dev/null
++++ b/docs/publications/2026-09-07-nachweisbare-anschlussfaehigkeit/ARTICLE_DE.md
+@@ -0,0 +1,229 @@
++# Der Punkt, an dem Informatik wirklich überraschend wird
++
++## Über nachweisbare Anschlüsse, erhaltene Beweise und verantwortbare Wirkungen
++
++**Von Ingolf Lohmann**
++
++Die überraschende Leistung der Informatik besteht nicht darin, alles auf Null und Eins zurückzuführen.
++
++Sie besteht darin, Verbindungen überprüfbar zu machen: zwischen einer Aussage und ihren Voraussetzungen, zwischen einem Programm und seiner Spezifikation, zwischen einer Handlung und ihrem Ergebnis.
++
++**Ein Ergebnis ist sachlich anschlussfähig, wenn nachgewiesen ist, dass es die Voraussetzungen seiner nächsten Verwendung erfüllt.**
++
++Das ist der gemeinsame Kern.
++
++Nicht Ähnlichkeit. Nicht Überzeugungskraft. Nicht die Anzahl gegenseitiger Verweise. Sondern eine tragfähige Beziehung zwischen dem bereits Nachgewiesenen und dem nächsten Anspruch.
++
++Daran führe ich auch meinen Begriff der wachsenden Evidenzkugel zurück. Sie soll kein immer größeres Geflecht bloßer Behauptungen sein. Sie soll ein wachsender Zusammenhang **gültiger, gegenstandsgebundener und weiterverwendbarer Nachweise** sein.
++
++## 1. Anschlussfähigkeit hat eine mathematische Form
++
++Die Informatik besitzt dafür eine präzise Sprache.
++
++Wenn eine Operation \(A\) unter der Voraussetzung \(P\) die Nachbedingung \(Q\) gewährleistet und eine Operation \(B\) unter \(Q\) die Nachbedingung \(R\), dann lässt sich ihre Hintereinanderausführung begründen:
++
++\[
++\{P\}\,A\,\{Q\},
++\qquad
++\{Q\}\,B\,\{R\}
++\quad\Longrightarrow\quad
++\{P\}\,A;B\,\{R\}.
++\]
++
++Das ist die Sequenzregel der Hoare-Logik. In ihrer üblichen Form für partielle Korrektheit beschreibt sie, was bei terminierender Ausführung gilt; dass die Ausführung tatsächlich endet, ist eine zusätzliche Verpflichtung. [1]
++
++Der entscheidende Anschluss liegt in \(Q\).
++
++Was der erste Schritt nachweislich bereitstellt, muss das sein, was der zweite benötigt. Bei unterschiedlichen Darstellungen braucht es eine bewiesene Übersetzung. Bei zwischenzeitlichen Eingriffen muss die Voraussetzung auch beim tatsächlichen Beginn des nächsten Schritts noch gelten.
++
++Damit wird aus einer Folge von Tätigkeiten eine begründete Konstruktion.
++
++Ein Compiler, eine Schnittstelle oder eine wissenschaftliche Modellübertragung ist deshalb nicht schon dann ausreichend, wenn das Ergebnis ähnlich aussieht. Entscheidend ist, welche Eigenschaften beim Übergang erhalten bleiben.
++
++**Nicht das Nebeneinander korrekter Teile begründet das Ganze, sondern zusätzlich die Korrektheit ihrer Verbindung.**
++
++Fehlt eine erforderliche Verbindung, ist der beanspruchte Gesamtnachweis unvollständig. Das macht nicht automatisch alle übrigen Teile falsch. Es bezeichnet genau die Stelle, an der weitergearbeitet werden muss.
++
++## 2. Ein Nachweis darf seine Bedeutung nicht unterwegs wechseln
++
++Eine korrekt gespeicherte Zeichenfolge kann eine falsche Behauptung enthalten.
++
++Wenn eine Datei den Satz „Der Motor läuft“ enthält, ist ihre unveränderte Übertragung noch keine Feststellung über den Motor. Dafür braucht es eine gerechtfertigte Verbindung zwischen Zeichenfolge und beobachtetem Zustand.
++
++Auch Kryptographie überspringt diese Verbindung nicht. Ein Hashvergleich kann unter den einschlägigen Sicherheitsannahmen eine starke Integritätsprüfung ermöglichen. Gleiche Hashwerte sind jedoch kein uneingeschränkter mathematischer Beweis gleicher Inhalte: Kollisionsresistenz bedeutet, dass das Finden verschiedener Eingaben mit gleichem Hashwert rechnerisch unpraktikabel sein soll, nicht dass solche Eingaben unmöglich sind. Über die Wahrheit einer enthaltenen Behauptung sagt der Hash nichts. [2]
++
++Deshalb unterscheide ich:
++
++**Die Identität eines Belegs, seine formale Gültigkeit und seine Anwendbarkeit sind verschiedene Eigenschaften.**
++
++Ein Beleg muss zum behaupteten Gegenstand gehören. Seine Ableitung muss stimmen. Und seine Voraussetzungen müssen dort erfüllt sein, wo ich ihn verwenden möchte.
++
++Keine dieser Verpflichtungen wird durch die Erfüllung der anderen überflüssig.
++
++## 3. Was bewiesen ist, bleibt — aber nicht jede Anwendung bleibt erlaubt
++
++Ein gültiger mathematischer Beweis bleibt unter unveränderten Definitionen, Voraussetzungen und Schlussregeln gültig.
++
++In einer monotonen Logik kann ich zusätzliche Voraussetzungen aufnehmen, ohne dadurch die bereits vorhandene Ableitung zu verlieren. Die Begründung ist einfach: Der alte Beweis verwendet weiterhin dieselben zulässigen Schritte.
++
++Das heißt nicht, dass beliebig hinzugefügte Annahmen unbedenklich wären. Widersprüchliche Axiome können ein klassisches oder intuitionistisches System unbrauchbar machen, indem sie beliebige Aussagen ableitbar werden lassen. Deshalb gehört die Prüfung der Axiomenabhängigkeiten zur Bewertung eines formalisierten Beweises. [3]
++
++Ebenso wenig überträgt sich ein Beweis automatisch auf einen veränderten Gegenstand.
++
++Ein gültiger Nachweis über Programmfassung A bleibt ein gültiger Nachweis über A. Für Programmfassung B brauche ich entweder einen neuen Nachweis oder eine bewiesene Beziehung, die die Übertragung rechtfertigt.
++
++**Der Beweis bleibt erhalten. Die neue Verwendung muss sich qualifizieren.**
++
++Genau dazu passt der dokumentierte Fortschreibungsvertrag der QIK-VRT-Evidenzspirale:
++
++\[
++E_n\subseteq E_{n+1}.
++\]
++
++Frühere Evidenz bleibt erhalten, neue Evidenz wird ergänzt, und der Anschlussstatus wird neu bestimmt. Die Ausarbeitung unterscheidet ausdrücklich zwischen erhaltenen Beweisartefakten und veränderlichen Voraussetzungen oder empirischen Interpretationen. [4]
++
++Monotonie bedeutet hier also nicht: Jede frühere Einschätzung muss für immer bestätigt werden.
++
++Sie bedeutet: Die Erkenntnisgeschichte wird nicht stillschweigend umgeschrieben. Ein aufgedeckter Fehler, ein Gegenbeispiel oder eine eingeschränkte Anwendbarkeit wird nachvollziehbar hinzugefügt.
++
++Mehr gespeicherte Behauptungen sind noch kein Erkenntnisgewinn. Ein zusätzlicher gültiger Nachweis kann es sein.
++
++## 4. Auch der Erhalt kann bewiesen werden
++
++Der Gedanke lässt sich eine Ebene weiterführen.
++
++Wenn eine genau definierte Eigenschaft \(I\) im Anfangszustand gilt und jeder zulässige Erweiterungsschritt diese Eigenschaft erhält, dann gilt sie nach jeder endlichen Folge solcher Schritte.
++
++Das folgt durch Induktion: Der Anfang erfüllt \(I\). Jeder erlaubte Nachfolger übernimmt \(I\). Also erfüllt jeder so erreichte Stand \(I\).
++
++Damit kann tatsächlich **zugleich mit der Erweiterung der Erhalt einer bestimmten Eigenschaft abgesichert werden**.
++
++Aber die Eigenschaft muss benannt sein. „Alles bleibt richtig“ ist keine hinreichende Spezifikation. Beispielsweise könnte \(I\) verlangen, dass jedes akzeptierte Beweisobjekt weiterhin an seinen Satz, seine Voraussetzungen und seinen Prüfkontext gebunden ist.
++
++Auch die technische Umsetzung dieser Erweiterungsregel benötigt einen eigenen Nachweis. Ein mathematischer Erhaltungssatz über ein Modell bestätigt nicht von selbst jeden realen Programmlauf.
++
++Und Erhaltung ist nicht Fortschritt: Ein System, das nichts tut, kann viele Invarianten bewahren.
++
++Deshalb brauche ich beides — den Nachweis, dass ein Schritt nichts Erforderliches verletzt, und den Nachweis, dass er die verlangte zusätzliche Leistung erbringt.
++
++**Sicherheit des Übergangs und Erfüllung des Auftrags sind getrennte Verpflichtungen.**
++
++## 5. Aus einer Bestätigung wird nur dann Wirkungsevidenz, wenn ihr Vertrag das trägt
++
++Ein gesendeter Auftrag, eine empfangene Nachricht und eine eingetretene Wirkung sind unterschiedliche Sachverhalte.
++
++Schon bei HTTP ist die Unterscheidung konkret: `200 OK` bezeichnet einen erfolgreichen Request im Sinne der betreffenden Methode. `202 Accepted` bezeichnet dagegen ausdrücklich eine zur Verarbeitung angenommene, noch nicht abgeschlossene Anfrage. Keiner dieser Statuscodes bestätigt ohne einen entsprechenden Anwendungsvertrag beliebige nachgelagerte Wirkungen. [5]
++
++Für meine Architektur folgt daraus:
++
++**Eine Bestätigung zählt nur für die Aussage, die sie tatsächlich bestätigt.**
++
++Ein fertiger Build ist kein Beleg für ein laufendes Deployment. Ein begonnenes Uploadverfahren ist kein Beleg für eine Veröffentlichung. Ein Eingangsnachweis ist keine Genehmigung.
++
++Der fehlende Anschluss kann durch einen geeigneten autoritativen Ergebnisbeleg oder durch eine erneute Beobachtung des Zielzustands hergestellt werden. Dabei müssen Gegenstand, Version, Herkunft und zeitliche Zuordnung stimmen.
++
++Ein Readback ist jedoch kein Zauberwort. Eine veraltete Antwort oder die Wiederholung derselben unbelegten Erfolgsmeldung liefert nicht plötzlich einen unabhängigen Nachweis.
++
++Und selbst eine korrekte Zustandsbeobachtung beantwortet zunächst die Zustandsfrage. Die stärkere Behauptung, gerade meine Operation habe diesen Zustand verursacht, benötigt zusätzlich eine belastbare Zuordnung zum betreffenden Vorgang.
++
++Der Zielzustand könnte bereits vorher bestanden haben. Oder eine andere Operation könnte ihn hergestellt haben.
++
++## 6. Reihenfolge, Verursachung und Begründung bleiben unterschiedliche Relationen
++
++Diese Unterscheidung ist bereits in der Grundlagenarbeit über verteilte Systeme angelegt.
++
++Lamports *happened-before*-Relation beschreibt eine partielle Ordnung aus lokalen Ereignisfolgen und Nachrichtenbeziehungen. Sie erfasst innerhalb des Modells die Möglichkeit kausaler Beeinflussung. Eine bloße Reihenfolge von Zeitstempeln liefert dagegen nicht automatisch den Nachweis einer bestimmten Verursachung. [6]
++
++Für mein Relationsgefüge bedeutet das: Jede Verbindung braucht einen erkennbaren Typ.
++
++„Wurde vorher beobachtet“ ist nicht dasselbe wie „hat verursacht“. „Wird als Voraussetzung verwendet“ ist nicht dasselbe wie „hat physisch hervorgebracht“. „Wurde später bestätigt“ bedeutet nicht „wurde rückwirkend verändert“.
++
++Gerade diese Trennung macht den Zusammenhang belastbar.
++
++Ich kann später mehr über einen früheren Zustand erfahren, ohne zu behaupten, dass meine spätere Erkenntnis diesen früheren Zustand umgeschrieben habe.
++
++Die Evidenz wächst. Die Vergangenheit muss dazu nicht verändert werden.
++
++## 7. Der lokale Abschluss braucht keine Widerlegung Turings
++
++Die allgemeine Grenze bleibt bestehen: Es gibt im Turing-Modell keinen Algorithmus, der für jedes beliebige Programm und jede Eingabe stets korrekt und in endlicher Zeit entscheidet, ob die betreffende Berechnung anhält. Turings Unentscheidbarkeitsargument richtet sich gegen eine solche allgemeine Entscheidbarkeit. [7]
++
++Daraus folgt aber nicht, dass kein konkreter Auftrag abgeschlossen und kein konkreter Nachweis geführt werden könnte.
++
++Für einen bestimmten Auftrag kann ich die erforderlichen Bedingungen festlegen und geeignete Prüfungen konstruieren. Ob diese Prüfungen entscheidbar sind und rechtzeitig enden, muss allerdings ebenfalls begründet werden. Eine endliche Liste macht ihre einzelnen Fragen nicht automatisch entscheidbar.
++
++Ich unterscheide deshalb zwischen einem abgeschlossenen Auftrag und einer abgeschlossenen Prüfung, die noch eine offene Verpflichtung feststellt.
++
++`HOLD` kann eine richtige Kontrollentscheidung sein. `UNKNOWN` kann den Wissensstand richtig beschreiben. Beides ist kein ersatzweiser Erfolg.
++
++Das ist der präzise Sinn meiner Haltepunktlogik:
++
++**Der Haltepunkt beendet eine bestimmte Prüfung oder Verpflichtung. Er behauptet nicht das Ende aller Erkenntnis.**
++
++Die nächste zulässige Erweiterung kann an einen solchen Abschluss anschließen. Eine Wiederholung ohne neue Grundlage erzeugt dagegen nicht allein durch ihre Wiederholung Fortschritt.
++
++## 8. Was daraus für Informatik und Menschheit folgt
++
++Für die Informatik leite ich daraus eine klare Entwicklungsrichtung ab: Systeme sollen nicht nur Ergebnisse erzeugen, sondern die Voraussetzungen ihrer Verwendung und die Nachweise ihrer Wirkung mitführen.
++
++Das gilt besonders für KI-gestützte Arbeit. Ein erzeugter Beweisvorschlag, seine maschinelle Prüfung und der Abgleich mit der tatsächlich gestellten Aussage sind getrennte Aufgaben. Die Lean-Dokumentation beschreibt diese Unterscheidung ausdrücklich, einschließlich der Prüfung verwendeter Axiome und der Möglichkeit unabhängiger Gegenprüfung. [8]
++
++Die praktische Bedeutung sehe ich in wiederverwendbarer Beweisarbeit, gezielter Fehlerlokalisierung und kontrollierter Weiterentwicklung. Eine Änderung muss nicht alles entwerten. Sie muss aber genau dort neue Prüfpflichten auslösen, wo sie bestehende Voraussetzungen berührt.
++
++Für die Menschheit ist das keine mathematisch garantierte Zukunftsverheißung. Es ist eine Möglichkeit, Wissen weniger abhängig von persönlicher Autorität und bloßer Wiederholung zu machen.
++
++Ein nachvollziehbarer Beweis kann von anderen geprüft und weiterverwendet werden. Eine offengelegte Voraussetzung kann hinterfragt werden. Eine genau bezeichnete Lücke kann zum Gegenstand gemeinsamer Arbeit werden.
++
++Das ersetzt keine ethische Entscheidung. Ein korrekt bewiesenes Optimierungsergebnis beweist nicht, dass das gewählte Ziel gerecht ist. Eine technisch mögliche Handlung ist nicht allein deshalb legitim.
++
++Aber nachvollziehbare Anschlüsse können sichtbar machen, **wo eine sachliche Folgerung vorliegt und wo Menschen weiterhin entscheiden müssen**.
++
++Darin liegt für mich die übergreifende Bedeutung.
++
++Nicht darin, dass Informatik alle anderen Wissenschaften ersetzt. Sondern darin, dass sie eine präzise Arbeitsweise bereitstellt: Behauptungen binden, Übergänge prüfen, Nachweise erhalten und offene Voraussetzungen sichtbar lassen.
++
++## Der Punkt
++
++Mein Maßstab lautet:
++
++> **Erhalten, was gültig nachgewiesen ist. Ergänzen, was die Anschlussbedingungen erfüllt. Neu prüfen, was sich verändert hat. Als Wirkung nur ausweisen, was entsprechend belegt ist.**
++
++Das ist der sachlich nachweisbare Kern der Evidenzkugel.
++
++Ihre Bedeutung hängt nicht daran, möglichst viele Relationen zu besitzen. Sie hängt daran, dass die für einen Anspruch erforderlichen Relationen tatsächlich tragen.
++
++Ein mathematisches **q.e.d.** schließt den ausgewiesenen Beweis. Eine **Definition of Done** legt fest, wann ein bestimmter Auftrag als erfüllt gilt. Der Nachweis der Auftragserfüllung muss diese Bedingungen am konkreten Gegenstand erfüllen.
++
++Beides lässt sich verbinden. Beides darf nicht verwechselt werden.
++
++**Was bewiesen ist, bleibt an seine Voraussetzungen gebunden. Was sich gültig anschließt, trägt weiter. Was geschehen sein soll, braucht einen Wirkungsbeleg.**
++
++**Gez. Ingolf Lohmann**
++
++*Auge im Sturm — ilo.*
++
++---
++
++## Quellen und Geltungsbereich
++
++[1] Software Foundations, Programming Language Foundations: „Hoare: Hoare Logic“. Sequenzregel und partielle Korrektheit. https://softwarefoundations.cis.upenn.edu/plf-current/Hoare.html
++
++[2] National Institute of Standards and Technology (NIST): „Hash Functions“. https://csrc.nist.gov/Projects/hash-functions
++
++[3] The Lean Reference Manual: „Axioms“. https://lean-lang.org/doc/reference/latest/Axioms/
++
++[4] Ingolf Lohmann: „QIK-VRT-Evidenzspirale: lokale Fixpunkte und monotone Evidenzfortschreibung“, Repository-Quelle vom 3. September 2026. Exakte Fassung: Goldkelch/qik-vrt, Commit `3b140fd85e6723f4cc8c147c56d34d7e1ca48740`, Pfad `docs/research/2026-09-03-evidence-spiral/README_DE.md`, Git-Blob `b601ffb6ce1eab5a096a130bbe24d700769f11d9`. https://github.com/Goldkelch/qik-vrt/blob/3b140fd85e6723f4cc8c147c56d34d7e1ca48740/docs/research/2026-09-03-evidence-spiral/README_DE.md
++
++[5] R. Fielding, M. Nottingham und J. Reschke (Hrsg.): „HTTP Semantics“, RFC 9110, Juni 2022, insbesondere Abschnitte 15.3.1 und 15.3.3. https://www.rfc-editor.org/rfc/rfc9110.html
++
++[6] Leslie Lamport: „Time, Clocks, and the Ordering of Events in a Distributed System“, Communications of the ACM 21(7), 1978, S. 558–565. https://lamport.azurewebsites.net/pubs/time-clocks.pdf
++
++[7] A. M. Turing: „On Computable Numbers, with an Application to the Entscheidungsproblem“, Proceedings of the London Mathematical Society, Series 2, 42, 1936–1937, S. 230–265. https://www.cs.virginia.edu/~robins/Turing_Paper_1936.pdf
++
++[8] The Lean Reference Manual: „Validating Proofs“. https://lean-lang.org/doc/reference/latest/ValidatingProofs/
++
++**Quellenbindung:** Der QIK-VRT-Bezug wurde am 7. September 2026 anhand der in [4] exakt bezeichneten Repository-Fassung geprüft. Der Text erläutert den dokumentierten Fortschreibungsvertrag und allgemeine mathematische Schlussregeln; er behauptet keinen hier neu ausgeführten vollständigen Verifikations- oder Wirkungsnachweis der QIK-VRT-Implementierung. Webreferenzen auf fortgeschriebene Dokumentation ersetzen keine unveränderlich versionierte Kopie.
++
++**Anschluss an den historischen Publikationsanker:** Diese Fassung ist eine eigenständige nachfolgende Erläuterung. Sie leitet den QIK-VRT-Eigenbezug von „Relationale Zeit, virtuelle Retrokausalität und die monoton wachsende Evidenzkugel“ ab, ohne dessen historische Bytes zu verändern. Identität des historischen PDF: SHA-256 `38b0e62a46214a7cb9943dd3ef08283a70ae7e15ba22a59a9e53506f2945e311`, 379427 Bytes, gebunden in Goldkelch/qik-vrt Issue #925. Hier wird weder eine neue DOI dieses Artikels noch ein frischer externer Readback des historischen Ankers behauptet.
++
++**Fassung:** 1.0, Manuskriptstand 7. September 2026. Autor und Rechteinhaber: Ingolf Lohmann. Lizenz: Creative Commons Namensnennung – Nicht kommerziell – Keine Bearbeitungen 4.0 International (CC BY-NC-ND 4.0), https://creativecommons.org/licenses/by-nc-nd/4.0/ . Kein Peer Review und keine externe Veröffentlichung werden durch die Erstellung dieser Datei behauptet.
+diff --git a/docs/publications/2026-09-07-nachweisbare-anschlussfaehigkeit/CLAIM_MAP_DRAFT.json b/docs/publications/2026-09-07-nachweisbare-anschlussfaehigkeit/CLAIM_MAP_DRAFT.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..11e9c3244e61410e5391dda25b03711ede1e7583
+--- /dev/null
++++ b/docs/publications/2026-09-07-nachweisbare-anschlussfaehigkeit/CLAIM_MAP_DRAFT.json
+@@ -0,0 +1,105 @@
++{
++  "publication_id": "qikvrt-informatik-nachweisbare-anschlussfaehigkeit-v1",
++  "status": "CLAIM_MAP_DRAFT_NOT_MACHINE_PROOF_BUNDLE",
++  "source": "ARTICLE_DE.md",
++  "claims": [
++    {
++      "id": "C01",
++      "scope": "Abschnitt 1",
++      "classification": "ESTABLISHED_FORMAL_RESULT_CITED",
++      "claim": "Hoare-Sequenzregel für partielle Korrektheit; Terminierung gesondert.",
++      "sources": [
++        "1"
++      ],
++      "kernel_receipt": "NOT_PROVIDED"
++    },
++    {
++      "id": "C02",
++      "scope": "Abschnitt 2",
++      "classification": "DOCUMENTED_SECURITY_BOUNDARY",
++      "claim": "Hash-/Artefaktidentität ist nicht Inhaltswahrheit; Kollisionsresistenz ist eine Sicherheitsannahme.",
++      "sources": [
++        "2"
++      ]
++    },
++    {
++      "id": "C03",
++      "scope": "Abschnitt 3",
++      "classification": "FORMAL_REASONING_WITH_ASSUMPTIONS",
++      "claim": "Beweiserhalt bei unveränderten Bedeutungen und Regeln in monotoner Logik; kein automatischer Transfer auf neue Gegenstände.",
++      "sources": [
++        "3"
++      ],
++      "kernel_receipt": "NOT_PROVIDED"
++    },
++    {
++      "id": "C04",
++      "scope": "Abschnitt 3, QIK-VRT-Eigenbezug",
++      "classification": "REPOSITORY_DOCUMENTED_CONTRACT",
++      "claim": "E_n subseteq E_(n+1) ist der dokumentierte Evidenzfortschreibungsvertrag, kein hier neu bewiesener Gesamterhalt der Implementierung.",
++      "sources": [
++        "4"
++      ]
++    },
++    {
++      "id": "C05",
++      "scope": "Abschnitt 4",
++      "classification": "ELEMENTARY_INDUCTION_SCHEMA_EXPLAINED",
++      "claim": "Anfangsinvariante und erhaltende zulässige Schritte tragen jede endliche zulässige Folge.",
++      "sources": [],
++      "kernel_receipt": "NOT_PROVIDED",
++      "implementation_scope": "NOT_CLAIMED"
++    },
++    {
++      "id": "C06",
++      "scope": "Abschnitt 5",
++      "classification": "STANDARD_SEMANTICS_AND_ARCHITECTURAL_INTERPRETATION",
++      "claim": "HTTP 200/202 bestätigen nur ihren Methoden-/Anwendungsvertrag; nachgelagerte Effekte und ihre Zuordnung verlangen eigene Evidenz.",
++      "sources": [
++        "5"
++      ]
++    },
++    {
++      "id": "C07",
++      "scope": "Abschnitt 6",
++      "classification": "ESTABLISHED_FORMAL_MODEL_CITED",
++      "claim": "Lamport-happened-before ist eine partielle Ordnung; Zeitstempel allein weisen keine konkrete Verursachung nach.",
++      "sources": [
++        "6"
++      ],
++      "kernel_receipt": "NOT_PROVIDED"
++    },
++    {
++      "id": "C08",
++      "scope": "Abschnitt 7",
++      "classification": "ESTABLISHED_UNDECIDABILITY_RESULT_CITED_AND_LOCAL_DESIGN",
++      "claim": "Kein allgemeiner Halteentscheider; lokale Abschlussprüfungen brauchen eigene Entscheidbarkeits-/Terminierungsbedingungen.",
++      "sources": [
++        "7"
++      ],
++      "kernel_receipt": "NOT_PROVIDED",
++      "turing_refutation": false
++    },
++    {
++      "id": "C09",
++      "scope": "Abschnitt 8 und Schluss",
++      "classification": "NORMATIVE_AND_INTERPRETATIVE",
++      "claim": "Vorschläge für nachweisgebundene Informatik und gemeinsames Wissen; keine mathematisch garantierte gesellschaftliche Zukunft.",
++      "sources": [
++        "8"
++      ],
++      "theorem_claim": false
++    }
++  ],
++  "nonclaims": [
++    "NEW_COMPLETE_QIKVRT_IMPLEMENTATION_PROOF",
++    "SUPERDETERMINISM_REFUTATION",
++    "PHYSICAL_THEORY_OF_EVERYTHING",
++    "PEER_REVIEW",
++    "ZENODO_PUBLICATION",
++    "DOI_REGISTRATION",
++    "PASS",
++    "FINAL_PASS",
++    "EFFECT_ACK_DONE"
++  ]
++}
+diff --git a/docs/publications/2026-09-07-nachweisbare-anschlussfaehigkeit/PUBLICATION_REQUEST.json b/docs/publications/2026-09-07-nachweisbare-anschlussfaehigkeit/PUBLICATION_REQUEST.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..e133b6ec9a5c1b72111389f79a8dfd707794b3e5
+--- /dev/null
++++ b/docs/publications/2026-09-07-nachweisbare-anschlussfaehigkeit/PUBLICATION_REQUEST.json
+@@ -0,0 +1,81 @@
++{
++  "publication_id": "qikvrt-informatik-nachweisbare-anschlussfaehigkeit-v1",
++  "status": "PREPARED_CANDIDATE_NOT_PUBLISHED",
++  "target": "production Zenodo",
++  "new_standalone_record": true,
++  "modify_existing_records": false,
++  "owner": "Ingolf Lohmann",
++  "owner_directive": "Großartig! Bitte nun das Geeignete auf Zenodo veröffentlichen!",
++  "authorization_scope": [
++    "ZENODO_PUBLICATION",
++    "DOI_REGISTRATION",
++    "AUTHORITATIVE_READBACK"
++  ],
++  "renewed_owner_permission_required": false,
++  "authorization_boundary": "The present user directive authorizes the requested effect chain. This record is not a machine-proof bundle, candidate-bound v2 return receipt, canonical single-use authorization statement, submitted GitHub review, or proof of a completed effect.",
++  "selection": "Last accepted, condensed article in this conversation. The 26-section supplied essay and two earlier long-form explanations are not silently included as co-primary articles.",
++  "editorial_changes": [
++    "Chat citation markup replaced by numbered references.",
++    "Bibliographic, version, license and historical-anchor provenance appendix added.",
++    "PDF layout and pagination; no substantive rewrite of the accepted article body."
++  ],
++  "source_repository": "Goldkelch/qik-vrt",
++  "observed_base_head": "3b140fd85e6723f4cc8c147c56d34d7e1ca48740",
++  "observed_base_tree": "7cecfdb608c17b20fc41428e98c28668d802229d",
++  "source_read_date": "2026-09-07",
++  "source_binding": {
++    "path": "docs/research/2026-09-03-evidence-spiral/README_DE.md",
++    "git_blob_sha1": "b601ffb6ce1eab5a096a130bbe24d700769f11d9"
++  },
++  "anchor_dependency": {
++    "issue": 925,
++    "rule": "ANCHOR_0_FIRST; cite or relation-bind exact historical document",
++    "pdf_sha256": "38b0e62a46214a7cb9943dd3ef08283a70ae7e15ba22a59a9e53506f2945e311",
++    "pdf_bytes": 379427,
++    "fresh_external_readback": "UNKNOWN"
++  },
++  "intended_content": [
++    {
++      "path": "ARTICLE_DE.md",
++      "bytes": 17623,
++      "sha256": "ec1916a9978eb79585e24010e807205a339ee15d3f15e1612d3d39395d576bae",
++      "git_blob_sha1": "b36eb7cdd99b3e8a9b84d8a2ee90b995f47b62c5"
++    },
++    {
++      "path": "Der_Punkt_nachweisbare_Anschlussfaehigkeit_Lohmann_v1.pdf",
++      "bytes": 23209,
++      "sha256": "e5f018c156385b2e4a4dc343d2372bfdf2908b446ca195a4d8de985afe13d924",
++      "git_blob_sha1": "d5748aec5657e868321afd26baa5bbec1602aa66"
++    }
++  ],
++  "article_repository_persistence": "TO_BE_BOUND_TO_NEW_CANDIDATE_COMMIT",
++  "pdf_repository_persistence": "NOT_YET_PERSISTED; exact local rendering supplied in the downloadable bundle",
++  "reuse": "Use existing tools/qikvrt_zenodo_publish.py and its v2 policy; no alternate publisher, new workflow, credential relocation, polling loop or historical-artifact mutation.",
++  "unfulfilled_obligations": [
++    "Persist exact candidate artifacts on a repository carrier.",
++    "Validate the actual candidate head and fulfill the v2 claim/proof/return-receipt requirements without fabricating kernel receipts.",
++    "Required exact-head review, post-review reobservation and legitimate promotion.",
++    "Reobserve exact Trusted Main and derive exact P7 external obligations.",
++    "Verify canonical anchor dependency; use candidate-specific single-use authorization.",
++    "Execute existing authenticated GitHub Actions publication path; then authoritative record/DOI/file redownload and persisted receipt."
++  ],
++  "local_checks": {
++    "pdf_pages": 7,
++    "pdf_rendered_and_visually_inspected": true,
++    "pdf_text_extractable": true,
++    "reportlab_version": "4.4.9",
++    "independent_mathematical_checker_rerun": false,
++    "repository_ci": "NOT_RUN_ON_NEW_CANDIDATE"
++  },
++  "effects_in_this_preparation": {
++    "zenodo_record_created": false,
++    "zenodo_upload": false,
++    "zenodo_publish": false,
++    "doi_registered": false,
++    "merge": false,
++    "approval_submitted": false,
++    "PASS": false,
++    "FINAL_PASS": false,
++    "EFFECT_ACK_DONE": false
++  }
++}
+diff --git a/docs/publications/2026-09-07-nachweisbare-anschlussfaehigkeit/README.md b/docs/publications/2026-09-07-nachweisbare-anschlussfaehigkeit/README.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..45c64fac2aae8ebea17193e563ff044a0d2dcbf4
+--- /dev/null
++++ b/docs/publications/2026-09-07-nachweisbare-anschlussfaehigkeit/README.md
+@@ -0,0 +1,34 @@
++# Nachweisbare Anschlussfähigkeit — Publikationskandidat 1.0
++
++Autor und Rechteinhaber: **Ingolf Lohmann**. Ziel: **production Zenodo**.
++
++## Gegenstand und Freigabe
++
++Der zuletzt im Dialog bestätigte Artikel „Der Punkt, an dem Informatik wirklich überraschend wird: Über nachweisbare Anschlüsse, erhaltene Beweise und verantwortbare Wirkungen“ wird eigenständig vorbereitet. Die ausdrückliche Owner-Anweisung lautet: „Großartig! Bitte nun das Geeignete auf Zenodo veröffentlichen!“ Sie ergänzt die bestehende Freigabe für Zenodo-Veröffentlichung, DOI-Registrierung und autoritativen Readback. Keine erneute allgemeine Publikationsfreigabe wird verlangt.
++
++Der akzeptierte Artikelkörper bleibt erhalten. Nur Zitierformat, Quellen-/Versions-/Lizenzanhang und Layout wurden ergänzt. Die Datei ARTICLE_DE.md enthält die vollständige vorgelegte Fassung.
++
++## Exakte Grenze
++
++**Dies ist eine Vorbereitung, keine erfolgte Zenodo-Veröffentlichung.** Die Metadaten und die Claim-Map sind ausdrücklich Entwürfe; sie sind keine Eingaben für den generischen Publisher. Es existiert hier kein behaupteter Kernel-Beleg und kein erfundener v2-Autorisierungs- oder Rückgabe-Receipt.
++
++Der fortgeschriebene Kandidat benötigt P2–P7 gemäß policy/QIKVRT_EXECUTION_PRECEDENCE_V1.json und die v2-Verträge gemäß runtime/capabilities/ZENODO_PUBLICATION_CAPABILITY.json. Die dauerhafte Freigabe ersetzt diese gegenstandsgebundenen Voraussetzungen nicht.
++
++## Wiederverwendung
++
++Ausschließlich den bestehenden generischen Publisher tools/qikvrt_zenodo_publish.py samt vorhandener Machine-Proof-, Autorisierungs-, Single-use- und Readback-Mechanismen verwenden. Keine neuen Workflows, alternativen Uploadskripte, Secret-Exporte, Endlosschleifen oder Änderungen historischer Dateien.
++
++Der historische Anker aus Issue #925 bleibt eine separate, bytegebundene Quelle. Weder seine Erledigung noch sein aktueller DOI-/Datei-Readback wird aus Issue-Schließung oder Repository-Inhalt abgeleitet.
++
++## Dateien
++
++ARTICLE_DE.md: vollständiges Manuskript mit nummerierten Primärquellen.
++ZENODO_METADATA_DRAFT.json: noch nicht gesendete Metadaten.
++CLAIM_MAP_DRAFT.json: gegenstandsbezogene Klassifikation und offene formale Receipts.
++PUBLICATION_REQUEST.json: Owner-Auftrag, Artefaktidentitäten, Vorbedingungen und explizite Nicht-Effekte.
++
++Die separat bereitgestellte PDF-Lesefassung ist in PUBLICATION_REQUEST.json exakt gehasht. Solange sie nicht im Repository persistiert und überprüft ist, darf ihre Repository-Persistenz nicht behauptet werden. Die digitale Quellenfassung kann ohne PDF aus dem Repository gelesen werden; die endgültige Uploadmenge wird erst nach vollständiger Artefaktpersistenz und Kontrolle eingefroren.
++
++## Lizenz
++
++Nicht-Software-Dokumente: CC BY-NC-ND 4.0. Ingolf Lohmann bleibt Autor und Rechteinhaber. https://creativecommons.org/licenses/by-nc-nd/4.0/
+diff --git a/docs/publications/2026-09-07-nachweisbare-anschlussfaehigkeit/ZENODO_METADATA_DRAFT.json b/docs/publications/2026-09-07-nachweisbare-anschlussfaehigkeit/ZENODO_METADATA_DRAFT.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..bf6ce82d934e71b793add8bebc4c82b5a8d5e1c0
+--- /dev/null
++++ b/docs/publications/2026-09-07-nachweisbare-anschlussfaehigkeit/ZENODO_METADATA_DRAFT.json
+@@ -0,0 +1,35 @@
++{
++  "metadata": {
++    "title": "Der Punkt, an dem Informatik wirklich überraschend wird: Über nachweisbare Anschlüsse, erhaltene Beweise und verantwortbare Wirkungen",
++    "upload_type": "publication",
++    "publication_type": "workingpaper",
++    "creators": [
++      {
++        "name": "Lohmann, Ingolf"
++      }
++    ],
++    "description": "<p>Deutschsprachiger, quellengebundener Artikel von Ingolf Lohmann über mathematische Anschlussfähigkeit, den Erhalt gültiger Beweise und die Trennung von technischer Handlung, Bestätigung und nachgewiesener Wirkung.</p><p>Der Text verbindet die Sequenzregel der Hoare-Logik, Invarianten und monotone Evidenzfortschreibung mit gegenstandsgebundenen Prüfungen, lokalen Haltepunkten und verantwortbarer KI-Nutzung. Er unterscheidet allgemeine mathematische Schlussregeln, dokumentierte QIK-VRT-Verträge sowie normative und interpretative Folgerungen.</p><p>Keine Widerlegung von Turings Unentscheidbarkeitssatz, keine empirische Totaltheorie und kein neu ausgeführter vollständiger Verifikations- oder Wirkungsnachweis der QIK-VRT-Implementierung werden beansprucht. Die Fassung ist eine eigenständige nachfolgende Erläuterung; historische QIK-VRT-Artefakte bleiben unverändert.</p>",
++    "version": "1.0",
++    "access_right": "open",
++    "license": "cc-by-nc-nd-4.0",
++    "language": "deu",
++    "keywords": [
++      "Informatik",
++      "formale Methoden",
++      "Hoare-Logik",
++      "Beweiserhalt",
++      "Evidenzkugel",
++      "QIK-VRT",
++      "Wirkungsnachweis",
++      "Provenienz"
++    ],
++    "related_identifiers": [
++      {
++        "identifier": "https://github.com/Goldkelch/qik-vrt/blob/3b140fd85e6723f4cc8c147c56d34d7e1ca48740/docs/research/2026-09-03-evidence-spiral/README_DE.md",
++        "relation": "references",
++        "scheme": "url"
++      }
++    ],
++    "notes": "Manuskript 1.0. Autor und Rechteinhaber: Ingolf Lohmann (Auge im Sturm / ilo). Kein behauptetes Peer Review. Ein Publikationsdatum und eine DOI werden erst anhand des tatsächlichen externen Publikationseffekts gebunden."
++  }
++}
