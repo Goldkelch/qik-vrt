@@ -24,22 +24,13 @@ class CloudTransputerContractTests(unittest.TestCase):
     def test_policy_preserves_exact_effect_boundaries(self) -> None:
         value = json.loads(POLICY.read_text(encoding="utf-8"))
         self.assertEqual(value["schema"], "qikvrt_cloud_transputer_v1")
-        self.assertEqual(
-            value["introduced_from_authority"]["main_sha"],
-            "3b140fd85e6723f4cc8c147c56d34d7e1ca48740",
-        )
-        self.assertEqual(
-            value["stable_mesh_surface"]["public_entrypoint"],
-            "https://goldkelch.github.io/qik-vrt/cloud-transputer/",
-        )
+        self.assertEqual(value["introduced_from_authority"]["main_sha"], "3b140fd85e6723f4cc8c147c56d34d7e1ca48740")
+        self.assertEqual(value["stable_mesh_surface"]["public_entrypoint"], "https://goldkelch.github.io/qik-vrt/cloud-transputer/")
         self.assertFalse(value["stable_mesh_surface"]["pages_is_compute_runtime"])
         self.assertTrue(value["scaling"]["replicas_allowed"])
         self.assertFalse(value["scaling"]["replicas_share_effect_authority"])
         self.assertFalse(value["m68000_boundary"]["standalone_m68000_tcp_ip_stack_claimed"])
-        self.assertEqual(
-            value["m68000_boundary"]["personal_posix_source_state"],
-            "UNBOUND_UNTIL_ACTUAL_OWNER_SOURCE_IS_PRESENT",
-        )
+        self.assertEqual(value["m68000_boundary"]["personal_posix_source_state"], "UNBOUND_UNTIL_ACTUAL_OWNER_SOURCE_IS_PRESENT")
         self.assertFalse(value["mirror_semantics"]["polling"])
         self.assertFalse(value["mirror_semantics"]["push_to_authority"])
         for name in ("PASS", "FINAL_PASS", "EFFECT_ACK_DONE"):
@@ -47,10 +38,7 @@ class CloudTransputerContractTests(unittest.TestCase):
 
     def test_container_has_requested_protocol_services_and_m68k_toolchain(self) -> None:
         text = DOCKERFILE.read_text(encoding="utf-8")
-        for token in (
-            "firefox-esr", "novnc", "nginx", "openssh-server", "postgresql",
-            "dnsmasq", "snmpd", "qemu-user", "gcc-m68k-linux-gnu",
-        ):
+        for token in ("firefox-esr", "novnc", "nginx", "openssh-server", "postgresql", "dnsmasq", "snmpd", "qemu-user", "gcc-m68k-linux-gnu"):
             self.assertIn(token, text)
         for exposed in ("8080/tcp", "2222/tcp", "2525/tcp", "5353/tcp", "5353/udp", "1161/udp", "5432/tcp"):
             self.assertIn(exposed, text)
@@ -58,11 +46,7 @@ class CloudTransputerContractTests(unittest.TestCase):
     def test_compose_defaults_to_loopback_and_persistent_isolated_state(self) -> None:
         text = COMPOSE.read_text(encoding="utf-8")
         self.assertGreaterEqual(text.count("${QIKVRT_BIND_ADDRESS:-127.0.0.1}"), 7)
-        for target in (
-            "/var/lib/qikvrt/profile", "/var/lib/qikvrt/state",
-            "/var/lib/qikvrt/mirror", "/var/lib/qikvrt/personal-posix",
-            "/var/lib/qikvrt/mail",
-        ):
+        for target in ("/var/lib/qikvrt/profile", "/var/lib/qikvrt/state", "/var/lib/qikvrt/mirror", "/var/lib/qikvrt/personal-posix", "/var/lib/qikvrt/mail"):
             self.assertIn(target, text)
         self.assertIn("no-new-privileges:true", text)
 
@@ -77,6 +61,15 @@ class CloudTransputerContractTests(unittest.TestCase):
         self.assertNotIn("git fetch", text)
         self.assertNotIn("while git", text)
 
+    def test_postgresql_discovery_is_version_depth_independent_and_fail_closed(self) -> None:
+        entry = ENTRYPOINT.read_text(encoding="utf-8")
+        health = HEALTH.read_text(encoding="utf-8")
+        for text in (entry, health):
+            self.assertIn("-path '*/bin/postgres'", text)
+            self.assertNotIn("/usr/lib/postgresql -maxdepth 2 -type f -name postgres", text)
+        self.assertIn("BLOCK: PostgreSQL server binary was not discovered", entry)
+        self.assertIn("required PostgreSQL tool is absent", entry)
+
     def test_mirror_is_one_shot_canonical_and_never_writes_authority(self) -> None:
         text = MIRROR.read_text(encoding="utf-8")
         self.assertIn("https://github.com/Goldkelch/qik-vrt.git", text)
@@ -88,12 +81,10 @@ class CloudTransputerContractTests(unittest.TestCase):
 
     def test_health_requires_every_requested_protocol_plane(self) -> None:
         text = HEALTH.read_text(encoding="utf-8")
-        for token in (
-            "vnc.html", "ssh-keyscan", "snmpget", "pg_isready",
-            "SELECT 20 + 22", "dig +time", "EFFECT_ACK_STATE=EFFECT_ACK_DONE",
-            "authority-mirror.json",
-        ):
+        for token in ("vnc.html", "ssh-keyscan", "snmpget", "pg_isready", "SELECT 20 + 22", "dig +time", "EFFECT_ACK_STATE=EFFECT_ACK_DONE", "authority-mirror.json"):
             self.assertIn(token, text)
+        for probe in ("effect_ack_direct", "proxy_terminal", "smtp", "dns", "ssh", "snmp", "postgresql_tcp", "sql92", "m68000_execution", "authority_mirror", "complete"):
+            self.assertIn(probe, text)
 
     def test_c90_probe_uses_existing_effect_ack_core_without_false_arch_claim(self) -> None:
         text = M68K.read_text(encoding="utf-8")

@@ -16,13 +16,22 @@ MESH_DOMAIN="${QIKVRT_MESH_DOMAIN:-qikvrt.mesh.local}"
 MESH_PUBLIC_URL="${QIKVRT_MESH_PUBLIC_URL:-https://goldkelch.github.io/qik-vrt/cloud-transputer/}"
 RUN_STATE=/run/qikvrt/runtime.json
 
+mark() { printf 'QIKVRT_HEALTH_PROBE=%s\n' "$1"; }
+
+mark effect_ack_direct
 curl -fsS "http://127.0.0.1:${HTTP_PORT}/.well-known/effect-ack" >/tmp/qikvrt-health-effect.json
+mark novnc_direct
 curl -fsS "http://127.0.0.1:${NOVNC_PORT}/vnc.html" >/dev/null
+mark proxy_terminal
 curl -fsS "http://127.0.0.1:${PROXY_PORT}/terminal/vnc.html" >/dev/null
+mark proxy_effect_ack
 curl -fsS "http://127.0.0.1:${PROXY_PORT}/effect-ack/.well-known/effect-ack" >/tmp/qikvrt-health-effect-proxy.json
+mark proxy_runtime_receipt
 curl -fsS "http://127.0.0.1:${PROXY_PORT}/.well-known/qikvrt-cloud-transputer" >/tmp/qikvrt-health-runtime.json
+mark firefox_process
 pgrep -af 'firefox|firefox-esr' >/dev/null
 
+mark smtp
 python3 -B - "$SMTP_PORT" <<'PY'
 import socket,sys
 port=int(sys.argv[1])
@@ -35,25 +44,39 @@ with socket.create_connection(('127.0.0.1',port),timeout=3) as sock:
     sock.sendall(b'QUIT\r\n')
 PY
 
+mark dns
 dig +time=2 +tries=1 @127.0.0.1 -p "$DNS_PORT" "$MESH_DOMAIN" A | grep -Eq '[[:space:]]A[[:space:]]+127\.0\.0\.1'
+mark ssh
 ssh-keyscan -T 3 -p "$SSH_PORT" 127.0.0.1 2>/dev/null | grep -q 'ssh-ed25519'
 
+mark snmp
 SNMP_COMMUNITY=qikvrt-local
 if [ -n "${QIKVRT_SNMP_COMMUNITY_FILE:-}" ]; then
   SNMP_COMMUNITY="$(cat "$QIKVRT_SNMP_COMMUNITY_FILE")"
 fi
 snmpget -v2c -c "$SNMP_COMMUNITY" -t 2 -r 0 "127.0.0.1:${SNMP_PORT}" 1.3.6.1.2.1.1.1.0 >/dev/null
 
-PG_BIN="$(dirname "$(find /usr/lib/postgresql -maxdepth 2 -type f -name postgres | sort | tail -n 1)")"
+mark postgresql_discovery
+PG_SERVER="$(find /usr/lib/postgresql -type f -path '*/bin/postgres' -print | sort -V | tail -n 1)"
+test -n "$PG_SERVER"
+PG_BIN="$(dirname "$PG_SERVER")"
+test -x "$PG_BIN/pg_isready"
+test -x "$PG_BIN/psql"
+mark postgresql_tcp
 "$PG_BIN/pg_isready" -h 127.0.0.1 -p "$SQL_PORT" -d qikvrt -U qikvrt >/dev/null
+mark sql92
 SQL92_VALUE="$(su -s /bin/sh postgres -c "'$PG_BIN/psql' -p '$SQL_PORT' -U qikvrt -d qikvrt -Atqc 'SELECT 20 + 22'")"
 test "$SQL92_VALUE" = 42
 
+mark m68000_file
 file "$STATE_DIR/m68k/qikvrt-effect-ack-probe" | grep -Eqi '68000|m68k|Motorola'
+mark m68000_execution
 grep -q '^ARCH=M68000_FAMILY$' "$STATE_DIR/m68k/execution.txt"
 grep -q '^EFFECT_ACK_STATE=EFFECT_ACK_DONE$' "$STATE_DIR/m68k/execution.txt"
 
+mark authority_mirror
 test -f "$STATE_DIR/authority-mirror.json"
+mark exact_runtime_receipts
 python3 -B - "$STATE_DIR/authority-mirror.json" "$RUN_STATE" "$MESH_PUBLIC_URL" /tmp/qikvrt-health-effect.json /tmp/qikvrt-health-effect-proxy.json /tmp/qikvrt-health-runtime.json <<'PY'
 import json,sys
 mirror_path,runtime_path,expected_url,effect_path,effect_proxy_path,proxy_runtime_path=sys.argv[1:]
@@ -81,3 +104,4 @@ assert effect['modes']==['prepare','commit']
 proxy_runtime=json.load(open(proxy_runtime_path,encoding='utf-8'))
 assert proxy_runtime==runtime
 PY
+mark complete

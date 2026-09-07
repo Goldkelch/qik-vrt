@@ -45,7 +45,6 @@ if [ ! -f "$PROFILE_DIR/.qikvrt-profile-initialized" ]; then
   : > "$PROFILE_DIR/.qikvrt-profile-initialized"
 fi
 
-# The canonical Authority mirror is refreshed once at boot.  There is no polling loop.
 if ! /usr/local/bin/qikvrt-authority-mirror-refresh >"$LOG_DIR/authority-mirror.log" 2>&1; then
   if [ "${QIKVRT_REQUIRE_AUTHORITY_MIRROR:-1}" = 1 ]; then
     cat "$LOG_DIR/authority-mirror.log" >&2 || true
@@ -53,9 +52,6 @@ if ! /usr/local/bin/qikvrt-authority-mirror-refresh >"$LOG_DIR/authority-mirror.
   fi
 fi
 
-# Prove that the repository's strict C90 Effect_ack core can be translated to
-# and executed as an M68000-family Linux binary.  This is deliberately distinct
-# from the optional owner POSIX source slot below.
 M68K_PROBE="$STATE_DIR/m68k/qikvrt-effect-ack-probe"
 m68k-linux-gnu-gcc -std=c90 -pedantic -Wall -Wextra -Werror -static \
   -I/opt/qikvrt/include \
@@ -87,9 +83,21 @@ if [ "${QIKVRT_REQUIRE_PERSONAL_POSIX:-0}" = 1 ] && [ "$PERSONAL_POSIX_STATE" !=
   exit 31
 fi
 
-# PostgreSQL: persistent cluster, local trust for in-container terminal access,
-# SCRAM for non-loopback clients.  A production password may be injected by file.
-PG_BIN="$(dirname "$(find /usr/lib/postgresql -maxdepth 2 -type f -name postgres | sort | tail -n 1)")"
+PG_SERVER="$(find /usr/lib/postgresql -type f -path '*/bin/postgres' -print | sort -V | tail -n 1)"
+if [ -z "$PG_SERVER" ]; then
+  printf '%s\n' "BLOCK: PostgreSQL server binary was not discovered below /usr/lib/postgresql" >&2
+  find /usr/lib/postgresql -maxdepth 4 -type f -print >&2 || true
+  exit 32
+fi
+PG_BIN="$(dirname "$PG_SERVER")"
+for pg_tool in postgres initdb pg_ctl psql createuser createdb pg_isready; do
+  if [ ! -x "$PG_BIN/$pg_tool" ]; then
+    printf '%s\n' "BLOCK: required PostgreSQL tool is absent: $PG_BIN/$pg_tool" >&2
+    exit 33
+  fi
+done
+printf 'PG_SERVER=%s\nPG_BIN=%s\n' "$PG_SERVER" "$PG_BIN" > "$LOG_DIR/postgresql-discovery.log"
+
 PGDATA="$STATE_DIR/postgresql/data"
 if [ ! -f "$PGDATA/PG_VERSION" ]; then
   mkdir -p "$PGDATA"
@@ -131,7 +139,6 @@ if [ -n "${QIKVRT_SQL_PASSWORD_FILE:-}" ]; then
 fi
 su -s /bin/sh postgres -c "'$PG_BIN/psql' -v ON_ERROR_STOP=1 -d qikvrt -c 'CREATE TABLE IF NOT EXISTS terminal_state (key VARCHAR(64) PRIMARY KEY, value VARCHAR(256) NOT NULL)' -c \"INSERT INTO terminal_state(key,value) VALUES ('schema','qikvrt_cloud_transputer_v1') ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value\"" >/dev/null
 
-# SSH host identity is persistent.  Password authentication is always disabled.
 SSH_HOST_KEY="$STATE_DIR/ssh/ssh_host_ed25519_key"
 if [ ! -f "$SSH_HOST_KEY" ]; then
   ssh-keygen -q -t ed25519 -N '' -f "$SSH_HOST_KEY"
@@ -141,7 +148,6 @@ if [ -n "${QIKVRT_SSH_AUTHORIZED_KEYS_FILE:-}" ]; then
   test -r "$QIKVRT_SSH_AUTHORIZED_KEYS_FILE"
   cp "$QIKVRT_SSH_AUTHORIZED_KEYS_FILE" "$AUTHORIZED_KEYS"
 fi
-: "${AUTHORIZED_KEYS:=$STATE_DIR/ssh/authorized_keys}"
 touch "$AUTHORIZED_KEYS"
 chmod 600 "$AUTHORIZED_KEYS" "$SSH_HOST_KEY"
 cat > "$RUN_DIR/sshd_config" <<EOF
@@ -164,8 +170,6 @@ EOF
 /usr/sbin/sshd -D -e -f "$RUN_DIR/sshd_config" > "$LOG_DIR/sshd.log" 2>&1 &
 SSHD_PID=$!
 
-# DNS and SNMP are actual protocol daemons.  SNMP defaults to loopback-only
-# community reachability unless an external community file is supplied.
 cat > "$RUN_DIR/dnsmasq.conf" <<EOF
 port=$DNS_PORT
 listen-address=0.0.0.0
@@ -201,8 +205,6 @@ python3 -B /opt/qikvrt/src/cloud_transputer/smtpd.py \
   > "$LOG_DIR/smtpd.log" 2>&1 &
 SMTP_PID=$!
 
-# Existing QIK-VRT Effect_ack HTTP capability remains loopback-local and is
-# exposed to the human terminal only through the controlled nginx path.
 python3 -B /opt/qikvrt/src/qikvrt_effect_ack_http_terminal.py \
   --host 127.0.0.1 --port "$HTTP_PORT" > "$LOG_DIR/effect-ack-http.log" 2>&1 &
 EFFECT_PID=$!
@@ -225,7 +227,6 @@ x11vnc $VNC_ARGS > "$LOG_DIR/x11vnc.log" 2>&1 &
 VNC_PID=$!
 websockify --web=/usr/share/novnc/ "$NOVNC_PORT" localhost:5900 > "$LOG_DIR/novnc.log" 2>&1 &
 NOVNC_PID=$!
-
 firefox-esr --no-remote --profile "$PROFILE_DIR" "$START_URL" > "$LOG_DIR/firefox.log" 2>&1 &
 FIREFOX_PID=$!
 
@@ -273,50 +274,26 @@ if [ -f "$STATE_DIR/authority-mirror.json" ]; then
 fi
 
 python3 -B - "$RUN_DIR/runtime.json" "$STATE_DIR/runtime.json" "$RUNTIME_ID" "$MESH_PUBLIC_URL" "$FIREFOX_VERSION" "$M68K_SHA256" "$PERSONAL_POSIX_STATE" "$MIRROR_HEAD" "$MIRROR_TREE" "$PROXY_PORT" "$SSH_PORT" "$SMTP_PORT" "$DNS_PORT" "$SNMP_PORT" "$SQL_PORT" <<'PY'
-import json
-import os
-import sys
-import time
-(
-    run_path, state_path, runtime_id, public_url, firefox_version, m68k_sha,
-    personal_posix_state, mirror_head, mirror_tree, proxy_port, ssh_port,
-    smtp_port, dns_port, snmp_port, sql_port,
-) = sys.argv[1:]
-value = {
-    "schema": "qikvrt_cloud_transputer_runtime_v1",
-    "runtime_id": runtime_id,
-    "mesh_public_url": public_url,
-    "firefox_version": firefox_version,
-    "profile_persistent": True,
-    "service_ports": {
-        "http_proxy": int(proxy_port),
-        "ssh": int(ssh_port),
-        "smtp": int(smtp_port),
-        "dns": int(dns_port),
-        "snmp": int(snmp_port),
-        "postgresql": int(sql_port),
-    },
-    "m68000_effect_ack_probe_sha256": m68k_sha,
-    "m68000_effect_ack_probe_executed": True,
-    "personal_posix_state": personal_posix_state,
-    "standalone_m68000_tcp_ip_stack_claimed": False,
-    "kernel_backed_posix_tcp_ip": True,
-    "authority_mirror_main_head": mirror_head,
-    "authority_mirror_main_tree": mirror_tree,
-    "authority_mirror_polling": False,
-    "started_at_unix": int(time.time()),
-    "public_cloud_reachability_readback": "UNOBSERVED_UNTIL_EXTERNAL_RUNTIME_ORIGIN_IS_AUTHENTICATED",
-    "external_effect_claimed": False,
-    "pass": False,
-    "final_pass": False,
-    "effect_ack_done": False,
+import json,os,sys,time
+(run_path,state_path,runtime_id,public_url,firefox_version,m68k_sha,personal_posix_state,mirror_head,mirror_tree,proxy_port,ssh_port,smtp_port,dns_port,snmp_port,sql_port)=sys.argv[1:]
+value={
+  'schema':'qikvrt_cloud_transputer_runtime_v1','runtime_id':runtime_id,
+  'mesh_public_url':public_url,'firefox_version':firefox_version,
+  'profile_persistent':True,
+  'service_ports':{'http_proxy':int(proxy_port),'ssh':int(ssh_port),'smtp':int(smtp_port),'dns':int(dns_port),'snmp':int(snmp_port),'postgresql':int(sql_port)},
+  'm68000_effect_ack_probe_sha256':m68k_sha,'m68000_effect_ack_probe_executed':True,
+  'personal_posix_state':personal_posix_state,'standalone_m68000_tcp_ip_stack_claimed':False,
+  'kernel_backed_posix_tcp_ip':True,'authority_mirror_main_head':mirror_head,
+  'authority_mirror_main_tree':mirror_tree,'authority_mirror_polling':False,
+  'started_at_unix':int(time.time()),
+  'public_cloud_reachability_readback':'UNOBSERVED_UNTIL_EXTERNAL_RUNTIME_ORIGIN_IS_AUTHENTICATED',
+  'external_effect_claimed':False,'pass':False,'final_pass':False,'effect_ack_done':False,
 }
-for path in (run_path, state_path):
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8", newline="\n") as handle:
-        json.dump(value, handle, ensure_ascii=False, indent=2, sort_keys=True)
-        handle.write("\n")
-    os.replace(tmp, path)
+for path in (run_path,state_path):
+  tmp=path+'.tmp'
+  with open(tmp,'w',encoding='utf-8',newline='\n') as handle:
+    json.dump(value,handle,ensure_ascii=False,indent=2,sort_keys=True); handle.write('\n')
+  os.replace(tmp,path)
 PY
 
 cleanup() {
