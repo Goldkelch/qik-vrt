@@ -1,0 +1,67 @@
+name: QIKVRT admin app authority probe
+
+on:
+  push:
+    branches: [control/admin-app-authority-probe-v1]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      ADMIN_APP_CLIENT_ID: ${{ vars.QIKVRT_ADMIN_APP_CLIENT_ID }}
+      ADMIN_APP_PRIVATE_KEY: ${{ secrets.QIKVRT_ADMIN_APP_PRIVATE_KEY }}
+      EXPECTED_INSTALLATION_ID: "147849532"
+    steps:
+      - name: Classify existing bootstrap without exposing credentials
+        id: bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${ADMIN_APP_CLIENT_ID:-}" ] && [ -n "${ADMIN_APP_PRIVATE_KEY:-}" ]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+            echo 'QIKVRT_ADMIN_APP_BOOTSTRAP=PRESENT'
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo 'QIKVRT_ADMIN_APP_BOOTSTRAP=ABSENT'
+          fi
+
+      - name: Mint exact short-lived administration token
+        id: app-token
+        if: steps.bootstrap.outputs.available == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ env.ADMIN_APP_CLIENT_ID }}
+          private-key: ${{ env.ADMIN_APP_PRIVATE_KEY }}
+          owner: Goldkelch
+          repositories: qik-vrt
+          permission-administration: write
+
+      - name: Verify installation and read live ruleset only
+        if: steps.app-token.outputs.token != ''
+        shell: bash
+        env:
+          ADMIN_TOKEN: ${{ steps.app-token.outputs.token }}
+          OBSERVED_INSTALLATION_ID: ${{ steps.app-token.outputs.installation-id }}
+        run: |
+          set -euo pipefail
+          test "$OBSERVED_INSTALLATION_ID" = "$EXPECTED_INSTALLATION_ID"
+          code="$(curl -sS -o /tmp/ruleset.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            https://api.github.com/repos/Goldkelch/qik-vrt/rulesets/19344903)"
+          test "$code" = 200
+          test "$(jq -r .id /tmp/ruleset.json)" = 19344903
+          echo "QIKVRT_ADMIN_APP_INSTALLATION_ID=${OBSERVED_INSTALLATION_ID}"
+          echo 'QIKVRT_ADMIN_APP_RULESET_READBACK=AUTHORIZED'
+          echo 'QIKVRT_ADMIN_APP_MUTATION=NONE'
+
+      - name: Preserve fail-closed absence classification
+        if: steps.bootstrap.outputs.available != 'true'
+        run: |
+          echo 'QIKVRT_ADMIN_APP_AUTHORITY=UNAVAILABLE'
+          echo 'QIKVRT_ADMIN_APP_MUTATION=NONE'
