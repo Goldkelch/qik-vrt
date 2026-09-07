@@ -30,7 +30,6 @@ jobs:
     timeout-minutes: 5
     env:
       GH_TOKEN: ${{ github.token }}
-      RULESET_ADMIN_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}
       REPOSITORY: ${{ github.repository }}
       UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id }}
       REVIEW_STATUS_CONTEXT: QIKVRT required code-owner review
@@ -50,14 +49,17 @@ jobs:
           root="$RUNNER_TEMP/qikvrt-ruleset-effect-dispatch"
           rm -rf "$root"
           mkdir -p "$root/artifact"
+
           checkout="$(git rev-parse --verify HEAD^{commit})"
           live_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"
           test "$checkout" = "$live_main"
+
           run="$(gh api "repos/${REPOSITORY}/actions/runs/${UPSTREAM_RUN_ID}")"
           upstream_name="$(jq -r .name <<<"$run")"
           upstream_path="$(jq -r .path <<<"$run")"
           upstream_conclusion="$(jq -r .conclusion <<<"$run")"
           test "$(jq -r .repository.full_name <<<"$run")" = "$REPOSITORY"
+
           case "$upstream_name" in
             "QIKVRT required code-owner review")
               test "$upstream_path" = ".github/workflows/qikvrt_required_review_gate.yml"
@@ -67,16 +69,21 @@ jobs:
               expected="qikvrt-required-code-owner-selection-${UPSTREAM_RUN_ID}-CANDIDATE"
               selection_name=qikvrt-required-review-selection.json
               selection_schema=qikvrt_required_code_owner_review_selection_v1
-              selection_kind=required-review ;;
+              selection_kind=required-review
+              ;;
             "QIKVRT requested review executor")
               test "$upstream_path" = ".github/workflows/qikvrt_requested_review_executor.yml"
               case "$upstream_conclusion" in success|failure) ;; *) exit 1 ;; esac
               expected="qikvrt-mesh-review-selection-${UPSTREAM_RUN_ID}-CANDIDATE"
               selection_name=qikvrt-review-selection.json
               selection_schema=qikvrt_requested_review_selection_v1
-              selection_kind=requested-review ;;
-            *) exit 1 ;;
+              selection_kind=requested-review
+              ;;
+            *)
+              exit 1
+              ;;
           esac
+
           artifacts="$(gh api "repos/${REPOSITORY}/actions/runs/${UPSTREAM_RUN_ID}/artifacts?per_page=100")"
           count="$(jq --arg name "$expected" '[.artifacts[] | select(.name == $name and (.expired != true))] | length' <<<"$artifacts")"
           if [ "$count" != 1 ]; then
@@ -90,6 +97,7 @@ jobs:
           mapfile -t files < <(find "$root/artifact" -type f -name "$selection_name" -print)
           test "${#files[@]}" -eq 1
           cp "${files[0]}" "$root/selection.json"
+
           test "$(jq -r .schema "$root/selection.json")" = "$selection_schema"
           test "$(jq -r .state "$root/selection.json")" = CANDIDATE
           if [ "$selection_kind" = required-review ]; then
@@ -103,6 +111,7 @@ jobs:
           head="$(jq -r .expected_head "$root/selection.json")"
           [[ "$pr" =~ ^[1-9][0-9]*$ ]]
           [[ "$head" =~ ^[0-9a-f]{40}$ ]]
+
           pull="$(gh api "repos/${REPOSITORY}/pulls/${pr}")"
           test "$(jq -r .state <<<"$pull")" = open
           test "$(jq -r .base.ref <<<"$pull")" = main
@@ -110,6 +119,7 @@ jobs:
           test "$(jq -r .head.sha <<<"$pull")" = "$head"
           head_ref="$(jq -r .head.ref <<<"$pull")"
           test "$(gh api "repos/${REPOSITORY}/git/ref/heads/${head_ref}" --jq .object.sha)" = "$head"
+
           statuses="$(gh api --paginate --slurp "repos/${REPOSITORY}/commits/${head}/statuses?per_page=100")"
           exact_count="$(jq --arg context "$REVIEW_STATUS_CONTEXT" '[.[][] | select(.context == $context and .state == "failure" and .description == "failure: CODE_OWNER_RULE_NOT_ENFORCED")] | length' <<<"$statuses")"
           if [ "$exact_count" -lt 1 ]; then
@@ -117,28 +127,15 @@ jobs:
             echo "blocker=EXACT_RULESET_BLOCKER_STATUS_MISSING" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
           test "$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)" = "$live_main"
           test "$(gh api "repos/${REPOSITORY}/pulls/${pr}" --jq .head.sha)" = "$head"
           test "$(gh api "repos/${REPOSITORY}/git/ref/heads/${head_ref}" --jq .object.sha)" = "$head"
+
+          echo "state=CANDIDATE" >> "$GITHUB_OUTPUT"
           echo "pr=$pr" >> "$GITHUB_OUTPUT"
           echo "head=$head" >> "$GITHUB_OUTPUT"
           echo "main=$live_main" >> "$GITHUB_OUTPUT"
-          if [ -z "${RULESET_ADMIN_TOKEN:-}" ]; then
-            echo "state=REQUEST_AUTHORITY" >> "$GITHUB_OUTPUT"
-            echo "blocker=QIKVRT_RULESET_ADMIN_TOKEN_UNAVAILABLE" >> "$GITHUB_OUTPUT"
-          else
-            echo "state=CANDIDATE" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Preserve missing-authority disposition
-        if: steps.bind.outputs.state == 'REQUEST_AUTHORITY'
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "REQUEST_AUTHORITY: QIKVRT_RULESET_ADMIN_TOKEN_UNAVAILABLE"
-          echo "Exact subject #${{ steps.bind.outputs.pr }}@${{ steps.bind.outputs.head }}"
-          echo "Trusted Main ${{ steps.bind.outputs.main }}"
-          echo "No ruleset mutation or writer dispatch attempted."
 
       - name: Dispatch existing single ruleset effect writer
         if: steps.bind.outputs.state == 'CANDIDATE'
@@ -146,11 +143,9 @@ jobs:
           PR_NUMBER: ${{ steps.bind.outputs.pr }}
           EXPECTED_HEAD: ${{ steps.bind.outputs.head }}
           EXPECTED_MAIN: ${{ steps.bind.outputs.main }}
-          GH_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${GH_TOKEN:-}"
           test "$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)" = "$EXPECTED_MAIN"
           test "$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)" = "$EXPECTED_HEAD"
           jq -n --arg pr "$PR_NUMBER" --arg head "$EXPECTED_HEAD" \
