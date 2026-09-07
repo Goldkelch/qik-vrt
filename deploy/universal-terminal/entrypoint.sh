@@ -8,6 +8,13 @@ HTTP_PORT="${QIKVRT_HTTP_PORT:-8771}"
 NOVNC_PORT="${QIKVRT_NOVNC_PORT:-6080}"
 DISPLAY_VALUE="${DISPLAY:-:99}"
 START_URL="${QIKVRT_START_URL:-https://arxiv.org/}"
+MESH_URL="${QIKVRT_MESH_URL:-https://github.com/Goldkelch/qik-vrt}"
+
+if [ "$MESH_URL" != "https://github.com/Goldkelch/qik-vrt" ] ||
+   [ "$START_URL" != "$MESH_URL" ]; then
+  printf '%s\n' "BLOCK: terminal must start at the fixed QIK-VRT Mesh URL" >&2
+  exit 4
+fi
 
 mkdir -p /opt/qikvrt/runtime/logs "$PROFILE_DIR" "$STATE_DIR"
 
@@ -58,6 +65,7 @@ obj={
   'profile_dir':profile,
   'profile_persistent':True,
   'start_url':start_url,
+  'mesh_url':start_url,
   'novnc_port':int(novnc_port),
   'started_at_unix':int(time.time()),
   'authenticated_session_storage':'FIREFOX_PROFILE',
@@ -75,7 +83,7 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
-printf '%s\n' "QIKVRT universal terminal ready: runtime=${RUNTIME_ID} noVNC=0.0.0.0:${NOVNC_PORT} effect_ack=127.0.0.1:${HTTP_PORT} profile=${PROFILE_DIR}"
+printf '%s\n' "QIKVRT universal terminal ready: runtime=${RUNTIME_ID} mesh=${MESH_URL} noVNC=127.0.0.1:${NOVNC_PORT} effect_ack=127.0.0.1:${HTTP_PORT} profile=${PROFILE_DIR}"
 
 while kill -0 "$HTTP_PID" 2>/dev/null && kill -0 "$FIREFOX_PID" 2>/dev/null && kill -0 "$NOVNC_PID" 2>/dev/null; do
   sleep 1
