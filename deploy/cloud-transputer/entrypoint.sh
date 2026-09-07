@@ -242,7 +242,11 @@ if [ -n "${QIKVRT_TERMINAL_PASSWORD:-}" ]; then
   TERMINAL_HASH="$(printf '%s\n' "$QIKVRT_TERMINAL_PASSWORD" | openssl passwd -6 -stdin)"
   umask 077
   printf '%s:%s\n' "$TERMINAL_USER" "$TERMINAL_HASH" > "$RUN_DIR/terminal.htpasswd"
-  TERMINAL_AUTH_DIRECTIVES="auth_basic \"QIK-VRT Universal Terminal\";
+  TERMINAL_AUTH_DIRECTIVES="satisfy any;
+      allow 127.0.0.1;
+      allow ::1;
+      deny all;
+      auth_basic \"QIK-VRT Universal Terminal\";
       auth_basic_user_file $RUN_DIR/terminal.htpasswd;"
   unset QIKVRT_TERMINAL_PASSWORD TERMINAL_HASH
 fi
