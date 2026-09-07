@@ -1,42 +1,87 @@
 {
-  "schema": "qikvrt_universal_terminal_virtualization_v1",
-  "repository": "Goldkelch/qik-vrt",
   "components": {
-    "browser": "browser/firefox/qikvrt-terminal",
     "authenticated_web_adapter": "browser/firefox/qikvrt-terminal/authenticated_delivery.js",
-    "effect_ack_http_daemon": "src/qikvrt_effect_ack_http_terminal.py",
-    "container": "deploy/universal-terminal/Dockerfile",
+    "authority_mirror_observer": "src/qikvrt_cloud_mirror_observer.py",
+    "browser": "browser/firefox/qikvrt-terminal",
     "compose": "deploy/universal-terminal/compose.yaml",
+    "container": "deploy/universal-terminal/Dockerfile",
+    "effect_ack_http_daemon": "src/qikvrt_effect_ack_http_terminal.py",
     "entrypoint": "deploy/universal-terminal/entrypoint.sh",
-    "runtime_health": "deploy/universal-terminal/runtime-health.sh"
+    "m68000_bootstrap_c90": "src/m68000/qikvrt_terminal_bootstrap.c",
+    "public_proxy": "src/qikvrt_terminal_proxy_httpd.py",
+    "runtime_health": "deploy/universal-terminal/runtime-health.sh",
+    "service_plane": "src/qikvrt_universal_service_plane.py"
   },
-  "runtime_transport": {
-    "class": "DURABLE_ADDRESSABLE_FIREFOX_TERMINAL",
-    "restart_policy": "UNLESS_STOPPED",
-    "persistent_profile": "/var/lib/qikvrt/profile",
-    "persistent_runtime_state": "/var/lib/qikvrt/state",
-    "session_owner": "FIREFOX_AND_DESTINATION_PLATFORM",
-    "extension_bootstrap": "COPY_ON_FIRST_PROFILE_INITIALIZATION",
-    "human_surface": "NOVNC",
-    "default_start_surface": "https://arxiv.org/",
-    "runtime_state_schema": "qikvrt_universal_terminal_runtime_state_v1",
-    "health_command": "/usr/local/bin/qikvrt-runtime-health"
+  "credential_boundary": {
+    "authenticated_delivery_receipts_exclude_secret_values": true,
+    "browser_profile_may_persist_platform_session": true,
+    "profile_volume_is_operator_protected_state": true,
+    "proxy_secret_is_runtime_only": true,
+    "repository_must_not_persist_passwords_tokens_otp_totp_or_captcha_values": true,
+    "ssh_authorized_keys_are_runtime_only": true
+  },
+  "definition_of_done": {
+    "authenticated_proxy_readback": "REQUIRED",
+    "authority_mirror_fresh_observation": "REQUIRED",
+    "browser_visible_terminal_readback": "REQUIRED",
+    "container_build": "REQUIRED",
+    "effect_ack_health_readback": "REQUIRED",
+    "exact_subject_binding": "REQUIRED",
+    "extension_bootstrap_readback": "REQUIRED",
+    "external_deployment_readback": "SEPARATE_EFFECT_REQUIRED",
+    "firefox_process_readback": "REQUIRED",
+    "loopback_only_host_bind_regression": "REQUIRED",
+    "m68000_bootstrap_digest_readback": "REQUIRED",
+    "persistent_profile_restart_readback": "REQUIRED",
+    "postgresql_sql_readback": "REQUIRED",
+    "runtime_state_readback": "REQUIRED",
+    "service_plane_protocol_readback": "REQUIRED"
   },
   "network_boundary": {
     "effect_ack_http_daemon": "LOOPBACK_ONLY_INSIDE_TERMINAL_NAMESPACE",
     "human_view": "NOVNC_LOOPBACK_ONLY",
-    "host_bind_address": "127.0.0.1",
-    "host_bind_address_configurable": false,
-    "vnc_password_supported": true,
-    "non_loopback_exposure_permitted": false,
-    "external_exposure_permitted": false
+    "internal_services": {
+      "direct_external_exposure_permitted": false,
+      "dns": "127.0.0.1:1053",
+      "postgresql": "127.0.0.1:5432",
+      "smtp": "127.0.0.1:1025",
+      "snmp": "127.0.0.1:1161",
+      "ssh": "127.0.0.1:2222"
+    },
+    "novnc_external_exposure_permitted": false,
+    "novnc_host_bind_address": "127.0.0.1",
+    "novnc_host_bind_address_configurable": false,
+    "novnc_non_loopback_exposure_permitted": false,
+    "public_proxy": {
+      "class": "SEPARATE_HTTP_WEBSOCKET_BOUNDARY",
+      "credential_source": "RUNTIME_SECRET_ONLY",
+      "direct_novnc_rebind": false,
+      "external_exposure_permitted_with_runtime_authentication": true,
+      "health_path": "/healthz",
+      "non_loopback_bind_requires_authentication": true,
+      "repository_secret_persistence_permitted": false,
+      "tls_termination": "DEPLOYMENT_PLATFORM_OR_OPERATOR_BOUNDARY"
+    }
   },
-  "credential_boundary": {
-    "browser_profile_may_persist_platform_session": true,
-    "repository_must_not_persist_passwords_tokens_otp_totp_or_captcha_values": true,
-    "authenticated_delivery_receipts_exclude_secret_values": true,
-    "profile_volume_is_operator_protected_state": true
+  "portability_claim": {
+    "class": "IMPLEMENTATION_PROFILE",
+    "not_claimed": [
+      "execution on every physical device",
+      "native equivalence on every ISA or operating system",
+      "complete translation of the host POSIX userspace to MC68000 machine code",
+      "universal network reachability",
+      "empirical proof that all information systems implement the profile",
+      "Authority/Mirror synchronization without reciprocal exact-subject evidence",
+      "SQL-92 conformance beyond the explicitly executed SQL subset",
+      "arXiv submission without an authenticated platform session and authoritative readback",
+      "Wikipedia edit without an authenticated platform session and authoritative readback",
+      "PASS",
+      "FINAL_PASS",
+      "EFFECT_ACK_DONE for any external deployment"
+    ],
+    "statement": "The terminal is packaged as an OCI-compatible Linux userspace image. A bounded ANSI-C90 bootstrap kernel is cross-compiled to MC68000 machine bytes; the host service plane remains a Linux userspace implementation."
   },
+  "repository": "Goldkelch/qik-vrt",
   "required_semantics": [
     "DISCOVER_CAPABILITY",
     "PREPARE_WITHOUT_PROTECTED_EFFECT",
@@ -47,32 +92,33 @@
     "PERSIST_AUTHENTICATED_BROWSER_SESSION_ACROSS_RUNTIME_RESTART",
     "REOBSERVE_RUNTIME_HEALTH_AFTER_RESTART",
     "HOST_NOVNC_BIND_MUST_REMAIN_IPV4_LOOPBACK_ONLY",
-    "NON_LOOPBACK_NOVNC_EXPOSURE_FORBIDDEN"
+    "NON_LOOPBACK_NOVNC_EXPOSURE_FORBIDDEN",
+    "PUBLIC_PROXY_MUST_BE_SEPARATE_FROM_NOVNC_LISTENER",
+    "NON_LOOPBACK_PROXY_REQUIRES_RUNTIME_AUTHENTICATION",
+    "INTERNAL_SERVICE_PORTS_MUST_REMAIN_LOOPBACK_ONLY",
+    "MIRROR_OBSERVATION_DOES_NOT_IMPLY_SYNCHRONIZATION",
+    "MC68000_BOOTSTRAP_DOES_NOT_IMPLY_COMPLETE_POSIX_TRANSLATION"
   ],
-  "portability_claim": {
-    "class": "IMPLEMENTATION_PROFILE",
-    "statement": "The terminal pair is packaged as an OCI-compatible Linux userspace image and therefore targets environments capable of running an OCI/container-compatible Linux userspace or an equivalent virtualization layer.",
-    "not_claimed": [
-      "execution on every physical device",
-      "native equivalence on every ISA or operating system",
-      "universal network reachability",
-      "empirical proof that all information systems implement the profile",
-      "arXiv submission without an authenticated platform session and authoritative readback",
-      "Wikipedia edit without an authenticated platform session and authoritative readback",
-      "PASS",
-      "FINAL_PASS",
-      "EFFECT_ACK_DONE for any external deployment"
-    ]
+  "runtime_transport": {
+    "class": "DURABLE_ADDRESSABLE_FIREFOX_TERMINAL",
+    "default_start_surface": "https://github.com/Goldkelch/qik-vrt",
+    "extension_bootstrap": "COPY_ON_FIRST_PROFILE_INITIALIZATION",
+    "health_command": "/usr/local/bin/qikvrt-runtime-health",
+    "human_surface": "NOVNC_BEHIND_SEPARATE_AUTHENTICATED_PROXY",
+    "m68000_bootstrap": "ANSI_C90_CROSS_COMPILED_TO_MC68000_TEXT_BYTES",
+    "persistent_profile": "/var/lib/qikvrt/profile",
+    "persistent_runtime_state": "/var/lib/qikvrt/state",
+    "restart_policy": "UNLESS_STOPPED",
+    "runtime_state_schema": "qikvrt_universal_terminal_runtime_state_v1",
+    "service_plane": [
+      "HTTPD_PROXY",
+      "SMTPD_LOCAL",
+      "DNSD_LOCAL",
+      "SNMPD_LOCAL",
+      "SSHD_LOCAL",
+      "POSTGRESQL_LOCAL"
+    ],
+    "session_owner": "FIREFOX_AND_DESTINATION_PLATFORM"
   },
-  "definition_of_done": {
-    "container_build": "REQUIRED",
-    "effect_ack_health_readback": "REQUIRED",
-    "firefox_process_readback": "REQUIRED",
-    "browser_visible_terminal_readback": "REQUIRED",
-    "persistent_profile_restart_readback": "REQUIRED",
-    "runtime_state_readback": "REQUIRED",
-    "extension_bootstrap_readback": "REQUIRED",
-    "exact_subject_binding": "REQUIRED",
-    "loopback_only_host_bind_regression": "REQUIRED"
-  }
+  "schema": "qikvrt_universal_terminal_virtualization_v1"
 }
