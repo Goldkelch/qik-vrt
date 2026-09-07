@@ -42,7 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /opt/qikvrt
 COPY . /opt/qikvrt
 
-RUN cd browser/firefox/qikvrt-terminal \
+RUN cd /opt/qikvrt/browser/firefox/qikvrt-terminal \
     && zip -qr /opt/qikvrt/runtime/bootstrap-profile/extensions/qikvrt-ai-terminal@goldkelch.local.xpi . \
     && printf '%s\n' \
       'user_pref("browser.shell.checkDefaultBrowser", false);' \
@@ -51,9 +51,9 @@ RUN cd browser/firefox/qikvrt-terminal \
       'user_pref("datareporting.policy.dataSubmissionEnabled", false);' \
       'user_pref("browser.sessionstore.resume_from_crash", true);' \
       > /opt/qikvrt/runtime/bootstrap-profile/user.js \
-    && cp deploy/cloud-transputer/entrypoint.sh /usr/local/bin/qikvrt-cloud-transputer \
-    && cp deploy/cloud-transputer/runtime-health.sh /usr/local/bin/qikvrt-cloud-transputer-health \
-    && cp deploy/cloud-transputer/authority-mirror-refresh.sh /usr/local/bin/qikvrt-authority-mirror-refresh \
+    && cp /opt/qikvrt/deploy/cloud-transputer/entrypoint.sh /usr/local/bin/qikvrt-cloud-transputer \
+    && cp /opt/qikvrt/deploy/cloud-transputer/runtime-health.sh /usr/local/bin/qikvrt-cloud-transputer-health \
+    && cp /opt/qikvrt/deploy/cloud-transputer/authority-mirror-refresh.sh /usr/local/bin/qikvrt-authority-mirror-refresh \
     && chmod 0755 /usr/local/bin/qikvrt-cloud-transputer \
                   /usr/local/bin/qikvrt-cloud-transputer-health \
                   /usr/local/bin/qikvrt-authority-mirror-refresh \
