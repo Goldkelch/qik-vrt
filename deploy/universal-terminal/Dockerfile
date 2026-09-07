@@ -63,6 +63,7 @@ RUN mkdir -p /opt/qikvrt/runtime/bootstrap-profile/extensions /opt/qikvrt/runtim
       > /opt/qikvrt/runtime/bootstrap-profile/user.js \
     && chmod +x \
       deploy/universal-terminal/entrypoint.sh \
+      deploy/universal-terminal/cloud-entrypoint.sh \
       deploy/universal-terminal/runtime-health.sh \
       deploy/universal-terminal/service-entrypoint.sh \
       deploy/universal-terminal/mirror-bootstrap.sh \
@@ -70,11 +71,13 @@ RUN mkdir -p /opt/qikvrt/runtime/bootstrap-profile/extensions /opt/qikvrt/runtim
       /usr/local/bin/qikvrt-ip-bootstrap
 
 COPY deploy/universal-terminal/entrypoint.sh /usr/local/bin/qikvrt-universal-terminal
+COPY deploy/universal-terminal/cloud-entrypoint.sh /usr/local/bin/qikvrt-cloud-terminal
 COPY deploy/universal-terminal/runtime-health.sh /usr/local/bin/qikvrt-runtime-health
 COPY deploy/universal-terminal/service-entrypoint.sh /usr/local/bin/qikvrt-service-entrypoint
 COPY deploy/universal-terminal/mirror-bootstrap.sh /usr/local/bin/qikvrt-mirror-bootstrap
 COPY deploy/universal-terminal/qikvrt_smtpd.py /usr/local/bin/qikvrt-smtpd
 RUN chmod +x /usr/local/bin/qikvrt-universal-terminal \
+    /usr/local/bin/qikvrt-cloud-terminal \
     /usr/local/bin/qikvrt-runtime-health \
     /usr/local/bin/qikvrt-service-entrypoint \
     /usr/local/bin/qikvrt-mirror-bootstrap \
