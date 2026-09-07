@@ -14,6 +14,7 @@ DOCKERFILE = ROOT / "deploy/cloud-transputer/Dockerfile"
 COMPOSE = ROOT / "deploy/cloud-transputer/compose.yaml"
 ENTRYPOINT = ROOT / "deploy/cloud-transputer/entrypoint.sh"
 HEALTH = ROOT / "deploy/cloud-transputer/runtime-health.sh"
+RUNTIME_WORKFLOW = ROOT / ".github/workflows/qikvrt_cloud_transputer.yml"
 MIRROR = ROOT / "deploy/cloud-transputer/authority-mirror-refresh.sh"
 M68K = ROOT / "src/cloud_transputer/m68k_effect_ack_probe.c"
 SMTPD = ROOT / "src/cloud_transputer/smtpd.py"
@@ -106,6 +107,12 @@ class CloudTransputerContractTests(unittest.TestCase):
         self.assertIn("time.sleep(0.5)", text)
         self.assertIn("BLOCK: bounded runtime readiness failed", text)
         self.assertNotIn("while True", text)
+
+    def test_dedicated_branch_push_reobserves_zero_diff_owner_rebinds(self) -> None:
+        text = RUNTIME_WORKFLOW.read_text(encoding="utf-8")
+        push = text.split("  push:\n", 1)[1].split("  workflow_dispatch:\n", 1)[0]
+        self.assertIn("branches: [runtime/cloud-transputer-v1]", push)
+        self.assertNotIn("paths:", push)
 
     def test_c90_probe_uses_existing_effect_ack_core_without_false_arch_claim(self) -> None:
         text = M68K.read_text(encoding="utf-8")
