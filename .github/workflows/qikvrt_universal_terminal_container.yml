@@ -92,7 +92,7 @@ jobs:
     timeout-minutes: 25
     env:
       EXACT_SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      QIKVRT_IMAGE_TAG: ${{ github.event.pull_request.head.sha || github.sha }}
+      QIKVRT_UNIVERSAL_TERMINAL_IMAGE: qikvrt/universal-terminal:${{ github.event.pull_request.head.sha || github.sha }}
       COMPOSE_FILE: deploy/universal-terminal/compose.yaml
       COMPOSE_PROJECT_NAME: qikvrt-terminal-ci-${{ github.run_id }}-${{ github.run_attempt }}
       QIKVRT_START_URL: about:blank
@@ -127,11 +127,14 @@ jobs:
           mounts={item['target'] for item in service['volumes']}
           assert '/var/lib/qikvrt/profile' in mounts
           assert '/var/lib/qikvrt/state' in mounts
-          assert len(service['ports'])==1
-          port=service['ports'][0]
-          assert int(port['target'])==6080
-          assert port.get('host_ip')=='127.0.0.1'
-          assert str(port.get('published'))=='6080'
+          ports=service['ports']
+          assert len(ports)==2
+          assert {int(port['target']) for port in ports}=={6080,8080}
+          assert all(port.get('host_ip')=='127.0.0.1' for port in ports)
+          assert all(str(port.get('published'))==str(port['target']) for port in ports)
+          gateway=value['services']['qikvrt-gateway']
+          assert gateway['network_mode']=='service:qikvrt-universal-terminal'
+          assert not gateway.get('ports')
           bootstrap=PurePosixPath('/opt/qikvrt/runtime/bootstrap-profile')
           for item in service['tmpfs']:
               target=PurePosixPath(item.split(':',1)[0])
@@ -139,10 +142,15 @@ jobs:
           PY
       - name: Build OCI image from operator compose configuration
         id: build
-        run: docker compose build
+        run: |
+          set -euo pipefail
+          if ! docker compose build > /tmp/qikvrt-terminal-build.log 2>&1; then
+            tail -n 120 /tmp/qikvrt-terminal-build.log
+            exit 1
+          fi
       - name: Start exact durable image through hardened compose
         id: start
-        run: docker compose up -d --no-build --wait --wait-timeout 120
+        run: docker compose up -d --no-build --wait --wait-timeout 120 qikvrt-universal-terminal
       - name: Reobserve actual hardening EFFECT_ACK Firefox and noVNC
         id: observe
         run: |
@@ -157,8 +165,8 @@ jobs:
           assert host['ReadonlyRootfs'] is True
           assert 'ALL' in host['CapDrop']
           assert any(item.replace('=',':')=='no-new-privileges:true' for item in host['SecurityOpt'])
-          assert set(host['PortBindings'])=={'6080/tcp'}
-          assert all(item['HostIp']=='127.0.0.1' for item in host['PortBindings']['6080/tcp'])
+          assert set(host['PortBindings'])=={'6080/tcp','8080/tcp'}
+          assert all(item['HostIp']=='127.0.0.1' for bindings in host['PortBindings'].values() for item in bindings)
           assert '/opt/qikvrt/runtime' not in host['Tmpfs']
           assert '/opt/qikvrt/runtime/logs' in host['Tmpfs']
           PY
@@ -187,7 +195,7 @@ jobs:
         id: restart
         run: |
           set -euo pipefail
-          docker compose up -d --no-build --force-recreate --wait --wait-timeout 120
+          docker compose up -d --no-build --force-recreate --wait --wait-timeout 120 qikvrt-universal-terminal
           docker compose exec -T qikvrt-universal-terminal /usr/local/bin/qikvrt-runtime-health
           test "$(docker compose exec -T qikvrt-universal-terminal cat /var/lib/qikvrt/profile/.qikvrt-restart-sentinel)" = durable-session-sentinel
           docker compose cp qikvrt-universal-terminal:/var/lib/qikvrt/state/runtime.json /tmp/runtime-after.json
@@ -195,7 +203,7 @@ jobs:
           import json
           before=json.load(open('/tmp/runtime-before.json',encoding='utf-8'))
           after=json.load(open('/tmp/runtime-after.json',encoding='utf-8'))
-          assert before['schema']==after['schema']=='qikvrt_universal_terminal_runtime_state_v1'
+          assert before['schema']==after['schema']=='qikvrt_universal_terminal_runtime_state_v2'
           assert before['runtime_id']==after['runtime_id']=='qikvrt-firefox-terminal'
           assert before['profile_persistent'] is True and after['profile_persistent'] is True
           assert after['authenticated_session_storage']=='FIREFOX_PROFILE'
@@ -264,7 +272,7 @@ jobs:
           docker compose logs --no-color > /tmp/qikvrt-terminal-evidence/container.log 2>&1 || true
           docker compose cp qikvrt-universal-terminal:/opt/qikvrt/runtime/logs/. /tmp/qikvrt-terminal-evidence/runtime-logs/ 2>/dev/null || true
           docker image inspect "qikvrt/universal-terminal:$EXACT_SUBJECT_SHA" > /tmp/qikvrt-terminal-evidence/image-inspect.json 2>/dev/null || true
-          for file in qikvrt-container-inspect.json runtime-before.json runtime-after.json effect-ack.json vnc.html qikvrt-compose.json qikvrt-firefox-version.txt qikvrt-terminal-exact-tree.txt; do
+          for file in qikvrt-terminal-build.log qikvrt-container-inspect.json runtime-before.json runtime-after.json effect-ack.json vnc.html qikvrt-compose.json qikvrt-firefox-version.txt qikvrt-terminal-exact-tree.txt; do
             if [ -f "/tmp/$file" ]; then cp "/tmp/$file" /tmp/qikvrt-terminal-evidence/; fi
           done
           if [ -f /tmp/qikvrt-terminal-image/IMAGE_RECEIPT.json ]; then cp /tmp/qikvrt-terminal-image/IMAGE_RECEIPT.json /tmp/qikvrt-terminal-evidence/; fi

@@ -37,9 +37,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       bind9 ca-certificates curl dbus-x11 dnsutils firefox-esr git \
-      nginx-light openssh-server postgresql postgresql-client \
+      nginx-light novnc openssh-server postgresql postgresql-client \
       procps python3 python3-minimal snmp snmpd util-linux \
-      websockify x11vnc xvfb zip \
+      websockify x11-utils x11vnc xvfb zip \
+    && test -s /usr/share/novnc/vnc.html \
+    && test -s /usr/share/novnc/core/rfb.js \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/qikvrt

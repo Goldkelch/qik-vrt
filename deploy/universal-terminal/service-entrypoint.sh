@@ -59,6 +59,14 @@ case "$mode" in
     PGDATA="${QIKVRT_PGDATA:-/var/lib/qikvrt/postgres}"
     mkdir -p "$PGDATA"
     chown -R postgres:postgres "$PGDATA"
+    install -d -m 700 -o postgres -g postgres /run/postgresql
+    cleanup_sql() {
+      rm -f /run/qikvrt-db.pass
+      runuser -u postgres -- "$PG_BIN/pg_ctl" -D "$PGDATA" -m fast -w -t 30 stop >/dev/null 2>&1 || true
+    }
+    trap cleanup_sql EXIT
+    trap 'exit 143' TERM
+    trap 'exit 130' INT
     if [ ! -s "$PGDATA/PG_VERSION" ]; then
       umask 077
       printf '%s\n' "$DB_PASSWORD" > /run/qikvrt-db.pass
@@ -70,6 +78,7 @@ case "$mode" in
         --auth-local=scram-sha-256 \
         --auth-host=scram-sha-256 \
         --encoding=UTF8
+      rm -f /run/qikvrt-db.pass
       {
         printf "%s\n" "listen_addresses='0.0.0.0'"
         printf "%s\n" "port=5432"
@@ -77,7 +86,23 @@ case "$mode" in
       } >> "$PGDATA/postgresql.conf"
       printf '%s\n' "host all all 0.0.0.0/0 scram-sha-256" >> "$PGDATA/pg_hba.conf"
     fi
-    exec runuser -u postgres -- "$PG_BIN/postgres" -D "$PGDATA"
+    # Authenticate locally even during initialization; do not weaken pg_hba.
+    # Check again on restart so an interrupted bootstrap can recover safely.
+    export PGPASSWORD="$DB_PASSWORD"
+    runuser -u postgres -- "$PG_BIN/pg_ctl" -D "$PGDATA" \
+      -o "-c listen_addresses='' -c unix_socket_directories=/run/postgresql" \
+      -l "$PGDATA/bootstrap.log" -w -t 30 start
+    exists="$(runuser -u postgres -- "$PG_BIN/psql" -X -w -h /run/postgresql \
+      -U qikvrt -d postgres -At -v ON_ERROR_STOP=1 \
+      -c "SELECT 1 FROM pg_database WHERE datname = 'qikvrt'")"
+    if [ "$exists" != 1 ]; then
+      runuser -u postgres -- "$PG_BIN/createdb" -w -h /run/postgresql -U qikvrt qikvrt
+    fi
+    runuser -u postgres -- "$PG_BIN/pg_ctl" -D "$PGDATA" -m fast -w -t 30 stop
+    unset PGPASSWORD DB_PASSWORD
+    trap - EXIT INT TERM
+    exec runuser -u postgres -- "$PG_BIN/postgres" -D "$PGDATA" \
+      -c unix_socket_directories=/run/postgresql
     ;;
   mirror)
     exec /usr/local/bin/qikvrt-mirror-bootstrap
