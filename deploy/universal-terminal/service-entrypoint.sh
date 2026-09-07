@@ -8,6 +8,9 @@ if [ "$#" -gt 0 ]; then
 fi
 
 case "$mode" in
+  cloud)
+    exec /usr/local/bin/qikvrt-cloud-terminal
+    ;;
   terminal)
     exec /usr/local/bin/qikvrt-universal-terminal
     ;;
