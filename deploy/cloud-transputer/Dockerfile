@@ -62,8 +62,6 @@ RUN cd /opt/qikvrt/browser/firefox/qikvrt-terminal \
                   /usr/local/bin/qikvrt-authority-mirror-refresh \
                   /opt/qikvrt/src/cloud_transputer/smtpd.py
 
-VOLUME ["/var/lib/qikvrt/profile", "/var/lib/qikvrt/state", "/var/lib/qikvrt/mirror", "/var/lib/qikvrt/personal-posix", "/var/lib/qikvrt/mail"]
-
 EXPOSE 8080/tcp 2222/tcp 2525/tcp 5353/tcp 5353/udp 1161/udp 5432/tcp
 
 HEALTHCHECK --interval=15s --timeout=10s --start-period=90s --retries=6 \
