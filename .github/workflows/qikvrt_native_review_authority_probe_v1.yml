@@ -1,0 +1,36 @@
+name: QIKVRT native review authority probe
+
+on:
+  push:
+    branches: [control/native-review-authority-probe-v1]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    env:
+      GOLDKELCH_TOKEN: ${{ secrets.QIKVRT_GOLDKELCH_REVIEW_TOKEN }}
+      INGOLF_TOKEN: ${{ secrets.QIKVRT_INGOLF_LOHMANN_REVIEW_TOKEN }}
+    steps:
+      - name: Classify existing native review authorities
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${GOLDKELCH_TOKEN:-}" ]; then
+            login="$(curl -fsSL -H "Authorization: Bearer ${GOLDKELCH_TOKEN}" -H 'Accept: application/vnd.github+json' https://api.github.com/user | jq -r .login)"
+            test "${login,,}" = goldkelch
+            echo 'QIKVRT_GOLDKELCH_REVIEW_AUTHORITY=PRESENT_AND_IDENTITY_BOUND'
+          else
+            echo 'QIKVRT_GOLDKELCH_REVIEW_AUTHORITY=ABSENT'
+          fi
+          if [ -n "${INGOLF_TOKEN:-}" ]; then
+            login="$(curl -fsSL -H "Authorization: Bearer ${INGOLF_TOKEN}" -H 'Accept: application/vnd.github+json' https://api.github.com/user | jq -r .login)"
+            test "${login,,}" = ingolf-lohmann
+            echo 'QIKVRT_INGOLF_REVIEW_AUTHORITY=PRESENT_AND_IDENTITY_BOUND'
+          else
+            echo 'QIKVRT_INGOLF_REVIEW_AUTHORITY=ABSENT'
+          fi
+          echo 'QIKVRT_NATIVE_REVIEW_MUTATION=NONE'
