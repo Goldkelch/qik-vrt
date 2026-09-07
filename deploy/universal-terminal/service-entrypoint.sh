@@ -12,6 +12,17 @@ case "$mode" in
     exec /usr/local/bin/qikvrt-universal-terminal
     ;;
   gateway)
+    # The gateway runs with every Linux capability dropped. Debian nginx
+    # otherwise creates its temp paths itself and then tries to chown them to
+    # the configured worker uid, which fails without CAP_CHOWN. Materialize
+    # the tmpfs paths first so nginx observes existing writable directories
+    # and never needs that privilege.
+    mkdir -p \
+      /tmp/nginx-client-body \
+      /tmp/nginx-proxy \
+      /tmp/nginx-fastcgi \
+      /tmp/nginx-uwsgi \
+      /tmp/nginx-scgi
     exec nginx -c /opt/qikvrt/deploy/universal-terminal/nginx.conf -g 'daemon off;'
     ;;
   smtpd)
