@@ -18,7 +18,7 @@ trap 'exit 130' INT
 # backend and noVNC on loopback-facing process ports and expose only nginx
 # on :8080. Firefox opens the canonical Mesh origin in this same namespace.
 export QIKVRT_HTTP_HOST=127.0.0.1
-export QIKVRT_START_URL="${QIKVRT_START_URL:-http://127.0.0.1:8080/qik-vrt/mesh/v1/}"
+export QIKVRT_START_URL="${QIKVRT_CLOUD_START_URL:-http://127.0.0.1:8080/qik-vrt/mesh/v1/}"
 
 /usr/local/bin/qikvrt-universal-terminal &
 TERMINAL_PID=$!
