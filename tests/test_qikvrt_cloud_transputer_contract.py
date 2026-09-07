@@ -44,6 +44,12 @@ class CloudTransputerContractTests(unittest.TestCase):
         for exposed in ("8080/tcp", "2222/tcp", "2525/tcp", "5353/tcp", "5353/udp", "1161/udp", "5432/tcp"):
             self.assertIn(exposed, text)
 
+    def test_image_persistence_uses_external_platform_mount_not_anonymous_volume(self) -> None:
+        text = DOCKERFILE.read_text(encoding="utf-8")
+        self.assertNotIn("VOLUME [", text)
+        for target in ("/var/lib/qikvrt/profile", "/var/lib/qikvrt/state", "/var/lib/qikvrt/mirror", "/var/lib/qikvrt/personal-posix", "/var/lib/qikvrt/mail"):
+            self.assertIn(target, text)
+
     def test_postgresql_log_is_precreated_for_unprivileged_pg_ctl(self) -> None:
         text = DOCKERFILE.read_text(encoding="utf-8")
         path = "/opt/qikvrt/runtime/cloud-transputer-logs/postgresql.log"
