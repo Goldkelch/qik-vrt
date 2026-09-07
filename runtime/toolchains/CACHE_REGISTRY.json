@@ -352,6 +352,140 @@
         "schema-validation tests"
       ],
       "version": "4.4.3"
+    },
+    "dropbear": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "deploy/universal-terminal/Dockerfile",
+        "deploy/universal-terminal/runtime-health.sh",
+        ".github/workflows/qikvrt_cloud_transputer_runtime.yml"
+      ],
+      "cache_class": "build-cache",
+      "cache_locations": [
+        "oci-build-layer:debian-bookworm-slim:runtime"
+      ],
+      "profiles": [
+        "cloud-transputer",
+        "all"
+      ],
+      "provider": "Debian bookworm dropbear-bin package in OCI runtime image",
+      "trusted_save": false,
+      "verification": [
+        "public-key-only loopback SSH command readback",
+        "no forwarding"
+      ],
+      "version": "2022.83-1+deb12u3"
+    },
+    "m68k-binutils": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "deploy/universal-terminal/Dockerfile",
+        ".github/workflows/qikvrt_cloud_transputer_runtime.yml"
+      ],
+      "cache_class": "build-cache",
+      "cache_locations": [
+        "oci-build-layer:debian-bookworm-slim:runtime"
+      ],
+      "profiles": [
+        "cloud-transputer",
+        "all"
+      ],
+      "provider": "Debian bookworm binutils-m68k-linux-gnu package in isolated OCI build stage",
+      "trusted_save": false,
+      "verification": [
+        "MC68000 .text extraction",
+        "MC68000 object disassembly receipt",
+        "machine-byte SHA-256 readback"
+      ],
+      "version": "2.40-2"
+    },
+    "m68k-gcc": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "deploy/universal-terminal/Dockerfile",
+        ".github/workflows/qikvrt_cloud_transputer_runtime.yml"
+      ],
+      "cache_class": "build-cache",
+      "cache_locations": [
+        "oci-build-layer:debian-bookworm-slim:runtime"
+      ],
+      "profiles": [
+        "cloud-transputer",
+        "all"
+      ],
+      "provider": "Debian bookworm gcc-m68k-linux-gnu package in isolated OCI build stage",
+      "trusted_save": false,
+      "verification": [
+        "strict ANSI-C90 compile",
+        "MC68000 freestanding object generation"
+      ],
+      "version": "12.2.0-debian-bookworm"
+    },
+    "openbox": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "deploy/universal-terminal/Dockerfile",
+        "deploy/universal-terminal/runtime-health.sh"
+      ],
+      "cache_class": "build-cache",
+      "cache_locations": [
+        "oci-build-layer:debian-bookworm-slim:runtime"
+      ],
+      "profiles": [
+        "cloud-transputer",
+        "all"
+      ],
+      "provider": "Debian bookworm openbox package in OCI runtime image",
+      "trusted_save": false,
+      "verification": [
+        "process liveness under Xvfb"
+      ],
+      "version": "reported-version"
+    },
+    "postgresql": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "deploy/universal-terminal/Dockerfile",
+        "deploy/universal-terminal/runtime-health.sh",
+        ".github/workflows/qikvrt_cloud_transputer_runtime.yml"
+      ],
+      "cache_class": "build-cache",
+      "cache_locations": [
+        "oci-build-layer:debian-bookworm-slim:runtime"
+      ],
+      "profiles": [
+        "cloud-transputer",
+        "all"
+      ],
+      "provider": "Debian bookworm PostgreSQL 15 packages in OCI runtime image",
+      "trusted_save": false,
+      "verification": [
+        "pg_isready loopback readback",
+        "authenticated non-superuser proxy SQL execution readback",
+        "persistent restart SQL readback"
+      ],
+      "version": "15-bookworm-security-track"
+    },
+    "xterm": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "deploy/universal-terminal/Dockerfile",
+        "deploy/universal-terminal/runtime-health.sh"
+      ],
+      "cache_class": "build-cache",
+      "cache_locations": [
+        "oci-build-layer:debian-bookworm-slim:runtime"
+      ],
+      "profiles": [
+        "cloud-transputer",
+        "all"
+      ],
+      "provider": "Debian bookworm xterm package in OCI runtime image",
+      "trusted_save": false,
+      "verification": [
+        "visible POSIX shell process liveness"
+      ],
+      "version": "reported-version"
     }
   },
   "coverage_authority": "runtime/toolchains/CACHE_COVERAGE.json",
