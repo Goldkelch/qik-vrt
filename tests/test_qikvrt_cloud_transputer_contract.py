@@ -69,10 +69,13 @@ class CloudTransputerContractTests(unittest.TestCase):
         self.assertNotIn("git fetch", text)
         self.assertNotIn("while git", text)
 
-    def test_dnsmasq_wildcard_binding_avoids_bind_dynamic_conflict(self) -> None:
+    def test_dnsmasq_default_binding_includes_loopback_and_container_interfaces(self) -> None:
         text = ENTRYPOINT.read_text(encoding="utf-8")
-        self.assertIn("listen-address=0.0.0.0", text)
-        self.assertNotIn("listen-address=0.0.0.0\nbind-dynamic", text)
+        dns_config = text.split('cat > "$RUN_DIR/dnsmasq.conf" <<EOF\n', 1)[1].split('\nEOF\ndnsmasq ', 1)[0]
+        self.assertIn("port=$DNS_PORT", dns_config)
+        self.assertNotIn("listen-address=", dns_config)
+        self.assertNotIn("bind-dynamic", dns_config)
+        self.assertIn("address=/$MESH_DOMAIN/127.0.0.1", dns_config)
 
     def test_postgresql_discovery_is_version_depth_independent_and_fail_closed(self) -> None:
         entry = ENTRYPOINT.read_text(encoding="utf-8")
