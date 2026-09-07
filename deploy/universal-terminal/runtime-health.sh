@@ -7,6 +7,10 @@ STATE_DIR="${QIKVRT_STATE_DIR:-/var/lib/qikvrt/state}"
 
 curl --max-time 2 -fsS "http://127.0.0.1:${HTTP_PORT}/.well-known/effect-ack" >/dev/null
 pgrep -af 'firefox|firefox-esr' >/dev/null
+# A profile error dialog is also a live Firefox process, but not a browser.
+# Require its real X11 Navigator window; CI separately drives and reads it.
+xwininfo -display "${DISPLAY:-:99}" -root -tree \
+  | grep -E '"Navigator" "firefox(-esr)?"' >/dev/null
 curl --max-time 2 -fsS "http://127.0.0.1:${NOVNC_PORT}/vnc.html" >/dev/null
 test -f "${STATE_DIR}/runtime.json"
 python3 -B - "${STATE_DIR}/runtime.json" <<'PY'

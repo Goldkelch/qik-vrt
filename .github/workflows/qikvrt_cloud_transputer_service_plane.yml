@@ -124,7 +124,8 @@ jobs:
               && nc -z 127.0.0.1 2222 \
               && nc -z 127.0.0.1 2525 \
               && nc -z 127.0.0.1 15432 \
-              && nc -z 127.0.0.1 19418; then
+              && timeout 5s git ls-remote --exit-code --refs git://127.0.0.1:19418/qik-vrt.git refs/heads/main \
+                > "$QIKVRT_SERVICE_EVIDENCE_DIR/mirror-ready-ref.txt"; then
               exit 0
             fi
             sleep 2
@@ -244,7 +245,8 @@ jobs:
           head="$(git ls-remote git://127.0.0.1:19418/qik-vrt.git refs/heads/main | awk 'NR==1 {print $1}')"
           test -n "$head"
           docker compose -f deploy/universal-terminal/compose.yaml exec -T qikvrt-mirror \
-            cat /var/lib/qikvrt/mirror/mirror-state.json
+            cat /var/lib/qikvrt/mirror/mirror-state.json \
+            | tee "$QIKVRT_SERVICE_EVIDENCE_DIR/mirror-state.json"
           test "$head" = "$(docker compose -f deploy/universal-terminal/compose.yaml exec -T qikvrt-mirror \
             python3 -c 'import json;print(json.load(open("/var/lib/qikvrt/mirror/mirror-state.json"))["authority_main_head"])')"
 
@@ -262,8 +264,12 @@ jobs:
             > "$QIKVRT_SERVICE_EVIDENCE_DIR/compose-ps.jsonl" 2>&1 || true
           docker compose -f deploy/universal-terminal/compose.yaml logs --no-color --tail 160 \
             > "$QIKVRT_SERVICE_EVIDENCE_DIR/service-logs.txt" 2>&1 || true
-          docker compose -f deploy/universal-terminal/compose.yaml cp \
-            qikvrt-universal-terminal:/opt/qikvrt/runtime/logs/. "$QIKVRT_SERVICE_EVIDENCE_DIR/runtime-logs/" || true
+          docker compose -f deploy/universal-terminal/compose.yaml exec -T qikvrt-universal-terminal \
+            sh -c 'for log in /opt/qikvrt/runtime/logs/*.log; do printf "\n--- %s ---\n" "$log"; tail -n 100 "$log"; done' \
+            > "$QIKVRT_SERVICE_EVIDENCE_DIR/runtime-logs/terminal-logs.txt" 2>&1 || true
+          docker compose -f deploy/universal-terminal/compose.yaml exec -T qikvrt-universal-terminal \
+            xwininfo -display :99 -root -tree \
+            > "$QIKVRT_SERVICE_EVIDENCE_DIR/runtime-logs/x11-windows.txt" 2>&1 || true
           docker compose -f deploy/universal-terminal/compose.yaml cp \
             qikvrt-universal-terminal:/var/lib/qikvrt/state/runtime.json "$QIKVRT_SERVICE_EVIDENCE_DIR/runtime.json" || true
           cid="$(docker compose -f deploy/universal-terminal/compose.yaml ps -aq qikvrt-universal-terminal)"

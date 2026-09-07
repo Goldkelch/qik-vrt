@@ -10,7 +10,14 @@ NOVNC_PORT="${QIKVRT_NOVNC_PORT:-6080}"
 DISPLAY_VALUE="${DISPLAY:-:99}"
 START_URL="${QIKVRT_START_URL:-http://qikvrt-gateway:8080/qik-vrt/mesh/v1/}"
 
-mkdir -p /opt/qikvrt/runtime/logs "$PROFILE_DIR" "$STATE_DIR"
+# Firefox initializes its profile registry under HOME even with --profile.
+# Keep that registry and XDG state off the read-only container root.
+HOME="${STATE_DIR}/home"
+XDG_CACHE_HOME="${STATE_DIR}/cache"
+XDG_CONFIG_HOME="${HOME}/.config"
+export HOME XDG_CACHE_HOME XDG_CONFIG_HOME
+mkdir -p /opt/qikvrt/runtime/logs "$PROFILE_DIR" "$STATE_DIR" \
+  "$HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME"
 
 PIDS=""
 cleanup() {
