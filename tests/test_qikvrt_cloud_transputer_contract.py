@@ -68,6 +68,11 @@ class CloudTransputerContractTests(unittest.TestCase):
         self.assertNotIn("git fetch", text)
         self.assertNotIn("while git", text)
 
+    def test_dnsmasq_wildcard_binding_avoids_bind_dynamic_conflict(self) -> None:
+        text = ENTRYPOINT.read_text(encoding="utf-8")
+        self.assertIn("listen-address=0.0.0.0", text)
+        self.assertNotIn("listen-address=0.0.0.0\nbind-dynamic", text)
+
     def test_postgresql_discovery_is_version_depth_independent_and_fail_closed(self) -> None:
         entry = ENTRYPOINT.read_text(encoding="utf-8")
         health = HEALTH.read_text(encoding="utf-8")
