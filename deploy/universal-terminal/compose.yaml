@@ -1,41 +1,193 @@
+version: "3.9"
+
 services:
-  qikvrt-universal-terminal:
+  qikvrt-terminal:
     build:
-      context: ../..
+      context: ${QIKVRT_REPOSITORY_CONTEXT:-../..}
       dockerfile: deploy/universal-terminal/Dockerfile
-    image: qikvrt/universal-terminal:${QIKVRT_IMAGE_TAG:-trusted-main}
-    restart: unless-stopped
+    image: ${QIKVRT_UNIVERSAL_TERMINAL_IMAGE:-qikvrt/universal-terminal:local}
+    environment:
+      QIKVRT_SERVICE_MODE: terminal
+      QIKVRT_HTTP_HOST: 0.0.0.0
+      QIKVRT_START_URL: http://qikvrt-gateway:8080/qik-vrt/mesh/v1/
     ports:
       - "127.0.0.1:${QIKVRT_NOVNC_HOST_PORT:-6080}:6080"
-    environment:
-      QIKVRT_START_URL: "${QIKVRT_START_URL:-https://arxiv.org/}"
-      QIKVRT_NOVNC_PORT: "6080"
-      QIKVRT_HTTP_PORT: "8771"
-      QIKVRT_RUNTIME_ID: "${QIKVRT_RUNTIME_ID:-qikvrt-firefox-terminal}"
-      QIKVRT_PROFILE_DIR: /var/lib/qikvrt/profile
-      QIKVRT_STATE_DIR: /var/lib/qikvrt/state
-      QIKVRT_VNC_PASSWORD_FILE: "${QIKVRT_VNC_PASSWORD_FILE:-}"
-    volumes:
-      - qikvrt_firefox_profile:/var/lib/qikvrt/profile
-      - qikvrt_runtime_state:/var/lib/qikvrt/state
-    security_opt:
-      - no-new-privileges:true
+    expose:
+      - "6080"
+      - "8771"
+    read_only: true
     cap_drop:
       - ALL
-    read_only: true
+    security_opt:
+      - no-new-privileges:true
     tmpfs:
-      - /tmp
-      - /run
-      # Keep the image's runtime/bootstrap-profile visible on first start.
-      - /opt/qikvrt/runtime/logs:size=256m,mode=1777
-    shm_size: 512m
+      - /tmp:size=128m,mode=1777
+      - /run:size=32m,mode=755
+      - /opt/qikvrt/runtime/logs:size=64m,mode=755
+    volumes:
+      - qikvrt_profile:/var/lib/qikvrt/profile
+      - qikvrt_state:/var/lib/qikvrt/state
+    shm_size: 256m
+    restart: unless-stopped
+    stop_grace_period: 10s
+
+  qikvrt-gateway:
+    image: ${QIKVRT_UNIVERSAL_TERMINAL_IMAGE:-qikvrt/universal-terminal:local}
+    environment:
+      QIKVRT_SERVICE_MODE: gateway
+    depends_on:
+      qikvrt-terminal:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${QIKVRT_MESH_HOST_PORT:-8080}:8080"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+      - /run:size=16m,mode=755
     healthcheck:
-      test: ["CMD", "/usr/local/bin/qikvrt-runtime-health"]
-      interval: 10s
-      timeout: 5s
-      start_period: 20s
-      retries: 6
+      disable: true
+    restart: unless-stopped
+
+  qikvrt-smtpd:
+    image: ${QIKVRT_UNIVERSAL_TERMINAL_IMAGE:-qikvrt/universal-terminal:local}
+    environment:
+      QIKVRT_SERVICE_MODE: smtpd
+    ports:
+      - "127.0.0.1:${QIKVRT_SMTP_HOST_PORT:-2525}:2525"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+      - /run:size=8m,mode=755
+    volumes:
+      - qikvrt_smtp:/var/lib/qikvrt/smtp
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+
+  qikvrt-snmpd:
+    image: ${QIKVRT_UNIVERSAL_TERMINAL_IMAGE:-qikvrt/universal-terminal:local}
+    environment:
+      QIKVRT_SERVICE_MODE: snmpd
+    ports:
+      - "127.0.0.1:${QIKVRT_SNMP_HOST_PORT:-1161}:1161/udp"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+      - /run:size=8m,mode=755
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+
+  qikvrt-dnsd:
+    image: ${QIKVRT_UNIVERSAL_TERMINAL_IMAGE:-qikvrt/universal-terminal:local}
+    environment:
+      QIKVRT_SERVICE_MODE: dnsd
+      QIKVRT_DNS_PORT: "5353"
+    ports:
+      - "127.0.0.1:${QIKVRT_DNS_HOST_PORT:-5353}:5353/udp"
+      - "127.0.0.1:${QIKVRT_DNS_HOST_PORT:-5353}:5353/tcp"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+      - /run:size=8m,mode=755
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+
+  qikvrt-sshd:
+    image: ${QIKVRT_UNIVERSAL_TERMINAL_IMAGE:-qikvrt/universal-terminal:local}
+    environment:
+      QIKVRT_SERVICE_MODE: sshd
+      QIKVRT_SSH_AUTHORIZED_KEYS: ${QIKVRT_SSH_AUTHORIZED_KEYS:-}
+    ports:
+      - "127.0.0.1:${QIKVRT_SSH_HOST_PORT:-2222}:2222"
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+      - /run:size=16m,mode=755
+    volumes:
+      - qikvrt_ssh:/var/lib/qikvrt/ssh
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+
+  qikvrt-sqld:
+    image: ${QIKVRT_UNIVERSAL_TERMINAL_IMAGE:-qikvrt/universal-terminal:local}
+    environment:
+      QIKVRT_SERVICE_MODE: sqld
+      QIKVRT_DB_PASSWORD: ${QIKVRT_DB_PASSWORD:-}
+    ports:
+      - "127.0.0.1:${QIKVRT_SQL_HOST_PORT:-15432}:5432"
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+      - /run:size=16m,mode=755
+    volumes:
+      - qikvrt_postgres:/var/lib/qikvrt/postgres
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+
+  qikvrt-mirror:
+    image: ${QIKVRT_UNIVERSAL_TERMINAL_IMAGE:-qikvrt/universal-terminal:local}
+    environment:
+      QIKVRT_SERVICE_MODE: mirror
+      QIKVRT_AUTHORITY_URL: ${QIKVRT_AUTHORITY_URL:-https://github.com/Goldkelch/qik-vrt.git}
+      QIKVRT_MIRROR_URL: ${QIKVRT_MIRROR_URL:-https://github.com/ingolf-lohmann/qik-vrt.git}
+    ports:
+      - "127.0.0.1:${QIKVRT_GIT_HOST_PORT:-19418}:9418"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /run:size=8m,mode=755
+    volumes:
+      - qikvrt_mirror:/var/lib/qikvrt/mirror
+    healthcheck:
+      disable: true
+    restart: unless-stopped
 
 volumes:
-  qikvrt_firefox_profile:
-  qikvrt_runtime_state:
+  qikvrt_profile:
+  qikvrt_state:
+  qikvrt_smtp:
+  qikvrt_ssh:
+  qikvrt_postgres:
+  qikvrt_mirror:

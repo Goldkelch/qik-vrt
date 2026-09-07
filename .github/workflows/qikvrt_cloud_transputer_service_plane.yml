@@ -1,0 +1,218 @@
+name: QIKVRT cloud transputer service-plane
+
+on:
+  pull_request:
+    paths:
+      - "deploy/universal-terminal/**"
+      - "tests/test_qikvrt_cloud_transputer_service_plane.py"
+      - ".github/workflows/qikvrt_cloud_transputer_service_plane.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-cloud-transputer-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-service-plane:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Bind exact subject
+        id: subject
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            head="$PR_HEAD_SHA"
+          else
+            head="$EVENT_SHA"
+          fi
+          test -n "$head"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "QIKVRT_HEAD=$head" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.subject.outputs.head }}
+          fetch-depth: 1
+
+      - name: Reobserve literal checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$QIKVRT_HEAD"
+          echo "QIKVRT_TREE=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_ENV"
+
+      - name: Static contract tests
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v tests.test_qikvrt_cloud_transputer_service_plane
+
+      - name: Build universal image
+        env:
+          QIKVRT_UNIVERSAL_TERMINAL_IMAGE: qikvrt/universal-terminal:${{ steps.subject.outputs.head }}
+          QIKVRT_DB_PASSWORD: ci-only-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          docker compose -f deploy/universal-terminal/compose.yaml build qikvrt-terminal
+          docker image inspect "$QIKVRT_UNIVERSAL_TERMINAL_IMAGE" >/dev/null
+
+      - name: Verify C90 native and M68000 machine-code artifacts
+        env:
+          QIKVRT_UNIVERSAL_TERMINAL_IMAGE: qikvrt/universal-terminal:${{ steps.subject.outputs.head }}
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint /bin/sh "$QIKVRT_UNIVERSAL_TERMINAL_IMAGE" -c '
+            set -eu
+            test -x /usr/local/bin/qikvrt-ip-bootstrap
+            grep -Eq "Machine:[[:space:]]+MC68000" /opt/qikvrt/runtime/m68k/qikvrt_ip_bootstrap.readelf.txt
+            test -s /opt/qikvrt/runtime/m68k/qikvrt_ip_bootstrap.objdump.txt
+            sha256sum -c /opt/qikvrt/runtime/m68k/qikvrt_ip_bootstrap.sha256
+          '
+
+      - name: Start complete loopback service plane
+        env:
+          QIKVRT_UNIVERSAL_TERMINAL_IMAGE: qikvrt/universal-terminal:${{ steps.subject.outputs.head }}
+          QIKVRT_DB_PASSWORD: ci-only-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          docker compose -f deploy/universal-terminal/compose.yaml up -d --no-build
+          docker compose -f deploy/universal-terminal/compose.yaml ps
+
+      - name: Wait for IP endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:8080/qik-vrt/mesh/v1/healthz >/dev/null \
+              && curl -fsS http://127.0.0.1:8080/qik-vrt/mesh/v1/effect-ack/.well-known/effect-ack >/dev/null \
+              && nc -z 127.0.0.1 2222 \
+              && nc -z 127.0.0.1 2525 \
+              && nc -z 127.0.0.1 15432 \
+              && nc -z 127.0.0.1 19418; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose -f deploy/universal-terminal/compose.yaml ps
+          docker compose -f deploy/universal-terminal/compose.yaml logs --no-color
+          exit 1
+
+      - name: Verify fixed Mesh URL and Firefox proxy UI
+        run: |
+          set -euo pipefail
+          curl -fsS http://127.0.0.1:8080/qik-vrt/mesh/v1/ | grep -F "QIK-VRT Mesh Universal Terminal"
+          curl -fsS "http://127.0.0.1:8080/qik-vrt/mesh/v1/terminal/vnc.html?autoconnect=true&resize=scale" | grep -Ei "noVNC|VNC"
+          curl -fsS http://127.0.0.1:8080/qik-vrt/mesh/v1/effect-ack/.well-known/effect-ack | grep -F "qikvrt_effect_ack_http_capability_v1"
+          docker compose -f deploy/universal-terminal/compose.yaml exec -T qikvrt-terminal \
+            /usr/local/bin/qikvrt-ip-bootstrap qikvrt-gateway 8080 /qik-vrt/mesh/v1/healthz
+
+      - name: Verify SMTP sink
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import smtplib
+          c=smtplib.SMTP("127.0.0.1",2525,timeout=10)
+          c.sendmail("ci@qik-vrt.mesh",["terminal@qik-vrt.mesh"],"Subject: QIKVRT CI\r\n\r\nmesh receipt\r\n")
+          c.quit()
+          PY
+          docker compose -f deploy/universal-terminal/compose.yaml exec -T qikvrt-smtpd \
+            sh -c 'test "$(find /var/lib/qikvrt/smtp -name "*.json" | wc -l)" -ge 1'
+
+      - name: Verify DNS and SNMP
+        run: |
+          set -euo pipefail
+          test "$(dig @127.0.0.1 -p 5353 mesh.qik-vrt.mesh A +short | tail -1)" = "127.0.0.1"
+          docker compose -f deploy/universal-terminal/compose.yaml exec -T qikvrt-snmpd \
+            snmpget -v2c -c qikvrt -On 127.0.0.1:1161 1.3.6.1.2.1.1.1.0
+
+      - name: Verify SSH daemon without manufacturing credentials
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import socket
+          with socket.create_connection(("127.0.0.1",2222),timeout=10) as s:
+              banner=s.recv(256)
+          assert banner.startswith(b"SSH-2.0-"), banner
+          print(banner.decode("ascii","replace").strip())
+          PY
+
+      - name: Verify SQL service with SQL-92 core operations
+        env:
+          PGPASSWORD: ci-only-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          docker compose -f deploy/universal-terminal/compose.yaml exec -T \
+            -e PGPASSWORD="$PGPASSWORD" qikvrt-sqld \
+            psql -h 127.0.0.1 -U qikvrt -d qikvrt -v ON_ERROR_STOP=1 <<'SQL'
+          BEGIN;
+          CREATE TABLE qikvrt_ci_a (id INTEGER NOT NULL PRIMARY KEY, value VARCHAR(32));
+          CREATE TABLE qikvrt_ci_b (id INTEGER NOT NULL PRIMARY KEY, parent_id INTEGER);
+          INSERT INTO qikvrt_ci_a VALUES (1, 'mesh');
+          INSERT INTO qikvrt_ci_b VALUES (1, 1);
+          SELECT a.value FROM qikvrt_ci_a AS a INNER JOIN qikvrt_ci_b AS b ON a.id = b.parent_id WHERE b.id = 1;
+          ROLLBACK;
+          SQL
+
+      - name: Verify Authority-connected read-only Mirror
+        run: |
+          set -euo pipefail
+          head="$(git ls-remote git://127.0.0.1:19418/qik-vrt.git refs/heads/main | awk 'NR==1 {print $1}')"
+          test -n "$head"
+          docker compose -f deploy/universal-terminal/compose.yaml exec -T qikvrt-mirror \
+            cat /var/lib/qikvrt/mirror/mirror-state.json
+          test "$head" = "$(docker compose -f deploy/universal-terminal/compose.yaml exec -T qikvrt-mirror \
+            python3 -c 'import json;print(json.load(open("/var/lib/qikvrt/mirror/mirror-state.json"))["authority_main_head"])')"
+
+      - name: Exercise Effect-Ack prepare and commit contract
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v tests.test_qikvrt_effect_ack_http_terminal
+
+      - name: Emit exact-subject receipt
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          cat > artifacts/CLOUD_TRANSPUTER_RECEIPT.txt <<EOF
+          schema=qikvrt_cloud_transputer_service_plane_receipt_v1
+          head=${QIKVRT_HEAD}
+          tree=${QIKVRT_TREE:-UNKNOWN}
+          run_id=${GITHUB_RUN_ID}
+          run_attempt=${GITHUB_RUN_ATTEMPT}
+          mesh_url=http://127.0.0.1:8080/qik-vrt/mesh/v1/
+          exposure=LOOPBACK_ONLY
+          external_public_deployment=false
+          physical_mc68000_execution=false
+          personal_posix_completeness=false
+          sql92_full_conformance=false
+          authority_or_mirror_mutation=false
+          publication=false
+          pass=false
+          final_pass=false
+          effect_ack_done=false
+          EOF
+          cat artifacts/CLOUD_TRANSPUTER_RECEIPT.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qikvrt-cloud-transputer-${{ steps.subject.outputs.head }}-${{ github.run_attempt }}
+          path: artifacts/CLOUD_TRANSPUTER_RECEIPT.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Teardown
+        if: always()
+        env:
+          QIKVRT_UNIVERSAL_TERMINAL_IMAGE: qikvrt/universal-terminal:${{ steps.subject.outputs.head }}
+          QIKVRT_DB_PASSWORD: ci-only-${{ github.run_id }}-${{ github.run_attempt }}
+        run: docker compose -f deploy/universal-terminal/compose.yaml down -v --remove-orphans || true
