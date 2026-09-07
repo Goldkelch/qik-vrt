@@ -63,7 +63,6 @@ RUN mkdir -p /opt/qikvrt/runtime/bootstrap-profile/extensions /opt/qikvrt/runtim
       > /opt/qikvrt/runtime/bootstrap-profile/user.js \
     && chmod +x \
       deploy/universal-terminal/entrypoint.sh \
-      deploy/universal-terminal/cloud-entrypoint.sh \
       deploy/universal-terminal/runtime-health.sh \
       deploy/universal-terminal/service-entrypoint.sh \
       deploy/universal-terminal/mirror-bootstrap.sh \
