@@ -1,0 +1,65 @@
+name: QIKVRT cloud transputer public edge finite reobservation
+
+on:
+  push:
+    branches: [evidence/cloud-transputer-public-edge-20260907-v1]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-edge:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Reobserve public DNS and HTTP edge finitely
+        shell: bash
+        env:
+          QIKVRT_ORIGIN: https://universal-terminal-production.up.railway.app
+          QIKVRT_HOST: universal-terminal-production.up.railway.app
+        run: |
+          set -euo pipefail
+          resolved=0
+          for attempt in 1 2 3 4 5 6; do
+            if getent ahostsv4 "$QIKVRT_HOST" | head -n 1 > /tmp/qikvrt-dns.txt; then
+              resolved=1
+              break
+            fi
+            printf 'QIKVRT_PUBLIC_EDGE_DNS_ATTEMPT=%s unresolved\n' "$attempt"
+            sleep 10
+          done
+          if [ "$resolved" -ne 1 ]; then
+            printf '%s\n' 'BLOCK: PUBLIC_DNS_EDGE_UNRESOLVED_AFTER_FINITE_REOBSERVATION' >&2
+            exit 41
+          fi
+          printf 'QIKVRT_PUBLIC_EDGE_DNS='; cat /tmp/qikvrt-dns.txt
+
+          health_code="$(curl -sS --max-time 10 -o /tmp/qikvrt-health.txt -w '%{http_code}' "$QIKVRT_ORIGIN/health")"
+          printf 'QIKVRT_PUBLIC_EDGE_HEALTH_STATUS=%s\n' "$health_code"
+          cat /tmp/qikvrt-health.txt
+          test "$health_code" = 200
+          grep -qx 'ready' /tmp/qikvrt-health.txt
+
+          receipt_code="$(curl -sS --max-time 10 -o /tmp/qikvrt-runtime.json -w '%{http_code}' "$QIKVRT_ORIGIN/.well-known/qikvrt-cloud-transputer")"
+          printf 'QIKVRT_PUBLIC_EDGE_RECEIPT_STATUS=%s\n' "$receipt_code"
+          test "$receipt_code" = 200
+          python3 -B - /tmp/qikvrt-runtime.json <<'PY'
+          import json,sys
+          value=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert value['schema']=='qikvrt_cloud_transputer_runtime_v1'
+          assert value['runtime_id']=='qikvrt-cloud-transputer-production-1'
+          assert value['mesh_public_url']=='https://goldkelch.github.io/qik-vrt/cloud-transputer/'
+          assert value['service_ports']['http_proxy']==8080
+          assert value['m68000_effect_ack_probe_executed'] is True
+          assert value['authority_mirror_polling'] is False
+          print('QIKVRT_PUBLIC_EDGE_RECEIPT_SCHEMA=VALID')
+          print('QIKVRT_PUBLIC_EDGE_RUNTIME_ID='+value['runtime_id'])
+          print('QIKVRT_PUBLIC_EDGE_MESH_URL='+value['mesh_public_url'])
+          PY
+
+          terminal_code="$(curl -sS --max-time 10 -o /tmp/qikvrt-terminal.html -w '%{http_code}' "$QIKVRT_ORIGIN/terminal/vnc.html")"
+          printf 'QIKVRT_PUBLIC_EDGE_TERMINAL_UNAUTH_STATUS=%s\n' "$terminal_code"
+          test "$terminal_code" = 401
+
+          printf '%s\n' 'QIKVRT_PUBLIC_EDGE_REOBSERVATION=SUCCESS'
