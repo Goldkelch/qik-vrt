@@ -172,7 +172,6 @@ SSHD_PID=$!
 
 cat > "$RUN_DIR/dnsmasq.conf" <<EOF
 port=$DNS_PORT
-listen-address=0.0.0.0
 no-resolv
 no-hosts
 address=/$MESH_DOMAIN/127.0.0.1
