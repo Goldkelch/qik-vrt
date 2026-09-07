@@ -79,24 +79,62 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          rate_limit_marker=/tmp/qikvrt-promotion-rate-limit.json
+          rm -f "$rate_limit_marker"
+          gh_read() {
+            local endpoint output error delay
+            endpoint="$1"
+            output="$(mktemp)"
+            error="$(mktemp)"
+            for delay in 0 15 45; do
+              if [ "$delay" -gt 0 ]; then
+                echo "QIKVRT_GITHUB_INSTALLATION_RATE_LIMIT_BACKOFF_SECONDS=$delay" >&2
+                sleep "$delay"
+              fi
+              if gh api "$endpoint" >"$output" 2>"$error"; then
+                cat "$output"
+                rm -f "$output" "$error"
+                return 0
+              fi
+              if ! grep -Fq "API rate limit exceeded for installation." "$error"; then
+                cat "$error" >&2
+                rm -f "$output" "$error"
+                return 1
+              fi
+            done
+            cat "$error" >&2
+            jq -n --arg endpoint "$endpoint" \
+              '{state:"HOLD",reason:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",endpoint:$endpoint}' \
+              > "$rate_limit_marker"
+            case "$endpoint" in
+              *"/pulls?"*) printf '[]\n' ;;
+              *) printf '{}\n' ;;
+            esac
+            rm -f "$output" "$error"
+          }
+
+          export CURRENT_MAIN_SHA="$(git rev-parse HEAD)"
+          if [ -n "$REQUESTED_PR" ]; then
+            gh_read "repos/${REPOSITORY}/pulls/${REQUESTED_PR}" \
+              > /tmp/qikvrt-promotion-pulls.json
+          else
+            gh_read "repos/${REPOSITORY}/pulls?state=open&base=main&per_page=100" \
+              > /tmp/qikvrt-promotion-pulls.json
+          fi
+          if [ -f "$rate_limit_marker" ]; then
+            echo "HOLD: GitHub installation API rate limit exhausted; candidate discovery is a fail-closed NOOP."
+            printf '[]\n' > /tmp/qikvrt-promotion-pulls.json
+          fi
+
           python3 -B - <<'PY' > /tmp/qikvrt-promotion-candidate.json
-          import json, os, subprocess
+          import json, os
           from tools.qikvrt_expected_head_promotion import PromotionBlock, trusted_promotion_marker
           repo = os.environ['REPOSITORY']
           marker = os.environ['PROMOTION_MARKER']
           requested = os.environ.get('REQUESTED_PR', '').strip()
-
-          def gh_json(path):
-              return json.loads(subprocess.check_output(['gh','api',path], text=True))
-          def gh_pages(path):
-              pages=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path], text=True))
-              out=[]
-              for page in pages:
-                  out.extend(page if isinstance(page,list) else [page])
-              return out
-
-          current_main = gh_json(f'repos/{repo}/commits/main')['sha']
-          prs = [gh_json(f'repos/{repo}/pulls/{int(requested)}')] if requested else gh_pages(f'repos/{repo}/pulls?state=open&base=main&per_page=100')
+          current_main = os.environ['CURRENT_MAIN_SHA']
+          raw_prs = json.load(open('/tmp/qikvrt-promotion-pulls.json'))
+          prs = raw_prs if isinstance(raw_prs, list) else ([raw_prs] if raw_prs else [])
           candidates=[]
           for pr in prs:
               if pr.get('state') != 'open' or pr.get('base',{}).get('ref') != 'main':

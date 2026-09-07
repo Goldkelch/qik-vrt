@@ -336,6 +336,15 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
         self.assertNotIn('pulls/${PR_NUMBER}/merge', workflow)
         self.assertNotIn("gh pr merge", workflow)
 
+    def test_candidate_discovery_fails_closed_on_installation_rate_limit(self):
+        workflow = (ROOT / ".github/workflows/qikvrt_expected_head_promotion.yml").read_text(encoding="utf-8")
+        self.assertIn("gh_read()", workflow)
+        self.assertIn("for delay in 0 15 45", workflow)
+        self.assertIn("API rate limit exceeded for installation.", workflow)
+        self.assertIn("GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED", workflow)
+        self.assertIn("candidate discovery is a fail-closed NOOP", workflow)
+        self.assertIn('CURRENT_MAIN_SHA="$(git rev-parse HEAD)"', workflow)
+
     def test_promotion_chunk_transport_rejects_incomplete_or_drifted_packets(self):
         packet_bytes = REVIEW_MODULE.REVIEW_DIFF_CHUNK_BYTES
         diff = b"a" * packet_bytes + b"b" * packet_bytes + b"c" * 17
