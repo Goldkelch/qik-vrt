@@ -868,9 +868,16 @@ def enable_valid_changed_return(
 
 
 def run_git(root: pathlib.Path, *arguments: str) -> str:
+    git_dir = root
+    if root.exists() and (root / "HEAD").exists() and (root / "objects").is_dir() and (root / "refs").is_dir():
+        command = ["git", "--git-dir", str(root), *arguments]
+        cwd = None
+    else:
+        command = ["git", *arguments]
+        cwd = root
     completed = subprocess.run(
-        ["git", *arguments],
-        cwd=root,
+        command,
+        cwd=cwd,
         check=True,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
