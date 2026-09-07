@@ -15,8 +15,7 @@ on:
       - 'tests/test_qikvrt_cloud_transputer_contract.py'
       - '.github/workflows/qikvrt_cloud_transputer.yml'
   push:
-    branches:
-      - runtime/cloud-transputer-v1
+    branches: [runtime/cloud-transputer-v1]
     paths:
       - 'policy/QIKVRT_CLOUD_TRANSPUTER_V1.json'
       - 'deploy/cloud-transputer/**'
@@ -78,8 +77,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker build --pull -f deploy/cloud-transputer/Dockerfile \
-            -t "$IMAGE:$EXACT_SUBJECT_SHA" .
+          set -o pipefail
+          docker build --progress=plain --pull -f deploy/cloud-transputer/Dockerfile \
+            -t "$IMAGE:$EXACT_SUBJECT_SHA" . 2>&1 | tee /tmp/docker-build.log
           docker image inspect "$IMAGE:$EXACT_SUBJECT_SHA" >/tmp/image-inspect.json
 
       - name: Start exact runtime with persistent state
@@ -107,9 +107,7 @@ jobs:
         run: |
           set -euo pipefail
           for i in $(seq 1 90); do
-            if docker exec qikvrt-cloud-transputer /usr/local/bin/qikvrt-cloud-transputer-health; then
-              break
-            fi
+            if docker exec qikvrt-cloud-transputer /usr/local/bin/qikvrt-cloud-transputer-health; then break; fi
             if ! docker inspect -f '{{.State.Running}}' qikvrt-cloud-transputer 2>/dev/null | grep -qx true; then
               docker logs qikvrt-cloud-transputer >&2 || true
               exit 1
@@ -179,6 +177,7 @@ jobs:
           mkdir -p "$out"
           printf '%s\n' "$EXACT_SUBJECT_SHA" > "$out/exact-head.txt"
           printf '%s\n' '${{ steps.bind.outputs.tree }}' > "$out/exact-tree.txt"
+          cp /tmp/docker-build.log "$out/docker-build.log" 2>/dev/null || true
           cp /tmp/image-inspect.json "$out/image-inspect.json" 2>/dev/null || true
           cp /tmp/runtime.json "$out/runtime.json" 2>/dev/null || true
           cp /tmp/authority-mirror.json "$out/authority-mirror.json" 2>/dev/null || true
@@ -198,7 +197,7 @@ jobs:
             'firefox_proxy_ui_reobserved':os.path.exists('/tmp/terminal.html'),
             'm68000_effect_ack_execution_reobserved':os.path.exists('/tmp/m68k-execution.txt'),
             'authority_mirror_reobserved':os.path.exists('/tmp/authority-mirror.json'),
-            'persistent_restart_executed':True,
+            'persistent_restart_executed':os.path.exists('/tmp/runtime.json'),
             'public_cloud_runtime_origin_deployed':False,
             'physical_m68000_execution':False,
             'complete_personal_posix_source_bound':False,
