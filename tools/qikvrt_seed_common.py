@@ -1186,7 +1186,7 @@ The Seed reads only explicitly policy-authorized Node entries. The Seed writes o
 
 
 def _result_exit_code(result: Mapping[str, Any]) -> int:
-    return 0 if result.get("status") == "PASS" else 10
+    return 0 if result.get("status") in {"PASS", "CONTINUE"} else 10
 
 
 def main(argv: Iterable[str] | None = None) -> int:

@@ -37,6 +37,26 @@ class UniversalTerminalNetworkBoundaryTests(unittest.TestCase):
             "REQUIRED",
         )
 
+    def test_terminal_is_bound_to_fixed_mesh_url(self):
+        entrypoint = (ROOT / "deploy/universal-terminal/entrypoint.sh").read_text(
+            encoding="utf-8"
+        )
+        compose = COMPOSE.read_text(encoding="utf-8")
+        self.assertIn(
+            'MESH_URL="${QIKVRT_MESH_URL:-https://github.com/Goldkelch/qik-vrt}"',
+            entrypoint,
+        )
+        self.assertIn(
+            'if [ "$MESH_URL" != "https://github.com/Goldkelch/qik-vrt" ]',
+            entrypoint,
+        )
+        self.assertIn(
+            'QIKVRT_MESH_URL: "https://github.com/Goldkelch/qik-vrt"',
+            compose,
+        )
+        runtime_transport = json.loads(POLICY.read_text())["runtime_transport"]
+        self.assertTrue(runtime_transport["fixed_mesh_url_enforced"])
+
 
 if __name__ == "__main__":
     unittest.main()
