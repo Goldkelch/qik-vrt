@@ -102,6 +102,14 @@ class UniversalTerminalNetworkBoundaryTests(unittest.TestCase):
         for directive in ("client_body", "proxy", "fastcgi", "uwsgi", "scgi"):
             self.assertRegex(nginx, rf"(?m)^  {directive}_temp_path /tmp/[^;]+;$")
 
+    def test_mesh_root_serves_a_file_without_trailing_slash_alias(self):
+        nginx = (COMPOSE.parent / "nginx.conf").read_text(encoding="utf-8")
+        landing = nginx.split("location = /qik-vrt/mesh/v1/ {", 1)[1].split("}", 1)[0]
+        self.assertIn("root /opt/qikvrt/deploy/universal-terminal;", landing)
+        self.assertIn("try_files /mesh-index.html =404;", landing)
+        self.assertNotIn("alias ", landing)
+        self.assertIn('add_header Cache-Control "no-store" always;', landing)
+
     def test_ci_runs_compose_instead_of_a_weaker_docker_run(self):
         text = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("COMPOSE_FILE: deploy/universal-terminal/compose.yaml", text)
