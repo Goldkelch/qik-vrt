@@ -15,6 +15,65 @@ SQL_PORT="${QIKVRT_SQL_PORT:-5432}"
 MESH_DOMAIN="${QIKVRT_MESH_DOMAIN:-qikvrt.mesh.local}"
 MESH_PUBLIC_URL="${QIKVRT_MESH_PUBLIC_URL:-https://goldkelch.github.io/qik-vrt/cloud-transputer/}"
 RUN_STATE=/run/qikvrt/runtime.json
+READY_ATTEMPTS="${QIKVRT_HEALTH_READY_ATTEMPTS:-8}"
+
+case "$READY_ATTEMPTS" in
+  ''|*[!0-9]*) printf '%s\n' 'BLOCK: QIKVRT_HEALTH_READY_ATTEMPTS must be a positive integer' >&2; exit 64 ;;
+esac
+if [ "$READY_ATTEMPTS" -lt 1 ]; then
+  printf '%s\n' 'BLOCK: QIKVRT_HEALTH_READY_ATTEMPTS must be at least 1' >&2
+  exit 64
+fi
+
+# Finite startup gate only.  The strict probes below remain unchanged and are
+# still authoritative.  Each attempt stops at the first not-yet-ready endpoint,
+# so the default worst-case delay remains below Docker's 10 s health timeout.
+python3 -B - "$HTTP_PORT" "$NOVNC_PORT" "$PROXY_PORT" "$SMTP_PORT" "$SSH_PORT" "$SQL_PORT" "$READY_ATTEMPTS" <<'PY'
+import socket
+import sys
+import time
+from urllib.request import urlopen
+
+http_port, novnc_port, proxy_port, smtp_port, ssh_port, sql_port, attempts = map(int, sys.argv[1:])
+http_targets = (
+    ('effect_ack_direct', f'http://127.0.0.1:{http_port}/.well-known/effect-ack'),
+    ('novnc_direct', f'http://127.0.0.1:{novnc_port}/vnc.html'),
+    ('proxy_terminal', f'http://127.0.0.1:{proxy_port}/terminal/vnc.html'),
+    ('proxy_effect_ack', f'http://127.0.0.1:{proxy_port}/effect-ack/.well-known/effect-ack'),
+    ('proxy_runtime_receipt', f'http://127.0.0.1:{proxy_port}/.well-known/qikvrt-cloud-transputer'),
+)
+tcp_targets = (
+    ('smtp', smtp_port),
+    ('ssh', ssh_port),
+    ('postgresql_tcp', sql_port),
+)
+last_failure = 'unobserved'
+for attempt in range(1, attempts + 1):
+    pending = None
+    for name, url in http_targets:
+        try:
+            with urlopen(url, timeout=0.5) as response:
+                if response.status >= 400:
+                    raise RuntimeError(f'HTTP {response.status}')
+        except Exception as exc:
+            pending = f'{name}: {exc}'
+            break
+    if pending is None:
+        for name, port in tcp_targets:
+            try:
+                with socket.create_connection(('127.0.0.1', port), timeout=0.5):
+                    pass
+            except OSError as exc:
+                pending = f'{name}: {exc}'
+                break
+    if pending is None:
+        print(f'QIKVRT_READINESS_GATE=READY attempts={attempt}')
+        raise SystemExit(0)
+    last_failure = pending
+    if attempt < attempts:
+        time.sleep(0.5)
+raise SystemExit(f'BLOCK: bounded runtime readiness failed after {attempts} attempts: {last_failure}')
+PY
 
 mark() { printf 'QIKVRT_HEALTH_PROBE=%s\n' "$1"; }
 

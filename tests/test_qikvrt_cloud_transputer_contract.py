@@ -93,6 +93,15 @@ class CloudTransputerContractTests(unittest.TestCase):
         for probe in ("effect_ack_direct", "proxy_terminal", "smtp", "dns", "ssh", "snmp", "postgresql_tcp", "sql92", "m68000_execution", "authority_mirror", "complete"):
             self.assertIn(probe, text)
 
+    def test_health_readiness_gate_is_finite_and_fail_closed(self) -> None:
+        text = HEALTH.read_text(encoding="utf-8")
+        self.assertIn("QIKVRT_HEALTH_READY_ATTEMPTS", text)
+        self.assertIn("for attempt in range(1, attempts + 1)", text)
+        self.assertIn("timeout=0.5", text)
+        self.assertIn("time.sleep(0.5)", text)
+        self.assertIn("BLOCK: bounded runtime readiness failed", text)
+        self.assertNotIn("while True", text)
+
     def test_c90_probe_uses_existing_effect_ack_core_without_false_arch_claim(self) -> None:
         text = M68K.read_text(encoding="utf-8")
         self.assertIn('#include "qikvrt/effect_ack.h"', text)
