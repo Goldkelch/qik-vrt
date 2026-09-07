@@ -60,7 +60,7 @@ jobs:
           git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
           git commit -m 'chore: materialize fix-branch integrity evidence'
           commit="$(git rev-parse HEAD)"
-          git push --force-with-lease="${ref}:${GITHUB_SHA}" origin "HEAD:${ref}"
+          git push origin "HEAD:${ref}"
           remote_after="$(git ls-remote origin "$ref" | awk '{print $1}')"
           test "$remote_after" = "$commit"
           detached="$(tr -d '\r\n' < REPOSITORY_FILE_MANIFEST.json.sha256)"
