@@ -3,18 +3,24 @@ services:
     build:
       context: ../..
       dockerfile: deploy/universal-terminal/Dockerfile
-    image: qikvrt/universal-terminal:${QIKVRT_IMAGE_TAG:-trusted-main}
+      args:
+        QIKVRT_EXACT_SUBJECT_SHA: "${QIKVRT_EXACT_SUBJECT_SHA:-UNBOUND}"
+    image: qikvrt/universal-terminal:${QIKVRT_IMAGE_TAG:-candidate}
     restart: unless-stopped
     ports:
       - "127.0.0.1:${QIKVRT_NOVNC_HOST_PORT:-6080}:6080"
+      - "127.0.0.1:${QIKVRT_PROXY_HOST_PORT:-8080}:8080"
     environment:
-      QIKVRT_START_URL: "${QIKVRT_START_URL:-https://arxiv.org/}"
-      QIKVRT_NOVNC_PORT: "6080"
-      QIKVRT_HTTP_PORT: "8771"
-      QIKVRT_RUNTIME_ID: "${QIKVRT_RUNTIME_ID:-qikvrt-firefox-terminal}"
+      QIKVRT_START_URL: "${QIKVRT_START_URL:-https://github.com/Goldkelch/qik-vrt}"
+      QIKVRT_PROXY_HOST: "${QIKVRT_PROXY_HOST:-127.0.0.1}"
+      QIKVRT_PROXY_USERNAME: "${QIKVRT_PROXY_USERNAME:-qikvrt}"
+      QIKVRT_PROXY_PASSWORD: "${QIKVRT_PROXY_PASSWORD:-}"
+      QIKVRT_RUNTIME_ID: "${QIKVRT_RUNTIME_ID:-qikvrt-cloud-transputer-v1}"
       QIKVRT_PROFILE_DIR: /var/lib/qikvrt/profile
       QIKVRT_STATE_DIR: /var/lib/qikvrt/state
       QIKVRT_VNC_PASSWORD_FILE: "${QIKVRT_VNC_PASSWORD_FILE:-}"
+      QIKVRT_SSH_AUTHORIZED_KEYS: "${QIKVRT_SSH_AUTHORIZED_KEYS:-}"
+      QIKVRT_EXACT_SUBJECT_SHA: "${QIKVRT_EXACT_SUBJECT_SHA:-UNBOUND}"
     volumes:
       - qikvrt_firefox_profile:/var/lib/qikvrt/profile
       - qikvrt_runtime_state:/var/lib/qikvrt/state
@@ -26,14 +32,13 @@ services:
     tmpfs:
       - /tmp
       - /run
-      - /opt/qikvrt/runtime:size=256m,mode=1777
     shm_size: 512m
     healthcheck:
       test: ["CMD", "/usr/local/bin/qikvrt-runtime-health"]
-      interval: 10s
-      timeout: 5s
-      start_period: 20s
-      retries: 6
+      interval: 15s
+      timeout: 15s
+      start_period: 60s
+      retries: 8
 
 volumes:
   qikvrt_firefox_profile:

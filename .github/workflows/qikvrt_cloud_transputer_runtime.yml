@@ -1,0 +1,248 @@
+name: QIKVRT cloud transputer runtime
+
+on:
+  push:
+    branches:
+      - infra/qikvrt-cloud-transputer-v1
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'deploy/universal-terminal/**'
+      - 'src/qikvrt_terminal_proxy_httpd.py'
+      - 'src/qikvrt_universal_service_plane.py'
+      - 'src/qikvrt_cloud_mirror_observer.py'
+      - 'src/m68000/qikvrt_terminal_bootstrap.c'
+      - 'policy/QIKVRT_UNIVERSAL_TERMINAL_VIRTUALIZATION_V1.json'
+      - 'tests/test_qikvrt_terminal_proxy_httpd.py'
+      - 'tests/test_qikvrt_universal_terminal_service_plane.py'
+      - '.railway/**'
+      - '.github/workflows/qikvrt_cloud_transputer_runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-cloud-transputer-runtime-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  runtime:
+    if: >-
+      github.event_name != 'push' ||
+      startsWith(github.event.head_commit.message, 'ci: materialize cloud transputer evidence')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      EXACT_SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Check out exact subject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXACT_SUBJECT_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact checkout and static contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXACT_SUBJECT_SHA"
+          python3 -B -m unittest -v \
+            tests.test_qikvrt_terminal_proxy_httpd \
+            tests.test_qikvrt_universal_terminal_service_plane \
+            tests.test_qikvrt_universal_terminal_network_boundary
+          python3 -B tools/qikvrt_tool_cache.py verify
+          python3 -B tools/qikvrt_integrity.py verify
+          cc -std=c90 -pedantic-errors -Wall -Wextra -Werror \
+            -DQIKVRT_IP_BOOTSTRAP_SELFTEST \
+            src/m68000/qikvrt_terminal_bootstrap.c \
+            -o /tmp/qikvrt-ip-bootstrap-selftest
+          /tmp/qikvrt-ip-bootstrap-selftest | grep -qx 'QIKVRT_C90_IP_BOOTSTRAP_SELFTEST=PASS'
+
+      - name: Build exact-subject OCI image including C90 to MC68000 bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build \
+            --build-arg "QIKVRT_EXACT_SUBJECT_SHA=$EXACT_SUBJECT_SHA" \
+            -f deploy/universal-terminal/Dockerfile \
+            -t "qikvrt-universal-terminal:$EXACT_SUBJECT_SHA" .
+
+      - name: Start hardened runtime behind authenticated proxy
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker volume create qikvrt-ci-profile >/dev/null
+          docker volume create qikvrt-ci-state >/dev/null
+          docker run -d --name qikvrt-terminal \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,nosuid,nodev,exec,size=512m \
+            --tmpfs /run:rw,nosuid,nodev,size=64m \
+            -p 127.0.0.1:18080:8080 \
+            -e QIKVRT_PROXY_HOST=0.0.0.0 \
+            -e QIKVRT_PROXY_PORT=8080 \
+            -e QIKVRT_PROXY_USERNAME=qikvrt \
+            -e QIKVRT_PROXY_PASSWORD=ci-exact-subject-secret \
+            -e "QIKVRT_EXACT_SUBJECT_SHA=$EXACT_SUBJECT_SHA" \
+            -v qikvrt-ci-profile:/var/lib/qikvrt/profile \
+            -v qikvrt-ci-state:/var/lib/qikvrt/state \
+            "qikvrt-universal-terminal:$EXACT_SUBJECT_SHA" >/dev/null
+          for attempt in $(seq 1 120); do
+            state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' qikvrt-terminal)"
+            [ "$state" = healthy ] && break
+            if [ "$state" = unhealthy ]; then
+              docker logs qikvrt-terminal || true
+              docker inspect qikvrt-terminal || true
+              exit 1
+            fi
+            sleep 2
+          done
+          test "$(docker inspect --format '{{.State.Health.Status}}' qikvrt-terminal)" = healthy
+
+      - name: Reobserve browser proxy EFFECT_ACK services SQL mirror and MC68000 bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl -sS -o /tmp/unauthorized -w '%{http_code}' http://127.0.0.1:18080/vnc.html)"
+          test "$code" = 401
+          curl -fsS -u qikvrt:ci-exact-subject-secret http://127.0.0.1:18080/vnc.html | grep -qi 'noVNC'
+          curl -fsS -u qikvrt:ci-exact-subject-secret http://127.0.0.1:18080/.well-known/effect-ack > /tmp/effect.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open('/tmp/effect.json',encoding='utf-8'))
+          assert d['schema']=='qikvrt_effect_ack_http_capability_v1'
+          assert d['modes']==['prepare','commit']
+          assert d['external_effects']=='NONE'
+          PY
+
+          docker exec qikvrt-terminal firefox-esr --version | tee /tmp/firefox-version.txt
+          docker exec qikvrt-terminal python3 -B /opt/qikvrt/src/qikvrt_universal_service_plane.py --self-test
+          docker exec qikvrt-terminal /usr/local/bin/qikvrt-runtime-health
+
+          curl -fsS -u qikvrt:ci-exact-subject-secret \
+            -H 'Content-Type: application/json' \
+            --data '{"sql":"DROP TABLE IF EXISTS qikvrt_ci_probe; CREATE TABLE qikvrt_ci_probe (id INTEGER PRIMARY KEY, note VARCHAR(32)); INSERT INTO qikvrt_ci_probe VALUES (1, $$exact-subject$$); SELECT id,note FROM qikvrt_ci_probe ORDER BY id;"}' \
+            http://127.0.0.1:18080/qikvrt/sql > /tmp/sql.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open('/tmp/sql.json',encoding='utf-8'))
+          assert d['schema']=='qikvrt_sql_terminal_result_v1'
+          assert d['returncode']==0
+          assert 'exact-subject' in d['stdout']
+          assert d['database_role']=='qikvrt_terminal'
+          assert d['external_effect_claimed'] is False
+          PY
+
+          curl -fsS -u qikvrt:ci-exact-subject-secret http://127.0.0.1:18080/qikvrt/mesh > /tmp/mesh.json
+          python3 - <<'PY'
+          import json,re
+          d=json.load(open('/tmp/mesh.json',encoding='utf-8'))
+          assert d['schema']=='qikvrt_cloud_authority_mirror_observation_v1'
+          assert d['authority']['repository']=='Goldkelch/qik-vrt'
+          assert d['mirror']['repository']=='ingolf-lohmann/qik-vrt'
+          assert re.fullmatch(r'[0-9a-f]{40}',d['authority']['head_sha'])
+          assert re.fullmatch(r'[0-9a-f]{40}',d['mirror']['head_sha'])
+          assert d['synchronization_claimed'] is False
+          PY
+
+          docker exec qikvrt-terminal sh -c \
+            'cd /opt/qikvrt/assets/m68000 && sha256sum -c qikvrt_terminal_bootstrap.bin.sha256 && test -s qikvrt_terminal_bootstrap.bin && grep -q qikvrt_boot_decide qikvrt_terminal_bootstrap.objdump.txt'
+          docker inspect qikvrt-terminal > /tmp/inspect.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open('/tmp/inspect.json',encoding='utf-8'))[0]
+          ports=d['NetworkSettings']['Ports']
+          binds=ports.get('8080/tcp') or []
+          assert binds and all(item['HostIp']=='127.0.0.1' for item in binds)
+          assert ports.get('6080/tcp') is None
+          PY
+
+      - name: Restart and prove persistent Firefox and SQL state
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker rm -f qikvrt-terminal >/dev/null
+          docker run -d --name qikvrt-terminal \
+            --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,nosuid,nodev,exec,size=512m \
+            --tmpfs /run:rw,nosuid,nodev,size=64m \
+            -p 127.0.0.1:18080:8080 \
+            -e QIKVRT_PROXY_HOST=0.0.0.0 \
+            -e QIKVRT_PROXY_PORT=8080 \
+            -e QIKVRT_PROXY_USERNAME=qikvrt \
+            -e QIKVRT_PROXY_PASSWORD=ci-exact-subject-secret \
+            -e "QIKVRT_EXACT_SUBJECT_SHA=$EXACT_SUBJECT_SHA" \
+            -v qikvrt-ci-profile:/var/lib/qikvrt/profile \
+            -v qikvrt-ci-state:/var/lib/qikvrt/state \
+            "qikvrt-universal-terminal:$EXACT_SUBJECT_SHA" >/dev/null
+          for attempt in $(seq 1 120); do
+            state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' qikvrt-terminal)"
+            [ "$state" = healthy ] && break
+            [ "$state" = unhealthy ] && { docker logs qikvrt-terminal; exit 1; }
+            sleep 2
+          done
+          test "$(docker inspect --format '{{.State.Health.Status}}' qikvrt-terminal)" = healthy
+          docker exec qikvrt-terminal test -f /var/lib/qikvrt/profile/.qikvrt-profile-initialized
+          curl -fsS -u qikvrt:ci-exact-subject-secret \
+            -H 'Content-Type: application/json' \
+            --data '{"sql":"SELECT note FROM qikvrt_ci_probe WHERE id=1;"}' \
+            http://127.0.0.1:18080/qikvrt/sql > /tmp/sql-after-restart.json
+          grep -q exact-subject /tmp/sql-after-restart.json
+          curl -fsS -u qikvrt:ci-exact-subject-secret http://127.0.0.1:18080/qikvrt/runtime > /tmp/runtime.json
+          python3 - "$EXACT_SUBJECT_SHA" <<'PY'
+          import json,sys
+          d=json.load(open('/tmp/runtime.json',encoding='utf-8'))
+          assert d['subject_head_sha']==sys.argv[1]
+          assert d['profile_persistent'] is True
+          assert d['external_effect_claimed'] is False
+          PY
+
+      - name: Materialize exact-subject runtime receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-receipt
+          python3 - "$EXACT_SUBJECT_SHA" > runtime-receipt/receipt.json <<'PY'
+          import json,sys,time,pathlib
+          print(json.dumps({
+            'schema':'qikvrt_cloud_transputer_runtime_receipt_v1',
+            'exact_subject_head_sha':sys.argv[1],
+            'observed_at_unix':int(time.time()),
+            'firefox_version':pathlib.Path('/tmp/firefox-version.txt').read_text().strip(),
+            'container_runtime_verified':True,
+            'firefox_novnc_proxy_verified':True,
+            'authenticated_proxy_verified':True,
+            'effect_ack_transport_verified':True,
+            'smtp_dns_snmp_ssh_protocol_readback_verified':True,
+            'postgresql_persistent_sql_verified':True,
+            'postgresql_http_gateway_authenticated_non_superuser_verified':True,
+            'persistent_restart_readback_verified':True,
+            'm68000_c90_bootstrap_machine_bytes_verified':True,
+            'complete_posix_to_m68000_translation_verified':False,
+            'physical_m68000_execution_verified':False,
+            'authority_mirror_observation_verified':True,
+            'authority_mirror_synchronization_verified':False,
+            'external_cloud_deployment_verified':False,
+            'PASS':False,
+            'FINAL_PASS':False,
+            'EFFECT_ACK_DONE':False,
+          },indent=2,sort_keys=True))
+          PY
+
+      - name: Upload exact runtime evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-cloud-transputer-${{ env.EXACT_SUBJECT_SHA }}
+          path: runtime-receipt/receipt.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker rm -f qikvrt-terminal >/dev/null 2>&1 || true
+          docker volume rm qikvrt-ci-profile qikvrt-ci-state >/dev/null 2>&1 || true

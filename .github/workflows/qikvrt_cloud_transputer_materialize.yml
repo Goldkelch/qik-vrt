@@ -1,0 +1,59 @@
+name: QIKVRT cloud transputer branch materialization
+
+on:
+  push:
+    branches:
+      - infra/qikvrt-cloud-transputer-v1
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-cloud-transputer-materialize
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: infra/qikvrt-cloud-transputer-v1
+          fetch-depth: 0
+
+      - name: Fail closed unless checkout is exact triggering subject
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$EXPECTED_SHA" || {
+            echo "HOLD_UNVERIFIED checkout=$actual trigger=$EXPECTED_SHA" >&2
+            exit 2
+          }
+
+      - name: Materialize toolchain coverage and repository integrity
+        run: python3 -B tools/qikvrt_cloud_transputer_materialize.py
+
+      - name: Commit only deterministic authority outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            runtime/toolchains/TOOLCHAIN.lock.tsv \
+            runtime/toolchains/CACHE_REGISTRY.json \
+            runtime/toolchains/CACHE_COVERAGE.json \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt
+          if git diff --cached --quiet; then
+            echo 'NOOP: cloud transputer authority outputs already current'
+            exit 0
+          fi
+          git commit -m 'ci: materialize cloud transputer evidence'
+          git push origin HEAD:infra/qikvrt-cloud-transputer-v1
