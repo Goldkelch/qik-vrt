@@ -39,7 +39,7 @@ class CloudTransputerContractTests(unittest.TestCase):
 
     def test_container_has_requested_protocol_services_and_m68k_toolchain(self) -> None:
         text = DOCKERFILE.read_text(encoding="utf-8")
-        for token in ("firefox-esr", "novnc", "nginx", "openssh-server", "postgresql", "dnsmasq", "snmpd", "qemu-user", "gcc-m68k-linux-gnu"):
+        for token in ("firefox-esr", "novnc", "nginx", "openssh-server", "postgresql", "dnsmasq", "snmpd", "qemu-user", "gcc-m68k-linux-gnu", "openssl"):
             self.assertIn(token, text)
         for exposed in ("8080/tcp", "2222/tcp", "2525/tcp", "5353/tcp", "5353/udp", "1161/udp", "5432/tcp"):
             self.assertIn(exposed, text)
@@ -116,6 +116,19 @@ class CloudTransputerContractTests(unittest.TestCase):
         push = text.split("  push:\n", 1)[1].split("  workflow_dispatch:\n", 1)[0]
         self.assertIn("branches: [runtime/cloud-transputer-v1]", push)
         self.assertNotIn("paths:", push)
+
+    def test_public_terminal_guard_and_post_contract_health_gate(self) -> None:
+        text = ENTRYPOINT.read_text(encoding="utf-8")
+        self.assertIn("QIKVRT_TERMINAL_PASSWORD", text)
+        self.assertIn("openssl passwd -6 -stdin", text)
+        self.assertIn("auth_basic ", text)
+        self.assertIn("QIK-VRT Universal Terminal", text)
+        self.assertIn("auth_basic_user_file $RUN_DIR/terminal.htpasswd;", text)
+        self.assertIn("location = /health", text)
+        self.assertIn("alias $RUN_DIR/ready.txt;", text)
+        health = text.rindex("/usr/local/bin/qikvrt-cloud-transputer-health\n")
+        ready = text.rindex('ready > "$RUN_DIR/ready.txt"')
+        self.assertLess(health, ready)
 
     def test_c90_probe_uses_existing_effect_ack_core_without_false_arch_claim(self) -> None:
         text = M68K.read_text(encoding="utf-8")

@@ -23,7 +23,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     QIKVRT_START_URL=https://goldkelch.github.io/qik-vrt/
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl git zip file procps sed \
+      ca-certificates curl git zip file procps sed openssl \
       firefox-esr fonts-dejavu-core xvfb x11vnc novnc websockify dbus-x11 \
       nginx openssh-server \
       postgresql postgresql-client \

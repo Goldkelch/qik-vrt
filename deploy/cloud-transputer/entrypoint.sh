@@ -228,6 +228,25 @@ NOVNC_PID=$!
 firefox-esr --no-remote --profile "$PROFILE_DIR" "$START_URL" > "$LOG_DIR/firefox.log" 2>&1 &
 FIREFOX_PID=$!
 
+TERMINAL_AUTH_DIRECTIVES=
+if [ -n "${QIKVRT_TERMINAL_PASSWORD:-}" ]; then
+  TERMINAL_USER="${QIKVRT_TERMINAL_USER:-qikvrt}"
+  if ! printf '%s' "$TERMINAL_USER" | grep -Eq '^[A-Za-z0-9._-]{1,64}$'; then
+    printf '%s\n' 'BLOCK: QIKVRT_TERMINAL_USER contains invalid characters' >&2
+    exit 34
+  fi
+  if [ "${#QIKVRT_TERMINAL_PASSWORD}" -lt 16 ]; then
+    printf '%s\n' 'BLOCK: QIKVRT_TERMINAL_PASSWORD must contain at least 16 characters' >&2
+    exit 35
+  fi
+  TERMINAL_HASH="$(printf '%s\n' "$QIKVRT_TERMINAL_PASSWORD" | openssl passwd -6 -stdin)"
+  umask 077
+  printf '%s:%s\n' "$TERMINAL_USER" "$TERMINAL_HASH" > "$RUN_DIR/terminal.htpasswd"
+  TERMINAL_AUTH_DIRECTIVES="auth_basic \"QIK-VRT Universal Terminal\";
+      auth_basic_user_file $RUN_DIR/terminal.htpasswd;"
+  unset QIKVRT_TERMINAL_PASSWORD TERMINAL_HASH
+fi
+
 cat > "$RUN_DIR/nginx.conf" <<EOF
 worker_processes 1;
 pid $RUN_DIR/nginx.pid;
@@ -240,6 +259,7 @@ http {
     server_name _;
     location = / { return 302 /terminal/vnc.html; }
     location /terminal/ {
+      $TERMINAL_AUTH_DIRECTIVES
       proxy_pass http://127.0.0.1:$NOVNC_PORT/;
       proxy_http_version 1.1;
       proxy_set_header Upgrade \$http_upgrade;
@@ -254,6 +274,10 @@ http {
     location = /.well-known/qikvrt-cloud-transputer {
       default_type application/json;
       alias $RUN_DIR/runtime.json;
+    }
+    location = /health {
+      default_type text/plain;
+      alias $RUN_DIR/ready.txt;
     }
   }
 }
@@ -302,6 +326,7 @@ cleanup() {
 trap cleanup INT TERM EXIT
 
 /usr/local/bin/qikvrt-cloud-transputer-health
+printf '%s\n' ready > "$RUN_DIR/ready.txt"
 printf '%s\n' "QIKVRT cloud transputer ready: runtime=$RUNTIME_ID proxy=0.0.0.0:$PROXY_PORT stable_mesh=$MESH_PUBLIC_URL"
 
 while kill -0 "$NGINX_PID" 2>/dev/null \
