@@ -25,6 +25,16 @@ class RulesetEffectDispatchBridgeContractTest(unittest.TestCase):
         self.assertIn("qikvrt_requested_review_selection_v1", self.text)
         self.assertIn("UPSTREAM_CANDIDATE_ARTIFACT_MISSING_OR_AMBIGUOUS", self.text)
 
+    def test_requested_review_failure_is_bound_by_workflow_path_not_run_name(self):
+        self.assertIn(
+            "github.event.workflow_run.path == '.github/workflows/qikvrt_requested_review_executor.yml'",
+            self.text,
+        )
+        self.assertIn('case "$upstream_path" in', self.text)
+        self.assertIn('".github/workflows/qikvrt_requested_review_executor.yml")', self.text)
+        self.assertNotIn("github.event.workflow_run.name == 'QIKVRT requested review executor'", self.text)
+        self.assertNotIn('case "$upstream_name" in', self.text)
+
     def test_failed_executor_can_supply_selection_but_not_review_receipt(self):
         self.assertIn("upstream_conclusion", self.text)
         self.assertIn("success|failure", self.text)
