@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+services:
+  qikvrt-cloud-transputer:
+    build:
+      context: ../..
+      dockerfile: deploy/cloud-transputer/Dockerfile
+    image: qikvrt/cloud-transputer:${QIKVRT_IMAGE_TAG:-candidate}
+    restart: unless-stopped
+    init: true
+    environment:
+      QIKVRT_RUNTIME_ID: "${QIKVRT_RUNTIME_ID:-qikvrt-cloud-transputer-1}"
+      QIKVRT_MESH_PUBLIC_URL: "${QIKVRT_MESH_PUBLIC_URL:-https://goldkelch.github.io/qik-vrt/cloud-transputer/}"
+      QIKVRT_MESH_DOMAIN: "${QIKVRT_MESH_DOMAIN:-qikvrt.mesh.local}"
+      QIKVRT_START_URL: "${QIKVRT_START_URL:-https://goldkelch.github.io/qik-vrt/}"
+      QIKVRT_REQUIRE_AUTHORITY_MIRROR: "${QIKVRT_REQUIRE_AUTHORITY_MIRROR:-1}"
+      QIKVRT_REQUIRE_PERSONAL_POSIX: "${QIKVRT_REQUIRE_PERSONAL_POSIX:-0}"
+    ports:
+      - "${QIKVRT_BIND_ADDRESS:-127.0.0.1}:${QIKVRT_PROXY_HOST_PORT:-8080}:8080/tcp"
+      - "${QIKVRT_BIND_ADDRESS:-127.0.0.1}:${QIKVRT_SSH_HOST_PORT:-2222}:2222/tcp"
+      - "${QIKVRT_BIND_ADDRESS:-127.0.0.1}:${QIKVRT_SMTP_HOST_PORT:-2525}:2525/tcp"
+      - "${QIKVRT_BIND_ADDRESS:-127.0.0.1}:${QIKVRT_DNS_HOST_PORT:-5353}:5353/tcp"
+      - "${QIKVRT_BIND_ADDRESS:-127.0.0.1}:${QIKVRT_DNS_HOST_PORT:-5353}:5353/udp"
+      - "${QIKVRT_BIND_ADDRESS:-127.0.0.1}:${QIKVRT_SNMP_HOST_PORT:-1161}:1161/udp"
+      - "${QIKVRT_BIND_ADDRESS:-127.0.0.1}:${QIKVRT_SQL_HOST_PORT:-5432}:5432/tcp"
+    volumes:
+      - qikvrt_cloud_profile:/var/lib/qikvrt/profile
+      - qikvrt_cloud_state:/var/lib/qikvrt/state
+      - qikvrt_authority_mirror:/var/lib/qikvrt/mirror
+      - qikvrt_personal_posix:/var/lib/qikvrt/personal-posix
+      - qikvrt_mail:/var/lib/qikvrt/mail
+    shm_size: 768m
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/qikvrt-cloud-transputer-health"]
+      interval: 15s
+      timeout: 10s
+      start_period: 90s
+      retries: 6
+
+volumes:
+  qikvrt_cloud_profile:
+  qikvrt_cloud_state:
+  qikvrt_authority_mirror:
+  qikvrt_personal_posix:
+  qikvrt_mail:

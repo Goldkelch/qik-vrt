@@ -1,0 +1,109 @@
+{
+  "_license": {
+    "classification": "machine_readable_control_contract",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_cloud_transputer_v1",
+  "version": "1.0.0",
+  "instance_class": "PERSONALIZED_SCALABLE_CLOUD_TRANSPUTER",
+  "introduced_from_authority": {
+    "repository": "Goldkelch/qik-vrt",
+    "main_sha": "3b140fd85e6723f4cc8c147c56d34d7e1ca48740",
+    "main_tree": "7cecfdb608c17b20fc41428e98c28668d802229d"
+  },
+  "stable_mesh_surface": {
+    "public_entrypoint": "https://goldkelch.github.io/qik-vrt/cloud-transputer/",
+    "runtime_origin": "EXACT_OPERATOR_BOUND_URL_REQUIRED",
+    "tls_model": "PUBLIC_ENTRYPOINT_PLUS_OPERATOR_TLS_RUNTIME_ORIGIN",
+    "runtime_origin_must_be_persisted_in_receipt": true,
+    "pages_is_compute_runtime": false
+  },
+  "components": {
+    "firefox_ui": "Firefox ESR + Xvfb + x11vnc + noVNC behind nginx path /terminal/",
+    "effect_ack": "src/qikvrt_effect_ack_http_terminal.py plus strict ANSI-C90 core",
+    "httpd": "nginx",
+    "smtpd": "bounded repository-owned SMTP daemon on TCP/2525",
+    "snmpd": "net-snmp snmpd on UDP/1161",
+    "dnsd": "dnsmasq on TCP+UDP/5353",
+    "sshd": "OpenSSH sshd on TCP/2222 with password authentication disabled",
+    "sql92": "PostgreSQL on TCP/5432 with SQL-92 smoke/readback",
+    "authority_mirror": "event-driven local bare mirror of https://github.com/Goldkelch/qik-vrt.git",
+    "m68000_toolchain": "gcc-m68k-linux-gnu + qemu-m68k"
+  },
+  "runtime_ports": {
+    "mesh_http": 8080,
+    "novnc_internal": 6080,
+    "effect_ack_internal": 8771,
+    "ssh": 2222,
+    "smtp": 2525,
+    "dns": 5353,
+    "snmp": 1161,
+    "postgresql": 5432
+  },
+  "scaling": {
+    "unit": "ONE_CONTAINER_ONE_PERSISTENT_PERSONAL_PROFILE",
+    "replicas_allowed": true,
+    "replicas_share_effect_authority": false,
+    "replica_runtime_id_required": true,
+    "external_load_balancer_may_route_stable_url": true,
+    "profile_state_must_not_be_silently_shared_between_independent_users": true
+  },
+  "m68000_boundary": {
+    "verified_repository_probe": "src/cloud_transputer/m68k_effect_ack_probe.c",
+    "compiler_mode": "-std=c90 -pedantic -static",
+    "machine_execution": "qemu-m68k user-mode executes the generated M68000 Linux ELF in CI/runtime",
+    "personal_posix_source_mount": "/var/lib/qikvrt/personal-posix",
+    "personal_posix_source_state": "UNBOUND_UNTIL_ACTUAL_OWNER_SOURCE_IS_PRESENT",
+    "standalone_m68000_tcp_ip_stack_claimed": false,
+    "kernel_backed_posix_tcp_ip_available": true,
+    "rule": "The repository probe demonstrates real C90-to-M68000 translation and M68000 execution. It MUST NOT be relabelled as Ingolf Lohmann's complete personal POSIX implementation or a standalone M68000 TCP/IP stack unless those exact sources and runtime evidence are separately bound."
+  },
+  "mirror_semantics": {
+    "authority_url": "https://github.com/Goldkelch/qik-vrt.git",
+    "operation": "BOUNDED_BOOT_OR_EXPLICIT_REFRESH_ONLY",
+    "polling": false,
+    "push_to_authority": false,
+    "force_push": false,
+    "receipt": "/var/lib/qikvrt/state/authority-mirror.json"
+  },
+  "credential_boundary": {
+    "secrets_in_repository": false,
+    "firefox_profile_persistent": true,
+    "ssh_authorized_keys_external": true,
+    "postgres_password_external_file_optional": true,
+    "vnc_password_external_file_optional": true,
+    "snmp_public_exposure_default": false
+  },
+  "required_runtime_readbacks": [
+    "FIREFOX_VERSION",
+    "NOVNC_PROXY_HTTP",
+    "EFFECT_ACK_HTTP_CAPABILITY",
+    "HTTPD",
+    "SMTPD",
+    "SNMPD",
+    "DNSD",
+    "SSHD",
+    "POSTGRESQL_SQL92_QUERY",
+    "M68000_ELF_ARCHITECTURE",
+    "M68000_EFFECT_ACK_EXECUTION",
+    "AUTHORITY_MIRROR_ORIGIN_AND_MAIN",
+    "PERSISTENT_PROFILE_RESTART",
+    "EXACT_RUNTIME_ORIGIN_BINDING"
+  ],
+  "effect_boundary": {
+    "repository_implementation_is_cloud_deployment": false,
+    "ci_container_execution_is_public_cloud_reachability": false,
+    "github_pages_is_runtime_origin": false,
+    "external_dns_or_tls_effect": false,
+    "authority_mirror_writeback": false,
+    "physical_m68000_execution": false,
+    "complete_personal_posix_implementation": false,
+    "standalone_m68000_tcp_ip_stack": false,
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}

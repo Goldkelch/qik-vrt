@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="de" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>QIK-VRT Cloud Transputer</title>
+  <meta name="description" content="Feste QIK-VRT-Mesh-Einstiegsoberfläche für eine exakt gebundene Cloud-Transputer-Firefox-Instanz.">
+  <style>
+    :root{color-scheme:dark;--bg:#0b1020;--panel:#141c31;--text:#eef4ff;--muted:#aebbd1;--accent:#7ed7ff;--line:#2a3a5b}
+    *{box-sizing:border-box}body{margin:0;font:16px/1.5 system-ui,-apple-system,sans-serif;background:linear-gradient(135deg,#08101d,#101a31);color:var(--text)}
+    main{max-width:1180px;margin:auto;padding:32px 20px 60px}.bar{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}.brand{font-weight:800;letter-spacing:.04em}.fixed{font-family:ui-monospace,monospace;color:var(--accent);overflow-wrap:anywhere}
+    .panel{background:rgba(20,28,49,.94);border:1px solid var(--line);border-radius:16px;padding:20px;margin-top:20px;box-shadow:0 18px 60px rgba(0,0,0,.25)}
+    .grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:20px}@media(max-width:820px){.grid{grid-template-columns:1fr}}
+    label{display:block;font-weight:700;margin-bottom:8px}input{width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:#091020;color:var(--text);font:inherit}
+    button,a.button{display:inline-block;border:0;border-radius:10px;padding:11px 15px;background:var(--accent);color:#06111a;font-weight:800;text-decoration:none;cursor:pointer;margin-top:12px}.secondary{background:#d8e5ff!important}.muted{color:var(--muted)}
+    iframe{width:100%;min-height:650px;border:1px solid var(--line);border-radius:12px;background:#05080e}.status{padding:10px 12px;border-left:4px solid var(--accent);background:#0b1425;border-radius:6px}.caps{display:flex;flex-wrap:wrap;gap:8px}.caps span{border:1px solid var(--line);border-radius:99px;padding:5px 9px;color:var(--muted);font-size:.9rem}
+    code{color:#cceeff}.warning{border-left-color:#ffc66d}.hidden{display:none}
+  </style>
+</head>
+<body>
+<main>
+  <div class="bar">
+    <div><div class="brand">QIK-VRT Cloud Transputer</div><div class="muted">IP-Universal-Terminal · Firefox Proxy UI · Effect_ack</div></div>
+    <a class="button secondary" href="../terminal/">Repository-Terminal</a>
+  </div>
+
+  <section class="panel">
+    <h1>Feste Mesh-URL, austauschbarer exakter Runtime-Origin</h1>
+    <p>Diese Seite ist der feste öffentliche Einstieg:</p>
+    <p class="fixed">https://goldkelch.github.io/qik-vrt/cloud-transputer/</p>
+    <p class="status warning"><strong>Evidenzgrenze:</strong> GitHub Pages ist die feste Proxy-/Launcher-UI, aber <strong>nicht der Compute-Origin</strong>. Der langlebige Firefox/noVNC-, SSH-, DNS-, SNMP-, SMTP- und SQL-Runtime-Origin wird separat betrieben und muss exakt gebunden sowie zurückgelesen werden.</p>
+  </section>
+
+  <div class="grid">
+    <section class="panel">
+      <h2>Runtime verbinden</h2>
+      <label for="runtimeOrigin">Exakter Runtime-Origin</label>
+      <input id="runtimeOrigin" inputmode="url" autocomplete="url" placeholder="https://runtime.example.invalid">
+      <button id="connect" type="button">Firefox-Terminal verbinden</button>
+      <button id="forget" class="secondary" type="button">Lokale Bindung löschen</button>
+      <p id="binding" class="muted">Noch kein Runtime-Origin lokal gebunden.</p>
+      <div class="caps" aria-label="Runtime-Funktionen">
+        <span>Firefox ESR</span><span>noVNC/WebSocket</span><span>Effect_ack</span><span>HTTP</span><span>SMTP</span><span>SNMP</span><span>DNS</span><span>SSH</span><span>SQL92/PostgreSQL</span><span>M68000-Probe</span><span>Authority Mirror</span>
+      </div>
+      <p class="muted">Die Eingabe wird nur im lokalen Browser-Profil gespeichert. Diese statische Seite nimmt keine Zugangsdaten, Tokens, Passwörter oder OTP-Werte entgegen.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Interaktive Firefox Proxy UI</h2>
+      <div id="empty" class="status">Runtime-Origin eingeben und verbinden. Danach wird <code>/terminal/vnc.html</code> in diese Oberfläche eingebettet.</div>
+      <iframe id="terminal" class="hidden" title="QIK-VRT Cloud Transputer Firefox Terminal" referrerpolicy="no-referrer"></iframe>
+    </section>
+  </div>
+
+  <section class="panel">
+    <h2>Bindungsmodell</h2>
+    <p>Der Runtime-Origin ist keine Wirkungsvollmacht. Jeder geschützte Effekt bleibt an QIK-VRT Effect_ack, exakte Subjektbindung und nachgelagerte Reobservation gebunden. Ein erreichbarer Browser, TCP-Port oder Transport-ACK ist daher weder <code>PASS</code>, <code>FINAL_PASS</code> noch <code>EFFECT_ACK_DONE</code>.</p>
+  </section>
+</main>
+<script>
+(() => {
+  'use strict';
+  const FIXED='https://goldkelch.github.io/qik-vrt/cloud-transputer/';
+  const input=document.getElementById('runtimeOrigin');
+  const frame=document.getElementById('terminal');
+  const empty=document.getElementById('empty');
+  const binding=document.getElementById('binding');
+  const key='qikvrt.cloudTransputer.runtimeOrigin.v1';
+  function normalize(raw){
+    const u=new URL(raw);
+    if(!['https:','http:'].includes(u.protocol) || u.username || u.password || u.hash) throw new Error('invalid runtime origin');
+    u.pathname=u.pathname.replace(/\/+$/,'');
+    u.search=''; u.hash='';
+    return u.origin + u.pathname;
+  }
+  function render(raw){
+    const origin=normalize(raw);
+    input.value=origin;
+    localStorage.setItem(key,origin);
+    frame.src=origin.replace(/\/$/,'') + '/terminal/vnc.html';
+    frame.classList.remove('hidden'); empty.classList.add('hidden');
+    binding.textContent='Lokal gebundener Runtime-Origin: ' + origin + ' · feste Mesh-URL: ' + FIXED;
+  }
+  document.getElementById('connect').addEventListener('click',()=>{try{render(input.value.trim())}catch(e){binding.textContent='Ungültiger Runtime-Origin: absolute HTTP(S)-URL ohne Credentials/Fragment erforderlich.'}});
+  document.getElementById('forget').addEventListener('click',()=>{localStorage.removeItem(key);input.value='';frame.removeAttribute('src');frame.classList.add('hidden');empty.classList.remove('hidden');binding.textContent='Noch kein Runtime-Origin lokal gebunden.'});
+  const query=new URLSearchParams(location.search).get('runtime');
+  const saved=query || localStorage.getItem(key);
+  if(saved){try{render(saved)}catch(_){localStorage.removeItem(key)}}
+})();
+</script>
+</body>
+</html>

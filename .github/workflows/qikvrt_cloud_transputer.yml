@@ -1,0 +1,229 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT cloud transputer exact-head runtime
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'policy/QIKVRT_CLOUD_TRANSPUTER_V1.json'
+      - 'deploy/cloud-transputer/**'
+      - 'src/cloud_transputer/**'
+      - 'docs/cloud-transputer/**'
+      - 'docs/terminal/QIKVRT_CLOUD_TRANSPUTER_V1.md'
+      - 'tests/test_qikvrt_cloud_transputer_contract.py'
+      - '.github/workflows/qikvrt_cloud_transputer.yml'
+  push:
+    branches:
+      - runtime/cloud-transputer-v1
+    paths:
+      - 'policy/QIKVRT_CLOUD_TRANSPUTER_V1.json'
+      - 'deploy/cloud-transputer/**'
+      - 'src/cloud_transputer/**'
+      - 'docs/cloud-transputer/**'
+      - 'docs/terminal/QIKVRT_CLOUD_TRANSPUTER_V1.md'
+      - 'tests/test_qikvrt_cloud_transputer_contract.py'
+      - '.github/workflows/qikvrt_cloud_transputer.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-cloud-transputer-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  exact-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      EXACT_SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      IMAGE: qikvrt/cloud-transputer
+      TEST_MESH_URL: https://goldkelch.github.io/qik-vrt/cloud-transputer/
+    steps:
+      - name: Check out exact subject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXACT_SUBJECT_SHA }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Bind exact head and tree
+        id: bind
+        shell: bash
+        run: |
+          set -euo pipefail
+          head="$(git rev-parse --verify HEAD^{commit})"
+          tree="$(git rev-parse --verify HEAD^{tree})"
+          test "$head" = "$EXACT_SUBJECT_SHA"
+          printf 'head=%s\n' "$head" >> "$GITHUB_OUTPUT"
+          printf 'tree=%s\n' "$tree" >> "$GITHUB_OUTPUT"
+
+      - name: Verify repository contracts before image build
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v tests.test_qikvrt_cloud_transputer_contract
+          cc -std=c90 -pedantic -Wall -Wextra -Werror -Iinclude -fsyntax-only \
+            src/effect_ack_core.c src/cloud_transputer/m68k_effect_ack_probe.c
+          sh -n deploy/cloud-transputer/entrypoint.sh \
+                deploy/cloud-transputer/runtime-health.sh \
+                deploy/cloud-transputer/authority-mirror-refresh.sh
+          python3 -m py_compile src/cloud_transputer/smtpd.py
+          docker compose -f deploy/cloud-transputer/compose.yaml config >/tmp/cloud-transputer-compose.txt
+
+      - name: Build exact OCI image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --pull -f deploy/cloud-transputer/Dockerfile \
+            -t "$IMAGE:$EXACT_SUBJECT_SHA" .
+          docker image inspect "$IMAGE:$EXACT_SUBJECT_SHA" >/tmp/image-inspect.json
+
+      - name: Start exact runtime with persistent state
+        shell: bash
+        run: |
+          set -euo pipefail
+          for v in profile state mirror personal-posix mail; do
+            docker volume create "qikvrt-cloud-test-$v" >/dev/null
+          done
+          docker run -d --name qikvrt-cloud-transputer \
+            -p 127.0.0.1:18080:8080 \
+            -e QIKVRT_RUNTIME_ID=qikvrt-cloud-transputer-ci-1 \
+            -e QIKVRT_MESH_PUBLIC_URL="$TEST_MESH_URL" \
+            -e QIKVRT_REQUIRE_AUTHORITY_MIRROR=1 \
+            -e QIKVRT_REQUIRE_PERSONAL_POSIX=0 \
+            -v qikvrt-cloud-test-profile:/var/lib/qikvrt/profile \
+            -v qikvrt-cloud-test-state:/var/lib/qikvrt/state \
+            -v qikvrt-cloud-test-mirror:/var/lib/qikvrt/mirror \
+            -v qikvrt-cloud-test-personal-posix:/var/lib/qikvrt/personal-posix \
+            -v qikvrt-cloud-test-mail:/var/lib/qikvrt/mail \
+            "$IMAGE:$EXACT_SUBJECT_SHA"
+
+      - name: Reobserve every runtime plane
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 90); do
+            if docker exec qikvrt-cloud-transputer /usr/local/bin/qikvrt-cloud-transputer-health; then
+              break
+            fi
+            if ! docker inspect -f '{{.State.Running}}' qikvrt-cloud-transputer 2>/dev/null | grep -qx true; then
+              docker logs qikvrt-cloud-transputer >&2 || true
+              exit 1
+            fi
+            sleep 2
+          done
+          docker exec qikvrt-cloud-transputer /usr/local/bin/qikvrt-cloud-transputer-health
+          curl -fsS http://127.0.0.1:18080/terminal/vnc.html >/tmp/terminal.html
+          curl -fsS http://127.0.0.1:18080/.well-known/qikvrt-cloud-transputer >/tmp/runtime.json
+          docker cp qikvrt-cloud-transputer:/var/lib/qikvrt/state/authority-mirror.json /tmp/authority-mirror.json
+          docker cp qikvrt-cloud-transputer:/var/lib/qikvrt/state/m68k/execution.txt /tmp/m68k-execution.txt
+          docker cp qikvrt-cloud-transputer:/var/lib/qikvrt/state/m68k/file.txt /tmp/m68k-file.txt
+          docker exec qikvrt-cloud-transputer sh -lc 'printf "%s\n" persistent-profile-sentinel > /var/lib/qikvrt/profile/.cloud-transputer-restart-sentinel'
+          python3 -B - <<'PY'
+          import json
+          r=json.load(open('/tmp/runtime.json',encoding='utf-8'))
+          assert r['runtime_id']=='qikvrt-cloud-transputer-ci-1'
+          assert r['mesh_public_url']=='https://goldkelch.github.io/qik-vrt/cloud-transputer/'
+          assert r['m68000_effect_ack_probe_executed'] is True
+          assert r['personal_posix_state']=='UNBOUND_OWNER_SOURCE_ABSENT'
+          assert r['standalone_m68000_tcp_ip_stack_claimed'] is False
+          assert r['kernel_backed_posix_tcp_ip'] is True
+          assert r['external_effect_claimed'] is False
+          assert r['pass'] is False and r['final_pass'] is False and r['effect_ack_done'] is False
+          m=json.load(open('/tmp/authority-mirror.json',encoding='utf-8'))
+          assert m['origin']=='https://github.com/Goldkelch/qik-vrt.git'
+          assert len(m['main_head_sha'])==40 and len(m['main_tree_sha'])==40
+          assert m['polling'] is False and m['writeback_to_authority'] is False
+          PY
+          grep -q '^ARCH=M68000_FAMILY$' /tmp/m68k-execution.txt
+          grep -q '^EFFECT_ACK_STATE=EFFECT_ACK_DONE$' /tmp/m68k-execution.txt
+          grep -Eqi '68000|m68k|Motorola' /tmp/m68k-file.txt
+
+      - name: Restart same personalized runtime and reobserve persistence
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker rm -f qikvrt-cloud-transputer >/dev/null
+          docker run -d --name qikvrt-cloud-transputer \
+            -p 127.0.0.1:18080:8080 \
+            -e QIKVRT_RUNTIME_ID=qikvrt-cloud-transputer-ci-1 \
+            -e QIKVRT_MESH_PUBLIC_URL="$TEST_MESH_URL" \
+            -e QIKVRT_REQUIRE_AUTHORITY_MIRROR=1 \
+            -v qikvrt-cloud-test-profile:/var/lib/qikvrt/profile \
+            -v qikvrt-cloud-test-state:/var/lib/qikvrt/state \
+            -v qikvrt-cloud-test-mirror:/var/lib/qikvrt/mirror \
+            -v qikvrt-cloud-test-personal-posix:/var/lib/qikvrt/personal-posix \
+            -v qikvrt-cloud-test-mail:/var/lib/qikvrt/mail \
+            "$IMAGE:$EXACT_SUBJECT_SHA"
+          for i in $(seq 1 90); do
+            if docker exec qikvrt-cloud-transputer /usr/local/bin/qikvrt-cloud-transputer-health; then break; fi
+            if ! docker inspect -f '{{.State.Running}}' qikvrt-cloud-transputer 2>/dev/null | grep -qx true; then
+              docker logs qikvrt-cloud-transputer >&2 || true
+              exit 1
+            fi
+            sleep 2
+          done
+          docker exec qikvrt-cloud-transputer /usr/local/bin/qikvrt-cloud-transputer-health
+          test "$(docker exec qikvrt-cloud-transputer cat /var/lib/qikvrt/profile/.cloud-transputer-restart-sentinel)" = persistent-profile-sentinel
+
+      - name: Preserve exact-head runtime evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=/tmp/qikvrt-cloud-transputer-evidence
+          mkdir -p "$out"
+          printf '%s\n' "$EXACT_SUBJECT_SHA" > "$out/exact-head.txt"
+          printf '%s\n' '${{ steps.bind.outputs.tree }}' > "$out/exact-tree.txt"
+          cp /tmp/image-inspect.json "$out/image-inspect.json" 2>/dev/null || true
+          cp /tmp/runtime.json "$out/runtime.json" 2>/dev/null || true
+          cp /tmp/authority-mirror.json "$out/authority-mirror.json" 2>/dev/null || true
+          cp /tmp/m68k-execution.txt "$out/m68k-execution.txt" 2>/dev/null || true
+          cp /tmp/m68k-file.txt "$out/m68k-file.txt" 2>/dev/null || true
+          cp /tmp/terminal.html "$out/terminal.html" 2>/dev/null || true
+          docker inspect qikvrt-cloud-transputer > "$out/container-inspect.json" 2>/dev/null || true
+          docker logs qikvrt-cloud-transputer > "$out/container.log" 2>&1 || true
+          docker cp qikvrt-cloud-transputer:/var/lib/qikvrt/state/runtime.json "$out/persistent-runtime.json" 2>/dev/null || true
+          python3 -B - "$out/receipt.json" <<'PY'
+          import json,os,sys
+          out=sys.argv[1]
+          receipt={
+            'schema':'qikvrt_cloud_transputer_ci_receipt_v1',
+            'subject_head_sha':os.environ['EXACT_SUBJECT_SHA'],
+            'oci_image_executed':os.path.exists('/tmp/runtime.json'),
+            'firefox_proxy_ui_reobserved':os.path.exists('/tmp/terminal.html'),
+            'm68000_effect_ack_execution_reobserved':os.path.exists('/tmp/m68k-execution.txt'),
+            'authority_mirror_reobserved':os.path.exists('/tmp/authority-mirror.json'),
+            'persistent_restart_executed':True,
+            'public_cloud_runtime_origin_deployed':False,
+            'physical_m68000_execution':False,
+            'complete_personal_posix_source_bound':False,
+            'standalone_m68000_tcp_ip_stack_bound':False,
+            'pass':False,
+            'final_pass':False,
+            'effect_ack_done':False,
+          }
+          open(out,'w',encoding='utf-8').write(json.dumps(receipt,indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Upload exact-head evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-cloud-transputer-${{ env.EXACT_SUBJECT_SHA }}
+          path: /tmp/qikvrt-cloud-transputer-evidence
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          docker rm -f qikvrt-cloud-transputer 2>/dev/null || true
+          for v in profile state mirror personal-posix mail; do
+            docker volume rm "qikvrt-cloud-test-$v" 2>/dev/null || true
+          done
