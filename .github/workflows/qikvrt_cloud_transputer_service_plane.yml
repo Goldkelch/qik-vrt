@@ -108,7 +108,7 @@ jobs:
           QIKVRT_DB_PASSWORD: ci-only-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          docker compose -f deploy/universal-terminal/compose.yaml up -d --no-build
+          docker compose -f deploy/universal-terminal/compose.yaml up -d --no-build --wait --wait-timeout 120
           docker compose -f deploy/universal-terminal/compose.yaml ps
 
       - name: Wait for IP endpoints
@@ -118,6 +118,7 @@ jobs:
           set -euo pipefail
           for i in {1..60}; do
             if curl -fsS http://127.0.0.1:8080/qik-vrt/mesh/v1/healthz >/dev/null \
+              && curl -fsS http://127.0.0.1:8080/qik-vrt/mesh/v1/terminal/vnc.html >/dev/null \
               && curl -fsS http://127.0.0.1:8080/qik-vrt/mesh/v1/effect-ack/.well-known/effect-ack >/dev/null \
               && nc -z 127.0.0.1 2222 \
               && nc -z 127.0.0.1 2525 \
