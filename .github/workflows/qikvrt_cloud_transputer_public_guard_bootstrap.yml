@@ -1,0 +1,113 @@
+# Temporary finite production-boundary repair. It adds optional Basic Auth for
+# the public noVNC plane and a readiness file exposed only after the strict
+# runtime contract succeeds, regenerates repository integrity, then removes
+# itself in the same successor commit.
+name: QIKVRT cloud transputer public guard bootstrap
+
+on:
+  push:
+    branches: [runtime/cloud-transputer-v1]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-cloud-transputer-public-guard-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  repair-once:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact pushed head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+
+      - name: Apply exact public access guard and readiness contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -B - <<'PY'
+          from pathlib import Path
+
+          docker_path = Path('deploy/cloud-transputer/Dockerfile')
+          docker = docker_path.read_text(encoding='utf-8')
+          old_pkg = '      ca-certificates curl git zip file procps sed \\\n'
+          new_pkg = '      ca-certificates curl git zip file procps sed openssl \\\n'
+          if docker.count(old_pkg) != 1:
+              raise SystemExit('BLOCK: exact Docker package anchor not observed once')
+          docker_path.write_text(docker.replace(old_pkg, new_pkg), encoding='utf-8', newline='\n')
+
+          entry_path = Path('deploy/cloud-transputer/entrypoint.sh')
+          entry = entry_path.read_text(encoding='utf-8')
+          nginx_anchor = 'cat > "$RUN_DIR/nginx.conf" <<EOF\n'
+          guard = '''TERMINAL_AUTH_DIRECTIVES=\nif [ -n "${QIKVRT_TERMINAL_PASSWORD:-}" ]; then\n  TERMINAL_USER="${QIKVRT_TERMINAL_USER:-qikvrt}"\n  if ! printf '%s' "$TERMINAL_USER" | grep -Eq '^[A-Za-z0-9._-]{1,64}$'; then\n    printf '%s\\n' 'BLOCK: QIKVRT_TERMINAL_USER contains invalid characters' >&2\n    exit 34\n  fi\n  if [ "${#QIKVRT_TERMINAL_PASSWORD}" -lt 16 ]; then\n    printf '%s\\n' 'BLOCK: QIKVRT_TERMINAL_PASSWORD must contain at least 16 characters' >&2\n    exit 35\n  fi\n  TERMINAL_HASH="$(printf '%s\\n' "$QIKVRT_TERMINAL_PASSWORD" | openssl passwd -6 -stdin)"\n  umask 077\n  printf '%s:%s\\n' "$TERMINAL_USER" "$TERMINAL_HASH" > "$RUN_DIR/terminal.htpasswd"\n  TERMINAL_AUTH_DIRECTIVES="auth_basic \\\"QIK-VRT Universal Terminal\\\";\n      auth_basic_user_file $RUN_DIR/terminal.htpasswd;"\n  unset QIKVRT_TERMINAL_PASSWORD TERMINAL_HASH\nfi\n\n'''
+          if entry.count(nginx_anchor) != 1:
+              raise SystemExit('BLOCK: nginx config anchor not observed once')
+          entry = entry.replace(nginx_anchor, guard + nginx_anchor)
+
+          terminal_anchor = '''    location /terminal/ {\n      proxy_pass http://127.0.0.1:$NOVNC_PORT/;\n'''
+          terminal_replacement = '''    location /terminal/ {\n      $TERMINAL_AUTH_DIRECTIVES\n      proxy_pass http://127.0.0.1:$NOVNC_PORT/;\n'''
+          if entry.count(terminal_anchor) != 1:
+              raise SystemExit('BLOCK: terminal nginx location anchor not observed once')
+          entry = entry.replace(terminal_anchor, terminal_replacement)
+
+          receipt_anchor = '''    location = /.well-known/qikvrt-cloud-transputer {\n      default_type application/json;\n      alias $RUN_DIR/runtime.json;\n    }\n'''
+          receipt_replacement = '''    location = /.well-known/qikvrt-cloud-transputer {\n      default_type application/json;\n      alias $RUN_DIR/runtime.json;\n    }\n    location = /health {\n      default_type text/plain;\n      alias $RUN_DIR/ready.txt;\n    }\n'''
+          if entry.count(receipt_anchor) != 1:
+              raise SystemExit('BLOCK: runtime receipt nginx anchor not observed once')
+          entry = entry.replace(receipt_anchor, receipt_replacement)
+
+          ready_anchor = '''/usr/local/bin/qikvrt-cloud-transputer-health\nprintf '%s\\n' "QIKVRT cloud transputer ready: runtime=$RUNTIME_ID proxy=0.0.0.0:$PROXY_PORT stable_mesh=$MESH_PUBLIC_URL"\n'''
+          ready_replacement = '''/usr/local/bin/qikvrt-cloud-transputer-health\nprintf '%s\\n' ready > "$RUN_DIR/ready.txt"\nprintf '%s\\n' "QIKVRT cloud transputer ready: runtime=$RUNTIME_ID proxy=0.0.0.0:$PROXY_PORT stable_mesh=$MESH_PUBLIC_URL"\n'''
+          if entry.count(ready_anchor) != 1:
+              raise SystemExit('BLOCK: post-health ready anchor not observed once')
+          entry_path.write_text(entry.replace(ready_anchor, ready_replacement), encoding='utf-8', newline='\n')
+
+          test_path = Path('tests/test_qikvrt_cloud_transputer_contract.py')
+          tests = test_path.read_text(encoding='utf-8')
+          package_anchor = '''        for token in ("firefox-esr", "novnc", "nginx", "openssh-server", "postgresql", "dnsmasq", "snmpd", "qemu-user", "gcc-m68k-linux-gnu"):\n            self.assertIn(token, text)\n'''
+          package_replacement = '''        for token in ("firefox-esr", "novnc", "nginx", "openssh-server", "postgresql", "dnsmasq", "snmpd", "qemu-user", "gcc-m68k-linux-gnu", "openssl"):\n            self.assertIn(token, text)\n'''
+          if tests.count(package_anchor) != 1:
+              raise SystemExit('BLOCK: package regression anchor not observed once')
+          tests = tests.replace(package_anchor, package_replacement)
+
+          insert_anchor = '    def test_c90_probe_uses_existing_effect_ack_core_without_false_arch_claim(self) -> None:\n'
+          method = '''    def test_public_terminal_guard_and_post_contract_health_gate(self) -> None:\n        text = ENTRYPOINT.read_text(encoding="utf-8")\n        self.assertIn("QIKVRT_TERMINAL_PASSWORD", text)\n        self.assertIn("openssl passwd -6 -stdin", text)\n        self.assertIn('auth_basic \\\"QIK-VRT Universal Terminal\\\";', text)\n        self.assertIn("auth_basic_user_file $RUN_DIR/terminal.htpasswd;", text)\n        self.assertIn("location = /health", text)\n        self.assertIn("alias $RUN_DIR/ready.txt;", text)\n        health = text.rindex("/usr/local/bin/qikvrt-cloud-transputer-health\\n")\n        ready = text.rindex("printf '%s\\\\n' ready > \\\"$RUN_DIR/ready.txt\\\"")\n        self.assertLess(health, ready)\n\n'''
+          if tests.count(insert_anchor) != 1:
+              raise SystemExit('BLOCK: production guard regression insertion anchor not observed once')
+          if method in tests:
+              raise SystemExit('BLOCK: production guard regression already present unexpectedly')
+          test_path.write_text(tests.replace(insert_anchor, method + insert_anchor), encoding='utf-8', newline='\n')
+          PY
+
+          python3 -B -m unittest -v tests.test_qikvrt_cloud_transputer_contract
+          cc -std=c90 -pedantic -Wall -Wextra -Werror -Iinclude -fsyntax-only \
+            src/effect_ack_core.c src/cloud_transputer/m68k_effect_ack_probe.c
+          sh -n deploy/cloud-transputer/entrypoint.sh deploy/cloud-transputer/runtime-health.sh deploy/cloud-transputer/authority-mirror-refresh.sh
+
+      - name: Remove bootstrap and regenerate exact integrity trio
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/qikvrt_cloud_transputer_public_guard_bootstrap.yml
+          python3 tools/qikvrt_integrity.py generate
+          python3 tools/qikvrt_integrity.py verify
+          git add deploy/cloud-transputer/Dockerfile \
+                  deploy/cloud-transputer/entrypoint.sh \
+                  tests/test_qikvrt_cloud_transputer_contract.py \
+                  REPOSITORY_FILE_MANIFEST.json \
+                  REPOSITORY_FILE_MANIFEST.json.sha256 \
+                  SHA256SUMS.txt
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          remote_head="$(git ls-remote --heads origin refs/heads/runtime/cloud-transputer-v1 | awk 'NR==1 {print $1}')"
+          test "$remote_head" = "$GITHUB_SHA"
+          git commit -m "fix: guard public terminal and bind post-contract health"
+          git push origin HEAD:refs/heads/runtime/cloud-transputer-v1
