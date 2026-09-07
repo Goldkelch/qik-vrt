@@ -27,7 +27,13 @@ ZENODO_METADATA_DRAFT.json: noch nicht gesendete Metadaten.
 CLAIM_MAP_DRAFT.json: gegenstandsbezogene Klassifikation und offene formale Receipts.
 PUBLICATION_REQUEST.json: Owner-Auftrag, Artefaktidentitäten, Vorbedingungen und explizite Nicht-Effekte.
 
-Die separat bereitgestellte PDF-Lesefassung ist in PUBLICATION_REQUEST.json exakt gehasht. Solange sie nicht im Repository persistiert und überprüft ist, darf ihre Repository-Persistenz nicht behauptet werden. Die digitale Quellenfassung kann ohne PDF aus dem Repository gelesen werden; die endgültige Uploadmenge wird erst nach vollständiger Artefaktpersistenz und Kontrolle eingefroren.
+Die bereits ausgelieferte PDF-Lesefassung ist in diesem Kandidaten unter `Der_Punkt_nachweisbare_Anschlussfaehigkeit_Lohmann_v1.pdf` enthalten: 23209 Bytes, SHA-256 `e5f018c156385b2e4a4dc343d2372bfdf2908b446ca195a4d8de985afe13d924`, Git-Blob `d5748aec5657e868321afd26baa5bbec1602aa66`. Die historischen PDF- und Manuskriptbytes wurden nicht verändert. Repository-Persistenz und spätere öffentliche Zenodo-Identität werden getrennt zurückgelesen. Die endgültige Uploadmenge benötigt weiterhin die vollständigen v2-Kontrollen.
+
+## Ausgeführte Indexreparatur
+
+Der vorhandene Generator `tools/qikvrt_publication_overview.py` wurde mit seinen fünf vorhandenen Regressionstests lokal ausgeführt. Die originalen Indizes, Generator und Testquelle wurden vorher gegen ihre Git-Blob-Identitäten geprüft. Er ergänzt genau das neue Publikationsbündel als `repository_candidate` in JSON und HTML; der zweite Lauf ist änderungsfrei. Ausgeführt wurde eine isolierte Projektionsprüfung, kein vollständiger Repository-Checkout und kein neuer vollständiger CI-/Kernel-Lauf. Die exakten Ausgangs- und Ergebnisbindungen stehen in `PUBLICATION_REQUEST.json` unter `repair_execution`.
+
+Der bestehende Integritätsworkflow darf in PR-Läufen ausdrücklich nicht committen. Deshalb wird der gespeicherte Reparaturcommit getrennt von einer erfolgreichen Regeneration im CI-Arbeitsverzeichnis nachgewiesen. Die Root-Integritätsdaten und vollständigen Exact-head-Gates bleiben erforderlich. Workflows, Tests, Sicherheits- und Publikationsregeln werden nicht geändert.
 
 ## Lizenz
 

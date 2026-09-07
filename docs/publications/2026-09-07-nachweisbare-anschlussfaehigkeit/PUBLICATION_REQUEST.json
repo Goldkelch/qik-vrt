@@ -48,11 +48,11 @@
       "git_blob_sha1": "d5748aec5657e868321afd26baa5bbec1602aa66"
     }
   ],
-  "article_repository_persistence": "TO_BE_BOUND_TO_NEW_CANDIDATE_COMMIT",
-  "pdf_repository_persistence": "NOT_YET_PERSISTED; exact local rendering supplied in the downloadable bundle",
+  "article_repository_persistence": "PERSISTED_AT_c0486031e9a94d8f7829da914d8b8eeb00eff4a4_UNCHANGED",
+  "pdf_repository_persistence": "INCLUDED_IN_THIS_CANDIDATE_TREE; verify exact path/blob and public readback separately",
   "reuse": "Use existing tools/qikvrt_zenodo_publish.py and its v2 policy; no alternate publisher, new workflow, credential relocation, polling loop or historical-artifact mutation.",
   "unfulfilled_obligations": [
-    "Persist exact candidate artifacts on a repository carrier.",
+    "Regenerate, verify and persist current repository integrity outputs for this complete candidate tree.",
     "Validate the actual candidate head and fulfill the v2 claim/proof/return-receipt requirements without fabricating kernel receipts.",
     "Required exact-head review, post-review reobservation and legitimate promotion.",
     "Reobserve exact Trusted Main and derive exact P7 external obligations.",
@@ -65,7 +65,7 @@
     "pdf_text_extractable": true,
     "reportlab_version": "4.4.9",
     "independent_mathematical_checker_rerun": false,
-    "repository_ci": "NOT_RUN_ON_NEW_CANDIDATE"
+    "repository_ci": "SUCCESSOR_REQUIRES_FRESH_EXACT_HEAD_GATES"
   },
   "effects_in_this_preparation": {
     "zenodo_record_created": false,
@@ -77,5 +77,85 @@
     "PASS": false,
     "FINAL_PASS": false,
     "EFFECT_ACK_DONE": false
+  },
+  "repair_execution": {
+    "source_head": "c0486031e9a94d8f7829da914d8b8eeb00eff4a4",
+    "source_tree": "f928ac8fdd78bec94703b6d883592ef732bda2f7",
+    "scope": "ISOLATED_PROJECTION_FIXTURE_NOT_FULL_REPOSITORY_CHECKOUT",
+    "scope_description": "Original complete indexes and the five exact candidate documents were reconstructed from connected GitHub reads and checked against their Git blob identities. Only the new candidate README was locally materialized; the full original repository was not cloned.",
+    "generator": {
+      "path": "tools/qikvrt_publication_overview.py",
+      "git_blob_sha1": "f77fa287ebd2e660e51a1a7699224e1b12639cf5"
+    },
+    "regression_tests": {
+      "path": "tests/test_qikvrt_publication_overview.py",
+      "git_blob_sha1": "3b239b958beffc344d395ab1e068be047d71bd6f",
+      "tests_run": 5,
+      "failures": 0,
+      "errors": 0,
+      "exit_code": 0
+    },
+    "materialization_result": {
+      "changed_paths": [
+        "docs/publications/index.json",
+        "docs/publications/index.html"
+      ],
+      "completion_claims": {
+        "EFFECT_ACK_DONE": false,
+        "FINAL_PASS": false,
+        "PASS": false
+      },
+      "detail": {
+        "indexed_bundle_count": 25,
+        "local_bundle_count": 1,
+        "missing_human_entries": [
+          "docs/publications/2026-09-07-nachweisbare-anschlussfaehigkeit/README.md"
+        ],
+        "missing_machine_entries": [
+          "docs/publications/2026-09-07-nachweisbare-anschlussfaehigkeit/README.md"
+        ]
+      },
+      "external_effect": "NONE",
+      "schema": "qikvrt_publication_overview_result_v1",
+      "state": "MATERIALIZED"
+    },
+    "recheck_result": {
+      "changed_paths": [],
+      "completion_claims": {
+        "EFFECT_ACK_DONE": false,
+        "FINAL_PASS": false,
+        "PASS": false
+      },
+      "detail": {
+        "indexed_bundle_count": 25,
+        "local_bundle_count": 1,
+        "missing_human_entries": [],
+        "missing_machine_entries": []
+      },
+      "external_effect": "NONE",
+      "schema": "qikvrt_publication_overview_result_v1",
+      "state": "CURRENT"
+    },
+    "output_bindings": [
+      {
+        "path": "docs/publications/index.json",
+        "bytes": 29839,
+        "git_blob_sha1": "f2a610931fc82611cbb77a8765bb7090075cd7d9",
+        "sha256": "728b70798018a178955be2c6ea9232123f863ab66e51b3a5270a5ccc43b1fe9d"
+      },
+      {
+        "path": "docs/publications/index.html",
+        "bytes": 27954,
+        "git_blob_sha1": "540b6fe3bd915c605bad04fb43905a0559a7342b",
+        "sha256": "5d523e0c1dad0dbb4f988d8c4fc51b589074df5c2c7d5082d1f9e596c65f0884"
+      }
+    ],
+    "full_repository_make_test_executed_locally": false,
+    "repository_integrity_regenerated_locally": false,
+    "full_bootloader_executed_locally": false,
+    "workflow_changes": false,
+    "policy_changes": false,
+    "previous_diagnosis_correction": "The existing materializer additionally guards its commit step with github.event_name != pull_request. A successful PR workspace materialization would not by itself persist a repair; the prior index failure was not the sole persistence boundary.",
+    "contribution_provenance": "Ingolf Lohmann supplied concept, acceptance and execution/publication direction. The AI assistant reconstructed exact inputs, executed the existing generator/tests and prepared this repository repair."
   }
 }
