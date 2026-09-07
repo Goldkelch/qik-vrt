@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="de" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>QIK-VRT Cloud Transputer · Universal Terminal</title>
+  <meta name="description" content="Feste QIK-VRT-Mesh-URL für den exakt gebundenen Cloud-Transputer mit Firefox/noVNC, Effect_ack und verifiziertem Runtime-Origin.">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; frame-src https://universal-terminal-production.up.railway.app; connect-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+  <style>
+    :root{color-scheme:dark;--bg:#07101d;--panel:#111b2e;--line:#263958;--text:#eef5ff;--muted:#aebbd0;--accent:#80ddff;--ok:#8ce6b0}
+    *{box-sizing:border-box}body{margin:0;font:16px/1.55 system-ui,-apple-system,sans-serif;background:radial-gradient(circle at 20% 0,#162645 0,#07101d 46%);color:var(--text)}
+    main{max-width:1180px;margin:auto;padding:32px 20px 60px}.bar{display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap}.brand{font-weight:850;letter-spacing:.04em}.muted{color:var(--muted)}
+    .panel{margin-top:20px;padding:20px;border:1px solid var(--line);border-radius:16px;background:rgba(17,27,46,.95);box-shadow:0 18px 60px rgba(0,0,0,.25)}
+    .grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);gap:20px}@media(max-width:860px){.grid{grid-template-columns:1fr}}
+    .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere}.status{border-left:4px solid var(--ok);background:#0b1726;padding:11px 13px;border-radius:7px}.caps{display:flex;gap:8px;flex-wrap:wrap}.caps span{padding:5px 9px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:.9rem}
+    a.button,button{display:inline-block;margin:10px 8px 0 0;padding:11px 15px;border:0;border-radius:10px;background:var(--accent);color:#041018;font-weight:800;text-decoration:none;cursor:pointer}.secondary{background:#dce8ff!important}.dangerless{background:#9de7bd!important}
+    iframe{width:100%;min-height:670px;border:1px solid var(--line);border-radius:12px;background:#05080e}.hidden{display:none}code{color:#cfeeff}dl{display:grid;grid-template-columns:max-content 1fr;gap:7px 14px}dt{color:var(--muted)}dd{margin:0;overflow-wrap:anywhere}
+  </style>
+</head>
+<body>
+<main>
+  <div class="bar">
+    <div><div class="brand">QIK-VRT Cloud Transputer</div><div class="muted">IP-Universal-Terminal · Firefox Proxy UI · Effect_ack</div></div>
+    <a class="button secondary" href="../">QIK-VRT Trust Mesh</a>
+  </div>
+
+  <section class="panel">
+    <h1>Feste Mesh-URL → exakt gebundener Cloud-Origin</h1>
+    <p class="mono">https://goldkelch.github.io/qik-vrt/cloud-transputer/</p>
+    <p class="status"><strong>Außenkante verifiziert:</strong> DNS-Auflösung, <code>/health = 200 ready</code>, Runtime-Receipt <code>200</code> und unauthentifizierter Terminalzugriff <code>401</code> wurden unabhängig aus GitHub Actions zurückgelesen.</p>
+  </section>
+
+  <div class="grid">
+    <section class="panel">
+      <h2>Gebundener Runtime-Origin</h2>
+      <dl>
+        <dt>Origin</dt><dd class="mono" id="origin">https://universal-terminal-production.up.railway.app</dd>
+        <dt>Runtime</dt><dd class="mono">qikvrt-cloud-transputer-production-1</dd>
+        <dt>Git Head</dt><dd class="mono">7f639df8ba8cca3fd8d84b63c95575faaa15c1e6</dd>
+        <dt>Tree</dt><dd class="mono">e80cc4b1c86b9fa63e926047b28da9b4645f3f14</dd>
+        <dt>Railway</dt><dd class="mono">eb3945ec-274d-431a-9e8f-b35b9ba7d3e5 · SUCCESS</dd>
+        <dt>Edge evidence</dt><dd class="mono">run 34144951748 · SUCCESS</dd>
+      </dl>
+      <a class="button dangerless" href="https://universal-terminal-production.up.railway.app/terminal/vnc.html" target="_blank" rel="noopener noreferrer">Firefox-Terminal öffnen</a>
+      <button id="embed" type="button">Proxy-UI hier laden</button>
+      <a class="button secondary" href="binding.json">Binding JSON</a>
+      <p class="muted">Der Terminal-Origin ist mit HTTP Basic Auth geschützt. Zugangsdaten werden von dieser statischen Mesh-Seite weder gespeichert noch übertragen.</p>
+      <div class="caps"><span>Firefox ESR</span><span>noVNC/WebSocket</span><span>Effect_ack</span><span>HTTP</span><span>SMTP</span><span>DNS</span><span>SNMP</span><span>SSH</span><span>PostgreSQL/SQL92</span><span>M68000-Probe</span><span>Authority Mirror</span></div>
+    </section>
+
+    <section class="panel">
+      <h2>Interaktive Proxy-UI</h2>
+      <div id="placeholder" class="status">Mit „Proxy-UI hier laden“ wird der exakt gebundene Terminal-Origin eingebettet. Für die Authentisierung kann der Browser den geschützten Origin in einem eigenen Fenster öffnen.</div>
+      <iframe id="terminal" class="hidden" title="QIK-VRT Cloud Transputer Firefox Terminal" referrerpolicy="no-referrer" allow="clipboard-read; clipboard-write"></iframe>
+    </section>
+  </div>
+
+  <section class="panel">
+    <h2>Evidenzgrenze</h2>
+    <p>Die reale Cloud-Runtime und ihre öffentliche HTTP-Kante sind verifiziert. Das ist weder eine Freigabe noch ein Merge- oder Publikationsbeweis und wird nicht als allgemeines <code>PASS</code>, <code>FINAL_PASS</code> oder <code>EFFECT_ACK_DONE</code> überdehnt. Eine vollständige persönliche POSIX-Implementierung und ein eigenständiger M68000-TCP/IP-Stack bleiben separat <strong>UNBOUND</strong>; die aktuelle Runtime nutzt kernel-backed POSIX/TCP-IP.</p>
+  </section>
+</main>
+<script>
+(() => {
+  'use strict';
+  const ORIGIN='https://universal-terminal-production.up.railway.app';
+  const frame=document.getElementById('terminal');
+  const placeholder=document.getElementById('placeholder');
+  document.getElementById('embed').addEventListener('click',()=>{
+    frame.src=ORIGIN + '/terminal/vnc.html';
+    frame.classList.remove('hidden');
+    placeholder.classList.add('hidden');
+  });
+})();
+</script>
+</body>
+</html>
