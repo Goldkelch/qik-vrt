@@ -1,7 +1,7 @@
 version: "3.9"
 
 services:
-  qikvrt-terminal:
+  qikvrt-universal-terminal:
     build:
       context: ${QIKVRT_REPOSITORY_CONTEXT:-../..}
       dockerfile: deploy/universal-terminal/Dockerfile
@@ -36,7 +36,7 @@ services:
     environment:
       QIKVRT_SERVICE_MODE: gateway
     depends_on:
-      qikvrt-terminal:
+      qikvrt-universal-terminal:
         condition: service_healthy
     ports:
       - "127.0.0.1:${QIKVRT_MESH_HOST_PORT:-8080}:8080"

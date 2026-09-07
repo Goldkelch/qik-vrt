@@ -61,7 +61,7 @@ jobs:
           QIKVRT_DB_PASSWORD: ci-only-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          docker compose -f deploy/universal-terminal/compose.yaml build qikvrt-terminal
+          docker compose -f deploy/universal-terminal/compose.yaml build qikvrt-universal-terminal
           docker image inspect "$QIKVRT_UNIVERSAL_TERMINAL_IMAGE" >/dev/null
 
       - name: Verify C90 native and M68000 machine-code artifacts
@@ -74,7 +74,8 @@ jobs:
             test -x /usr/local/bin/qikvrt-ip-bootstrap
             grep -Eq "Machine:[[:space:]]+MC68000" /opt/qikvrt/runtime/m68k/qikvrt_ip_bootstrap.readelf.txt
             test -s /opt/qikvrt/runtime/m68k/qikvrt_ip_bootstrap.objdump.txt
-            sha256sum -c /opt/qikvrt/runtime/m68k/qikvrt_ip_bootstrap.sha256
+            cd /opt/qikvrt/runtime/m68k
+            sha256sum -c qikvrt_ip_bootstrap.sha256
           '
 
       - name: Start complete loopback service plane
@@ -111,7 +112,7 @@ jobs:
           curl -fsS http://127.0.0.1:8080/qik-vrt/mesh/v1/ | grep -F "QIK-VRT Mesh Universal Terminal"
           curl -fsS "http://127.0.0.1:8080/qik-vrt/mesh/v1/terminal/vnc.html?autoconnect=true&resize=scale" | grep -Ei "noVNC|VNC"
           curl -fsS http://127.0.0.1:8080/qik-vrt/mesh/v1/effect-ack/.well-known/effect-ack | grep -F "qikvrt_effect_ack_http_capability_v1"
-          docker compose -f deploy/universal-terminal/compose.yaml exec -T qikvrt-terminal \
+          docker compose -f deploy/universal-terminal/compose.yaml exec -T qikvrt-universal-terminal \
             /usr/local/bin/qikvrt-ip-bootstrap qikvrt-gateway 8080 /qik-vrt/mesh/v1/healthz
 
       - name: Verify SMTP sink

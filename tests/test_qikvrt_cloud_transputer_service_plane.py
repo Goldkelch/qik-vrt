@@ -22,7 +22,7 @@ class CloudTransputerServicePlaneTests(unittest.TestCase):
     def test_service_plane_is_loopback_published_and_fail_closed(self) -> None:
         compose = (DEPLOY / "compose.yaml").read_text(encoding="utf-8")
         for service in (
-            "qikvrt-terminal",
+            "qikvrt-universal-terminal",
             "qikvrt-gateway",
             "qikvrt-smtpd",
             "qikvrt-snmpd",

@@ -3,7 +3,7 @@ FROM debian:bookworm-slim AS qikvrt-m68k-builder
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      binutils-m68k-linux-gnu gcc gcc-m68k-linux-gnu libc6-dev-m68k-cross \
+      binutils-m68k-linux-gnu gcc libc6-dev gcc-m68k-linux-gnu libc6-dev-m68k-cross \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
@@ -19,8 +19,8 @@ RUN set -eux; \
       > /out/m68k/qikvrt_ip_bootstrap.readelf.txt; \
     m68k-linux-gnu-objdump -dr /out/m68k/qikvrt_ip_bootstrap.o \
       > /out/m68k/qikvrt_ip_bootstrap.objdump.txt; \
-    sha256sum /out/m68k/qikvrt_ip_bootstrap.o \
-      > /out/m68k/qikvrt_ip_bootstrap.sha256
+    (cd /out/m68k && sha256sum qikvrt_ip_bootstrap.o \
+      > qikvrt_ip_bootstrap.sha256)
 
 FROM debian:bookworm-slim
 
