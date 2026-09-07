@@ -108,7 +108,8 @@ jobs:
           QIKVRT_DB_PASSWORD: ci-only-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          docker compose -f deploy/universal-terminal/compose.yaml up -d --no-build --wait --wait-timeout 120
+          docker compose -f deploy/universal-terminal/compose.yaml up -d --no-build --wait --wait-timeout 120 qikvrt-universal-terminal
+          docker compose -f deploy/universal-terminal/compose.yaml up -d --no-build
           docker compose -f deploy/universal-terminal/compose.yaml ps
 
       - name: Wait for IP endpoints
