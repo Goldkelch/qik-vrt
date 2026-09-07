@@ -1382,7 +1382,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertFalse(report["ledger_safe"])
         self.assertFalse(report["progress_successor"])
 
-    def test_active_writer_change_is_a_nonprojectable_bound_successor(self):
+    def test_active_writer_change_requires_a_new_exact_event_observation(self):
         waiting = self.snapshot(active_writers=[{
             "id": 777,
             "name": "QIKVRT repository evidence materialization",
@@ -1414,9 +1414,11 @@ class RequestedReviewExecutorTests(unittest.TestCase):
                 [],
             )
 
-        self.assertTrue(report["ledger_safe"])
-        self.assertTrue(report["progress_successor"])
+        self.assertFalse(report["ledger_safe"])
+        self.assertFalse(report["progress_successor"])
         self.assertFalse(report["exact"])
+        self.assertFalse(report["checks"]["causal_binding"])
+        self.assertEqual(report["state"], "HOLD_UNVERIFIED")
         self.assertNotEqual(
             expected["active_writers_observed"],
             fresh["active_writers_observed"],
@@ -1977,6 +1979,40 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertNotIn("e" * 40, {item["head_sha"] for item in observed})
         self.assertEqual(gh_runs.call_count, len(MODULE.ACTIVE_WRITER_STATES))
 
+    def test_active_writer_observation_excludes_role_local_ledger_executor(self):
+        runs = [
+            {
+                "id": 901,
+                "name": MODULE.ROLE_LOCAL_LEDGER_WORKFLOW_NAME,
+                "status": "in_progress",
+                "head_sha": HEAD_SHA,
+                "workflow_id": 7001,
+                "path": MODULE.ROLE_LOCAL_LEDGER_WORKFLOW_PATH + "@main",
+                "event": "workflow_dispatch",
+                "run_number": 1,
+                "run_attempt": 1,
+            },
+            {
+                "id": 902,
+                "name": MODULE.ROLE_LOCAL_LEDGER_WORKFLOW_NAME,
+                "status": "in_progress",
+                "head_sha": HEAD_SHA,
+                "workflow_id": 7002,
+                "path": ".github/workflows/other-writer.yml",
+                "event": "workflow_dispatch",
+                "run_number": 1,
+                "run_attempt": 1,
+            },
+        ]
+        with mock.patch.object(MODULE, "_gh_runs", return_value=runs):
+            observed = MODULE._active_writer_observation(
+                "example/qik-vrt",
+                999,
+                {MODULE.ROLE_LOCAL_LEDGER_WORKFLOW_NAME},
+                {HEAD_SHA},
+            )
+        self.assertEqual([item["id"] for item in observed], [902])
+
     def test_active_writer_observation_rejects_unbound_head_set(self):
         with self.assertRaisesRegex(
             MODULE.ReviewObservationError,
@@ -2072,6 +2108,13 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn("steps.queue.outputs.needed == 'true'", text)
         self.assertNotIn("steps.ledger.outputs.duplicate != 'true'", text)
         self.assertIn("Select exactly one durable recursive review work unit", text)
+        self.assertIn("steps.ledger.outputs.d0 == '2'", text)
+        self.assertIn("Record competing-writer hold without a ledger mutation", text)
+        self.assertIn("steps.decision.outputs.blocker != 'COMPETING_WRITER_ACTIVE'", text)
+        self.assertIn("REOBSERVE_EXACT_EVENT_TARGET", text)
+        self.assertIn("HOLD_UNVERIFIED: exact event target could not be reobserved", text)
+        self.assertNotIn('    "active_writers_observed",', core)
+        self.assertIn("ROLE_LOCAL_LEDGER_WORKFLOW_NAME", core)
         self.assertIn("review_queue_intent", text)
         self.assertIn("review_queue_ack", text)
         self.assertIn("successor_evidence_persisted", text)
