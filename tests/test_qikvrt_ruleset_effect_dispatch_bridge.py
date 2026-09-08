@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
+import ast
 from pathlib import Path
+import textwrap
+from types import SimpleNamespace
 import unittest
 
 
@@ -67,6 +70,103 @@ class RulesetEffectDispatchBridgeContractTest(unittest.TestCase):
         self.assertNotIn("arxiv", self.text.lower())
         self.assertNotIn("wikipedia", self.text.lower())
         self.assertNotIn("EFFECT_ACK_DONE", self.text)
+
+
+class NativeReviewWorkflowIdentityContractTest(unittest.TestCase):
+    """Exercise the actual workflow guards without executing its API code."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.path = ".github/workflows/qikvrt_requested_review_executor.yml"
+        text = (ROOT / ".github/workflows/qikvrt_required_review_gate.yml").read_text(encoding="utf-8")
+        cls.planner = text.split("  plan-native-account-review:\n", 1)[1].split(
+            "  native-account-review-as-goldkelch:\n", 1
+        )[0]
+        condition = cls.planner.split("    if: >-\n", 1)[1].split("    runs-on:", 1)[0]
+        cls.job_guard = compile(" ".join(condition.split()).replace("&&", "and"), "job-guard", "eval")
+        source = cls.planner.split('python3 -B - <<\'PY\' > "$root/selection.json"\n', 1)[1]
+        source = textwrap.dedent(source.split("          PY\n", 1)[0])
+        tree = ast.parse(source)
+        guards = [
+            node for node in tree.body
+            if isinstance(node, ast.If) and any(
+                isinstance(child, ast.Constant)
+                and child.value == "UPSTREAM_EXECUTOR_PROVENANCE_INVALID"
+                for child in ast.walk(node)
+            )
+        ]
+        if len(guards) != 1:
+            raise AssertionError("expected one exact upstream provenance guard")
+        cls.provenance_guard = compile(ast.Expression(guards[0].test), "provenance-guard", "eval")
+
+    def run_fixture(self):
+        return {
+            "name": "QIKVRT requested review pr=event head=event fp=event",
+            "path": self.path,
+            "conclusion": "success",
+            "event": "pull_request_target",
+            "workflow_id": 123,
+            "repository": {"full_name": "Goldkelch/qik-vrt"},
+        }
+
+    def job_allowed(self, run, *, ref="refs/heads/main", event_name="workflow_run"):
+        github = SimpleNamespace(
+            ref=ref, event_name=event_name,
+            event=SimpleNamespace(workflow_run=SimpleNamespace(**run)),
+        )
+        return eval(self.job_guard, {"__builtins__": {}}, {"github": github})
+
+    def provenance_invalid(self, run, *, workflow=None):
+        return eval(self.provenance_guard, {"__builtins__": {}}, {
+            "run": run,
+            "workflow": {"id": 123, "path": self.path} if workflow is None else workflow,
+            "trusted_path": self.path,
+            "repo": "Goldkelch/qik-vrt",
+            "allowed_events": {"pull_request_target", "issue_comment", "workflow_run", "workflow_dispatch"},
+        })
+
+    def test_native_planner_ignores_dynamic_display_names(self):
+        for name in (
+            "QIKVRT requested review executor",
+            "QIKVRT requested review pr=event head=event fp=event",
+            "QIKVRT requested review pr=1045 head=exact fp=exact",
+        ):
+            with self.subTest(name=name):
+                run = {**self.run_fixture(), "name": name}
+                self.assertTrue(self.job_allowed(run))
+                self.assertFalse(self.provenance_invalid(run))
+
+    def test_native_job_keeps_trusted_main_success_and_event_boundaries(self):
+        run = {**self.run_fixture(), "name": "QIKVRT requested review executor"}
+        self.assertFalse(self.job_allowed(run, ref="refs/heads/fix/untrusted"))
+        self.assertFalse(self.job_allowed(run, event_name="workflow_dispatch"))
+        for conclusion in ("failure", "cancelled", "skipped", None):
+            with self.subTest(conclusion=conclusion):
+                self.assertFalse(self.job_allowed({**run, "conclusion": conclusion}))
+        self.assertFalse(self.job_allowed({**run, "path": ".github/workflows/untrusted.yml"}))
+
+    def test_native_provenance_rejects_spoofed_names_and_wrong_identity(self):
+        run = {**self.run_fixture(), "name": "QIKVRT requested review executor"}
+        for override in (
+            {"path": ".github/workflows/untrusted.yml"},
+            {"workflow_id": 999},
+            {"repository": {"full_name": "other/qik-vrt"}},
+            {"conclusion": "failure"},
+            {"event": "push"},
+        ):
+            with self.subTest(override=override):
+                self.assertTrue(self.provenance_invalid({**run, **override}))
+        self.assertTrue(self.provenance_invalid(run, workflow={"id": 123, "path": "wrong"}))
+        self.assertTrue(self.provenance_invalid(run, workflow={"id": 999, "path": self.path}))
+
+    def test_native_provenance_preserves_exact_followup_events(self):
+        for event in ("pull_request_target", "issue_comment", "workflow_run", "workflow_dispatch"):
+            with self.subTest(event=event):
+                self.assertFalse(self.provenance_invalid({**self.run_fixture(), "event": event}))
+
+    def test_native_planner_has_no_display_name_classification(self):
+        self.assertNotIn("github.event.workflow_run.name", self.planner)
+        self.assertNotIn("run.get('name')", self.planner)
 
 
 if __name__ == "__main__":
