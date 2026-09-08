@@ -185,7 +185,7 @@ jobs:
     if: >-
       github.ref == 'refs/heads/main' &&
       github.event_name == 'workflow_run' &&
-      github.event.workflow_run.name == 'QIKVRT requested review executor' &&
+      github.event.workflow_run.path == '.github/workflows/qikvrt_requested_review_executor.yml' &&
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
@@ -243,8 +243,7 @@ jobs:
           workflow=gh(f'repos/{repo}/actions/workflows/qikvrt_requested_review_executor.yml')
           allowed_events={'pull_request_target','issue_comment','workflow_run','workflow_dispatch'}
           if (
-              run.get('name') != 'QIKVRT requested review executor'
-              or run.get('conclusion') != 'success'
+              run.get('conclusion') != 'success'
               or run.get('event') not in allowed_events
               or run.get('workflow_id') != workflow.get('id')
               or workflow.get('path') != trusted_path
