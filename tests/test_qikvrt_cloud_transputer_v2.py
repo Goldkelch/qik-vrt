@@ -19,8 +19,10 @@ C90 = ROOT / "src/cloud_transputer/personal_posix_tcpip.c"
 CORE = ROOT / "src/effect_ack_core.c"
 INCLUDE = ROOT / "include"
 SQL = ROOT / "src/cloud_transputer/sql92_gateway.py"
+COMPOSER = ROOT / "src/cloud_transputer/runtime_v2_compose.py"
 
 sys.path.insert(0, str(SQL.parent))
+import runtime_v2_compose  # noqa: E402
 import sql92_gateway  # noqa: E402
 
 
@@ -74,7 +76,7 @@ class CloudTransputerV2Tests(unittest.TestCase):
         for required in ("qv_ipv4_packet", "qv_tcp_segment", "qv_udp_segment", "QV_TCP_SYN", "QIKVRT_EFFECT_ACK_DONE"):
             self.assertIn(required, text)
 
-    def test_v2_wrapper_cross_compiles_executes_and_preserves_claim_boundaries(self) -> None:
+    def test_v2_wrapper_cross_compiles_composes_then_reobserves(self) -> None:
         entry = ENTRYPOINT.read_text(encoding="utf-8")
         for token in (
             "m68k-linux-gnu-gcc -std=c90 -pedantic -Wall -Wextra -Werror -static",
@@ -84,9 +86,98 @@ class CloudTransputerV2Tests(unittest.TestCase):
             "physical_m68000_execution_claimed':False",
             "global_effect_ack_done':False",
             "sql92_gateway.py",
+            "runtime_v2_compose.py",
+            "QIKVRT_V2_STARTUP_PRECOMPOSE=1",
+            "QIKVRT_CLOUD_TRANSPUTER_V2_READY",
+            "qikvrt-cloud-transputer-health",
         ):
             self.assertIn(token, entry)
         subprocess.run(["sh", "-n", str(ENTRYPOINT), str(HEALTH)], check=True)
+
+    def test_runtime_composer_reconciles_verified_profile_without_amplifying_claims(self) -> None:
+        runtime = {
+            "schema": "qikvrt_cloud_transputer_runtime_v1",
+            "runtime_id": "replica-a",
+            "effect_ack_done": False,
+            "external_effect_claimed": False,
+            "pass": False,
+            "final_pass": False,
+            "standalone_m68000_tcp_ip_stack_claimed": False,
+            "kernel_backed_posix_tcp_ip": True,
+            "personal_posix_state": "UNBOUND_OWNER_SOURCE_ABSENT",
+        }
+        receipt = {
+            "schema": "qikvrt_personal_posix_m68000_tcpip_receipt_v1",
+            "profile": "QIKVRT_PERSONAL_POSIX_C90_V1",
+            "source_sha256": "11" * 32,
+            "m68000_binary_sha256": "22" * 32,
+            "m68000_machine_execution_observed": True,
+            "posix_profile_selftest": "PASS",
+            "standalone_tcp_ip_scope": "IPV4_TCP_UDP_PACKET_ENGINE_WITH_TCP_HTTP_BOOTSTRAP_V1",
+            "standalone_tcp_ip_packet_engine": "PASS",
+            "existing_effect_ack_core_linked": True,
+            "effect_ack_done_local_selftest": True,
+            "negative_effect_ack_fail_closed": True,
+            "external_packet_io_adapter": "LINUX_OCI_HOST_ADAPTER",
+            "bare_metal_nic_driver_claimed": False,
+            "full_posix_1_conformance_claimed": False,
+            "physical_m68000_execution_claimed": False,
+            "repository_or_publication_effect_claimed": False,
+            "pass": False,
+            "final_pass": False,
+            "global_effect_ack_done": False,
+        }
+        value = runtime_v2_compose.compose(runtime, receipt, observed_at_unix=123)
+        self.assertEqual(value["schema"], "qikvrt_cloud_transputer_runtime_v1")
+        self.assertEqual(value["runtime_overlay_schema"], "qikvrt_cloud_transputer_runtime_v2_overlay_v1")
+        self.assertEqual(value["personal_posix_state"], "REPOSITORY_C90_M68000_PROFILE_VERIFIED")
+        self.assertEqual(value["personal_posix_authority"], "REPOSITORY_EXACT_BOUND_IMPLEMENTATION")
+        self.assertEqual(value["personal_posix_source_sha256"], "11" * 32)
+        self.assertEqual(value["personal_posix_m68000_binary_sha256"], "22" * 32)
+        self.assertTrue(value["standalone_m68000_tcp_ip_packet_engine_verified"])
+        self.assertEqual(value["external_packet_io_adapter"], "LINUX_OCI_HOST_ADAPTER")
+        self.assertFalse(value["standalone_m68000_tcp_ip_stack_claimed"])
+        self.assertFalse(value["bare_metal_nic_driver_claimed"])
+        self.assertFalse(value["full_posix_1_conformance_claimed"])
+        self.assertFalse(value["physical_m68000_execution_claimed"])
+        self.assertFalse(value["external_effect_claimed"])
+        self.assertFalse(value["pass"])
+        self.assertFalse(value["final_pass"])
+        self.assertFalse(value["effect_ack_done"])
+
+    def test_runtime_composer_rejects_global_effect_amplification(self) -> None:
+        runtime = {
+            "schema": "qikvrt_cloud_transputer_runtime_v1",
+            "effect_ack_done": False,
+            "external_effect_claimed": False,
+            "pass": False,
+            "final_pass": False,
+            "standalone_m68000_tcp_ip_stack_claimed": False,
+            "kernel_backed_posix_tcp_ip": True,
+        }
+        receipt = {
+            "schema": "qikvrt_personal_posix_m68000_tcpip_receipt_v1",
+            "profile": "QIKVRT_PERSONAL_POSIX_C90_V1",
+            "source_sha256": "11" * 32,
+            "m68000_binary_sha256": "22" * 32,
+            "m68000_machine_execution_observed": True,
+            "posix_profile_selftest": "PASS",
+            "standalone_tcp_ip_scope": "IPV4_TCP_UDP_PACKET_ENGINE_WITH_TCP_HTTP_BOOTSTRAP_V1",
+            "standalone_tcp_ip_packet_engine": "PASS",
+            "existing_effect_ack_core_linked": True,
+            "effect_ack_done_local_selftest": True,
+            "negative_effect_ack_fail_closed": True,
+            "external_packet_io_adapter": "LINUX_OCI_HOST_ADAPTER",
+            "bare_metal_nic_driver_claimed": False,
+            "full_posix_1_conformance_claimed": False,
+            "physical_m68000_execution_claimed": False,
+            "repository_or_publication_effect_claimed": False,
+            "pass": False,
+            "final_pass": False,
+            "global_effect_ack_done": True,
+        }
+        with self.assertRaises(ValueError):
+            runtime_v2_compose.compose(runtime, receipt)
 
     def test_docker_keeps_sql_ui_inside_firefox_proxy_boundary(self) -> None:
         text = DOCKERFILE.read_text(encoding="utf-8")
@@ -129,7 +220,7 @@ class CloudTransputerV2Tests(unittest.TestCase):
         with self.assertRaises(ValueError):
             sql92_gateway.parse_effect_ack_request("v=1, mode=commit")
 
-    def test_v2_health_reobserves_sql_effect_and_authority_mirror(self) -> None:
+    def test_v2_health_reobserves_sql_effect_authority_and_runtime_overlay(self) -> None:
         text = HEALTH.read_text(encoding="utf-8")
         self.assertIn("qikvrt-cloud-transputer-health-v1", text)
         self.assertIn("mode=prepare", text)
@@ -138,6 +229,9 @@ class CloudTransputerV2Tests(unittest.TestCase):
         self.assertIn("LOCAL_QIKVRT_DATABASE_ONLY", text)
         self.assertIn("authority_repository", text)
         self.assertIn("receipt_count", text)
+        self.assertIn("REPOSITORY_C90_M68000_PROFILE_VERIFIED", text)
+        self.assertIn("qikvrt_cloud_transputer_runtime_v2_overlay_v1", text)
+        self.assertIn("QIKVRT_V2_STARTUP_PRECOMPOSE", text)
 
 
 if __name__ == "__main__":
