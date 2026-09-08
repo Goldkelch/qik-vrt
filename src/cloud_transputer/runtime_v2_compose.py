@@ -111,6 +111,10 @@ def _write_atomic(path: pathlib.Path, value: dict[str, Any]) -> None:
     raw = (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
     fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     try:
+        # The nginx worker must be able to read the replacement immediately at
+        # the atomic rename boundary.  mkstemp defaults to 0600, so preserving
+        # readability must happen before os.replace(), not as a later chmod.
+        os.fchmod(fd, 0o644)
         with os.fdopen(fd, "wb") as handle:
             handle.write(raw)
             handle.flush()
