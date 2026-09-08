@@ -15,8 +15,17 @@ M68K_FILE="$M68K_DIR/personal-posix-tcpip-file.txt"
 M68K_SHA="$M68K_DIR/personal-posix-tcpip-sha256.txt"
 M68K_RECEIPT="$M68K_DIR/personal-posix-tcpip-receipt.json"
 V2_READY="$RUN_DIR/v2-ready.txt"
+V2_PHASE="$RUN_DIR/v2-phase.txt"
 V1_PID=
 SQL_UI_PID=
+
+publish_phase() {
+  phase="$1"
+  tmp="$V2_PHASE.tmp.$$"
+  printf '%s\n' "$phase" > "$tmp"
+  chmod 0644 "$tmp"
+  mv -f "$tmp" "$V2_PHASE"
+}
 
 cleanup() {
   if [ -n "${V1_PID:-}" ] && kill -0 "$V1_PID" 2>/dev/null; then
@@ -30,6 +39,7 @@ trap 'cleanup' INT TERM HUP EXIT
 
 mkdir -p "$M68K_DIR" "$STATE_DIR/sql92/receipts" "$LOG_DIR" "$RUN_DIR"
 rm -f "$V2_READY"
+publish_phase PRECOMPOSE
 
 m68k-linux-gnu-gcc -std=c90 -pedantic -Wall -Wextra -Werror -static \
   -I/opt/qikvrt/include \
@@ -102,15 +112,13 @@ kill -0 "$SQL_UI_PID" 2>/dev/null || {
   exit 40
 }
 
-# Preserve an explicit operator override; the stock image default still opens
-# the local SQL/EFFECT_ACK control surface from inside Firefox.
 if [ -z "${QIKVRT_START_URL:-}" ] || [ "${QIKVRT_START_URL}" = "https://goldkelch.github.io/qik-vrt/" ]; then
   export QIKVRT_START_URL="http://127.0.0.1:${SQL_UI_PORT}/"
 fi
 
-# The inherited V1 supervisor performs its own bounded health check.  During
-# that one startup check the V2 public runtime overlay does not exist yet, so
-# the health script is explicitly told that it is observing PRECOMPOSE state.
+# PRECOMPOSE is an observable runtime phase, not merely a process-local hint.
+# The inherited V1 supervisor and Docker's independent health process can both
+# therefore distinguish startup from the composed V2 subject without racing.
 QIKVRT_V2_STARTUP_PRECOMPOSE=1 /usr/local/bin/qikvrt-cloud-transputer-v1 &
 V1_PID=$!
 
@@ -142,11 +150,14 @@ python3 -B /opt/qikvrt/src/cloud_transputer/runtime_v2_compose.py \
   --output "$STATE_DIR/runtime.json" \
   > "$LOG_DIR/runtime-v2-compose.json"
 
-# Reobserve the composed, public runtime before advertising the stronger V2
-# readiness marker.  This liveness check is deliberately non-effecting.
+# Only after both replacement receipts are atomically installed and already
+# world-readable does the shared phase move to COMPOSED.
+publish_phase COMPOSED
+
 QIKVRT_VERIFY_SQL_EFFECT_ACK=0 /usr/local/bin/qikvrt-cloud-transputer-health \
   > "$LOG_DIR/v2-post-compose-health.log" 2>&1
 printf '%s\n' 'QIKVRT_CLOUD_TRANSPUTER_V2_READY' > "$V2_READY"
+chmod 0644 "$V2_READY"
 
 set +e
 wait "$V1_PID"
