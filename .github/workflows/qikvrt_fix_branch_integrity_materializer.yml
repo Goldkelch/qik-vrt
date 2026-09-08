@@ -41,12 +41,12 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^)" = '3aa5ef243f083b29cc58ab3202303bbb7195e298'
+          test "$(git rev-parse HEAD^)" = '9697d8ba1218785e5cbdcd1c1e4b80dd98c5c9c6'
           test "$(git rev-parse HEAD:tests/test_qikvrt_ruleset_effect_dispatch_bridge.py)" = '53a1c6b369eb2fbee6a802d50388634b9e0293b4'
-          test "$(git rev-parse HEAD:.github/workflows/qikvrt_requested_review_contract.yml)" = '3d4bff50bd6d853aa4fa9b73a978e5b463a91c58'
+          test "$(git rev-parse HEAD:.github/workflows/qikvrt_requested_review_contract.yml)" = '28b9f3dc49c3d17ed4b74abfb7b724d8f160256e'
           python3 -B tools/qikvrt_tool_cache.py verify
 
-      - name: Reproduce the missing permanent regression execution
+      - name: Verify the connector-persisted read-only CI wiring
         shell: bash
         run: |
           set -euo pipefail
@@ -80,42 +80,9 @@ jobs:
               raise SystemExit('BLOCK: test insertion subject differs')
           path.write_text(source.replace(anchor, addition.rstrip() + '\n' + anchor), encoding='utf-8')
           PY
-          set +e
           python3 -B -m unittest -v \
             tests.test_qikvrt_ruleset_effect_dispatch_bridge.ReviewRepairScopeContractTest.test_routing_regressions_are_wired_into_exact_head_contract_ci \
-            > "$RUNNER_TEMP/qikvrt-cleanup-red.log" 2>&1
-          result=$?
-          set -e
-          cat "$RUNNER_TEMP/qikvrt-cleanup-red.log"
-          test "$result" -eq 1
-          grep -q 'ROUTING_REGRESSION_MODULE_NOT_EXECUTED' "$RUNNER_TEMP/qikvrt-cleanup-red.log"
-
-      - name: Connect the existing regressions to permanent read-only CI
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -B - <<'PY'
-          from pathlib import Path
-          path = Path('.github/workflows/qikvrt_requested_review_contract.yml')
-          source = path.read_text(encoding='utf-8')
-          tail = ' ' + chr(92) + '\n'
-          insertions = [
-              ('      - ".github/workflows/qikvrt_required_review_gate.yml"\n',
-               '      - ".github/workflows/qikvrt_ruleset_effect_dispatch_bridge.yml"\n'
-               '      - ".github/workflows/qikvrt_fix_branch_integrity_materializer.yml"\n'),
-              ('      - "tests/test_qikvrt_native_account_review.py"\n',
-               '      - "tests/test_qikvrt_ruleset_effect_dispatch_bridge.py"\n'),
-              ('            tests/test_qikvrt_native_account_review.py' + tail,
-               '            tests/test_qikvrt_ruleset_effect_dispatch_bridge.py' + tail),
-              ('            tests.test_qikvrt_native_account_review' + tail,
-               '            tests.test_qikvrt_ruleset_effect_dispatch_bridge' + tail),
-          ]
-          for anchor, addition in insertions:
-              if source.count(anchor) != 1 or addition in source:
-                  raise SystemExit('BLOCK: exact contract insertion differs')
-              source = source.replace(anchor, anchor + addition, 1)
-          path.write_text(source, encoding='utf-8')
-          PY
+            2>&1 | tee "$RUNNER_TEMP/qikvrt-cleanup-wiring.log"
 
       - name: Remove the parallel writer and verify the same regression
         shell: bash
@@ -144,7 +111,6 @@ jobs:
           expected = {
               '.github/workflows/qikvrt_fix_branch_integrity_materializer.yml',
               'tests/test_qikvrt_ruleset_effect_dispatch_bridge.py',
-              '.github/workflows/qikvrt_requested_review_contract.yml',
               'REPOSITORY_FILE_MANIFEST.json',
               'REPOSITORY_FILE_MANIFEST.json.sha256',
               'SHA256SUMS.txt',
@@ -154,6 +120,9 @@ jobs:
           ).splitlines())
           if actual != expected:
               raise SystemExit(f'BLOCK: cleanup path set differs: {sorted(actual)}')
+          workflow_changes = [p for p in actual if p.startswith('.github/workflows/')]
+          if workflow_changes != ['.github/workflows/qikvrt_fix_branch_integrity_materializer.yml']:
+              raise SystemExit('BLOCK: Actions writer may only remove its temporary helper')
           # git rm already staged the deletion; do not re-add its absent path.
           staged_paths = expected - {'.github/workflows/qikvrt_fix_branch_integrity_materializer.yml'}
           subprocess.check_call(['git', 'add', '--', *sorted(staged_paths)])
