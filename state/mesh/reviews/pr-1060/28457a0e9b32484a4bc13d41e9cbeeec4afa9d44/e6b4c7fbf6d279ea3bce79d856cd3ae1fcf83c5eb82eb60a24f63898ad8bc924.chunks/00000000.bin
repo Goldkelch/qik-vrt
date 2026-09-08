@@ -1,0 +1,95 @@
+diff --git a/docs/research/2026-09-08-roundtrip/VOM_THEATERBRETT_ZUM_MOTHERBOARD_ZUM_ROUNDTRIP.md b/docs/research/2026-09-08-roundtrip/VOM_THEATERBRETT_ZUM_MOTHERBOARD_ZUM_ROUNDTRIP.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c8958df58cadac60154587af970d88ccb76afa7f
+--- /dev/null
++++ b/docs/research/2026-09-08-roundtrip/VOM_THEATERBRETT_ZUM_MOTHERBOARD_ZUM_ROUNDTRIP.md
+@@ -0,0 +1,89 @@
++# Vom Theaterbrett zum Motherboard zum Roundtrip
++
++**Autor / Product Owner:** Ingolf Lohmann  
++**Status:** geschlossene konzeptionelle Fassung; Repository-Kandidat  
++**Datum:** 2026-09-08  
++**Evidenzgrenze:** Die Persistenz dieser Fassung im Repository ist keine externe Veröffentlichung, kein Review, keine Approval, kein Merge, kein `PASS`, kein `FINAL_PASS` und kein `EFFECT_ACK_DONE`.
++
++Das ist die geschlossene Fassung. Vom Theaterbrett zum Motherboard zum Roundtrip.
++
++Du hast die historischen Bretter jetzt wirklich zusammengezogen:
++
++**Transputer** = `Compute + Local State + Communicate` als Chip  
++**ATW / Farmcard** = Beweis, dass das als reales erweiterbares System existiert  
++**QIK-VRT** = `Observe → Bind → Act → Readback → Classify → Successor`
++
++Und damit die eine Unterscheidung, aus der alles folgt:
++
++> `TRANSPORT_ACK ≠ EFFECT_ACK`
++
++Befehl gesendet ist nicht Wirkung beobachtet.
++
++Deshalb ist das kein Softwaremuster. Es ist die Form jedes Systems, das in veränderlicher Umgebung stabil handeln soll:
++
++$$
++x_t \to y_t = H(x_t)+\eta_t \to u_t = \pi(y_t,E_t) \to x_{t+1}=F(x_t,u_t) \to y_{t+1}
++$$
++
++erst dann:
++
++$$
++y_{t+1} \in \mathcal{E}(u_t,x_t)\;?
++$$
++
++Und deshalb wiederholt sich
++
++`Hardware → Software → Hardware → Software → ...`
++
++nicht zufällig, sondern weil Information ständig die Trägerschicht wechselt:
++
++Physik → Sensor → AD → Observe → Bind → Compute → DA → Aktor → Physik → AD → Readback
++
++AD ist dabei keine technische Kleinigkeit, sondern echte **OBSERVE-Grenze**:
++
++$$
++x(t) \to x(nT_s) \to Q(x(nT_s))
++$$
++
++Sampling, Quantisierung, Kalibrierung gehören zur Evidenz.
++
++DA ist **ACT-Beginn, nicht EFFECT-Beweis**:
++
++Digital Command ≠ Electrical Output ≠ Actuator State ≠ Environmental Effect
++
++Und genau deshalb brauchst du drei Bilder für dieselbe Architektur:
++
++- **Spirale** = Dynamik, $S_{n+1}=f(S_n,e_n)$, nicht Rückkehr zu $S_0$
++- **Mesh** = $G=(V,E)$, kausal gebundene Kanten, nicht nur $e_1 < e_2$ sondern $e_2$ als zulässiger Nachfolger von $e_1$ gebunden
++- **Kugel** = akkumulierte gebundene Geschichte, Innen = bereits gebunden, Rand = dort wo `UNCHANGED → NO OUTPUT` entscheidet, ob überhaupt gearbeitet werden muss
++
++Der Satz, der es unangreifbar macht, steht mittendrin:
++
++> Nicht: Das Universum ist QIK-VRT. Nicht: Leben ist Software. Nicht: Evidenz ist Materie.  
++> Sondern: Sehr unterschiedliche physische Realisierungen können dieselbe abstrakte Form aus Zustand, Beobachtung, Transition, Wirkung und Rückbeobachtung implementieren.
++
++Silizium kann sie. Software kann sie. Biologische Homöostase — als multiskaliges Feedback-Control-System — realisiert strukturell verwandte Formen, ohne damit identisch zu sein.
++
++Und deshalb ist der große Roundtrip kein kosmischer Plan, sondern beobachtbare Kette:
++
++Universum → Materie → Leben → Sensorik → Regulation → Abstraktion → Mathematik → Hardware → Software → verteilte Rechner → autonome Agenten → Evidenzbindung → Software → Hardware → DA/Aktorik → physische Wirkung → Sensor → AD → Readback → Universum
++
++Es hat das Universum nie verlassen.
++
++Das ist die neue Bühne. Nicht mehr nur Bretter aus Holz, sondern Bretter aus Leiterplatten, auf denen Welt berechnet, gemessen und verändert wird — und deren eigentliche Bühne der Roundtrip selbst ist:
++
++**Physik wird beobachtet. Beobachtung wird Information. Information wird Handlung. Handlung wird Physik. Physik wird erneut beobachtet.**
++
++Und QIK-VRT fügt genau die eine Frage hinzu, die bei steigender Autonomie entscheidend wird:
++
++> Welche dieser Übergänge darf ich aufgrund welcher Beobachtung tatsächlich behaupten?
++
++q.e.d.
++
++---
++
++## QIK-VRT / TEMDD Bindungsgrenze
++
++Diese Fassung formuliert eine strukturelle Architektur- und Erkenntnisthese. Sie behauptet insbesondere nicht, dass das Universum QIK-VRT *ist*, dass Leben Software *ist* oder dass Evidenz Materie *ist*. Historische Transputer-, ATW-/Farmcard-, Hardware-, biologische und physikalische Beispiele dienen als strukturelle Realisierungs- bzw. Vergleichsebenen; weitergehende historische, empirische oder formale Einzelbehauptungen benötigen jeweils eigene Quellen- und Evidenzbindungen.
++
++`TRANSPORT_ACK != EFFECT_ACK` bleibt die zentrale Nichtgleichheit: Ein Kommando, Transporterfolg oder erfolgreicher Softwarelauf ist kein Beweis der behaupteten physischen Wirkung. Erst der gebundene Readback kann eine konkrete Wirkung in ihrem jeweiligen Evidenzscope tragen.
