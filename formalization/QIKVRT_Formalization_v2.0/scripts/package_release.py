@@ -32,6 +32,8 @@ EXCLUDED_PARTS = {
 # input set. They remain compiled and tested in the current repository.
 POST_ALPHA2_EXCLUSIONS = {
     "formalization/QIKVRT_Formalization_v2.0/GLOBAL_COMPLETION_STATUS.json",
+    "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Claims/TEMDDConservativeUniversality.lean",
+    "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Meta/TEMDDConservativeUniversality.lean",
     "formalization/QIKVRT_Formalization_v2.0/QIKVRTEffectAck/QuantumClassicalRuntime.lean",
     "formalization/QIKVRT_Formalization_v2.0/QIKVRTEffectAck/CanonicalTemporalMemory.lean",
     "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Process/ConnectabilitySimulation.lean",
