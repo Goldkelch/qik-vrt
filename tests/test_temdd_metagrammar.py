@@ -18,6 +18,7 @@ AUDIT = FORMAL_ROOT / "QIKVRTFormalization/TEMDD/AxiomAudit.lean"
 SCOPE = FORMAL_ROOT / "TEMDD_PROOF_SCOPE.json"
 POLICY = ROOT / "policy/TEMDD_LANGUAGE_V1.json"
 ARTICLE = ROOT / "docs/TEMDD_METAGRAMMAR.md"
+WORKFLOW = ROOT / ".github/workflows/qikvrt_temdd_metagrammar_formalization.yml"
 
 
 def identity(path: pathlib.Path) -> dict[str, object]:
@@ -75,6 +76,11 @@ class TEMDDMetaGrammarScopeTests(unittest.TestCase):
             "empirische",
         ):
             self.assertIn(required, article)
+
+    def test_receipt_script_resolves_the_project_before_parent_walk(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("project = pathlib.Path('.').resolve()", workflow)
+        self.assertIn("repository_root = project.parents[1]", workflow)
 
 
 if __name__ == "__main__":

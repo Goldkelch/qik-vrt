@@ -82,6 +82,7 @@
     "A source file and manual review do not replace a fresh Lean/Lake kernel check on the exact committed subject.",
     "External exact-head CI run 34227447978 on remote candidate 0bb48f55a95ba1753e6dcc685f0a980a3bb80f75 reported a Lean source parser failure at MetaGrammar.lean:24:2 because the field name Sort is reserved; the successor candidate renames that field and requires a fresh exact-head kernel receipt.",
     "External exact-head CI run 34228521947 on remote candidate 28a63393c498bb23eb8b84ee29c523125fe139b5 then reported the explicit universe-lifting mismatch at MetaGrammar.lean:65, :66, and :74; the successor candidate lifts inherited and payload symbol types with ULift and requires a new exact-head kernel receipt.",
+    "External exact-head CI run 34229140647 on remote candidate 6d08f0fbc67e7be534d2281924b420867d6098a1 completed the Lean build, proof-escape checks, and TEMDD axiom audit but failed while assembling the receipt because pathlib.Path('.').parents[1] is undefined for a relative path; the successor resolves the project path before the parent walk and requires a new exact-head receipt.",
     "The local container has no usable Lake executable, so it cannot replace the required external exact-head kernel check.",
     "Transport attribution does not establish natural-person identity, legal authorship, independent approval, merge authorization, publication, empirical truth, or external effect acknowledgement."
   ],
@@ -125,7 +126,8 @@
     "base_tree": "e383fe468dab363792e7f7c5a010e793dff37670",
     "content_commits": [
       "d3c81acf8bd2a3759874876341fc707bfa8d9909",
-      "8f1afae5ec90ebfa093ef1947d3e6ed69e42da3a"
+      "8f1afae5ec90ebfa093ef1947d3e6ed69e42da3a",
+      "20876457bb061409c3477cb429780a6ca2c4d364"
     ],
     "required_parent": "1e69535303bd4ecf9ea5c96414a580a42e95f9ab",
     "force_push": false,
@@ -133,16 +135,16 @@
     "merge": "NOT_EXECUTED"
   },
   "verification": {
-    "temdd_contract": "PASS_4_UNITTEST_CASES",
+    "temdd_contract": "PASS_5_UNITTEST_CASES",
     "proof_scope_json": "PASS",
     "temdd_policy_json": "PASS",
     "workflow_yaml": "PASS",
     "workflow_embedded_receipt_script": "PASS",
     "diff_check": "PASS",
     "local_lean_lake": "HOLD_LOCAL_LAKE_NOT_INSTALLED",
-    "repository_integrity": "PASS_4107_CLASSIFIED_ENTRIES_4098_IMMUTABLE_DIGESTS_EXCLUDING_USER_OWNED_UNTRACKED_ARCHIVE",
-    "trusted_exact_head_ci": "HOLD_REMOTE_UNIVERSE_LIFT_SOURCE_BUILD_FAILURE_RUN_34228521947; SUCCESSOR_EXACT_HEAD_RECEIPT_PENDING",
-    "first_blocker": "EXACT_SUCCESSOR_HEAD_KERNEL_RECEIPT_PENDING_AFTER_ULIFT_REMEDIATION"
+    "repository_integrity": "STALE_AFTER_RECEIPT_PATH_MUTATION_REQUIRES_REGENERATION",
+    "trusted_exact_head_ci": "HOLD_EXACT_HEAD_RECEIPT_ASSEMBLY_FAILURE_RUN_34229140647; LEAN_BUILD_ESCAPE_CHECKS_AND_AXIOM_AUDIT_PASSED_BUT_RECEIPT_MISSING; SUCCESSOR_EXACT_HEAD_RECEIPT_PENDING",
+    "first_blocker": "EXACT_SUCCESSOR_HEAD_KERNEL_RECEIPT_PENDING_AFTER_RECEIPT_PATH_REMEDIATION"
   },
   "human_decision": {
     "repository_candidate_direction": "RECEIVED",
@@ -153,8 +155,8 @@
     "manual_modification": "NOT_RECORDED"
   },
   "external_effects": {
-    "candidate_ref_update": "OBSERVED_REMOTE_REF_28a63393c498bb23eb8b84ee29c523125fe139b5_BEFORE_ULIFT_REMEDIATION",
-    "pull_request": "OBSERVED_DRAFT_PR_1055_FOR_UNIVERSE_FAILURE_CANDIDATE; SUCCESSOR_UPDATE_PENDING",
+    "candidate_ref_update": "OBSERVED_REMOTE_REF_6d08f0fbc67e7be534d2281924b420867d6098a1_BEFORE_RECEIPT_PATH_REMEDIATION",
+    "pull_request": "OBSERVED_DRAFT_PR_1055_FOR_RECEIPT_ASSEMBLY_FAILURE_CANDIDATE; SUCCESSOR_UPDATE_PENDING",
     "merge": "NOT_EXECUTED",
     "independent_review": "NOT_SUBMITTED",
     "release": "NOT_EXECUTED",
@@ -169,6 +171,6 @@
     "PUBLICATION": false,
     "DOI": false
   },
-  "status": "ULIFT_REMEDIATED_PENDING_NEW_EXACT_HEAD_CI_AND_REVIEW_CANDIDATE",
+  "status": "RECEIPT_PATH_REMEDIATED_PENDING_NEW_EXACT_HEAD_CI_AND_REVIEW_CANDIDATE",
   "scope_boundary": "This candidate formalizes a typed syntax-extension construction and interpretation-compatibility result only. It does not establish logical conservativity, universal natural-language translation, truth extraction from arbitrary data, empirical truth of modelled natural laws, repository PASS/FINAL_PASS, merge, publication, or external effect acknowledgement."
 }
