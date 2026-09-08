@@ -61,6 +61,30 @@ class MaterializationScopeTests(unittest.TestCase):
         self.assertFalse(aphorism["content_disposition"])
         self.assertTrue(aphorism["aphorism"])
 
+    def test_temdd_metatheory_does_not_rebuild_frozen_alpha2_release(self) -> None:
+        result = MODULE.classify(
+            [
+                "docs/TEMDD_LANGUAGE_V1.md",
+                "docs/TEMDD_CONSERVATIVE_UNIVERSALITY.md",
+                "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization.lean",
+                "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/Completion.lean",
+                "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/ConservativeUniversality.lean",
+                "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/ConservativeUniversalityRefinement.lean",
+                "policy/TEMDD_LANGUAGE_V1.json",
+                "tests/test_temdd_language.py",
+                "tools/temdd_language.py",
+                "tools/qikvrt_materialization_scope.py",
+                "tests/test_qikvrt_materialization_scope.py",
+            ]
+        )
+        self.assertTrue(result["temdd_metatheory_only"])
+        self.assertFalse(result["full"])
+        self.assertFalse(result["formalization"])
+        self.assertFalse(result["content_disposition"])
+        self.assertFalse(result["aphorism"])
+        self.assertTrue(result["integrity"])
+        self.assertTrue(result["complete_repository_gates"])
+
     def test_control_or_unsafe_path_fails_safe_to_full_materialization(self) -> None:
         for path in (
             ".github/workflows/qikvrt_batch04_integrity.yml",
