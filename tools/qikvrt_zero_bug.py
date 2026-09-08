@@ -11,8 +11,159 @@ def load_policy():
     return json.loads(POLICY.read_text(encoding="utf-8"))
 
 
+
+DEBUGGING_STAGES = (
+    ("symptom", "CORRECT_FAILURE"),
+    ("cause", "IDENTIFY_AND_CORRECT_CAUSE"),
+    ("regression", "VERIFY_REGRESSION"),
+    ("original_flow", "REOBSERVE_ORIGINAL_FLOW"),
+)
+
+
+def recursive_debugging_plan(inventory):
+    """Validate a finite causal worklist; never execute payloads or grant authority.
+
+    Input receipts must come from the existing authoritative observers. This
+    reducer checks their declared bindings, not their authenticity. Historical
+    red reproductions are never accepted as current-head green validation.
+    """
+    result = {
+        "schema": "qikvrt_recursive_debugging_plan_v1",
+        "state": "HOLD_INVENTORY_UNVERIFIED",
+        "complete": False,
+        "actions": [],
+        "unresolved": [],
+        "maximum_writers_per_subject": 1,
+        "external_effect": "NONE",
+        "universal_bug_freedom_claimed": False,
+    }
+
+    def text(value):
+        return isinstance(value, str) and bool(value.strip())
+
+    def subject_ok(value):
+        return (
+            isinstance(value, dict)
+            and text(value.get("repository"))
+            and all(
+                isinstance(value.get(key), str)
+                and len(value[key]) == 40
+                and all(c in "0123456789abcdef" for c in value[key])
+                for key in ("base_sha", "head_sha", "tree_sha")
+            )
+        )
+
+    if not isinstance(inventory, dict):
+        return result
+    subject = inventory.get("subject")
+    units = inventory.get("work_units")
+    if (
+        inventory.get("schema") != "qikvrt_recursive_debugging_inventory_v1"
+        or not subject_ok(subject)
+        or not text(inventory.get("scope"))
+        or not text(inventory.get("inventory_receipt_id"))
+        or not isinstance(units, list)
+        or len(units) > 4096
+    ):
+        return result
+    nodes = {}
+    for unit in units:
+        if not isinstance(unit, dict) or not text(unit.get("id")):
+            return result
+        if unit["id"] in nodes:
+            return result
+        if not text(unit.get("original_scope")) or not text(unit.get("observation_receipt_id")):
+            return result
+        for edge in ("blocked_by", "causes"):
+            links = unit.get(edge)
+            if not isinstance(links, list) or not all(text(x) for x in links) or len(set(links)) != len(links):
+                return result
+        if not isinstance(unit.get("receipts"), dict):
+            return result
+        nodes[unit["id"]] = unit
+
+    # Kahn-style worklist: no Python recursion limit and no polling/retry loop.
+    pending = set(nodes)
+    closed = set()
+    processed = set()
+    while pending:
+        ready = sorted(
+            key for key in pending
+            if set(nodes[key]["blocked_by"] + nodes[key]["causes"]) <= processed
+        )
+        if not ready:
+            break
+        for key in ready:
+            unit = nodes[key]
+            predecessor = unit["observation_receipt_id"]
+            seen_receipts = {predecessor}
+            action = None
+            if not set(unit["blocked_by"]) <= closed:
+                action = "HOLD_DEPENDENCY_OPEN"
+            else:
+                for stage, required_action in DEBUGGING_STAGES:
+                    if stage == "cause" and not set(unit["causes"]) <= closed:
+                        action = "HOLD_CAUSE_WORK_UNIT_OPEN"
+                        break
+                    receipt = unit["receipts"].get(stage)
+                    exact = (
+                        isinstance(receipt, dict)
+                        and receipt.get("subject") == subject
+                        and receipt.get("status") == "success"
+                        and text(receipt.get("id"))
+                        and receipt["id"] not in seen_receipts
+                        and receipt.get("after") == predecessor
+                    )
+                    if exact and stage in {"symptom", "cause"}:
+                        exact = text(receipt.get("effect_receipt_id"))
+                    if exact and stage == "cause":
+                        exact = text(receipt.get("mechanism"))
+                    if exact and stage == "regression":
+                        red = receipt.get("red")
+                        exact = (
+                            isinstance(red, dict)
+                            and text(receipt.get("test_id"))
+                            and red.get("test_id") == receipt["test_id"]
+                            and red.get("status") == "failure"
+                            and text(red.get("id"))
+                            and red["id"] != receipt["id"]
+                            and subject_ok(red.get("subject"))
+                        )
+                    if exact and stage == "original_flow":
+                        exact = receipt.get("scope") == unit["original_scope"]
+                    if not exact:
+                        action = required_action
+                        break
+                    predecessor = receipt["id"]
+                    seen_receipts.add(predecessor)
+            if action is None:
+                closed.add(key)
+            else:
+                result["unresolved"].append(key)
+                result["actions"].append({"work_unit": key, "next_action": action})
+            pending.remove(key)
+            processed.add(key)
+    for key in sorted(pending):
+        result["unresolved"].append(key)
+        result["actions"].append({
+            "work_unit": key,
+            "next_action": "HOLD_CAUSAL_GRAPH_CYCLE_OR_MISSING_DEPENDENCY",
+        })
+    result["actions"].sort(key=lambda item: item["work_unit"])
+    result["unresolved"].sort()
+    result["inventory_complete"] = inventory.get("inventory_complete") is True
+    result["complete"] = result["inventory_complete"] and not result["unresolved"]
+    result["state"] = (
+        "NO_KNOWN_ERRORS_OR_BLOCKERS_IN_BOUND_SCOPE" if result["complete"]
+        else "REPAIR_OBLIGATIONS_OPEN" if result["unresolved"]
+        else "HOLD_INVENTORY_UNVERIFIED"
+    )
+    return result
+
+
 def evaluate(observation, policy=None):
     policy = policy or load_policy()
+    debugging = recursive_debugging_plan(observation.get("recursive_debugging_inventory"))
     required = {
         "exact_head_and_tree_bound": bool(observation.get("exact_head_and_tree_bound")),
         "known_deterministic_defects_zero": observation.get("known_deterministic_defects", 1) == 0,
@@ -24,6 +175,8 @@ def evaluate(observation, policy=None):
         "reobserve_after_every_mutation": bool(observation.get("reobserve_after_every_mutation")),
         "full_tracked_tree_sha256_bound": bool(observation.get("full_tracked_tree_sha256_bound")),
     }
+    if "recursive_debugging_inventory" in observation and not debugging["complete"]:
+        required["known_deterministic_defects_zero"] = False
     missing = [k for k in policy["hard_invariants"] if not required.get(k, False)]
     if not missing:
         state = "ZERO_KNOWN_DETERMINISTIC_BUGS_LOCAL"
@@ -37,6 +190,8 @@ def evaluate(observation, policy=None):
         "invariants": required,
         "failed_invariants": missing,
         "evidence": observation.get("evidence", {}),
+        "recursive_debugging": debugging,
+        "local_gate_success_is_repair_completion": False,
         "platform_promotion_evidence_required": True,
         "universal_bug_freedom_claimed": False,
     }
@@ -50,6 +205,10 @@ def self_check(policy=None):
     platform = policy.get("platform_promotion_surface", {})
     return {
         "schema": "qikvrt_zero_bug_self_check_v1",
+        "recursive_debugging_contract_bound": (
+            policy.get("base_algorithm", {}).get("id") == "CORRECT_FAILURE_THEN_CAUSE_RECURSIVELY_V1"
+            and policy["base_algorithm"].get("steps") == [step for _, step in DEBUGGING_STAGES]
+        ),
         "complete": all(k in policy for k in ("schema", "hard_invariants", "state_machine", "repair_order", "continuous_revision", "audit_surface", "platform_promotion_surface")),
         "after_mutation": policy["state_machine"].get("after_mutation"),
         "after_fresh_local_exact_head_success": policy["state_machine"].get("after_fresh_local_exact_head_success"),
@@ -116,6 +275,7 @@ def main():
     p.add_argument("--self-check", action="store_true")
     p.add_argument("--observation")
     p.add_argument("--derive", action="store_true")
+    p.add_argument("--repair-inventory", help="Evaluate retained exact recursive repair receipts; no effects")
     p.add_argument("--head")
     p.add_argument("--tree")
     p.add_argument("--expected-head")
@@ -126,10 +286,14 @@ def main():
     p.add_argument("--writer-lease-marker")
     p.add_argument("--write-observation")
     args = p.parse_args()
-    if args.self_check:
+    if args.repair_inventory:
+        result = recursive_debugging_plan(json.loads(Path(args.repair_inventory).read_text(encoding="utf-8")))
+        ok = result["complete"]
+    elif args.self_check:
         result = self_check()
         ok = (
             result["complete"]
+            and result["recursive_debugging_contract_bound"]
             and result["after_mutation"] == "HOLD_UNVERIFIED"
             and result["after_fresh_local_exact_head_success"] == "ZERO_KNOWN_DETERMINISTIC_BUGS_LOCAL"
             and result["later_is_better"] is False

@@ -14,6 +14,9 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+if __package__ in (None, ""):
+    sys.path.insert(0, str(ROOT))
+from tools.qikvrt_zero_bug import recursive_debugging_plan
 CONTRACT = ROOT / "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
 DELEGATION = (
     ROOT
@@ -157,6 +160,9 @@ def _validate_handlers(handlers: Any) -> list[dict[str, Any]]:
 
 
 def load_contract() -> dict[str, Any]:
+    debugging = _load_json(ROOT / "policy/ZERO_BUG_CONTINUOUS_V1.json", "zero-bug base algorithm")
+    if debugging.get("base_algorithm", {}).get("id") != "CORRECT_FAILURE_THEN_CAUSE_RECURSIVELY_V1":
+        raise SelfHealBlock("mandatory recursive debugging base algorithm is absent")
     value = _load_json(CONTRACT, "autonomous self-healing contract")
     if value.get("schema") != "qikvrt_autonomous_self_healing_contract_v1":
         raise SelfHealBlock("contract schema mismatch")
@@ -270,16 +276,55 @@ def repair_handler(handler: dict[str, Any]) -> dict[str, Any]:
         raise SelfHealBlock(
             "anticipation failure is not an allowlisted projection drift"
         )
-    repair = run(tuple(handler["repair"]))
-    if repair.returncode:
-        raise SelfHealBlock(
-            f"repair failed for {handler['failure_class']}: "
-            f"{repair.stderr.strip() or repair.stdout.strip()}"
-        )
-    return {"failure_class": handler["failure_class"], "state": "REPAIRED"}
+    # A failed command may already have changed state. Reobserve once even
+    # after nonzero exit or timeout; never retry the mutation blindly.
+    repair = None
+    repair_error = None
+    try:
+        repair = run(tuple(handler["repair"]))
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        repair_error = type(exc).__name__
+    reobserved = None
+    reobservation_error = None
+    try:
+        reobserved = run(tuple(handler["probe"]))
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        reobservation_error = type(exc).__name__
+
+    def receipt(value):
+        if value is None:
+            return None
+        return {
+            "command": list(value.command),
+            "returncode": value.returncode,
+            "stdout_sha256": hashlib.sha256(value.stdout.encode("utf-8")).hexdigest(),
+            "stderr_sha256": hashlib.sha256(value.stderr.encode("utf-8")).hexdigest(),
+        }
+
+    corrected = reobserved is not None and reobserved.returncode == 0
+    command_ok = repair is not None and repair.returncode == 0
+    evidence = {"before": receipt(probe), "repair": receipt(repair), "after": receipt(reobserved)}
+    identity = hashlib.sha256(json.dumps({
+        "failure_class": handler["failure_class"], "before": evidence["before"],
+    }, sort_keys=True).encode("utf-8")).hexdigest()
+    return {
+        "failure_class": handler["failure_class"],
+        "state": "SYMPTOM_CORRECTED_CAUSE_OPEN" if corrected and command_ok else "HOLD_REPAIR_INCOMPLETE",
+        "work_unit_id": identity,
+        "symptom_reobserved_corrected": corrected,
+        "repair_command_succeeded": command_ok,
+        "repair_error": repair_error,
+        "reobservation_error": reobservation_error,
+        "evidence": evidence,
+        "cause_state": "UNVERIFIED",
+        "original_flow_state": "UNVERIFIED",
+        "exact_committed_subject_readback_required": True,
+        "next_action": "IDENTIFY_AND_CORRECT_CAUSE" if corrected and command_ok else "DIAGNOSE_REOBSERVED_REPAIR_FAILURE",
+        "repair_complete": False,
+    }
 
 
-def execute(apply: bool) -> dict[str, Any]:
+def execute(apply: bool, *, repair_inventory: dict[str, Any] | None = None) -> dict[str, Any]:
     contract = load_contract()
     initial = run(
         ("git", "status", "--porcelain=v1", "--untracked-files=all"),
@@ -314,7 +359,30 @@ def execute(apply: bool) -> dict[str, Any]:
         if fingerprint is not None
         else None
     )
-    state = "CANDIDATE_READY" if paths else "NOOP"
+    debugging = recursive_debugging_plan(repair_inventory)
+    obligations = [action for action in actions if action["state"] != "NOOP"]
+    # A clean probe is not reconciliation of historical cause obligations.
+    # A changed workspace cannot reuse even exact committed predecessor receipts.
+    if repair_inventory is not None:
+        tree = run(("git", "rev-parse", "HEAD^{tree}"), timeout=60)
+        subject = repair_inventory.get("subject", {})
+        bound = (
+            isinstance(subject, dict)
+            and subject.get("head_sha") == base_revision
+            and subject.get("tree_sha") == tree.stdout.strip()
+            and tree.returncode == 0
+            and observed_base_revision() == base_revision
+        )
+        if not bound or paths or obligations or not apply:
+            debugging["complete"] = False
+            debugging["state"] = "HOLD_FRESH_REPAIR_RECONCILIATION_REQUIRED"
+    debugging.update({
+        "policy": "policy/ZERO_BUG_CONTINUOUS_V1.json#base_algorithm",
+        "known_repair_obligations": obligations,
+        "prior_obligations": "UNKNOWN_NOT_CLEARED" if repair_inventory is None else "RETAINED_IN_SUPPLIED_INVENTORY",
+        "local_noop_is_repair_completion": False,
+    })
+    state = "CANDIDATE_READY" if paths else "HOLD_REPAIR_INCOMPLETE" if obligations else "NOOP"
     return {
         "schema": "qikvrt_autonomous_self_heal_result_v1",
         "state": state,
@@ -323,6 +391,8 @@ def execute(apply: bool) -> dict[str, Any]:
         "candidate_identity": candidate_id,
         "changed_paths": paths,
         "actions": actions,
+        "recursive_debugging": debugging,
+        "recursive_debugging_inventory": repair_inventory,
         "external_effect": "NONE",
         "promotion_policy": {
             "unconditional_automatic_merge": "FORBIDDEN",
@@ -342,9 +412,11 @@ def execute(apply: bool) -> dict[str, Any]:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("check", "apply"))
+    parser.add_argument("--repair-inventory", help="Retained authoritative exact repair inventory; no inferred empty backlog")
     args = parser.parse_args(argv)
     try:
-        result = execute(args.command == "apply")
+        inventory = _load_json(pathlib.Path(args.repair_inventory), "recursive repair inventory") if args.repair_inventory else None
+        result = execute(args.command == "apply", repair_inventory=inventory)
     except (
         OSError,
         ValueError,

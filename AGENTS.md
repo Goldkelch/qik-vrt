@@ -152,3 +152,26 @@ self-modification, and recursive agent spawning are prohibited.
 The normative machine-readable policy is
 `policy/COLLECTIVE_ADAPTIVE_COGNITION.json`. The explanatory contract is
 `docs/COLLECTIVE_ADAPTIVE_COGNITION.md`.
+
+## Mandatory recursive debugging base algorithm
+
+For every detected error or blocker, apply
+`policy/ZERO_BUG_CONTINUOUS_V1.json#base_algorithm` and
+`docs/ZERO_BUG_CONTINUOUS_V1.md`:
+
+First correct the concrete failure and authoritatively reobserve the effect.
+Then identify and correct its cause, add a discriminating regression, and
+reobserve the original requested operation. Apply the same work-unit contract
+to every discovered cause, prerequisite blocker and follow-up failure until
+no known errors or blockers remain in the explicitly bound scope.
+
+Retain and reconcile open work-unit/ledger/artifact receipts across events.
+A green local probe, new session, NOOP, patch, successful command or technical
+workflow is not cause closure. Missing inventory remains UNKNOWN, not zero.
+Use the existing finite worklist reducer and registered writers. Do not create
+a second polling loop, bypass a required review, weaken a gate, substitute an
+identity or transfer predecessor validation. Missing capabilities remain
+concrete open obligations after exhausting authorized resolution paths;
+independent eligible work remains executable. Every head mutation resets P2+.
+The end condition requires exact-subject symptom, cause, regression and
+original-flow readbacks, never only a status label or a promise to continue.
