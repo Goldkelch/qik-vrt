@@ -41,6 +41,13 @@ class AutonomousRulesetEffectLoopContractTest(unittest.TestCase):
         self.assertIn("--receipt", self.text)
         self.assertIn("rulesets/19344903", self.text)
 
+    def test_admin_ruleset_read_is_not_faked_by_the_actions_token(self):
+        self.assertIn("GH_TOKEN: ${{ github.token }}", self.text)
+        self.assertIn('if [ -z "${QIKVRT_RULESET_ADMIN_TOKEN:-}" ]; then', self.text)
+        self.assertIn('GH_TOKEN="$QIKVRT_RULESET_ADMIN_TOKEN"', self.text)
+        self.assertIn('gh api "repos/${REPOSITORY}/rulesets/19344903"', self.text)
+        self.assertIn("Never normalize such a partial", self.text)
+
     def test_admin_authority_is_nonterminal_and_repository_routed(self):
         self.assertIn("QIKVRT_RULESET_ADMIN_TOKEN", self.text)
         self.assertNotIn("QIKVRT_GITHUB_ADMIN_TOKEN", self.text)

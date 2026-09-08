@@ -38,7 +38,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     env:
-      GH_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}
+      # Selection, continuation comments, statuses, and the same-head
+      # reobservation dispatch use the repository-scoped Actions token.  The
+      # distinct Administration token is deliberately confined below to the
+      # ruleset snapshot/evaluate/apply path.
+      GH_TOKEN: ${{ github.token }}
       REPOSITORY: ${{ github.repository }}
       UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id || '' }}
       REQUESTED_PR: ${{ inputs.pr || '' }}
@@ -399,18 +403,11 @@ jobs:
           test "$current_head" = "$EXPECTED_HEAD"
           test "$branch_head" = "$EXPECTED_HEAD"
 
-          gh api "repos/${REPOSITORY}/rulesets/19344903" > "$root/live-ruleset-before.json"
-          set +e
-          python3 -B tools/qikvrt_ruleset_reconcile.py \
-            --snapshot "$root/live-ruleset-before.json" \
-            --receipt "$root/preflight-receipt.json"
-          preflight_rc=$?
-          set -e
-          preflight_state="$(jq -r .state "$root/preflight-receipt.json")"
-
-          if [ "$preflight_state" = CURRENT ]; then
-            cp "$root/preflight-receipt.json" "$root/effect-receipt.json"
-          elif [ "$preflight_state" = DRIFT ]; then
+          # GitHub omits ruleset fields such as bypass actors for callers
+          # without Administration: write.  Never normalize such a partial
+          # response: missing authority must be a deterministic
+          # REQUEST_AUTHORITY, not a potentially false CURRENT result.
+          if [ -z "${QIKVRT_RULESET_ADMIN_TOKEN:-}" ]; then
             set +e
             python3 -B tools/qikvrt_ruleset_reconcile.py \
               --apply \
@@ -419,8 +416,32 @@ jobs:
             set -e
             cp "$root/apply-receipt.json" "$root/effect-receipt.json"
             printf '%s\n' "$apply_rc" > "$root/apply-exit-code.txt"
+            preflight_rc=$apply_rc
           else
-            cp "$root/preflight-receipt.json" "$root/effect-receipt.json"
+            GH_TOKEN="$QIKVRT_RULESET_ADMIN_TOKEN" \
+              gh api "repos/${REPOSITORY}/rulesets/19344903" > "$root/live-ruleset-before.json"
+            set +e
+            python3 -B tools/qikvrt_ruleset_reconcile.py \
+              --snapshot "$root/live-ruleset-before.json" \
+              --receipt "$root/preflight-receipt.json"
+            preflight_rc=$?
+            set -e
+            preflight_state="$(jq -r .state "$root/preflight-receipt.json")"
+
+            if [ "$preflight_state" = CURRENT ]; then
+              cp "$root/preflight-receipt.json" "$root/effect-receipt.json"
+            elif [ "$preflight_state" = DRIFT ]; then
+              set +e
+              python3 -B tools/qikvrt_ruleset_reconcile.py \
+                --apply \
+                --receipt "$root/apply-receipt.json"
+              apply_rc=$?
+              set -e
+              cp "$root/apply-receipt.json" "$root/effect-receipt.json"
+              printf '%s\n' "$apply_rc" > "$root/apply-exit-code.txt"
+            else
+              cp "$root/preflight-receipt.json" "$root/effect-receipt.json"
+            fi
           fi
           printf '%s\n' "$preflight_rc" > "$root/preflight-exit-code.txt"
 
