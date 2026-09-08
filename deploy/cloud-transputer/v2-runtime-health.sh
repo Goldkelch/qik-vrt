@@ -7,7 +7,8 @@ STATE_DIR="${QIKVRT_STATE_DIR:-/var/lib/qikvrt/state}"
 SQL_UI_PORT="${QIKVRT_SQL_UI_PORT:-8772}"
 M68K_DIR="$STATE_DIR/m68k"
 VERIFY_SQL_EFFECT="${QIKVRT_VERIFY_SQL_EFFECT_ACK:-0}"
-PRECOMPOSE="${QIKVRT_V2_STARTUP_PRECOMPOSE:-0}"
+PHASE_FILE=/run/qikvrt/v2-phase.txt
+EXPLICIT_PRECOMPOSE="${QIKVRT_V2_STARTUP_PRECOMPOSE:-0}"
 TMP_DIR="$(mktemp -d /tmp/qikvrt-v2-health.XXXXXX)"
 CAPABILITY_JSON="$TMP_DIR/sql92-capability.json"
 STATE_JSON="$TMP_DIR/sql92-state.json"
@@ -18,14 +19,35 @@ case "$VERIFY_SQL_EFFECT" in
   0|1) ;;
   *) printf '%s\n' 'BLOCK: QIKVRT_VERIFY_SQL_EFFECT_ACK must be 0 or 1' >&2; exit 64 ;;
 esac
-case "$PRECOMPOSE" in
+case "$EXPLICIT_PRECOMPOSE" in
   0|1) ;;
   *) printf '%s\n' 'BLOCK: QIKVRT_V2_STARTUP_PRECOMPOSE must be 0 or 1' >&2; exit 64 ;;
 esac
 
+PHASE=UNOBSERVED
+if [ -s "$PHASE_FILE" ]; then
+  PHASE="$(cat "$PHASE_FILE")"
+fi
+case "$PHASE" in
+  PRECOMPOSE|COMPOSED) ;;
+  UNOBSERVED)
+    if [ "$EXPLICIT_PRECOMPOSE" != 1 ]; then
+      printf '%s\n' 'BLOCK: V2 runtime phase is not observable' >&2
+      exit 65
+    fi
+    ;;
+  *) printf 'BLOCK: invalid V2 runtime phase: %s\n' "$PHASE" >&2; exit 65 ;;
+esac
+if [ "$EXPLICIT_PRECOMPOSE" = 1 ] || [ "$PHASE" = PRECOMPOSE ]; then
+  PRECOMPOSE=1
+else
+  PRECOMPOSE=0
+fi
+
 /usr/local/bin/qikvrt-cloud-transputer-health-v1
 
 mark() { printf 'QIKVRT_V2_HEALTH_PROBE=%s\n' "$1"; }
+mark "runtime_phase_${PHASE}"
 
 mark personal_posix_m68000
 file "$M68K_DIR/qikvrt-personal-posix-tcpip" | grep -Eqi '68000|m68k|Motorola'
