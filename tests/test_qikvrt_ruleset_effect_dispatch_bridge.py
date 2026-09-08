@@ -176,5 +176,25 @@ class ReviewRepairScopeContractTest(unittest.TestCase):
             "ROUTING_REPAIR_MUST_NOT_INSTALL_PARALLEL_FIX_BRANCH_WRITER",
         )
 
+
+    def test_routing_regressions_are_wired_into_exact_head_contract_ci(self):
+        workflow = (ROOT / ".github/workflows/qikvrt_requested_review_contract.yml").read_text(encoding="utf-8")
+        step = workflow.split("      - name: Verify review cores and decisions\n", 1)[1].split(
+            "      - name: Verify event, recovery, identity and promotion bindings\n", 1
+        )[0]
+        command = step.split("python3 -B -m unittest -v", 1)[1]
+        self.assertIn(
+            "tests.test_qikvrt_ruleset_effect_dispatch_bridge", command,
+            "ROUTING_REGRESSION_MODULE_NOT_EXECUTED",
+        )
+        for path in (
+            ".github/workflows/qikvrt_ruleset_effect_dispatch_bridge.yml",
+            ".github/workflows/qikvrt_fix_branch_integrity_materializer.yml",
+            "tests/test_qikvrt_ruleset_effect_dispatch_bridge.py",
+        ):
+            self.assertIn('      - "' + path + '"', workflow)
+        self.assertIn('ref: $' + '{{ github.event.pull_request.head.sha || github.sha }}', workflow)
+        self.assertIn('persist-credentials: false', workflow)
+
 if __name__ == "__main__":
     unittest.main()
