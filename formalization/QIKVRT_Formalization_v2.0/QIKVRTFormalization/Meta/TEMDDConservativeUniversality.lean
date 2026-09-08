@@ -33,6 +33,7 @@ structure Language where
   step : State → Action → State → Prop
   reachable : State → Action → State → Prop
   done : Requirement → Evidence → State → Prop
+  doneAtSubject : Requirement → Evidence → Subject → Prop
   unknown : Prop → Prop
   mutated : Subject → Subject → Prop
   evidenceTransferAllowed : Prop
@@ -77,6 +78,13 @@ structure ConservativeEmbedding (source : Language) (target : Language) where
     ∀ oldSubject newSubject,
       source.mutated oldSubject newSubject →
         target.mutated (mapSubject oldSubject) (mapSubject newSubject)
+  mutation_invalidation_preserved :
+    ∀ oldSubject newSubject requirement evidence,
+      source.mutated oldSubject newSubject →
+      source.bound evidence oldSubject →
+      source.doneAtSubject requirement evidence oldSubject →
+        ¬ target.doneAtSubject (mapRequirement requirement)
+          (mapEvidence evidence) (mapSubject newSubject)
   transition_preserved :
     ∀ state action next,
       source.step state action next →
