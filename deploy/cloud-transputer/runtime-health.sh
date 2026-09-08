@@ -16,6 +16,11 @@ MESH_DOMAIN="${QIKVRT_MESH_DOMAIN:-qikvrt.mesh.local}"
 MESH_PUBLIC_URL="${QIKVRT_MESH_PUBLIC_URL:-https://goldkelch.github.io/qik-vrt/cloud-transputer/}"
 RUN_STATE=/run/qikvrt/runtime.json
 READY_ATTEMPTS="${QIKVRT_HEALTH_READY_ATTEMPTS:-8}"
+TMP_DIR="$(mktemp -d /tmp/qikvrt-health.XXXXXX)"
+EFFECT_DIRECT="$TMP_DIR/effect.json"
+EFFECT_PROXY="$TMP_DIR/effect-proxy.json"
+RUNTIME_PROXY="$TMP_DIR/runtime.json"
+trap 'rm -rf "$TMP_DIR"' EXIT
 
 case "$READY_ATTEMPTS" in
   ''|*[!0-9]*) printf '%s\n' 'BLOCK: QIKVRT_HEALTH_READY_ATTEMPTS must be a positive integer' >&2; exit 64 ;;
@@ -25,9 +30,7 @@ if [ "$READY_ATTEMPTS" -lt 1 ]; then
   exit 64
 fi
 
-# Finite startup gate only.  The strict probes below remain unchanged and are
-# still authoritative.  Each attempt stops at the first not-yet-ready endpoint,
-# so the default worst-case delay remains below Docker's 10 s health timeout.
+# Finite startup gate only. The strict probes below remain authoritative.
 python3 -B - "$HTTP_PORT" "$NOVNC_PORT" "$PROXY_PORT" "$SMTP_PORT" "$SSH_PORT" "$SQL_PORT" "$READY_ATTEMPTS" <<'PY'
 import socket
 import sys
@@ -78,15 +81,15 @@ PY
 mark() { printf 'QIKVRT_HEALTH_PROBE=%s\n' "$1"; }
 
 mark effect_ack_direct
-curl -fsS "http://127.0.0.1:${HTTP_PORT}/.well-known/effect-ack" >/tmp/qikvrt-health-effect.json
+curl -fsS "http://127.0.0.1:${HTTP_PORT}/.well-known/effect-ack" >"$EFFECT_DIRECT"
 mark novnc_direct
 curl -fsS "http://127.0.0.1:${NOVNC_PORT}/vnc.html" >/dev/null
 mark proxy_terminal
 curl -fsS "http://127.0.0.1:${PROXY_PORT}/terminal/vnc.html" >/dev/null
 mark proxy_effect_ack
-curl -fsS "http://127.0.0.1:${PROXY_PORT}/effect-ack/.well-known/effect-ack" >/tmp/qikvrt-health-effect-proxy.json
+curl -fsS "http://127.0.0.1:${PROXY_PORT}/effect-ack/.well-known/effect-ack" >"$EFFECT_PROXY"
 mark proxy_runtime_receipt
-curl -fsS "http://127.0.0.1:${PROXY_PORT}/.well-known/qikvrt-cloud-transputer" >/tmp/qikvrt-health-runtime.json
+curl -fsS "http://127.0.0.1:${PROXY_PORT}/.well-known/qikvrt-cloud-transputer" >"$RUNTIME_PROXY"
 mark firefox_process
 pgrep -af 'firefox|firefox-esr' >/dev/null
 
@@ -136,7 +139,7 @@ grep -q '^EFFECT_ACK_STATE=EFFECT_ACK_DONE$' "$STATE_DIR/m68k/execution.txt"
 mark authority_mirror
 test -f "$STATE_DIR/authority-mirror.json"
 mark exact_runtime_receipts
-python3 -B - "$STATE_DIR/authority-mirror.json" "$RUN_STATE" "$MESH_PUBLIC_URL" /tmp/qikvrt-health-effect.json /tmp/qikvrt-health-effect-proxy.json /tmp/qikvrt-health-runtime.json <<'PY'
+python3 -B - "$STATE_DIR/authority-mirror.json" "$RUN_STATE" "$MESH_PUBLIC_URL" "$EFFECT_DIRECT" "$EFFECT_PROXY" "$RUNTIME_PROXY" <<'PY'
 import json,sys
 mirror_path,runtime_path,expected_url,effect_path,effect_proxy_path,proxy_runtime_path=sys.argv[1:]
 mirror=json.load(open(mirror_path,encoding='utf-8'))
