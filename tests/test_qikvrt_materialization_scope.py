@@ -85,6 +85,31 @@ class MaterializationScopeTests(unittest.TestCase):
         self.assertTrue(result["integrity"])
         self.assertTrue(result["complete_repository_gates"])
 
+    def test_temdd_scope_accepts_only_companion_integrity_projections(self) -> None:
+        result = MODULE.classify(
+            [
+                "docs/TEMDD_CONSERVATIVE_UNIVERSALITY.md",
+                "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/ConservativeUniversalityRefinement.lean",
+                "REPOSITORY_FILE_MANIFEST.json",
+                "REPOSITORY_FILE_MANIFEST.json.sha256",
+                "SHA256SUMS.txt",
+            ]
+        )
+        self.assertTrue(result["temdd_metatheory_only"])
+        self.assertFalse(result["full"])
+        self.assertFalse(result["formalization"])
+        self.assertTrue(result["integrity"])
+        self.assertTrue(result["complete_repository_gates"])
+
+        projections_only = MODULE.classify(
+            [
+                "REPOSITORY_FILE_MANIFEST.json",
+                "REPOSITORY_FILE_MANIFEST.json.sha256",
+                "SHA256SUMS.txt",
+            ]
+        )
+        self.assertFalse(projections_only["temdd_metatheory_only"])
+
     def test_control_or_unsafe_path_fails_safe_to_full_materialization(self) -> None:
         for path in (
             ".github/workflows/qikvrt_batch04_integrity.yml",
