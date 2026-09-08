@@ -93,18 +93,18 @@ def classify(paths: Sequence[str], *, force_full: bool = False) -> dict[str, Any
     normalized = sorted(set(path.strip() for path in paths if path.strip()))
     unsafe = sorted(path for path in normalized if _unsafe(path))
     control = sorted(path for path in normalized if path in CONTROL_PATHS)
-    full = force_full or bool(unsafe) or bool(control)
     temdd_metatheory_only = _temdd_metatheory_only(normalized)
-
-    formalization = (
-        False
-        if temdd_metatheory_only and not force_full and not unsafe
-        else full
-        or any(
-            path in FORMALIZATION_PATHS or _starts(path, FORMALIZATION_PREFIXES)
-            for path in normalized
-        )
+    full = force_full or bool(unsafe) or (
+        bool(control) and not temdd_metatheory_only
     )
+
+    formalization = full or any(
+        path in FORMALIZATION_PATHS or _starts(path, FORMALIZATION_PREFIXES)
+        for path in normalized
+    )
+    if temdd_metatheory_only and not force_full and not unsafe:
+        formalization = False
+
     content_disposition = full or any(
         path in CONTENT_PATHS
         or _starts(path, CONTENT_PREFIXES)
