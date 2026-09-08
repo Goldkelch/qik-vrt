@@ -27,6 +27,7 @@ import QIKVRTFormalization.Hardware.AuthorityMirrorWitness
 import QIKVRTFormalization.Hardware.D3FixedPoint
 import QIKVRTFormalization.Decision.ObservationSufficiency
 import QIKVRTFormalization.Meta.TEMDDConservativeUniversality
+import QIKVRTFormalization.Claims.TEMDDConservativeUniversality
 
 /-!
 Top-level import for the checked QIK-VRT formalization v2 tranches.

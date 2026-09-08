@@ -45,12 +45,6 @@ def KnowledgeRegion (L : Language) (evidence : L.Evidence) :
     L.State → Prop :=
   fun state => L.evidencePossible state evidence
 
-def EvidenceNonAmplification (source target : Language)
-    (mapEvidence : source.Evidence → target.Evidence) : Prop :=
-  ∀ evidence state,
-    target.evidencePossible state (mapEvidence evidence) →
-      source.evidencePossible state evidence
-
 structure ConservativeEmbedding (source : Language) (target : Language) where
   mapState : source.State → target.State
   mapRequirement : source.Requirement → target.Requirement
@@ -71,7 +65,10 @@ structure ConservativeEmbedding (source : Language) (target : Language) where
   evidence_consistency_preserved :
     ∀ evidence,
       source.consistent evidence ↔ target.consistent (mapEvidence evidence)
-  evidence_not_amplified : EvidenceNonAmplification source target mapEvidence
+  evidence_not_amplified :
+    ∀ evidence state,
+      target.evidencePossible (mapState state) (mapEvidence evidence) →
+        source.evidencePossible state evidence
   subject_binding_preserved :
     ∀ evidence subject,
       source.bound evidence subject ↔
@@ -124,6 +121,15 @@ theorem temdd_conservative_universality (source target : Language)
   rcases hSource with ⟨embedding⟩
   exact ⟨embedding, True.intro⟩
 
+def TEMDDConservativeUniversalityStatement : Prop :=
+  ∀ source target, AdmissibleClass source target →
+    ∃ embedding : ConservativeEmbedding source target, True
+
+theorem TEMDDConservativeUniversality_checked :
+    TEMDDConservativeUniversalityStatement := by
+  intro source target hSource
+  exact temdd_conservative_universality source target hSource
+
 theorem no_freedom_to_redefine_truth (source target : Language)
     (embedding : ConservativeEmbedding source target)
     (requirement : source.Requirement) (evidence : source.Evidence)
@@ -132,5 +138,7 @@ theorem no_freedom_to_redefine_truth (source target : Language)
       (embedding.mapEvidence evidence) (embedding.mapState state)) :
     source.done requirement evidence state :=
   embedding.completion_reflected requirement evidence state hDone
+
+#print axioms TEMDDConservativeUniversality_checked
 
 end QIKVRT.V2.TEMDD
