@@ -1,0 +1,252 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT cloud transputer V2 M68000 scale runtime
+
+on:
+  push:
+    branches: [runtime/cloud-transputer-posix-tcpip-v2]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'policy/QIKVRT_CLOUD_TRANSPUTER_POSIX_TCPIP_V2.json'
+      - 'deploy/cloud-transputer/**'
+      - 'src/cloud_transputer/**'
+      - 'tests/test_qikvrt_cloud_transputer_v2.py'
+      - '.github/workflows/qikvrt_cloud_transputer_v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-cloud-transputer-v2-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  exact-v2-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      EXACT_SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      IMAGE: qikvrt/cloud-transputer-v2
+      TEST_MESH_URL: https://goldkelch.github.io/qik-vrt/cloud-transputer/
+    steps:
+      - name: Check out exact V2 subject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXACT_SUBJECT_SHA }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Bind exact head and tree
+        id: bind
+        shell: bash
+        run: |
+          set -euo pipefail
+          head="$(git rev-parse --verify HEAD^{commit})"
+          tree="$(git rev-parse --verify HEAD^{tree})"
+          test "$head" = "$EXACT_SUBJECT_SHA"
+          printf 'head=%s\n' "$head" >> "$GITHUB_OUTPUT"
+          printf 'tree=%s\n' "$tree" >> "$GITHUB_OUTPUT"
+          printf 'EXACT_HEAD=%s\nEXACT_TREE=%s\n' "$head" "$tree"
+
+      - name: Verify strict source contracts before OCI build
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v tests.test_qikvrt_cloud_transputer_v2
+          cc -std=c90 -pedantic -Wall -Wextra -Werror -Iinclude \
+            src/effect_ack_core.c src/cloud_transputer/personal_posix_tcpip.c \
+            -o /tmp/qikvrt-personal-posix-native
+          /tmp/qikvrt-personal-posix-native | tee /tmp/native-c90-execution.txt
+          grep -q '^PERSONAL_POSIX_SELFTEST=PASS$' /tmp/native-c90-execution.txt
+          grep -q '^STANDALONE_M68000_TCPIP_PACKET_ENGINE=PASS$' /tmp/native-c90-execution.txt
+          grep -q '^EFFECT_ACK_NEGATIVE_STATE=EFFECT_ACK_CONTINUE$' /tmp/native-c90-execution.txt
+          sh -n deploy/cloud-transputer/entrypoint.sh \
+                deploy/cloud-transputer/runtime-health.sh \
+                deploy/cloud-transputer/v2-entrypoint.sh \
+                deploy/cloud-transputer/v2-runtime-health.sh \
+                deploy/cloud-transputer/authority-mirror-refresh.sh
+          python3 -m py_compile src/cloud_transputer/smtpd.py src/cloud_transputer/sql92_gateway.py
+          docker compose -f deploy/cloud-transputer/compose.yaml config >/tmp/cloud-transputer-compose.txt
+
+      - name: Build exact V2 OCI image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --progress=plain --pull -f deploy/cloud-transputer/Dockerfile \
+            -t "$IMAGE:$EXACT_SUBJECT_SHA" . 2>&1 | tee /tmp/docker-build-v2.log
+          docker image inspect "$IMAGE:$EXACT_SUBJECT_SHA" >/tmp/image-inspect-v2.json
+
+      - name: Start two isolated personalized replicas
+        shell: bash
+        run: |
+          set -euo pipefail
+          for replica in a b; do
+            for volume in profile state mirror personal-posix mail; do
+              docker volume create "qikvrt-v2-${replica}-${volume}" >/dev/null
+            done
+          done
+          docker run -d --name qikvrt-v2-a \
+            -p 127.0.0.1:18080:8080 \
+            -e QIKVRT_RUNTIME_ID=qikvrt-cloud-transputer-v2-a \
+            -e QIKVRT_MESH_PUBLIC_URL="$TEST_MESH_URL" \
+            -e QIKVRT_REQUIRE_AUTHORITY_MIRROR=1 \
+            -e QIKVRT_REQUIRE_PERSONAL_POSIX=0 \
+            -v qikvrt-v2-a-profile:/var/lib/qikvrt/profile \
+            -v qikvrt-v2-a-state:/var/lib/qikvrt/state \
+            -v qikvrt-v2-a-mirror:/var/lib/qikvrt/mirror \
+            -v qikvrt-v2-a-personal-posix:/var/lib/qikvrt/personal-posix \
+            -v qikvrt-v2-a-mail:/var/lib/qikvrt/mail \
+            "$IMAGE:$EXACT_SUBJECT_SHA"
+          docker run -d --name qikvrt-v2-b \
+            -e QIKVRT_RUNTIME_ID=qikvrt-cloud-transputer-v2-b \
+            -e QIKVRT_MESH_PUBLIC_URL="$TEST_MESH_URL" \
+            -e QIKVRT_REQUIRE_AUTHORITY_MIRROR=1 \
+            -e QIKVRT_REQUIRE_PERSONAL_POSIX=0 \
+            -v qikvrt-v2-b-profile:/var/lib/qikvrt/profile \
+            -v qikvrt-v2-b-state:/var/lib/qikvrt/state \
+            -v qikvrt-v2-b-mirror:/var/lib/qikvrt/mirror \
+            -v qikvrt-v2-b-personal-posix:/var/lib/qikvrt/personal-posix \
+            -v qikvrt-v2-b-mail:/var/lib/qikvrt/mail \
+            "$IMAGE:$EXACT_SUBJECT_SHA"
+
+      - name: Reobserve both runtime planes and scale isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          : >/tmp/v2-health-a.log
+          : >/tmp/v2-health-b.log
+          for replica in a b; do
+            ready=0
+            for attempt in $(seq 1 120); do
+              if docker exec "qikvrt-v2-${replica}" /usr/local/bin/qikvrt-cloud-transputer-health >>"/tmp/v2-health-${replica}.log" 2>&1; then
+                ready=1
+                break
+              fi
+              if ! docker inspect -f '{{.State.Running}}' "qikvrt-v2-${replica}" 2>/dev/null | grep -qx true; then
+                break
+              fi
+              sleep 2
+            done
+            if [ "$ready" -ne 1 ]; then
+              cat "/tmp/v2-health-${replica}.log" >&2
+              docker logs "qikvrt-v2-${replica}" >&2 || true
+              exit 1
+            fi
+            docker exec "qikvrt-v2-${replica}" /usr/local/bin/qikvrt-cloud-transputer-health | tee -a "/tmp/v2-health-${replica}.log"
+            docker cp "qikvrt-v2-${replica}:/var/lib/qikvrt/state/runtime.json" "/tmp/${replica}-runtime.json"
+            docker cp "qikvrt-v2-${replica}:/var/lib/qikvrt/state/authority-mirror.json" "/tmp/${replica}-authority.json"
+            docker cp "qikvrt-v2-${replica}:/var/lib/qikvrt/state/m68k/personal-posix-tcpip-receipt.json" "/tmp/${replica}-m68k-posix.json"
+            docker exec "qikvrt-v2-${replica}" curl -fsS http://127.0.0.1:8772/state >"/tmp/${replica}-sql-state.json"
+          done
+          curl -fsS http://127.0.0.1:18080/terminal/vnc.html >/tmp/terminal-v2.html
+          printf '%s\n' replica-a-only | docker exec -i qikvrt-v2-a sh -c 'cat > /var/lib/qikvrt/profile/.v2-scale-sentinel'
+          test "$(docker exec qikvrt-v2-a cat /var/lib/qikvrt/profile/.v2-scale-sentinel)" = replica-a-only
+          ! docker exec qikvrt-v2-b test -e /var/lib/qikvrt/profile/.v2-scale-sentinel
+          python3 -B - <<'PY'
+          import json
+          def load(path): return json.load(open(path,encoding='utf-8'))
+          ar,br=load('/tmp/a-runtime.json'),load('/tmp/b-runtime.json')
+          aa,ba=load('/tmp/a-authority.json'),load('/tmp/b-authority.json')
+          am,bm=load('/tmp/a-m68k-posix.json'),load('/tmp/b-m68k-posix.json')
+          assert ar['runtime_id']=='qikvrt-cloud-transputer-v2-a'
+          assert br['runtime_id']=='qikvrt-cloud-transputer-v2-b'
+          assert ar['runtime_id'] != br['runtime_id']
+          assert aa['main_head_sha']==ba['main_head_sha']
+          assert aa['main_tree_sha']==ba['main_tree_sha']
+          assert aa['origin']==ba['origin']=='https://github.com/Goldkelch/qik-vrt.git'
+          for r in (am,bm):
+              assert r['profile']=='QIKVRT_PERSONAL_POSIX_C90_V1'
+              assert r['m68000_machine_execution_observed'] is True
+              assert r['standalone_tcp_ip_packet_engine']=='PASS'
+              assert r['physical_m68000_execution_claimed'] is False
+              assert r['global_effect_ack_done'] is False
+          assert am['m68000_binary_sha256']==bm['m68000_binary_sha256']
+          PY
+
+      - name: Restart replica A and reobserve personalized persistence
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker rm -f qikvrt-v2-a >/dev/null
+          docker run -d --name qikvrt-v2-a \
+            -p 127.0.0.1:18080:8080 \
+            -e QIKVRT_RUNTIME_ID=qikvrt-cloud-transputer-v2-a \
+            -e QIKVRT_MESH_PUBLIC_URL="$TEST_MESH_URL" \
+            -e QIKVRT_REQUIRE_AUTHORITY_MIRROR=1 \
+            -v qikvrt-v2-a-profile:/var/lib/qikvrt/profile \
+            -v qikvrt-v2-a-state:/var/lib/qikvrt/state \
+            -v qikvrt-v2-a-mirror:/var/lib/qikvrt/mirror \
+            -v qikvrt-v2-a-personal-posix:/var/lib/qikvrt/personal-posix \
+            -v qikvrt-v2-a-mail:/var/lib/qikvrt/mail \
+            "$IMAGE:$EXACT_SUBJECT_SHA"
+          ready=0
+          : >/tmp/v2-restart-a.log
+          for attempt in $(seq 1 120); do
+            if docker exec qikvrt-v2-a /usr/local/bin/qikvrt-cloud-transputer-health >>/tmp/v2-restart-a.log 2>&1; then ready=1; break; fi
+            if ! docker inspect -f '{{.State.Running}}' qikvrt-v2-a 2>/dev/null | grep -qx true; then break; fi
+            sleep 2
+          done
+          test "$ready" -eq 1
+          docker exec qikvrt-v2-a /usr/local/bin/qikvrt-cloud-transputer-health | tee -a /tmp/v2-restart-a.log
+          test "$(docker exec qikvrt-v2-a cat /var/lib/qikvrt/profile/.v2-scale-sentinel)" = replica-a-only
+
+      - name: Preserve exact-head V2 evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=/tmp/qikvrt-cloud-transputer-v2-evidence
+          mkdir -p "$out"
+          printf '%s\n' "$EXACT_SUBJECT_SHA" > "$out/exact-head.txt"
+          printf '%s\n' '${{ steps.bind.outputs.tree }}' > "$out/exact-tree.txt"
+          for f in native-c90-execution.txt docker-build-v2.log image-inspect-v2.json \
+                   v2-health-a.log v2-health-b.log v2-restart-a.log terminal-v2.html \
+                   a-runtime.json b-runtime.json a-authority.json b-authority.json \
+                   a-m68k-posix.json b-m68k-posix.json a-sql-state.json b-sql-state.json; do
+            cp "/tmp/$f" "$out/$f" 2>/dev/null || true
+          done
+          for replica in a b; do
+            docker inspect "qikvrt-v2-${replica}" >"$out/${replica}-container-inspect.json" 2>/dev/null || true
+            docker logs "qikvrt-v2-${replica}" >"$out/${replica}-container.log" 2>&1 || true
+          done
+          python3 -B - "$out/receipt.json" '${{ steps.bind.outputs.tree }}' <<'PY'
+          import json,os,sys
+          path,tree=sys.argv[1:]
+          value={
+            'schema':'qikvrt_cloud_transputer_v2_ci_receipt_v1',
+            'subject_head_sha':os.environ['EXACT_SUBJECT_SHA'],'subject_tree_sha':tree,
+            'strict_c90_selftest_reobserved':os.path.exists('/tmp/native-c90-execution.txt'),
+            'm68000_execution_reobserved':os.path.exists('/tmp/a-m68k-posix.json') and os.path.exists('/tmp/b-m68k-posix.json'),
+            'firefox_proxy_ui_reobserved':os.path.exists('/tmp/terminal-v2.html'),
+            'sql92_effect_ack_readback_reobserved':os.path.exists('/tmp/a-sql-state.json') and os.path.exists('/tmp/b-sql-state.json'),
+            'authority_mirror_reobserved':os.path.exists('/tmp/a-authority.json') and os.path.exists('/tmp/b-authority.json'),
+            'replicas_reobserved':2,'profile_isolation_reobserved':True,'persistent_restart_reobserved':os.path.exists('/tmp/v2-restart-a.log'),
+            'public_cloud_runtime_origin_deployed':False,'physical_m68000_execution':False,
+            'full_posix_1_conformance':False,'bare_metal_nic_driver':False,
+            'approval':False,'merge':False,'publication':False,'pass':False,'final_pass':False,'effect_ack_done':False,
+          }
+          open(path,'w',encoding='utf-8').write(json.dumps(value,indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Upload exact-head V2 evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-cloud-transputer-v2-${{ env.EXACT_SUBJECT_SHA }}
+          path: /tmp/qikvrt-cloud-transputer-v2-evidence
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          docker rm -f qikvrt-v2-a qikvrt-v2-b 2>/dev/null || true
+          for replica in a b; do
+            for volume in profile state mirror personal-posix mail; do
+              docker volume rm "qikvrt-v2-${replica}-${volume}" 2>/dev/null || true
+            done
+          done
