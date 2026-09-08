@@ -169,5 +169,12 @@ class NativeReviewWorkflowIdentityContractTest(unittest.TestCase):
         self.assertNotIn("run.get('name')", self.planner)
 
 
+class ReviewRepairScopeContractTest(unittest.TestCase):
+    def test_routing_repair_has_no_parallel_fix_branch_writer(self):
+        self.assertFalse(
+            (ROOT / ".github/workflows/qikvrt_fix_branch_integrity_materializer.yml").exists(),
+            "ROUTING_REPAIR_MUST_NOT_INSTALL_PARALLEL_FIX_BRANCH_WRITER",
+        )
+
 if __name__ == "__main__":
     unittest.main()
