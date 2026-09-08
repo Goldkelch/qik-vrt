@@ -217,7 +217,7 @@ theorem distinct_subjects_remain_distinct
   intro hEqual
   exact hDifferent (Φ.injective_subject hEqual)
 
-/--
+/-
 The open proof obligation for a concrete TEMDD target is therefore exactly:
 choose an independently justified `C`, instantiate `T` from Language 1.0 without
 weakening its semantics, and prove `U3ConservativeSemanticUniversality C T`.
