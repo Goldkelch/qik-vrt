@@ -5,6 +5,7 @@ FROM debian:trixie-slim
 ENV DEBIAN_FRONTEND=noninteractive \
     DISPLAY=:99 \
     QIKVRT_HTTP_PORT=8771 \
+    QIKVRT_SQL_UI_PORT=8772 \
     QIKVRT_NOVNC_PORT=6080 \
     QIKVRT_PROXY_PORT=8080 \
     QIKVRT_SSH_PORT=2222 \
@@ -20,7 +21,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     QIKVRT_RUNTIME_ID=qikvrt-cloud-transputer-1 \
     QIKVRT_MESH_PUBLIC_URL=https://goldkelch.github.io/qik-vrt/cloud-transputer/ \
     QIKVRT_MESH_DOMAIN=qikvrt.mesh.local \
-    QIKVRT_START_URL=https://goldkelch.github.io/qik-vrt/
+    QIKVRT_START_URL=http://127.0.0.1:8772/
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl git zip file procps sed openssl \
@@ -49,19 +50,28 @@ RUN cd /opt/qikvrt/browser/firefox/qikvrt-terminal \
     && zip -qr /opt/qikvrt/runtime/bootstrap-profile/extensions/qikvrt-ai-terminal@goldkelch.local.xpi . \
     && printf '%s\n' \
       'user_pref("browser.shell.checkDefaultBrowser", false);' \
-      'user_pref("browser.startup.homepage", "https://goldkelch.github.io/qik-vrt/");' \
+      'user_pref("browser.startup.homepage", "http://127.0.0.1:8772/");' \
       'user_pref("toolkit.telemetry.reportingpolicy.firstRun", false);' \
       'user_pref("datareporting.policy.dataSubmissionEnabled", false);' \
       'user_pref("browser.sessionstore.resume_from_crash", true);' \
       > /opt/qikvrt/runtime/bootstrap-profile/user.js \
-    && cp /opt/qikvrt/deploy/cloud-transputer/entrypoint.sh /usr/local/bin/qikvrt-cloud-transputer \
-    && cp /opt/qikvrt/deploy/cloud-transputer/runtime-health.sh /usr/local/bin/qikvrt-cloud-transputer-health \
+    && cp /opt/qikvrt/deploy/cloud-transputer/entrypoint.sh /usr/local/bin/qikvrt-cloud-transputer-v1 \
+    && cp /opt/qikvrt/deploy/cloud-transputer/v2-entrypoint.sh /usr/local/bin/qikvrt-cloud-transputer \
+    && cp /opt/qikvrt/deploy/cloud-transputer/runtime-health.sh /usr/local/bin/qikvrt-cloud-transputer-health-v1 \
+    && cp /opt/qikvrt/deploy/cloud-transputer/v2-runtime-health.sh /usr/local/bin/qikvrt-cloud-transputer-health \
     && cp /opt/qikvrt/deploy/cloud-transputer/authority-mirror-refresh.sh /usr/local/bin/qikvrt-authority-mirror-refresh \
-    && chmod 0755 /usr/local/bin/qikvrt-cloud-transputer \
+    && chmod 0755 /usr/local/bin/qikvrt-cloud-transputer-v1 \
+                  /usr/local/bin/qikvrt-cloud-transputer \
+                  /usr/local/bin/qikvrt-cloud-transputer-health-v1 \
                   /usr/local/bin/qikvrt-cloud-transputer-health \
                   /usr/local/bin/qikvrt-authority-mirror-refresh \
-                  /opt/qikvrt/src/cloud_transputer/smtpd.py
+                  /opt/qikvrt/src/cloud_transputer/smtpd.py \
+                  /opt/qikvrt/src/cloud_transputer/sql92_gateway.py \
+    && python3 -m py_compile /opt/qikvrt/src/cloud_transputer/smtpd.py \
+                            /opt/qikvrt/src/cloud_transputer/sql92_gateway.py
 
+# 8772 is intentionally not exposed: it is consumed inside the authenticated
+# Firefox/noVNC terminal. Public ingress remains the single proxy on 8080.
 EXPOSE 8080/tcp 2222/tcp 2525/tcp 5353/tcp 5353/udp 1161/udp 5432/tcp
 
 HEALTHCHECK --interval=15s --timeout=10s --start-period=90s --retries=6 \
