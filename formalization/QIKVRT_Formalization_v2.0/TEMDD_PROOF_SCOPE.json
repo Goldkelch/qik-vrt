@@ -1,0 +1,140 @@
+{
+  "schema": "qikvrt_temdd_metagrammar_proof_scope_v1",
+  "proof_id": "TEMDD_METAGRAMMAR_V1",
+  "claim_class": "FORMAL_MODEL_THEOREM",
+  "formal_system": "leanprover/lean4:v4.19.0",
+  "candidate_subject": {
+    "repository": "Goldkelch/qik-vrt",
+    "branch": "temdd/metagrammar-proof-20260908",
+    "base_commit": "1e69535303bd4ecf9ea5c96414a580a42e95f9ab",
+    "base_tree": "e383fe468dab363792e7f7c5a010e793dff37670",
+    "exact_commit_binding": "EXTERNAL_EXACT_HEAD_RECEIPT_REQUIRED",
+    "exact_tree_binding": "EXTERNAL_EXACT_HEAD_RECEIPT_REQUIRED"
+  },
+  "source_files": {
+    "lean_toolchain": {
+      "path": "formalization/QIKVRT_Formalization_v2.0/lean-toolchain",
+      "bytes": 26,
+      "sha256": "ee6fd37555065223ddad24dff70b5447dfbac23c14f48fb8e3ddf266104bfa87",
+      "git_blob_sha1": "cf00978c98941128bcbab27eaa26ed28b9cbbf15"
+    },
+    "entrypoint": {
+      "path": "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization.lean",
+      "bytes": 4863,
+      "sha256": "101a78185cee56592321031e52290cd8f604edf8599efcabddd08022ee443ef4",
+      "git_blob_sha1": "25c2d96f3b7a41f34bea500c5759998efd8e7f8e"
+    },
+    "completion_kernel": {
+      "path": "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/Completion.lean",
+      "bytes": 5521,
+      "sha256": "620b122b6fcfc51db3ac6516ac6607d6b330bc042cff39c79980bc30e8ffb065",
+      "git_blob_sha1": "3242db2b7e7f25948ff6e35d6d7be5e4cd991710"
+    },
+    "metagrammar": {
+      "path": "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/MetaGrammar.lean",
+      "bytes": 13163,
+      "sha256": "23dc8b920eda4279e65fd49296291fd4068db9275fc44e0f201dd94792149c0b",
+      "git_blob_sha1": "99ce780a5b77e9b7b5cc5ac653f900dba90062df"
+    },
+    "axiom_audit": {
+      "path": "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/AxiomAudit.lean",
+      "bytes": 705,
+      "sha256": "b3fbfab3835298805e37c013de284fb26ecd26fd45bd6ec15b9818214c949343",
+      "git_blob_sha1": "52a0b0f6e75637376677420c6a85957b22102752"
+    }
+  },
+  "theorems": [
+    {
+      "name": "formula_embedding_preserves_interpretation",
+      "fully_qualified_name": "QIKVRT.V2.TEMDD.formula_embedding_preserves_interpretation"
+    },
+    {
+      "name": "arbitrary_payload_has_conservative_extension",
+      "fully_qualified_name": "QIKVRT.V2.TEMDD.arbitrary_payload_has_conservative_extension"
+    },
+    {
+      "name": "arbitrary_payload_extension_preserves_source_formula",
+      "fully_qualified_name": "QIKVRT.V2.TEMDD.arbitrary_payload_extension_preserves_source_formula"
+    },
+    {
+      "name": "arbitrary_conservative_extension",
+      "fully_qualified_name": "QIKVRT.V2.TEMDD.arbitrary_conservative_extension"
+    },
+    {
+      "name": "temdd_is_a_metagrammar",
+      "fully_qualified_name": "QIKVRT.V2.TEMDD.temdd_is_a_metagrammar"
+    },
+    {
+      "name": "completion_formula_lift",
+      "fully_qualified_name": "QIKVRT.V2.TEMDD.completion_formula_lift"
+    },
+    {
+      "name": "completion_lift",
+      "fully_qualified_name": "QIKVRT.V2.TEMDD.completion_lift"
+    }
+  ],
+  "axiom_policy": {
+    "allowed_kernel_axioms": [
+      "propext",
+      "Quot.sound",
+      "Classical.choice"
+    ],
+    "project_axioms_forbidden": true,
+    "exact_axiom_inventory_must_be_recorded_in_receipt": true
+  },
+  "formal_claim": {
+    "statement": "For every explicitly selected Lean payload type, the kernel constructs a typed extension vocabulary with a separate extension sort and canonical inclusion; Formula evaluation of the source vocabulary is preserved under restriction of a target interpretation along that inclusion.",
+    "definition_relative": true,
+    "semantic_contract": "Evaluation compatibility is defined only for the typed propositional Formula language and the supplied interpretation/restriction pair.",
+    "completion_contract": "Done transfers only under the explicit state-map, knowledge-coverage, knowledge-reflection, and requirement-preservation premises of completion_lift."
+  },
+  "proof_escape_policy": {
+    "project_axioms_forbidden": true,
+    "sorry_admit_forbidden": true,
+    "unchecked_constants_forbidden": true,
+    "axiom_audit_required": true,
+    "audit_result": "PENDING_EXACT_SUBJECT_EXECUTION"
+  },
+  "verification_contract": {
+    "status": "DECLARED_UNVERIFIED_CANDIDATE",
+    "commands": [
+      [
+        "lake",
+        "build",
+        "QIKVRTFormalization"
+      ],
+      [
+        "lake",
+        "env",
+        "lean",
+        "QIKVRTFormalization/TEMDD/AxiomAudit.lean"
+      ],
+      [
+        "python3",
+        "-B",
+        "scripts/audit_proof_escapes.py"
+      ]
+    ],
+    "required_binding": [
+      "exact_commit",
+      "exact_tree",
+      "command_exit_codes",
+      "axiom_audit_output_sha256"
+    ]
+  },
+  "nonclaims": [
+    "logical_conservativity",
+    "injectivity_of_an_arbitrary_supplied_vocabulary_embedding",
+    "every_conceivable_semantic_extension_is_sound",
+    "universal_natural_language_translation",
+    "truth_extraction_from_arbitrary_data",
+    "empirical_truth_of_any_modelled_law",
+    "repository_pass_final_pass_or_effect_ack_done"
+  ],
+  "self_binding_rule": "The Git commit and tree containing this scope file bind its exact bytes; this file deliberately does not make an impossible in-file self-hash claim.",
+  "release_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}

@@ -1,0 +1,273 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT TEMDD metagrammar kernel verification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/**"
+      - "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization.lean"
+      - "formalization/QIKVRT_Formalization_v2.0/TEMDD_PROOF_SCOPE.json"
+      - "docs/TEMDD_LANGUAGE_V1.md"
+      - "docs/TEMDD_METAGRAMMAR.md"
+      - "docs/LEAN_LAKE_PROOF_STATUS.md"
+      - "policy/TEMDD_LANGUAGE_V1.json"
+      - "tests/test_temdd_language.py"
+      - "tests/test_temdd_metagrammar.py"
+      - "Makefile"
+      - ".github/workflows/qikvrt_temdd_metagrammar_formalization.yml"
+  push:
+    branches-ignore: [main]
+    paths:
+      - "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/**"
+      - "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization.lean"
+      - "formalization/QIKVRT_Formalization_v2.0/TEMDD_PROOF_SCOPE.json"
+      - "docs/TEMDD_LANGUAGE_V1.md"
+      - "docs/TEMDD_METAGRAMMAR.md"
+      - "docs/LEAN_LAKE_PROOF_STATUS.md"
+      - "policy/TEMDD_LANGUAGE_V1.json"
+      - "tests/test_temdd_language.py"
+      - "tests/test_temdd_metagrammar.py"
+      - "Makefile"
+      - ".github/workflows/qikvrt_temdd_metagrammar_formalization.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-temdd-metagrammar-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exact-head-temdd-metagrammar:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact commit and tree
+        id: binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          test "$actual" = "$expected"
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          test "${#actual}" -eq 40
+          test "${#tree}" -eq 40
+          echo "head=$actual" >> "$GITHUB_OUTPUT"
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Verify source-level TEMDD contract
+        run: make temdd-contract
+
+      - name: Provision pinned Lean/Lake toolchain
+        uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: formalization/QIKVRT_Formalization_v2.0
+          test: false
+
+      - name: Verify declared Lean toolchain and build exact root
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(tr -d '\r\n' < lean-toolchain)" = "leanprover/lean4:v4.19.0"
+          lake env lean --version
+          lake env lean --githash
+          lake build QIKVRTFormalization
+
+      - name: Reject scoped proof escapes
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          lake env lean -E hasSorry QIKVRTFormalization/TEMDD/MetaGrammar.lean
+          lake env lean -E hasSorry QIKVRTFormalization/TEMDD/AxiomAudit.lean
+
+      - name: Reject repository proof escapes
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        run: python3 -B scripts/audit_proof_escapes.py
+
+      - name: Execute TEMDD metagrammar axiom audit
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .lake/build
+          lake env lean QIKVRTFormalization/TEMDD/AxiomAudit.lean \
+            > .lake/build/temdd-metagrammar-axioms.txt 2>&1
+          cat .lake/build/temdd-metagrammar-axioms.txt
+
+      - name: Validate exact formal scope and create receipt
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        shell: bash
+        env:
+          HEAD_SHA: ${{ steps.binding.outputs.head }}
+          TREE_SHA: ${{ steps.binding.outputs.tree }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import re
+          import subprocess
+
+          project = pathlib.Path('.').resolve()
+          repository_root = project.parents[1]
+          scope_path = project / 'TEMDD_PROOF_SCOPE.json'
+          scope = json.loads(scope_path.read_text(encoding='utf-8'))
+          audit_output = project / '.lake/build/temdd-metagrammar-axioms.txt'
+
+          def identity(path):
+              raw = path.read_bytes()
+              return {
+                  'path': path.relative_to(repository_root).as_posix(),
+                  'bytes': len(raw),
+                  'sha256': hashlib.sha256(raw).hexdigest(),
+                  'git_blob_sha1': subprocess.check_output(
+                      ['git', 'hash-object', '--no-filters', str(path)],
+                      text=True,
+                  ).strip(),
+              }
+
+          source_identities = {}
+          for label, expected in scope['source_files'].items():
+              actual = identity(repository_root / expected['path'])
+              if actual != expected:
+                  raise SystemExit(
+                      f'BLOCK source identity mismatch for {label}: '
+                      f'expected={expected!r} observed={actual!r}'
+                  )
+              source_identities[label] = actual
+
+          expected_names = [item['fully_qualified_name'] for item in scope['theorems']]
+          raw_audit = audit_output.read_text(encoding='utf-8')
+          pattern = re.compile(
+              r"'([^']+)' (?:does not depend on any axioms|depends on axioms:\s*\[([^]]*)\])"
+          )
+          reports = {}
+          cursor = 0
+          for match in pattern.finditer(raw_audit):
+              if raw_audit[cursor:match.start()].strip():
+                  raise SystemExit(
+                      'BLOCK unexpected axiom-audit segment: '
+                      f'{raw_audit[cursor:match.start()]!r}'
+                  )
+              name = match.group(1)
+              if name in reports:
+                  raise SystemExit(f'BLOCK duplicate theorem audit: {name}')
+              reports[name] = [
+                  value.strip() for value in (match.group(2) or '').split(',')
+                  if value.strip()
+              ]
+              cursor = match.end()
+          if raw_audit[cursor:].strip():
+              raise SystemExit(
+                  'BLOCK unexpected trailing axiom-audit output: '
+                  f'{raw_audit[cursor:]!r}'
+              )
+          if list(reports) != expected_names:
+              raise SystemExit(
+                  f'BLOCK theorem inventory differs: expected={expected_names!r} '
+                  f'observed={list(reports)!r}'
+              )
+
+          allowed = set(scope['axiom_policy']['allowed_kernel_axioms'])
+          observed_axioms = sorted({
+              axiom for theorem_axioms in reports.values()
+              for axiom in theorem_axioms
+          })
+          project_axioms = sorted(set(observed_axioms) - allowed)
+          if scope['axiom_policy']['project_axioms_forbidden'] and project_axioms:
+              raise SystemExit(
+                  f'BLOCK unexpected project axiom dependencies: {project_axioms!r}'
+              )
+
+          event_name = os.environ['GITHUB_EVENT_NAME']
+          receipt = {
+              'schema': 'qikvrt_temdd_metagrammar_kernel_receipt_v1',
+              'state': 'KERNEL_STEP_VERIFIED',
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'source_commit': os.environ['HEAD_SHA'],
+              'source_tree': os.environ['TREE_SHA'],
+              'checkout': {
+                  'event_name': event_name,
+                  'mode': (
+                      'pull_request_exact_head'
+                      if event_name == 'pull_request' else 'push_exact_head'
+                  ),
+                  'github_sha': os.environ['GITHUB_SHA'],
+                  'github_ref': os.environ['GITHUB_REF'],
+              },
+              'workflow': {
+                  'run_id': os.environ['GITHUB_RUN_ID'],
+                  'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+                  'url': (
+                      f"{os.environ['GITHUB_SERVER_URL']}/"
+                      f"{os.environ['GITHUB_REPOSITORY']}/actions/runs/"
+                      f"{os.environ['GITHUB_RUN_ID']}"
+                  ),
+              },
+              'runtime': {
+                  'toolchain': scope['formal_system'],
+                  'lean_version': subprocess.check_output(
+                      ['lake', 'env', 'lean', '--version'], text=True
+                  ).strip(),
+                  'lean_githash': subprocess.check_output(
+                      ['lake', 'env', 'lean', '--githash'], text=True
+                  ).strip(),
+              },
+              'source_files': source_identities,
+              'axiom_audit_output': identity(audit_output),
+              'theorem_count': len(expected_names),
+              'theorems': expected_names,
+              'axioms_by_theorem': reports,
+              'allowed_kernel_axioms': sorted(allowed),
+              'observed_kernel_axioms': observed_axioms,
+              'project_axioms': project_axioms,
+              'formal_claim': scope['formal_claim'],
+              'scope_boundary': scope['nonclaims'],
+              'global_pass': 'NOT_CLAIMED',
+              'final_pass': 'NOT_CLAIMED',
+              'effect_ack_done': 'NOT_CLAIMED',
+              'physical_correspondence': 'NOT_INFERRED',
+              'empirical_truth': 'NOT_INFERRED',
+              'universal_truth_oracle': 'NOT_INFERRED',
+          }
+          canonical = json.dumps(
+              receipt, ensure_ascii=False, sort_keys=True, separators=(',', ':')
+          ).encode('utf-8')
+          receipt['receipt_payload_sha256'] = hashlib.sha256(canonical).hexdigest()
+          receipt_path = project / '.lake/build/TEMDD_METAGRAMMAR_KERNEL_RECEIPT.json'
+          receipt_path.write_text(
+              json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + '\\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload exact-head TEMDD metagrammar evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-temdd-metagrammar-kernel-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            formalization/QIKVRT_Formalization_v2.0/.lake/build/temdd-metagrammar-axioms.txt
+            formalization/QIKVRT_Formalization_v2.0/.lake/build/TEMDD_METAGRAMMAR_KERNEL_RECEIPT.json
