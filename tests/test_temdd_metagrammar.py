@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import pathlib
+import re
 import unittest
 
 
@@ -81,6 +82,26 @@ class TEMDDMetaGrammarScopeTests(unittest.TestCase):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("project = pathlib.Path('.').resolve()", workflow)
         self.assertIn("repository_root = project.parents[1]", workflow)
+
+    def test_receipt_axiom_audit_pattern_is_valid(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        expected = (
+            r"'([^']+)' (?:does not depend on any axioms|"
+            r"depends on axioms:\s*\[([^]]*)\])"
+        )
+        self.assertIn(expected, workflow)
+        compiled = re.compile(expected)
+        self.assertIsNotNone(
+            compiled.fullmatch(
+                "'QIKVRT.V2.TEMDD.completion_lift' does not depend on any axioms"
+            )
+        )
+        self.assertIsNotNone(
+            compiled.fullmatch(
+                "'QIKVRT.V2.TEMDD.completion_lift' depends on axioms: "
+                "[propext, Quot.sound]"
+            )
+        )
 
 
 if __name__ == "__main__":
