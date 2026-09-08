@@ -121,7 +121,7 @@ jobs:
           for replica in a b; do
             ready=0
             for attempt in $(seq 1 120); do
-              if docker exec "qikvrt-v2-${replica}" /usr/local/bin/qikvrt-cloud-transputer-health >>"/tmp/v2-health-${replica}.log" 2>&1; then
+              if docker exec "qikvrt-v2-${replica}" test -s /run/qikvrt/ready.txt 2>/dev/null; then
                 ready=1
                 break
               fi
@@ -131,11 +131,12 @@ jobs:
               sleep 2
             done
             if [ "$ready" -ne 1 ]; then
-              cat "/tmp/v2-health-${replica}.log" >&2
               docker logs "qikvrt-v2-${replica}" >&2 || true
               exit 1
             fi
-            docker exec "qikvrt-v2-${replica}" /usr/local/bin/qikvrt-cloud-transputer-health | tee -a "/tmp/v2-health-${replica}.log"
+            docker exec -e QIKVRT_VERIFY_SQL_EFFECT_ACK=1 "qikvrt-v2-${replica}" \
+              /usr/local/bin/qikvrt-cloud-transputer-health | tee "/tmp/v2-health-${replica}.log"
+            touch "/tmp/${replica}-sql-effect.ok"
             docker cp "qikvrt-v2-${replica}:/var/lib/qikvrt/state/runtime.json" "/tmp/${replica}-runtime.json"
             docker cp "qikvrt-v2-${replica}:/var/lib/qikvrt/state/authority-mirror.json" "/tmp/${replica}-authority.json"
             docker cp "qikvrt-v2-${replica}:/var/lib/qikvrt/state/m68k/personal-posix-tcpip-receipt.json" "/tmp/${replica}-m68k-posix.json"
@@ -145,6 +146,7 @@ jobs:
           printf '%s\n' replica-a-only | docker exec -i qikvrt-v2-a sh -c 'cat > /var/lib/qikvrt/profile/.v2-scale-sentinel'
           test "$(docker exec qikvrt-v2-a cat /var/lib/qikvrt/profile/.v2-scale-sentinel)" = replica-a-only
           ! docker exec qikvrt-v2-b test -e /var/lib/qikvrt/profile/.v2-scale-sentinel
+          touch /tmp/profile-isolation.ok
           python3 -B - <<'PY'
           import json
           def load(path): return json.load(open(path,encoding='utf-8'))
@@ -185,13 +187,14 @@ jobs:
           ready=0
           : >/tmp/v2-restart-a.log
           for attempt in $(seq 1 120); do
-            if docker exec qikvrt-v2-a /usr/local/bin/qikvrt-cloud-transputer-health >>/tmp/v2-restart-a.log 2>&1; then ready=1; break; fi
+            if docker exec qikvrt-v2-a test -s /run/qikvrt/ready.txt 2>/dev/null; then ready=1; break; fi
             if ! docker inspect -f '{{.State.Running}}' qikvrt-v2-a 2>/dev/null | grep -qx true; then break; fi
             sleep 2
           done
           test "$ready" -eq 1
-          docker exec qikvrt-v2-a /usr/local/bin/qikvrt-cloud-transputer-health | tee -a /tmp/v2-restart-a.log
+          docker exec qikvrt-v2-a /usr/local/bin/qikvrt-cloud-transputer-health | tee /tmp/v2-restart-a.log
           test "$(docker exec qikvrt-v2-a cat /var/lib/qikvrt/profile/.v2-scale-sentinel)" = replica-a-only
+          touch /tmp/persistent-restart.ok
 
       - name: Preserve exact-head V2 evidence
         if: always()
@@ -205,7 +208,8 @@ jobs:
           for f in native-c90-execution.txt docker-build-v2.log image-inspect-v2.json \
                    v2-health-a.log v2-health-b.log v2-restart-a.log terminal-v2.html \
                    a-runtime.json b-runtime.json a-authority.json b-authority.json \
-                   a-m68k-posix.json b-m68k-posix.json a-sql-state.json b-sql-state.json; do
+                   a-m68k-posix.json b-m68k-posix.json a-sql-state.json b-sql-state.json \
+                   a-sql-effect.ok b-sql-effect.ok profile-isolation.ok persistent-restart.ok; do
             cp "/tmp/$f" "$out/$f" 2>/dev/null || true
           done
           for replica in a b; do
@@ -215,15 +219,18 @@ jobs:
           python3 -B - "$out/receipt.json" '${{ steps.bind.outputs.tree }}' <<'PY'
           import json,os,sys
           path,tree=sys.argv[1:]
+          runtime_files=[f'/tmp/{r}-runtime.json' for r in ('a','b')]
           value={
             'schema':'qikvrt_cloud_transputer_v2_ci_receipt_v1',
             'subject_head_sha':os.environ['EXACT_SUBJECT_SHA'],'subject_tree_sha':tree,
             'strict_c90_selftest_reobserved':os.path.exists('/tmp/native-c90-execution.txt'),
-            'm68000_execution_reobserved':os.path.exists('/tmp/a-m68k-posix.json') and os.path.exists('/tmp/b-m68k-posix.json'),
-            'firefox_proxy_ui_reobserved':os.path.exists('/tmp/terminal-v2.html'),
-            'sql92_effect_ack_readback_reobserved':os.path.exists('/tmp/a-sql-state.json') and os.path.exists('/tmp/b-sql-state.json'),
-            'authority_mirror_reobserved':os.path.exists('/tmp/a-authority.json') and os.path.exists('/tmp/b-authority.json'),
-            'replicas_reobserved':2,'profile_isolation_reobserved':True,'persistent_restart_reobserved':os.path.exists('/tmp/v2-restart-a.log'),
+            'm68000_execution_reobserved':all(os.path.exists(f'/tmp/{r}-m68k-posix.json') for r in ('a','b')),
+            'firefox_proxy_ui_reobserved':os.path.exists('/tmp/terminal-v2.html') and os.path.getsize('/tmp/terminal-v2.html')>0,
+            'sql92_effect_ack_readback_reobserved':all(os.path.exists(f'/tmp/{r}-sql-effect.ok') for r in ('a','b')),
+            'authority_mirror_reobserved':all(os.path.exists(f'/tmp/{r}-authority.json') for r in ('a','b')),
+            'replicas_reobserved':sum(os.path.exists(f) for f in runtime_files),
+            'profile_isolation_reobserved':os.path.exists('/tmp/profile-isolation.ok'),
+            'persistent_restart_reobserved':os.path.exists('/tmp/persistent-restart.ok'),
             'public_cloud_runtime_origin_deployed':False,'physical_m68000_execution':False,
             'full_posix_1_conformance':False,'bare_metal_nic_driver':False,
             'approval':False,'merge':False,'publication':False,'pass':False,'final_pass':False,'effect_ack_done':False,
