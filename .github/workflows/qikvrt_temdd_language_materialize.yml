@@ -1,0 +1,78 @@
+name: TEMDD language exact-head materialization
+
+on:
+  push:
+    branches:
+      - temdd/language-v1-completion-calculus
+
+permissions:
+  contents: write
+
+concurrency:
+  group: temdd-language-materialize-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          auto-config: false
+      - name: Bind exact source subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "${GITHUB_SHA}"
+          git rev-parse HEAD^{tree}
+      - name: Validate TEMDD reference semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v tests.test_temdd_language
+      - name: Build checked Lean formalization
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          lake build
+      - name: Materialize repository integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+      - name: Run complete repository gates on materialized worktree
+        shell: bash
+        run: |
+          set -euo pipefail
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+      - name: Persist only deterministic integrity evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_head="$(git rev-parse --verify HEAD^{commit})"
+          remote_head="$(git ls-remote --heads origin "refs/heads/${GITHUB_REF_NAME}" | awk 'NR == 1 { print $1 }')"
+          if [ "$remote_head" != "$source_head" ]; then
+            echo "BLOCK: branch advanced before persistence" >&2
+            exit 2
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          if git diff --cached --quiet; then
+            echo "No integrity delta to persist."
+            exit 0
+          fi
+          git commit -m "temdd: materialize exact-head integrity evidence"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
