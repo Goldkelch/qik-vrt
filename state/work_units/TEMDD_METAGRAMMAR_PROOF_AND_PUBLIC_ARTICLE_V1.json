@@ -80,7 +80,8 @@
   ],
   "unresolved_origin": [
     "A source file and manual review do not replace a fresh Lean/Lake kernel check on the exact committed subject.",
-    "The local temporary Lean 4.19 runtime provisioned its toolchain, but the container's Lean executable returned 'failed to locate application'; this is an environment observation, not a source-level proof failure.",
+    "External exact-head CI run 34227447978 on remote candidate 0bb48f55a95ba1753e6dcc685f0a980a3bb80f75 reported a Lean source parser failure at MetaGrammar.lean:24:2 because the field name Sort is reserved; the successor candidate renames that field and requires a fresh exact-head kernel receipt.",
+    "The local container has no usable Lake executable, so it cannot replace the required external exact-head kernel check.",
     "Transport attribution does not establish natural-person identity, legal authorship, independent approval, merge authorization, publication, empirical truth, or external effect acknowledgement."
   ],
   "inputs": {
@@ -121,7 +122,9 @@
     "branch": "temdd/metagrammar-proof-20260908",
     "base_commit": "1e69535303bd4ecf9ea5c96414a580a42e95f9ab",
     "base_tree": "e383fe468dab363792e7f7c5a010e793dff37670",
-    "content_commits": [],
+    "content_commits": [
+      "d3c81acf8bd2a3759874876341fc707bfa8d9909"
+    ],
     "required_parent": "1e69535303bd4ecf9ea5c96414a580a42e95f9ab",
     "force_push": false,
     "history_rewrite": false,
@@ -134,10 +137,10 @@
     "workflow_yaml": "PASS",
     "workflow_embedded_receipt_script": "PASS",
     "diff_check": "PASS",
-    "local_lean_lake": "HOLD_ENVIRONMENT_APPLICATION_LOOKUP_FAILURE",
-    "repository_integrity": "PASS_4108_CLASSIFIED_ENTRIES_4099_IMMUTABLE_DIGESTS",
-    "trusted_exact_head_ci": "PENDING_CANDIDATE_COMMIT_AND_REMOTE_REOBSERVATION",
-    "first_blocker": "EXACT_COMMITTED_HEAD_CI_RECEIPT_PENDING"
+    "local_lean_lake": "HOLD_LOCAL_LAKE_NOT_INSTALLED",
+    "repository_integrity": "PASS_4107_CLASSIFIED_ENTRIES_4098_IMMUTABLE_DIGESTS_EXCLUDING_USER_OWNED_UNTRACKED_ARCHIVE",
+    "trusted_exact_head_ci": "HOLD_REMOTE_SOURCE_BUILD_FAILURE_RUN_34227447978; SUCCESSOR_EXACT_HEAD_RECEIPT_PENDING",
+    "first_blocker": "EXACT_SUCCESSOR_HEAD_KERNEL_RECEIPT_PENDING_AFTER_PARSER_REMEDIATION"
   },
   "human_decision": {
     "repository_candidate_direction": "RECEIVED",
@@ -148,8 +151,8 @@
     "manual_modification": "NOT_RECORDED"
   },
   "external_effects": {
-    "candidate_ref_update": "AUTHORIZED_PENDING_EXECUTION",
-    "pull_request": "PENDING",
+    "candidate_ref_update": "OBSERVED_REMOTE_REF_0bb48f55a95ba1753e6dcc685f0a980a3bb80f75_BEFORE_PARSER_REMEDIATION",
+    "pull_request": "OBSERVED_DRAFT_PR_1055_FOR_PRE_REMEDIATION_CANDIDATE; SUCCESSOR_UPDATE_PENDING",
     "merge": "NOT_EXECUTED",
     "independent_review": "NOT_SUBMITTED",
     "release": "NOT_EXECUTED",
@@ -164,6 +167,6 @@
     "PUBLICATION": false,
     "DOI": false
   },
-  "status": "IMPLEMENTED_PENDING_EXACT_HEAD_CI_AND_REVIEW_CANDIDATE",
+  "status": "SOURCE_REMEDIATED_PENDING_NEW_EXACT_HEAD_CI_AND_REVIEW_CANDIDATE",
   "scope_boundary": "This candidate formalizes a typed syntax-extension construction and interpretation-compatibility result only. It does not establish logical conservativity, universal natural-language translation, truth extraction from arbitrary data, empirical truth of modelled natural laws, repository PASS/FINAL_PASS, merge, publication, or external effect acknowledgement."
 }

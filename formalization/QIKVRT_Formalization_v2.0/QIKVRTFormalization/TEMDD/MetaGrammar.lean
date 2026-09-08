@@ -21,12 +21,12 @@ universe u v w x
 
 /-- A vocabulary whose primitive symbols are indexed by a declared sort. -/
 structure TypedVocabulary where
-  Sort : Type u
-  Symbol : Sort → Type u
+  domain : Type u
+  symbol : domain → Type u
 
 /-- Propositional formulas over a typed vocabulary. -/
 inductive Formula (V : TypedVocabulary.{u}) : Type u where
-  | atom : {sort : V.Sort} → V.Symbol sort → Formula V
+  | atom : {domain : V.domain} → V.symbol domain → Formula V
   | truth : Formula V
   | falsity : Formula V
   | conjunction : Formula V → Formula V → Formula V
@@ -38,9 +38,9 @@ inductive Formula (V : TypedVocabulary.{u}) : Type u where
 structure VocabularyEmbedding
     (source : TypedVocabulary.{u})
     (target : TypedVocabulary.{v}) where
-  mapSort : source.Sort → target.Sort
-  mapSymbol : ∀ {sort : source.Sort},
-    source.Symbol sort → target.Symbol (mapSort sort)
+  mapDomain : source.domain → target.domain
+  mapSymbol : ∀ {domain : source.domain},
+    source.symbol domain → target.symbol (mapDomain domain)
 
 /--
 The sorts of an extension: inherited source sorts remain distinct from one
@@ -49,7 +49,7 @@ fresh sort whose primitive symbols have the payload type.
 inductive ExtensionSort
     (source : TypedVocabulary.{u})
     (payload : Type v) : Type (max u v) where
-  | inherited : source.Sort → ExtensionSort source payload
+  | inherited : source.domain → ExtensionSort source payload
   | extension : ExtensionSort source payload
 
 /--
@@ -59,10 +59,10 @@ Extend a vocabulary by one separate sort whose symbols are values of
 def extend
     (source : TypedVocabulary.{u})
     (payload : Type v) : TypedVocabulary.{max u v} where
-  Sort := ExtensionSort source payload
-  Symbol := fun sort =>
-    match sort with
-    | .inherited inheritedSort => source.Symbol inheritedSort
+  domain := ExtensionSort source payload
+  symbol := fun domain =>
+    match domain with
+    | .inherited inheritedDomain => source.symbol inheritedDomain
     | .extension => payload
 
 /-- The canonical inclusion of every source sort and symbol into `extend`. -/
@@ -70,7 +70,7 @@ def inclusion
     (source : TypedVocabulary.{u})
     (payload : Type v) :
     VocabularyEmbedding source (extend source payload) where
-  mapSort := ExtensionSort.inherited
+  mapDomain := ExtensionSort.inherited
   mapSymbol := fun symbol => symbol
 
 namespace Formula
@@ -96,7 +96,7 @@ end Formula
 
 /-- An interpretation assigns a proposition to each well-typed primitive. -/
 abbrev Interpretation (V : TypedVocabulary.{u}) :=
-  ∀ {sort : V.Sort}, V.Symbol sort → Prop
+  ∀ {domain : V.domain}, V.symbol domain → Prop
 
 namespace Formula
 
@@ -123,7 +123,7 @@ def restrictInterpretation
     (embedding : VocabularyEmbedding source target)
     (interpretation : Interpretation target) :
     Interpretation source :=
-  fun {sort} symbol => interpretation (embedding.mapSymbol symbol)
+  fun {domain} symbol => interpretation (embedding.mapSymbol symbol)
 
 /-- Formula embedding preserves meaning under the corresponding restriction. -/
 theorem formula_embedding_preserves_interpretation
@@ -273,8 +273,8 @@ inductive TEMDDPrimitive : TEMDDSort → Type where
 
 /-- The typed vocabulary used by the TEMDD meta-grammar theorem. -/
 def TEMDDVocabulary : TypedVocabulary where
-  Sort := TEMDDSort
-  Symbol := TEMDDPrimitive
+  domain := TEMDDSort
+  symbol := TEMDDPrimitive
 
 /-- The core formula naming a completion claim. -/
 def completionFormula : Formula TEMDDVocabulary :=
