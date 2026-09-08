@@ -1,0 +1,98 @@
+{
+  "_license": {
+    "classification": "machine_readable_control_contract",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_cloud_transputer_posix_tcpip_v2",
+  "version": "2.0.0-candidate",
+  "predecessor_runtime": {
+    "branch": "runtime/cloud-transputer-v1",
+    "head": "7f639df8ba8cca3fd8d84b63c95575faaa15c1e6",
+    "tree": "e80cc4b1c86b9fa63e926047b28da9b4645f3f14",
+    "evidence_transfer": false
+  },
+  "fixed_mesh_surface": {
+    "launcher": "https://goldkelch.github.io/qik-vrt/cloud-transputer/",
+    "runtime_origin_requires_independent_deployment_readback": true,
+    "firefox_proxy_path": "/terminal/vnc.html",
+    "public_additional_sql_port": false,
+    "sql_ui_is_inside_personalized_firefox": true
+  },
+  "personal_posix_m68000": {
+    "source": "src/cloud_transputer/personal_posix_tcpip.c",
+    "language_contract": "STRICT_ISO_C90",
+    "cross_compiler": "m68k-linux-gnu-gcc",
+    "execution_adapter": "qemu-m68k",
+    "profile": "QIKVRT_PERSONAL_POSIX_C90_V1",
+    "implemented_descriptor_operations": ["open", "read", "write", "lseek", "close"],
+    "standalone_packet_engine": {
+      "ipv4": true,
+      "tcp": true,
+      "udp": true,
+      "tcp_three_way_handshake": true,
+      "http_bootstrap_payload": "GET /.well-known/qikvrt-cloud-transputer HTTP/1.0",
+      "host_socket_api_used_by_packet_engine": false
+    },
+    "effect_ack_core": "src/effect_ack_core.c",
+    "effect_ack_positive_and_negative_selftests_required": true,
+    "external_packet_io_adapter": "LINUX_OCI_HOST_ADAPTER",
+    "bare_metal_nic_driver_claimed": false,
+    "full_posix_1_conformance_claimed": false,
+    "physical_m68000_execution_claimed": false
+  },
+  "sql_terminal": {
+    "implementation": "src/cloud_transputer/sql92_gateway.py",
+    "bind": "127.0.0.1:8772",
+    "browser_surface": true,
+    "postgresql_database": "qikvrt",
+    "profile": "SQL92_ORIENTED_POSTGRESQL_SUBSET",
+    "full_sql92_conformance_claimed": false,
+    "prepare_has_effect": false,
+    "commit_requires_single_use_token": true,
+    "commit_requires_exact_request_hash": true,
+    "commit_requires_explicit_readback_select": true,
+    "effect_ack_done_scope": "LOCAL_QIKVRT_DATABASE_ONLY",
+    "repository_effect_from_sql_ack": false,
+    "publication_effect_from_sql_ack": false
+  },
+  "scale_contract": {
+    "unit": "ONE_CONTAINER_ONE_PERSISTENT_PERSONAL_PROFILE_ONE_RUNTIME_ID",
+    "horizontal_replication": true,
+    "independent_profile_state_required": true,
+    "independent_effect_authority_required": true,
+    "common_authority_mirror_head_may_be_observed": true,
+    "replica_count_is_not_unbounded_proof": true,
+    "minimum_candidate_scale_readback_replicas": 2
+  },
+  "required_candidate_readbacks": [
+    "EXACT_HEAD_AND_TREE",
+    "STRICT_C90_NATIVE_COMPILE_AND_SELFTEST",
+    "M68000_CROSS_COMPILE",
+    "M68000_QEMU_EXECUTION",
+    "IPV4_TCP_UDP_PACKET_ENGINE",
+    "TCP_HANDSHAKE_AND_HTTP_BOOTSTRAP",
+    "EFFECT_ACK_POSITIVE_AND_NEGATIVE",
+    "FIREFOX_NOVNC_PROXY_UI",
+    "SQL92_PREPARE_COMMIT_READBACK",
+    "AUTHORITY_MIRROR_HEAD_AND_TREE",
+    "TWO_REPLICA_RUNTIME_ID_ISOLATION",
+    "TWO_REPLICA_PROFILE_ISOLATION",
+    "PERSISTENT_RESTART_READBACK"
+  ],
+  "delivery_boundaries": {
+    "candidate_ci_is_public_deployment": false,
+    "candidate_ci_is_physical_m68000_execution": false,
+    "transport_ack_is_effect_ack": false,
+    "local_database_effect_ack_is_global_effect_ack": false,
+    "runtime_branch_deploy_is_trusted_main_merge": false,
+    "approval": false,
+    "merge": false,
+    "publication": false,
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
