@@ -68,7 +68,10 @@ jobs:
                 deploy/cloud-transputer/v2-entrypoint.sh \
                 deploy/cloud-transputer/v2-runtime-health.sh \
                 deploy/cloud-transputer/authority-mirror-refresh.sh
-          python3 -m py_compile src/cloud_transputer/smtpd.py src/cloud_transputer/sql92_gateway.py
+          python3 -m py_compile \
+            src/cloud_transputer/smtpd.py \
+            src/cloud_transputer/sql92_gateway.py \
+            src/cloud_transputer/runtime_v2_compose.py
           docker compose -f deploy/cloud-transputer/compose.yaml config >/tmp/cloud-transputer-compose.txt
 
       - name: Build exact V2 OCI image
@@ -121,7 +124,7 @@ jobs:
           for replica in a b; do
             ready=0
             for attempt in $(seq 1 120); do
-              if docker exec "qikvrt-v2-${replica}" test -s /run/qikvrt/ready.txt 2>/dev/null; then
+              if docker exec "qikvrt-v2-${replica}" test -s /run/qikvrt/v2-ready.txt 2>/dev/null; then
                 ready=1
                 break
               fi
@@ -143,6 +146,7 @@ jobs:
             docker exec "qikvrt-v2-${replica}" curl -fsS http://127.0.0.1:8772/state >"/tmp/${replica}-sql-state.json"
           done
           curl -fsS http://127.0.0.1:18080/terminal/vnc.html >/tmp/terminal-v2.html
+          curl -fsS http://127.0.0.1:18080/.well-known/qikvrt-cloud-transputer >/tmp/public-runtime-v2.json
           printf '%s\n' replica-a-only | docker exec -i qikvrt-v2-a sh -c 'cat > /var/lib/qikvrt/profile/.v2-scale-sentinel'
           test "$(docker exec qikvrt-v2-a cat /var/lib/qikvrt/profile/.v2-scale-sentinel)" = replica-a-only
           ! docker exec qikvrt-v2-b test -e /var/lib/qikvrt/profile/.v2-scale-sentinel
@@ -153,9 +157,22 @@ jobs:
           ar,br=load('/tmp/a-runtime.json'),load('/tmp/b-runtime.json')
           aa,ba=load('/tmp/a-authority.json'),load('/tmp/b-authority.json')
           am,bm=load('/tmp/a-m68k-posix.json'),load('/tmp/b-m68k-posix.json')
+          public=load('/tmp/public-runtime-v2.json')
           assert ar['runtime_id']=='qikvrt-cloud-transputer-v2-a'
           assert br['runtime_id']=='qikvrt-cloud-transputer-v2-b'
           assert ar['runtime_id'] != br['runtime_id']
+          for runtime,receipt in ((ar,am),(br,bm)):
+              assert runtime['runtime_overlay_schema']=='qikvrt_cloud_transputer_runtime_v2_overlay_v1'
+              assert runtime['personal_posix_state']=='REPOSITORY_C90_M68000_PROFILE_VERIFIED'
+              assert runtime['personal_posix_profile']=='QIKVRT_PERSONAL_POSIX_C90_V1'
+              assert runtime['personal_posix_source_sha256']==receipt['source_sha256']
+              assert runtime['personal_posix_m68000_binary_sha256']==receipt['m68000_binary_sha256']
+              assert runtime['standalone_m68000_tcp_ip_packet_engine_verified'] is True
+              assert runtime['external_packet_io_adapter']=='LINUX_OCI_HOST_ADAPTER'
+              assert runtime['standalone_m68000_tcp_ip_stack_claimed'] is False
+              assert runtime['physical_m68000_execution_claimed'] is False
+              assert runtime['pass'] is False and runtime['final_pass'] is False and runtime['effect_ack_done'] is False
+          assert public==ar
           assert aa['main_head_sha']==ba['main_head_sha']
           assert aa['main_tree_sha']==ba['main_tree_sha']
           assert aa['origin']==ba['origin']=='https://github.com/Goldkelch/qik-vrt.git'
@@ -167,6 +184,7 @@ jobs:
               assert r['global_effect_ack_done'] is False
           assert am['m68000_binary_sha256']==bm['m68000_binary_sha256']
           PY
+          touch /tmp/public-runtime-overlay.ok
 
       - name: Restart replica A and reobserve personalized persistence
         shell: bash
@@ -187,13 +205,15 @@ jobs:
           ready=0
           : >/tmp/v2-restart-a.log
           for attempt in $(seq 1 120); do
-            if docker exec qikvrt-v2-a test -s /run/qikvrt/ready.txt 2>/dev/null; then ready=1; break; fi
+            if docker exec qikvrt-v2-a test -s /run/qikvrt/v2-ready.txt 2>/dev/null; then ready=1; break; fi
             if ! docker inspect -f '{{.State.Running}}' qikvrt-v2-a 2>/dev/null | grep -qx true; then break; fi
             sleep 2
           done
           test "$ready" -eq 1
           docker exec qikvrt-v2-a /usr/local/bin/qikvrt-cloud-transputer-health | tee /tmp/v2-restart-a.log
           test "$(docker exec qikvrt-v2-a cat /var/lib/qikvrt/profile/.v2-scale-sentinel)" = replica-a-only
+          docker exec qikvrt-v2-a curl -fsS http://127.0.0.1:8080/.well-known/qikvrt-cloud-transputer \
+            | python3 -c 'import json,sys; r=json.load(sys.stdin); assert r["personal_posix_state"]=="REPOSITORY_C90_M68000_PROFILE_VERIFIED"; assert r["runtime_overlay_schema"]=="qikvrt_cloud_transputer_runtime_v2_overlay_v1"'
           touch /tmp/persistent-restart.ok
 
       - name: Preserve exact-head V2 evidence
@@ -207,9 +227,9 @@ jobs:
           printf '%s\n' '${{ steps.bind.outputs.tree }}' > "$out/exact-tree.txt"
           for f in native-c90-execution.txt docker-build-v2.log image-inspect-v2.json \
                    v2-health-a.log v2-health-b.log v2-restart-a.log terminal-v2.html \
-                   a-runtime.json b-runtime.json a-authority.json b-authority.json \
+                   public-runtime-v2.json a-runtime.json b-runtime.json a-authority.json b-authority.json \
                    a-m68k-posix.json b-m68k-posix.json a-sql-state.json b-sql-state.json \
-                   a-sql-effect.ok b-sql-effect.ok profile-isolation.ok persistent-restart.ok; do
+                   a-sql-effect.ok b-sql-effect.ok profile-isolation.ok public-runtime-overlay.ok persistent-restart.ok; do
             cp "/tmp/$f" "$out/$f" 2>/dev/null || true
           done
           for replica in a b; do
@@ -226,6 +246,7 @@ jobs:
             'strict_c90_selftest_reobserved':os.path.exists('/tmp/native-c90-execution.txt'),
             'm68000_execution_reobserved':all(os.path.exists(f'/tmp/{r}-m68k-posix.json') for r in ('a','b')),
             'firefox_proxy_ui_reobserved':os.path.exists('/tmp/terminal-v2.html') and os.path.getsize('/tmp/terminal-v2.html')>0,
+            'public_runtime_v2_overlay_reobserved':os.path.exists('/tmp/public-runtime-overlay.ok'),
             'sql92_effect_ack_readback_reobserved':all(os.path.exists(f'/tmp/{r}-sql-effect.ok') for r in ('a','b')),
             'authority_mirror_reobserved':all(os.path.exists(f'/tmp/{r}-authority.json') for r in ('a','b')),
             'replicas_reobserved':sum(os.path.exists(f) for f in runtime_files),
