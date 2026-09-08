@@ -145,7 +145,7 @@ class GatewayState:
         proc = subprocess.run(
             [
                 "psql", "-X", "-A", "-t", "-v", "ON_ERROR_STOP=1",
-                "-h", "127.0.0.1", "-p", str(self.pg_port), "-U", "qikvrt", "-d", "qikvrt",
+                "-h", "/run/postgresql", "-p", str(self.pg_port), "-U", "qikvrt", "-d", "qikvrt",
             ],
             input=sql + ";\n",
             text=True,
@@ -162,8 +162,10 @@ class GatewayState:
     def persist_receipt(self, value: dict[str, Any]) -> str:
         encoded = canonical_json(value)
         digest = sha256_bytes(encoded)
-        self.sequence += 1
-        path = self.receipt_dir / f"{self.sequence:08d}-{digest}.json"
+        with self.lock:
+            self.sequence += 1
+            sequence = self.sequence
+        path = self.receipt_dir / f"{sequence:08d}-{digest}.json"
         path.write_bytes(json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2).encode("utf-8") + b"\n")
         return digest
 
