@@ -52,6 +52,34 @@ model is a law of nature.  Physical hypotheses and empirical-correspondence
 claims remain separately classified and require their own experimental
 receipts.
 
+## TEMDD conservative-metagrammar scope
+
+The TEMDD completion calculus and its conservative-metagrammar extension are
+an additive proof surface. They are not source environments of the locked
+62-page manuscript and are therefore not counted among that manuscript's
+claim-graph totals.
+
+The relevant candidate sources are:
+
+- `formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/Completion.lean`
+- `formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/MetaGrammar.lean`
+- `formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/AxiomAudit.lean`
+- `formalization/QIKVRT_Formalization_v2.0/TEMDD_PROOF_SCOPE.json`
+
+The meta-language theorem has a precise, limited statement: any explicitly
+declared Lean payload type can be introduced as fresh TEMDD vocabulary through
+a typed embedding, while evaluation of formulae from the prior vocabulary is
+preserved under interpretation restriction. In that definition-relative sense
+TEMDD is a conservative metagrammar for the represented syntax.
+
+It does **not** establish that every conceivable semantic extension is sound,
+that arbitrary human or machine language is translated faithfully, that
+software extracts truth from arbitrary data, or that a modelled law is thereby
+an empirically established law of nature. Those remain semantic,
+implementation, measurement, and independent-reproduction obligations. As
+with every Lean/Lake statement, kernel-checked status belongs only to an exact
+subject on which the pinned build and axiom audit have actually succeeded.
+
 ## Repository invariants are a different evidence class
 
 QIK-VRT's `ZERO-BUG` terminology is an operational repository invariant.  The

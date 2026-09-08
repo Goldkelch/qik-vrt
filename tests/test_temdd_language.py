@@ -12,6 +12,7 @@ from tools.temdd_language import (
     evaluate_completion,
     requirement_transition_allowed,
 )
+import unittest
 
 
 def complete(**overrides):
@@ -81,3 +82,25 @@ def test_explicit_authority_can_adopt_requirement_change():
 
 def test_unchanged_requirement_needs_no_mutation_authority():
     assert requirement_transition_allowed(unchanged=True, explicitly_authorized=False)
+
+
+class TEMDDLanguageContractTests(unittest.TestCase):
+    """Expose the V1 pytest-style contract cases to the repository unittest gate."""
+
+    def test_v1_completion_contract_cases(self):
+        cases = (
+            test_authorized_alternative_solution_can_be_done,
+            test_green_checks_wrong_subject_must_not_done,
+            test_stale_receipt_after_mutation_must_not_done,
+            test_empty_or_contradictory_evidence_must_not_done,
+            test_knowledge_region_with_counterexample_must_not_done,
+            test_actual_state_outside_evidence_must_not_done,
+            test_unresolved_hard_obligation_must_not_done,
+            test_missing_completion_authority_must_not_done,
+            test_unauthorized_requirement_change_must_not_be_adopted,
+            test_explicit_authority_can_adopt_requirement_change,
+            test_unchanged_requirement_needs_no_mutation_authority,
+        )
+        for case in cases:
+            with self.subTest(case=case.__name__):
+                case()

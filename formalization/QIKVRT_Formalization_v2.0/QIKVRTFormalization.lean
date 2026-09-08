@@ -27,6 +27,7 @@ import QIKVRTFormalization.Hardware.AuthorityMirrorWitness
 import QIKVRTFormalization.Hardware.D3FixedPoint
 import QIKVRTFormalization.Decision.ObservationSufficiency
 import QIKVRTFormalization.TEMDD.Completion
+import QIKVRTFormalization.TEMDD.MetaGrammar
 
 /-!
 Top-level import for the checked QIK-VRT formalization v2 tranches.
@@ -77,4 +78,10 @@ actual-state coverage, mutation invalidation, explicit authority for requirement
 changes, and safe-transition counterexamples. It does not identify this local
 formal completion predicate with repository PASS/FINAL_PASS, review, publication,
 empirical truth, or external effect acknowledgement.
+
+Its conservative-metagrammar extension formalizes one narrower structural
+claim: explicitly declared typed vocabulary embeddings preserve the evaluation
+of pre-existing formulae under interpretation restriction. It does not turn
+that syntax theorem into a universal semantic, translation, data-truth, or
+empirical-law guarantee.
 -/

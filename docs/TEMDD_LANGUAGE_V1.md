@@ -111,7 +111,7 @@ unique implementation.
 
 ## 8. Formal surface
 
-The Lean kernel is:
+The Lean completion kernel is:
 
 `formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/Completion.lean`.
 
@@ -127,7 +127,25 @@ The presence of these files on a branch is not itself proof that `lake build`,
 tests, repository integrity materialization, review or external effects have
 succeeded. Those claims require fresh exact-subject evidence.
 
-## 9. Normative principle
+## 9. Conservative metagrammar extension
+
+`MetaGrammar.lean` adds a deliberately narrower theorem than a promise of
+all-knowing automation. It gives TEMDD a typed, explicit extension interface:
+for every declared payload type, fresh vocabulary can be embedded without
+changing the evaluation of formulae written in the already existing vocabulary.
+
+The proof scope is recorded in
+`formalization/QIKVRT_Formalization_v2.0/TEMDD_PROOF_SCOPE.json`; its axiom
+audit is `QIKVRTFormalization/TEMDD/AxiomAudit.lean`. This makes TEMDD a
+metagrammar in the formal, definition-relative sense stated there. It does not
+silently transfer evidence across a mutated subject, establish that every
+future semantic extension is sound, or turn arbitrary data into empirical
+truth.
+
+For a public explanation of that distinction, see
+[`TEMDD_METAGRAMMAR.md`](TEMDD_METAGRAMMAR.md).
+
+## 10. Normative principle
 
 > Do not claim, decide, or act more strongly than exact-bound evidence supports.
 
