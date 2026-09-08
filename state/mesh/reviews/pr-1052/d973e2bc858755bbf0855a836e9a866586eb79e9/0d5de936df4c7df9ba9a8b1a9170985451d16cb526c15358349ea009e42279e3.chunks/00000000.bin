@@ -1,0 +1,816 @@
+diff --git a/.github/workflows/qikvrt_batch04_integrity.yml b/.github/workflows/qikvrt_batch04_integrity.yml
+index 9e1dd5f05697b3b974351f4e73622c9658ca108f..2fff16b0a39bf8b73d96499fac3bc32e2fc03efc 100644
+--- a/.github/workflows/qikvrt_batch04_integrity.yml
++++ b/.github/workflows/qikvrt_batch04_integrity.yml
+@@ -9,6 +9,7 @@ on:
+       - agent/manuscript-formalization-v2-completion
+       - docs/information-effect-axis-v1
+       - publication/pr966-p5-successor-v1
++      - fix/recursive-debugging-base-v1
+   pull_request:
+     branches:
+       - main
+diff --git a/AGENTS.md b/AGENTS.md
+index cd83fda1160afb41973c538d52d81da928131671..738d5083ce3cb7551cc6f9561e699e95c1581f3a 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -152,3 +152,26 @@ self-modification, and recursive agent spawning are prohibited.
+ The normative machine-readable policy is
+ `policy/COLLECTIVE_ADAPTIVE_COGNITION.json`. The explanatory contract is
+ `docs/COLLECTIVE_ADAPTIVE_COGNITION.md`.
++
++## Mandatory recursive debugging base algorithm
++
++For every detected error or blocker, apply
++`policy/ZERO_BUG_CONTINUOUS_V1.json#base_algorithm` and
++`docs/ZERO_BUG_CONTINUOUS_V1.md`:
++
++First correct the concrete failure and authoritatively reobserve the effect.
++Then identify and correct its cause, add a discriminating regression, and
++reobserve the original requested operation. Apply the same work-unit contract
++to every discovered cause, prerequisite blocker and follow-up failure until
++no known errors or blockers remain in the explicitly bound scope.
++
++Retain and reconcile open work-unit/ledger/artifact receipts across events.
++A green local probe, new session, NOOP, patch, successful command or technical
++workflow is not cause closure. Missing inventory remains UNKNOWN, not zero.
++Use the existing finite worklist reducer and registered writers. Do not create
++a second polling loop, bypass a required review, weaken a gate, substitute an
++identity or transfer predecessor validation. Missing capabilities remain
++concrete open obligations after exhausting authorized resolution paths;
++independent eligible work remains executable. Every head mutation resets P2+.
++The end condition requires exact-subject symptom, cause, regression and
++original-flow readbacks, never only a status label or a promise to continue.
+diff --git a/docs/ZERO_BUG_CONTINUOUS_V1.md b/docs/ZERO_BUG_CONTINUOUS_V1.md
+index 87484cc2f4c441a6e03f3d649879b1410b518055..8090f8c0dd61f1fba266e93280c33306033660ac 100644
+--- a/docs/ZERO_BUG_CONTINUOUS_V1.md
++++ b/docs/ZERO_BUG_CONTINUOUS_V1.md
+@@ -13,3 +13,99 @@ The repair discipline is:
+ `OBSERVE_EXACT_HEAD_TREE -> IDENTIFY_FIRST_DETERMINISTIC_DEFECT -> SELECT_SMALLEST_REGISTERED_REPAIR -> VERIFY_SOURCE_HEAD_BEFORE_WRITE -> SERIALIZE_ONE_PRODUCTIVE_WRITER -> APPLY_MINIMAL_EFFECT -> REOBSERVE_NEW_HEAD_TREE -> REQUIRE_ALL_FRESH_GATES -> RETAIN_OR_HOLD`
+ 
+ This preserves `CAUSALITY != SEQUENCE`, `MUTATION != VERIFICATION`, and `REQUESTED != EXECUTED != OBSERVED != ACKNOWLEDGED`.
++
++## Mandatory Mesh base algorithm: correct failure, then correct cause
++
++Product Owner Ingolf Lohmann's September 8, 2026 directive is normative in
++`policy/ZERO_BUG_CONTINUOUS_V1.json#base_algorithm`:
++
++1. Correct the concrete error or blocker with the smallest authorized effect,
++   then reobserve the actual result. A successful command is insufficient.
++2. Identify and correct the causal mechanism. Symptom correction alone leaves
++   the work unit open.
++3. Reproduce the defect with a discriminating regression and verify the same
++   test against the corrected exact subject.
++4. Reobserve the original user-requested operation, not only the repair test.
++
++Every discovered cause, prerequisite blocker and repair failure is another work
++unit under this same algorithm. The end condition is a complete, freshly bound
++inventory with no open known work units or descendants in the declared scope.
++It is not universal bug freedom, promotion, publication or EFFECT_ACK_DONE.
++
++Recursion is a finite event-driven dependency worklist, not a new endless
++polling loop or unbounded agent spawning. At most one productive writer owns
++an exact subject. A held dependency does not stop independent eligible work.
++Cycles, missing children and the 4096-unit per-call budget boundary retain
++HOLD; they never mean the backlog was discharged. Order comes from explicit
++causal links, not timestamps, PR numbers or array order.
++
++## Executable enforcement and reuse
++
++The existing `tools/qikvrt_autonomous_self_heal.py:repair_handler` now performs
++`probe -> one allowlisted repair -> probe` even after a nonzero exit or repair
++timeout. The receipt preserves command return codes and SHA-256 hashes of
++observation output. A successful local reprobe becomes
++`SYMPTOM_CORRECTED_CAUSE_OPEN`, never `REPAIRED`. A failed command with a partial
++successful effect remains `HOLD_REPAIR_INCOMPLETE`; it is not blindly repeated.
++A missing post-effect observation is unknown. Local workspace results still
++require exact committed-subject readback and original-flow validation.
++
++The existing controller loads the mandatory basis policy before executing
++registered handlers, invokes the reducer below, and carries unresolved cause
++obligations in its result. The existing pre-effect wrapper retains that result;
++no new signer, workflow scheduler, generic shell executor or writer authority
++is introduced. Existing output artifacts/work-unit ledgers are the persistence
++carriers. Before a subsequent event can close a repair, its client must retain
++and reconcile those receipts. Without supplied history the controller reports
++`UNKNOWN_NOT_CLEARED`; a clean later probe does not discharge earlier causes.
++
++`tools/qikvrt_zero_bug.py:recursive_debugging_plan` validates the complete
++four-stage causal receipt chain and every explicit child relation. The existing
++zero-bug evaluator rejects an explicitly supplied open or invalid repair
++inventory even if its local command markers are all green. Without an inventory
++its old local-audit state remains local only and recursive completion is false.
++
++Read-only evaluation of retained authoritative evidence:
++
++```sh
++python3 -B tools/qikvrt_zero_bug.py --repair-inventory exact-inventory.json
++python3 -B tools/qikvrt_autonomous_self_heal.py check --repair-inventory exact-inventory.json
++```
++
++The inventory schema is `qikvrt_recursive_debugging_inventory_v1`. It contains
++`subject` (`repository`, `base_sha`, `head_sha`, `tree_sha`), `scope`,
++`inventory_receipt_id`, literal boolean `inventory_complete`, and `work_units`.
++Each unit has a unique `id`, `original_scope`, `observation_receipt_id`, explicit
++`blocked_by` and `causes` arrays, and a `receipts` object.
++
++The receipt keys are `symptom`, `cause`, `regression`, `original_flow`. Each
++success binds the current exact `subject`, a distinct `id`, and `after` equal
++to the preceding receipt ID (the observation ID for `symptom`). Symptom and
++cause readbacks also bind `effect_receipt_id`; cause identifies `mechanism`.
++Regression carries a `test_id` and a `red` reproduction with the same test ID,
++an identified subject/receipt and `status=failure`. The historical red subject
++is not current green validation. Original-flow readback binds the unit's exact
++`original_scope`. Every current-subject mutation invalidates downstream receipt
++bindings; prior bytes remain historical evidence, not reusable validation.
++
++This reducer validates supplied evidence relations. It does not authenticate
++arbitrary JSON or itself make GitHub/external reads. Its callers must obtain
++receipts from the existing authoritative observers. A plan is not permission
++to run arbitrary input as code. Unknown credentials and capabilities remain
++explicit open obligations; existing authority paths must be investigated, not
++substituted or weakened. P0-P7, exact-account signing, ruleset controls and
++external publication readbacks remain separate mandatory boundaries.
++
++## Regression and attribution
++
++The added tests cover false success after exit zero, failed-write partial
++effects, timeouts, missing readback, symptom-only closure, unknown inventory,
++parent/child obligations, cycles, missing links, input permutation, exact-subject
++drift, red/green identity and original-flow scope. Local tests of the reducer
++are not proof that every Mesh instance has adopted or executed the policy.
++
++The normative two-stage debugging directive is Ingolf Lohmann's contribution.
++The implementation, tests and explanatory integration are artificial-cognitive
++work produced by ChatGPT under that directive; acceptance does not change that
++origin. Repository review, promotion and runtime adoption remain separately
++read-back-bound.
+diff --git a/policy/ZERO_BUG_CONTINUOUS_V1.json b/policy/ZERO_BUG_CONTINUOUS_V1.json
+index cd29f8159271089be198b80c1c27066d14c23c3e..8cf23ad8ee86a0bf433114a1762a99090766114c 100644
+--- a/policy/ZERO_BUG_CONTINUOUS_V1.json
++++ b/policy/ZERO_BUG_CONTINUOUS_V1.json
+@@ -78,5 +78,40 @@
+     "later_is_better": false,
+     "perfect_optimum_policy": "policy/PERFECT_OPTIMUM_V1.json",
+     "arbitrary_unregistered_self_modification": "HOLD"
++  },
++  "base_algorithm": {
++    "id": "CORRECT_FAILURE_THEN_CAUSE_RECURSIVELY_V1",
++    "authority": "Ingolf Lohmann, Product Owner: September 8, 2026 debugging directive",
++    "mandatory_scope": "Every detected error and blocker, including repair failures, missing evidence and unavailable capabilities",
++    "steps": [
++      "CORRECT_FAILURE",
++      "IDENTIFY_AND_CORRECT_CAUSE",
++      "VERIFY_REGRESSION",
++      "REOBSERVE_ORIGINAL_FLOW"
++    ],
++    "repeat": "Apply the same work unit contract to each discovered cause, prerequisite blocker and follow-up failure until all known obligations in the bound scope are closed by evidence",
++    "runtime": "FINITE_EVENT_DRIVEN_WORKLIST",
++    "maximum_work_units_per_reducer_call": 4096,
++    "overflow": "HOLD_INVENTORY_UNVERIFIED_WITHOUT_DISCARDING_BACKLOG",
++    "symptom_correction_is_cause_correction": false,
++    "command_success_is_effect_readback": false,
++    "local_green_is_global_repair_completion": false,
++    "reobserve_after_failed_mutation": true,
++    "retry_without_material_state_change": "FORBIDDEN",
++    "independent_work": "Remain eligible; an unavailable dependency blocks only its dependent work units",
++    "causality": "Explicit blocked_by/causes references and receipt after links; never timestamps, PR numbers or input order",
++    "closure": "Complete freshly observed inventory, exact current base/head/tree receipts for symptom and cause correction, identified causal mechanism, same-test red/green regression, original-flow readback and no open descendant",
++    "missing_inventory": "UNKNOWN_NOT_ZERO",
++    "prior_obligations": "Persist and reconcile existing work-unit/ledger/artifact receipts; a later clean probe or NOOP never deletes an unresolved cause",
++    "subject_mutation": "Reset P2+ and require fresh downstream bindings; preserve predecessor records as history only",
++    "capability_boundary": "Investigate and repair using already authorized capabilities; otherwise retain the exact open obligation and REQUEST_AUTHORITY without impersonation, blind retry or invented effects",
++    "effect_authority": "Reuse existing registered writers and exact-scope delegations; this algorithm grants no new write, signing, administrative or external authority",
++    "precedence_policy": "policy/QIKVRT_EXECUTION_PRECEDENCE_V1.json",
++    "continuous_monitor": "QIKVRT_GITHUB_PLATFORM_CONTINUOUS_MONITOR remains the only permitted continuous polling path",
++    "implementation": [
++      "tools/qikvrt_zero_bug.py:recursive_debugging_plan",
++      "tools/qikvrt_autonomous_self_heal.py:repair_handler",
++      "tools/qikvrt_autonomous_self_heal.py:execute"
++    ]
+   }
+ }
+diff --git a/tests/test_qikvrt_autonomous_self_heal.py b/tests/test_qikvrt_autonomous_self_heal.py
+index 45ee71973713420db88a8f7ad23fd74cb0df3e38..5844ed42bb7a5f83bcc902fd50ef912a4ca5e09e 100644
+--- a/tests/test_qikvrt_autonomous_self_heal.py
++++ b/tests/test_qikvrt_autonomous_self_heal.py
+@@ -174,11 +174,91 @@ class AutonomousSelfHealTests(unittest.TestCase):
+                 ("probe",), 2, "publication overview drift: missing", ""
+             ),
+             MODULE.CommandResult(("repair",), 0, "MATERIALIZED", ""),
++            MODULE.CommandResult(("probe",), 0, "VERIFIED", ""),
+         ]
+         with mock.patch.object(MODULE, "run", side_effect=results) as mocked:
+             value = MODULE.repair_handler(handler)
+-        self.assertEqual(value["state"], "REPAIRED")
+-        self.assertEqual(mocked.call_count, 2)
++        self.assertEqual(value["state"], "SYMPTOM_CORRECTED_CAUSE_OPEN")
++        self.assertFalse(value["repair_complete"])
++        self.assertEqual(mocked.call_count, 3)
++
++
++class RecursiveRepairRuntimeTests(unittest.TestCase):
++    def handler(self):
++        return {"failure_class": "EXACT_TEST_FAILURE", "probe": ["probe"], "repair": ["repair"]}
++
++    def result(self, command, code):
++        return MODULE.CommandResult((command,), code, "result", "")
++
++    def test_exit_zero_without_effect_is_not_repaired(self):
++        results = [self.result("probe", 1), self.result("repair", 0), self.result("probe", 1)]
++        with mock.patch.object(MODULE, "run", side_effect=results) as run:
++            value = MODULE.repair_handler(self.handler())
++        self.assertEqual(value["state"], "HOLD_REPAIR_INCOMPLETE")
++        self.assertEqual(run.call_count, 3)
++        self.assertFalse(value["repair_complete"])
++
++    def test_failed_command_partial_effect_is_reobserved_without_retry(self):
++        results = [self.result("probe", 1), self.result("repair", 1), self.result("probe", 0)]
++        with mock.patch.object(MODULE, "run", side_effect=results) as run:
++            value = MODULE.repair_handler(self.handler())
++        self.assertTrue(value["symptom_reobserved_corrected"])
++        self.assertFalse(value["repair_command_succeeded"])
++        self.assertEqual(value["state"], "HOLD_REPAIR_INCOMPLETE")
++        self.assertEqual(run.call_args_list, [mock.call(("probe",)), mock.call(("repair",)), mock.call(("probe",))])
++
++    def test_timeout_still_requires_effect_readback(self):
++        results = [self.result("probe", 1), MODULE.subprocess.TimeoutExpired(["repair"], 1), self.result("probe", 0)]
++        with mock.patch.object(MODULE, "run", side_effect=results) as run:
++            value = MODULE.repair_handler(self.handler())
++        self.assertEqual(value["repair_error"], "TimeoutExpired")
++        self.assertEqual(run.call_count, 3)
++        self.assertFalse(value["repair_complete"])
++
++    def test_unavailable_readback_is_unknown_not_success(self):
++        results = [self.result("probe", 1), self.result("repair", 0), OSError("readback unavailable")]
++        with mock.patch.object(MODULE, "run", side_effect=results):
++            value = MODULE.repair_handler(self.handler())
++        self.assertFalse(value["symptom_reobserved_corrected"])
++        self.assertIsNone(value["evidence"]["after"])
++        self.assertEqual(value["reobservation_error"], "OSError")
++
++    def test_green_reprobe_retains_cause_and_original_flow_obligations(self):
++        results = [self.result("probe", 1), self.result("repair", 0), self.result("probe", 0)]
++        with mock.patch.object(MODULE, "run", side_effect=results):
++            value = MODULE.repair_handler(self.handler())
++        self.assertEqual(value["cause_state"], "UNVERIFIED")
++        self.assertEqual(value["original_flow_state"], "UNVERIFIED")
++        self.assertTrue(value["exact_committed_subject_readback_required"])
++        self.assertEqual(value["next_action"], "IDENTIFY_AND_CORRECT_CAUSE")
++
++    def test_clean_probe_does_not_execute_repair(self):
++        with mock.patch.object(MODULE, "run", return_value=self.result("probe", 0)) as run:
++            value = MODULE.repair_handler(self.handler())
++        self.assertEqual(value["state"], "NOOP")
++        self.assertEqual(run.call_count, 1)
++
++    def test_obligation_identity_is_stable_not_timestamp_based(self):
++        results = [self.result("probe", 1), self.result("repair", 0), self.result("probe", 0)]
++        with mock.patch.object(MODULE, "run", side_effect=results * 2):
++            first = MODULE.repair_handler(self.handler())
++            second = MODULE.repair_handler(self.handler())
++        self.assertEqual(first["work_unit_id"], second["work_unit_id"])
++        self.assertEqual(len(first["evidence"]["before"]["stdout_sha256"]), 64)
++
++    def test_existing_executor_invokes_reducer_and_preserves_unknown_backlog(self):
++        contract = {"allowlisted_handlers": [{**self.handler(), "mutable_paths": ["a"]}]}
++        with mock.patch.object(MODULE, "load_contract", return_value=contract), mock.patch.object(MODULE, "run", return_value=MODULE.CommandResult((), 0, "", "")), mock.patch.object(MODULE, "observed_base_revision", return_value="a" * 40), mock.patch.object(MODULE, "changed_paths", return_value=[]), mock.patch.object(MODULE, "recursive_debugging_plan", wraps=MODULE.recursive_debugging_plan) as reducer:
++            value = MODULE.execute(True)
++        reducer.assert_called_once_with(None)
++        self.assertEqual(value["state"], "NOOP")
++        self.assertFalse(value["recursive_debugging"]["complete"])
++        self.assertEqual(value["recursive_debugging"]["prior_obligations"], "UNKNOWN_NOT_CLEARED")
++
++    def test_basis_policy_absence_blocks_registered_controller(self):
++        with mock.patch.object(MODULE, "_load_json", return_value={}):
++            with self.assertRaisesRegex(MODULE.SelfHealBlock, "base algorithm"):
++                MODULE.load_contract()
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/tests/test_qikvrt_zero_bug.py b/tests/test_qikvrt_zero_bug.py
+index a2d1ccdaf13ebcd3a16689274d6773dd5e362f4a..ccd2bb36cb4dc75e9a7effa1d1fc8b763f5e5569 100644
+--- a/tests/test_qikvrt_zero_bug.py
++++ b/tests/test_qikvrt_zero_bug.py
+@@ -60,5 +60,162 @@ class ZeroBugContinuousTests(unittest.TestCase):
+         self.assertEqual(evaluate(obs)["state"], "HOLD_EVIDENCE_INCOMPLETE")
+ 
+ 
++class RecursiveDebuggingTests(unittest.TestCase):
++    def inventory(self):
++        return {
++            "schema": "qikvrt_recursive_debugging_inventory_v1",
++            "subject": {"repository": "Goldkelch/qik-vrt", "base_sha": "a" * 40, "head_sha": "b" * 40, "tree_sha": "c" * 40},
++            "scope": "explicitly observed repair scope",
++            "inventory_receipt_id": "inventory-readback",
++            "inventory_complete": True,
++            "work_units": [self.unit("root")],
++        }
++
++    def unit(self, key):
++        return {"id": key, "original_scope": "original user operation", "observation_receipt_id": key + "-observed", "blocked_by": [], "causes": [], "receipts": {}}
++
++    def close_unit(self, inv, unit):
++        from tools.qikvrt_zero_bug import DEBUGGING_STAGES
++        previous = unit["observation_receipt_id"]
++        for stage, _ in DEBUGGING_STAGES:
++            ident = unit["id"] + "-" + stage
++            receipt = {"id": ident, "subject": dict(inv["subject"]), "status": "success", "after": previous}
++            if stage in {"symptom", "cause"}:
++                receipt["effect_receipt_id"] = unit["id"] + "-effect"
++            if stage == "cause":
++                receipt["mechanism"] = "wrong display-name classification"
++            if stage == "regression":
++                receipt["test_id"] = "exact predicate regression"
++                receipt["red"] = {"id": ident + "-red", "test_id": receipt["test_id"], "status": "failure", "subject": {**inv["subject"], "head_sha": "d" * 40}}
++            if stage == "original_flow":
++                receipt["scope"] = unit["original_scope"]
++            unit["receipts"][stage] = receipt
++            previous = ident
++
++    def plan(self, inv):
++        from tools.qikvrt_zero_bug import recursive_debugging_plan
++        return recursive_debugging_plan(inv)
++
++    def test_unknown_inventory_is_not_zero(self):
++        for inv in (None, {}, [], {"inventory_complete": True}):
++            self.assertFalse(self.plan(inv)["complete"])
++
++    def test_only_complete_explicit_empty_inventory_can_close(self):
++        inv = self.inventory(); inv["work_units"] = []
++        self.assertTrue(self.plan(inv)["complete"])
++        for flag in (False, "true", 1, None):
++            inv["inventory_complete"] = flag
++            self.assertFalse(self.plan(inv)["complete"])
++
++    def test_all_four_exact_causal_receipts_required(self):
++        inv = self.inventory(); unit = inv["work_units"][0]
++        self.close_unit(inv, unit)
++        self.assertTrue(self.plan(inv)["complete"])
++        for stage, action in (("symptom", "CORRECT_FAILURE"), ("cause", "IDENTIFY_AND_CORRECT_CAUSE"), ("regression", "VERIFY_REGRESSION"), ("original_flow", "REOBSERVE_ORIGINAL_FLOW")):
++            old = unit["receipts"].pop(stage)
++            self.assertEqual(self.plan(inv)["actions"][0]["next_action"], action)
++            unit["receipts"][stage] = old
++
++    def test_symptom_only_does_not_close_cause(self):
++        inv = self.inventory(); unit = inv["work_units"][0]
++        self.close_unit(inv, unit); unit["receipts"] = {"symptom": unit["receipts"]["symptom"]}
++        self.assertEqual(self.plan(inv)["actions"][0]["next_action"], "IDENTIFY_AND_CORRECT_CAUSE")
++
++    def test_green_local_gates_cannot_hide_known_open_inventory(self):
++        obs = ZeroBugContinuousTests().good()
++        obs["recursive_debugging_inventory"] = self.inventory()
++        self.assertEqual(evaluate(obs)["state"], "HOLD_DEFECT_IDENTIFIED")
++
++    def test_absent_history_is_not_completion_even_when_local_gates_green(self):
++        result = evaluate(ZeroBugContinuousTests().good())
++        self.assertFalse(result["recursive_debugging"]["complete"])
++        self.assertFalse(result["local_gate_success_is_repair_completion"])
++
++    def test_every_subject_mutation_invalidates_current_validation(self):
++        for key in ("base_sha", "head_sha", "tree_sha", "repository"):
++            inv = self.inventory(); self.close_unit(inv, inv["work_units"][0])
++            inv["subject"][key] = "other/repository" if key == "repository" else "e" * 40
++            self.assertFalse(self.plan(inv)["complete"])
++            self.assertEqual(self.plan(inv)["actions"][0]["next_action"], "CORRECT_FAILURE")
++
++    def test_timestamps_do_not_replace_explicit_receipt_edges(self):
++        inv = self.inventory(); unit = inv["work_units"][0]; self.close_unit(inv, unit)
++        unit["receipts"]["cause"]["after"] = "unrelated"
++        unit["receipts"]["cause"]["timestamp"] = "9999-12-31"
++        self.assertFalse(self.plan(inv)["complete"])
++
++    def test_cause_mechanism_and_effect_readback_are_required(self):
++        for stage, field in (("symptom", "effect_receipt_id"), ("cause", "effect_receipt_id"), ("cause", "mechanism")):
++            inv = self.inventory(); unit = inv["work_units"][0]; self.close_unit(inv, unit)
++            unit["receipts"][stage].pop(field)
++            self.assertFalse(self.plan(inv)["complete"])
++
++    def test_red_and_green_must_be_the_same_test(self):
++        inv = self.inventory(); unit = inv["work_units"][0]; self.close_unit(inv, unit)
++        unit["receipts"]["regression"]["red"]["test_id"] = "unrelated test"
++        self.assertFalse(self.plan(inv)["complete"])
++
++    def test_red_must_have_reproduced_failure(self):
++        inv = self.inventory(); unit = inv["work_units"][0]; self.close_unit(inv, unit)
++        unit["receipts"]["regression"]["red"]["status"] = "success"
++        self.assertFalse(self.plan(inv)["complete"])
++
++    def test_original_user_flow_not_just_isolated_repair_is_required(self):
++        inv = self.inventory(); unit = inv["work_units"][0]; self.close_unit(inv, unit)
++        unit["receipts"]["original_flow"]["scope"] = "unrelated operation"
++        self.assertFalse(self.plan(inv)["complete"])
++
++    def test_cause_children_remain_open_after_parent_symptom_fix(self):
++        inv = self.inventory(); root = inv["work_units"][0]; self.close_unit(inv, root)
++        child = self.unit("cause"); root["causes"] = ["cause"]; inv["work_units"].append(child)
++        actions = {a["work_unit"]: a["next_action"] for a in self.plan(inv)["actions"]}
++        self.assertEqual(actions, {"cause": "CORRECT_FAILURE", "root": "HOLD_CAUSE_WORK_UNIT_OPEN"})
++        self.close_unit(inv, child); self.assertTrue(self.plan(inv)["complete"])
++
++    def test_external_blocker_does_not_globally_deadlock_independent_work(self):
++        inv = self.inventory(); root = inv["work_units"][0]; root["blocked_by"] = ["credential"]
++        inv["work_units"] += [self.unit("credential"), self.unit("independent")]
++        actions = {a["work_unit"]: a["next_action"] for a in self.plan(inv)["actions"]}
++        self.assertEqual(actions["root"], "HOLD_DEPENDENCY_OPEN")
++        self.assertEqual(actions["independent"], "CORRECT_FAILURE")
++
++    def test_cycles_do_not_recurse_forever_or_hide_independent_work(self):
++        inv = self.inventory(); inv["work_units"][0]["causes"] = ["root"]
++        inv["work_units"].append(self.unit("independent"))
++        self.assertEqual(len(self.plan(inv)["actions"]), 2)
++        self.assertFalse(self.plan(inv)["complete"])
++
++    def test_missing_child_is_unknown_not_closed(self):
++        inv = self.inventory(); inv["work_units"][0]["causes"] = ["missing"]
++        self.assertIn("MISSING_DEPENDENCY", self.plan(inv)["actions"][0]["next_action"])
++
++    def test_input_order_does_not_create_causal_order(self):
++        inv = self.inventory(); inv["work_units"].append(self.unit("other"))
++        first = self.plan(inv); inv["work_units"].reverse()
++        self.assertEqual(first, self.plan(inv))
++
++    def test_duplicate_identifiers_and_malformed_links_fail_closed(self):
++        inv = self.inventory(); inv["work_units"] *= 2
++        self.assertFalse(self.plan(inv)["complete"])
++        inv = self.inventory(); inv["work_units"][0]["causes"] = "root"
++        self.assertFalse(self.plan(inv)["complete"])
++
++    def test_large_acyclic_graph_uses_worklist_not_call_stack(self):
++        inv = self.inventory(); inv["work_units"] = [self.unit(str(i)) for i in range(1050)]
++        for i, unit in enumerate(inv["work_units"]):
++            unit["causes"] = [str(i - 1)] if i else []
++        self.assertEqual(len(self.plan(inv)["unresolved"]), 1050)
++
++    def test_work_budget_overflow_is_hold_not_completion(self):
++        inv = self.inventory(); inv["work_units"] = [self.unit(str(i)) for i in range(4097)]
++        self.assertEqual(self.plan(inv)["state"], "HOLD_INVENTORY_UNVERIFIED")
++
++    def test_planner_does_not_grant_execution_or_external_effect(self):
++        result = self.plan(self.inventory())
++        self.assertEqual(result["external_effect"], "NONE")
++        self.assertEqual(result["maximum_writers_per_subject"], 1)
++        self.assertFalse(result["universal_bug_freedom_claimed"])
++
++
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/tools/qikvrt_autonomous_self_heal.py b/tools/qikvrt_autonomous_self_heal.py
+index 535811d47abf2af9f9801906c839e519c3643950..2ec7763e171eae8f71e0d517214ec5837bc157c7 100755
+--- a/tools/qikvrt_autonomous_self_heal.py
++++ b/tools/qikvrt_autonomous_self_heal.py
+@@ -14,6 +14,9 @@ from dataclasses import dataclass
+ from typing import Any, Mapping, Sequence
+ 
+ ROOT = pathlib.Path(__file__).resolve().parents[1]
++if __package__ in (None, ""):
++    sys.path.insert(0, str(ROOT))
++from tools.qikvrt_zero_bug import recursive_debugging_plan
+ CONTRACT = ROOT / "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
+ DELEGATION = (
+     ROOT
+@@ -157,6 +160,9 @@ def _validate_handlers(handlers: Any) -> list[dict[str, Any]]:
+ 
+ 
+ def load_contract() -> dict[str, Any]:
++    debugging = _load_json(ROOT / "policy/ZERO_BUG_CONTINUOUS_V1.json", "zero-bug base algorithm")
++    if debugging.get("base_algorithm", {}).get("id") != "CORRECT_FAILURE_THEN_CAUSE_RECURSIVELY_V1":
++        raise SelfHealBlock("mandatory recursive debugging base algorithm is absent")
+     value = _load_json(CONTRACT, "autonomous self-healing contract")
+     if value.get("schema") != "qikvrt_autonomous_self_healing_contract_v1":
+         raise SelfHealBlock("contract schema mismatch")
+@@ -270,16 +276,55 @@ def repair_handler(handler: dict[str, Any]) -> dict[str, Any]:
+         raise SelfHealBlock(
+             "anticipation failure is not an allowlisted projection drift"
+         )
+-    repair = run(tuple(handler["repair"]))
+-    if repair.returncode:
+-        raise SelfHealBlock(
+-            f"repair failed for {handler['failure_class']}: "
+-            f"{repair.stderr.strip() or repair.stdout.strip()}"
+-        )
+-    return {"failure_class": handler["failure_class"], "state": "REPAIRED"}
++    # A failed command may already have changed state. Reobserve once even
++    # after nonzero exit or timeout; never retry the mutation blindly.
++    repair = None
++    repair_error = None
++    try:
++        repair = run(tuple(handler["repair"]))
++    except (OSError, subprocess.TimeoutExpired) as exc:
++        repair_error = type(exc).__name__
++    reobserved = None
++    reobservation_error = None
++    try:
++        reobserved = run(tuple(handler["probe"]))
++    except (OSError, subprocess.TimeoutExpired) as exc:
++        reobservation_error = type(exc).__name__
++
++    def receipt(value):
++        if value is None:
++            return None
++        return {
++            "command": list(value.command),
++            "returncode": value.returncode,
++            "stdout_sha256": hashlib.sha256(value.stdout.encode("utf-8")).hexdigest(),
++            "stderr_sha256": hashlib.sha256(value.stderr.encode("utf-8")).hexdigest(),
++        }
++
++    corrected = reobserved is not None and reobserved.returncode == 0
++    command_ok = repair is not None and repair.returncode == 0
++    evidence = {"before": receipt(probe), "repair": receipt(repair), "after": receipt(reobserved)}
++    identity = hashlib.sha256(json.dumps({
++        "failure_class": handler["failure_class"], "before": evidence["before"],
++    }, sort_keys=True).encode("utf-8")).hexdigest()
++    return {
++        "failure_class": handler["failure_class"],
++        "state": "SYMPTOM_CORRECTED_CAUSE_OPEN" if corrected and command_ok else "HOLD_REPAIR_INCOMPLETE",
++        "work_unit_id": identity,
++        "symptom_reobserved_corrected": corrected,
++        "repair_command_succeeded": command_ok,
++        "repair_error": repair_error,
++        "reobservation_error": reobservation_error,
++        "evidence": evidence,
++        "cause_state": "UNVERIFIED",
++        "original_flow_state": "UNVERIFIED",
++        "exact_committed_subject_readback_required": True,
++        "next_action": "IDENTIFY_AND_CORRECT_CAUSE" if corrected and command_ok else "DIAGNOSE_REOBSERVED_REPAIR_FAILURE",
++        "repair_complete": False,
++    }
+ 
+ 
+-def execute(apply: bool) -> dict[str, Any]:
++def execute(apply: bool, *, repair_inventory: dict[str, Any] | None = None) -> dict[str, Any]:
+     contract = load_contract()
+     initial = run(
+         ("git", "status", "--porcelain=v1", "--untracked-files=all"),
+@@ -314,7 +359,30 @@ def execute(apply: bool) -> dict[str, Any]:
+         if fingerprint is not None
+         else None
+     )
+-    state = "CANDIDATE_READY" if paths else "NOOP"
++    debugging = recursive_debugging_plan(repair_inventory)
++    obligations = [action for action in actions if action["state"] != "NOOP"]
++    # A clean probe is not reconciliation of historical cause obligations.
++    # A changed workspace cannot reuse even exact committed predecessor receipts.
++    if repair_inventory is not None:
++        tree = run(("git", "rev-parse", "HEAD^{tree}"), timeout=60)
++        subject = repair_inventory.get("subject", {})
++        bound = (
++            isinstance(subject, dict)
++            and subject.get("head_sha") == base_revision
++            and subject.get("tree_sha") == tree.stdout.strip()
++            and tree.returncode == 0
++            and observed_base_revision() == base_revision
++        )
++        if not bound or paths or obligations or not apply:
++            debugging["complete"] = False
++            debugging["state"] = "HOLD_FRESH_REPAIR_RECONCILIATION_REQUIRED"
++    debugging.update({
++        "policy": "policy/ZERO_BUG_CONTINUOUS_V1.json#base_algorithm",
++        "known_repair_obligations": obligations,
++        "prior_obligations": "UNKNOWN_NOT_CLEARED" if repair_inventory is None else "RETAINED_IN_SUPPLIED_INVENTORY",
++        "local_noop_is_repair_completion": False,
++    })
++    state = "CANDIDATE_READY" if paths else "HOLD_REPAIR_INCOMPLETE" if obligations else "NOOP"
+     return {
+         "schema": "qikvrt_autonomous_self_heal_result_v1",
+         "state": state,
+@@ -323,6 +391,8 @@ def execute(apply: bool) -> dict[str, Any]:
+         "candidate_identity": candidate_id,
+         "changed_paths": paths,
+         "actions": actions,
++        "recursive_debugging": debugging,
++        "recursive_debugging_inventory": repair_inventory,
+         "external_effect": "NONE",
+         "promotion_policy": {
+             "unconditional_automatic_merge": "FORBIDDEN",
+@@ -342,9 +412,11 @@ def execute(apply: bool) -> dict[str, Any]:
+ def main(argv: Sequence[str] | None = None) -> int:
+     parser = argparse.ArgumentParser(description=__doc__)
+     parser.add_argument("command", choices=("check", "apply"))
++    parser.add_argument("--repair-inventory", help="Retained authoritative exact repair inventory; no inferred empty backlog")
+     args = parser.parse_args(argv)
+     try:
+-        result = execute(args.command == "apply")
++        inventory = _load_json(pathlib.Path(args.repair_inventory), "recursive repair inventory") if args.repair_inventory else None
++        result = execute(args.command == "apply", repair_inventory=inventory)
+     except (
+         OSError,
+         ValueError,
+diff --git a/tools/qikvrt_zero_bug.py b/tools/qikvrt_zero_bug.py
+index c24862248b527949a2bdf81ffbb6dec23bd28821..10000433a28c0c82c000a314318fd33d4ff596ea 100644
+--- a/tools/qikvrt_zero_bug.py
++++ b/tools/qikvrt_zero_bug.py
+@@ -11,8 +11,159 @@ def load_policy():
+     return json.loads(POLICY.read_text(encoding="utf-8"))
+ 
+ 
++
++DEBUGGING_STAGES = (
++    ("symptom", "CORRECT_FAILURE"),
++    ("cause", "IDENTIFY_AND_CORRECT_CAUSE"),
++    ("regression", "VERIFY_REGRESSION"),
++    ("original_flow", "REOBSERVE_ORIGINAL_FLOW"),
++)
++
++
++def recursive_debugging_plan(inventory):
++    """Validate a finite causal worklist; never execute payloads or grant authority.
++
++    Input receipts must come from the existing authoritative observers. This
++    reducer checks their declared bindings, not their authenticity. Historical
++    red reproductions are never accepted as current-head green validation.
++    """
++    result = {
++        "schema": "qikvrt_recursive_debugging_plan_v1",
++        "state": "HOLD_INVENTORY_UNVERIFIED",
++        "complete": False,
++        "actions": [],
++        "unresolved": [],
++        "maximum_writers_per_subject": 1,
++        "external_effect": "NONE",
++        "universal_bug_freedom_claimed": False,
++    }
++
++    def text(value):
++        return isinstance(value, str) and bool(value.strip())
++
++    def subject_ok(value):
++        return (
++            isinstance(value, dict)
++            and text(value.get("repository"))
++            and all(
++                isinstance(value.get(key), str)
++                and len(value[key]) == 40
++                and all(c in "0123456789abcdef" for c in value[key])
++                for key in ("base_sha", "head_sha", "tree_sha")
++            )
++        )
++
++    if not isinstance(inventory, dict):
++        return result
++    subject = inventory.get("subject")
++    units = inventory.get("work_units")
++    if (
++        inventory.get("schema") != "qikvrt_recursive_debugging_inventory_v1"
++        or not subject_ok(subject)
++        or not text(inventory.get("scope"))
++        or not text(inventory.get("inventory_receipt_id"))
++        or not isinstance(units, list)
++        or len(units) > 4096
++    ):
++        return result
++    nodes = {}
++    for unit in units:
++        if not isinstance(unit, dict) or not text(unit.get("id")):
++            return result
++        if unit["id"] in nodes:
++            return result
++        if not text(unit.get("original_scope")) or not text(unit.get("observation_receipt_id")):
++            return result
++        for edge in ("blocked_by", "causes"):
++            links = unit.get(edge)
++            if not isinstance(links, list) or not all(text(x) for x in links) or len(set(links)) != len(links):
++                return result
++        if not isinstance(unit.get("receipts"), dict):
++            return result
++        nodes[unit["id"]] = unit
++
++    # Kahn-style worklist: no Python recursion limit and no polling/retry loop.
++    pending = set(nodes)
++    closed = set()
++    processed = set()
++    while pending:
++        ready = sorted(
++            key for key in pending
++            if set(nodes[key]["blocked_by"] + nodes[key]["causes"]) <= processed
++        )
++        if not ready:
++            break
++        for key in ready:
++            unit = nodes[key]
++            predecessor = unit["observation_receipt_id"]
++            seen_receipts = {predecessor}
++            action = None
++            if not set(unit["blocked_by"]) <= closed:
++                action = "HOLD_DEPENDENCY_OPEN"
++            else:
++                for stage, required_action in DEBUGGING_STAGES:
++                    if stage == "cause" and not set(unit["causes"]) <= closed:
++                        action = "HOLD_CAUSE_WORK_UNIT_OPEN"
++                        break
++                    receipt = unit["receipts"].get(stage)
++                    exact = (
++                        isinstance(receipt, dict)
++                        and receipt.get("subject") == subject
++                        and receipt.get("status") == "success"
++                        and text(receipt.get("id"))
++                        and receipt["id"] not in seen_receipts
++                        and receipt.get("after") == predecessor
++                    )
++                    if exact and stage in {"symptom", "cause"}:
++                        exact = text(receipt.get("effect_receipt_id"))
++                    if exact and stage == "cause":
++                        exact = text(receipt.get("mechanism"))
++                    if exact and stage == "regression":
++                        red = receipt.get("red")
++                        exact = (
++                            isinstance(red, dict)
++                            and text(receipt.get("test_id"))
++                            and red.get("test_id") == receipt["test_id"]
++                            and red.get("status") == "failure"
++                            and text(red.get("id"))
++                            and red["id"] != receipt["id"]
++                            and subject_ok(red.get("subject"))
++                        )
++                    if exact and stage == "original_flow":
++                        exact = receipt.get("scope") == unit["original_scope"]
++                    if not exact:
++                        action = required_action
++                        break
++                    predecessor = receipt["id"]
++                    seen_receipts.add(predecessor)
++            if action is None:
++                closed.add(key)
++            else:
++                result["unresolved"].append(key)
++                result["actions"].append({"work_unit": key, "next_action": action})
++            pending.remove(key)
++            processed.add(key)
++    for key in sorted(pending):
++        result["unresolved"].append(key)
++        result["actions"].append({
++            "work_unit": key,
++            "next_action": "HOLD_CAUSAL_GRAPH_CYCLE_OR_MISSING_DEPENDENCY",
++        })
++    result["actions"].sort(key=lambda item: item["work_unit"])
++    result["unresolved"].sort()
++    result["inventory_complete"] = inventory.get("inventory_complete") is True
++    result["complete"] = result["inventory_complete"] and not result["unresolved"]
++    result["state"] = (
++        "NO_KNOWN_ERRORS_OR_BLOCKERS_IN_BOUND_SCOPE" if result["complete"]
++        else "REPAIR_OBLIGATIONS_OPEN" if result["unresolved"]
++        else "HOLD_INVENTORY_UNVERIFIED"
++    )
++    return result
++
++
+ def evaluate(observation, policy=None):
+     policy = policy or load_policy()
++    debugging = recursive_debugging_plan(observation.get("recursive_debugging_inventory"))
+     required = {
+         "exact_head_and_tree_bound": bool(observation.get("exact_head_and_tree_bound")),
+         "known_deterministic_defects_zero": observation.get("known_deterministic_defects", 1) == 0,
+@@ -24,6 +175,8 @@ def evaluate(observation, policy=None):
+         "reobserve_after_every_mutation": bool(observation.get("reobserve_after_every_mutation")),
+         "full_tracked_tree_sha256_bound": bool(observation.get("full_tracked_tree_sha256_bound")),
+     }
++    if "recursive_debugging_inventory" in observation and not debugging["complete"]:
++        required["known_deterministic_defects_zero"] = False
+     missing = [k for k in policy["hard_invariants"] if not required.get(k, False)]
+     if not missing:
+         state = "ZERO_KNOWN_DETERMINISTIC_BUGS_LOCAL"
+@@ -37,6 +190,8 @@ def evaluate(observation, policy=None):
+         "invariants": required,
+         "failed_invariants": missing,
+         "evidence": observation.get("evidence", {}),
++        "recursive_debugging": debugging,
++        "local_gate_success_is_repair_completion": False,
+         "platform_promotion_evidence_required": True,
+         "universal_bug_freedom_claimed": False,
+     }
+@@ -50,6 +205,10 @@ def self_check(policy=None):
+     platform = policy.get("platform_promotion_surface", {})
+     return {
+         "schema": "qikvrt_zero_bug_self_check_v1",
++        "recursive_debugging_contract_bound": (
++            policy.get("base_algorithm", {}).get("id") == "CORRECT_FAILURE_THEN_CAUSE_RECURSIVELY_V1"
++            and policy["base_algorithm"].get("steps") == [step for _, step in DEBUGGING_STAGES]
++        ),
+         "complete": all(k in policy for k in ("schema", "hard_invariants", "state_machine", "repair_order", "continuous_revision", "audit_surface", "platform_promotion_surface")),
+         "after_mutation": policy["state_machine"].get("after_mutation"),
+         "after_fresh_local_exact_head_success": policy["state_machine"].get("after_fresh_local_exact_head_success"),
+@@ -116,6 +275,7 @@ def main():
+     p.add_argument("--self-check", action="store_true")
+     p.add_argument("--observation")
+     p.add_argument("--derive", action="store_true")
++    p.add_argument("--repair-inventory", help="Evaluate retained exact recursive repair receipts; no effects")
+     p.add_argument("--head")
+     p.add_argument("--tree")
+     p.add_argument("--expected-head")
+@@ -126,10 +286,14 @@ def main():
+     p.add_argument("--writer-lease-marker")
+     p.add_argument("--write-observation")
+     args = p.parse_args()
+-    if args.self_check:
++    if args.repair_inventory:
++        result = recursive_debugging_plan(json.loads(Path(args.repair_inventory).read_text(encoding="utf-8")))
++        ok = result["complete"]
++    elif args.self_check:
+         result = self_check()
+         ok = (
+             result["complete"]
++            and result["recursive_debugging_contract_bound"]
+             and result["after_mutation"] == "HOLD_UNVERIFIED"
+             and result["after_fresh_local_exact_head_success"] == "ZERO_KNOWN_DETERMINISTIC_BUGS_LOCAL"
+             and result["later_is_better"] is False
