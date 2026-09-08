@@ -38,6 +38,11 @@ TEMDD_METATHEORY_PATHS = {
     "tools/qikvrt_materialization_scope.py",
     "tests/test_qikvrt_materialization_scope.py",
 }
+INTEGRITY_PROJECTION_PATHS = {
+    "REPOSITORY_FILE_MANIFEST.json",
+    "REPOSITORY_FILE_MANIFEST.json.sha256",
+    "SHA256SUMS.txt",
+}
 CONTENT_PREFIXES = (
     "tools/qikvrt_content_disposition_",
     "tools/qikvrt_batch003_",
@@ -82,9 +87,18 @@ def _content_work_unit(path: str) -> bool:
     return "BATCH_003" in upper or "RETROSPECTIVE_PROOF_CORPUS" in upper
 
 
+def _is_temdd_metatheory_path(path: str) -> bool:
+    return path in TEMDD_METATHEORY_PATHS or _starts(path, TEMDD_METATHEORY_PREFIXES)
+
+
 def _temdd_metatheory_only(paths: Sequence[str]) -> bool:
-    return bool(paths) and all(
-        path in TEMDD_METATHEORY_PATHS or _starts(path, TEMDD_METATHEORY_PREFIXES)
+    if not paths:
+        return False
+    substantive = [path for path in paths if path not in INTEGRITY_PROJECTION_PATHS]
+    if not substantive:
+        return False
+    return all(_is_temdd_metatheory_path(path) for path in substantive) and all(
+        _is_temdd_metatheory_path(path) or path in INTEGRITY_PROJECTION_PATHS
         for path in paths
     )
 
