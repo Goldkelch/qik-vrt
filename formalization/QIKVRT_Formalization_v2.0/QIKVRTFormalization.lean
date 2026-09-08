@@ -27,6 +27,8 @@ import QIKVRTFormalization.Hardware.AuthorityMirrorWitness
 import QIKVRTFormalization.Hardware.D3FixedPoint
 import QIKVRTFormalization.Decision.ObservationSufficiency
 import QIKVRTFormalization.TEMDD.Completion
+import QIKVRTFormalization.TEMDD.ConservativeUniversality
+import QIKVRTFormalization.TEMDD.ConservativeUniversalityRefinement
 
 /-!
 Top-level import for the checked QIK-VRT formalization v2 tranches.
@@ -77,4 +79,11 @@ actual-state coverage, mutation invalidation, explicit authority for requirement
 changes, and safe-transition counterexamples. It does not identify this local
 formal completion predicate with repository PASS/FINAL_PASS, review, publication,
 empirical truth, or external effect acknowledgement.
+
+The TEMDD conservative-universality tranche adds a separate metatheory and a
+first constructive U3 theorem for the structural class of languages obtained by
+state/subject refinement of a target TEMDD semantic surface.  This establishes a
+nonempty infinite admissible class without changing Language 1.0 completion or
+the default evidence-transfer denial.  Broader universality remains a separate
+class-expansion proof obligation.
 -/
