@@ -1,0 +1,88 @@
+name: QIKVRT trusted PR integrity writer
+
+on:
+  pull_request_target:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: qikvrt-pr-integrity-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: false
+
+jobs:
+  persist-integrity:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      TARGET_REF: ${{ github.event.pull_request.head.ref }}
+    steps:
+      - name: Checkout trusted main control code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted
+          persist-credentials: false
+      - name: Checkout exact PR subject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.EXPECTED_HEAD }}
+          path: subject
+          fetch-depth: 2
+      - name: Install trusted integrity implementation into isolated subject checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp trusted/tools/qikvrt_integrity.py subject/tools/qikvrt_integrity.py
+          cp trusted/tools/qikvrt_subprocess.py subject/tools/qikvrt_subprocess.py
+      - name: Regenerate and verify integrity with trusted code only
+        working-directory: subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+      - name: Enforce exact mutation allowlist
+        working-directory: subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          allowed='^(REPOSITORY_FILE_MANIFEST\.json|REPOSITORY_FILE_MANIFEST\.json\.sha256|SHA256SUMS\.txt)$'
+          bad="$(git status --porcelain=v1 | awk '{print $2}' | grep -Ev "$allowed" || true)"
+          if [ -n "$bad" ]; then
+            echo 'BLOCK: trusted integrity writer produced a non-integrity delta' >&2
+            printf '%s\n' "$bad" >&2
+            exit 2
+          fi
+      - name: Persist only if exact remote head is unchanged
+        working-directory: subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')"
+          local_head="$(git rev-parse --verify HEAD^{commit})"
+          if [ "$local_head" != "$EXPECTED_HEAD" ] || [ "$remote_head" != "$EXPECTED_HEAD" ]; then
+            echo 'HOLD: PR head drifted before trusted integrity persistence' >&2
+            echo "expected=$EXPECTED_HEAD local=$local_head remote=$remote_head" >&2
+            exit 3
+          fi
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          if git diff --cached --quiet; then
+            echo 'NOOP: integrity is already byte-current'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'ci: materialize trusted PR integrity evidence'
+          git push origin "HEAD:refs/heads/$TARGET_REF"
