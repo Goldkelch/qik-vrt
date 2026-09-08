@@ -54,7 +54,8 @@ inductive ExtensionSort
 
 /--
 Extend a vocabulary by one separate sort whose symbols are values of
-`payload`.  Existing source symbols retain their original sort and type.
+`payload`.  `ULift` aligns the universes of inherited symbols and the payload;
+the canonical inclusion below preserves each inherited symbol by `ULift.up`.
 -/
 def extend
     (source : TypedVocabulary.{u})
@@ -62,8 +63,8 @@ def extend
   domain := ExtensionSort source payload
   symbol := fun domain =>
     match domain with
-    | .inherited inheritedDomain => source.symbol inheritedDomain
-    | .extension => payload
+    | .inherited inheritedDomain => ULift.{v} (source.symbol inheritedDomain)
+    | .extension => ULift.{u} payload
 
 /-- The canonical inclusion of every source sort and symbol into `extend`. -/
 def inclusion
@@ -71,7 +72,7 @@ def inclusion
     (payload : Type v) :
     VocabularyEmbedding source (extend source payload) where
   mapDomain := ExtensionSort.inherited
-  mapSymbol := fun symbol => symbol
+  mapSymbol := fun symbol => ULift.up symbol
 
 namespace Formula
 
