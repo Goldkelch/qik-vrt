@@ -7,14 +7,29 @@ STATE_DIR="${QIKVRT_STATE_DIR:-/var/lib/qikvrt/state}"
 SQL_UI_PORT="${QIKVRT_SQL_UI_PORT:-8772}"
 SQL_PORT="${QIKVRT_SQL_PORT:-5432}"
 LOG_DIR=/opt/qikvrt/runtime/cloud-transputer-logs
+RUN_DIR=/run/qikvrt
 M68K_DIR="$STATE_DIR/m68k"
 M68K_BINARY="$M68K_DIR/qikvrt-personal-posix-tcpip"
 M68K_EXECUTION="$M68K_DIR/personal-posix-tcpip-execution.txt"
 M68K_FILE="$M68K_DIR/personal-posix-tcpip-file.txt"
 M68K_SHA="$M68K_DIR/personal-posix-tcpip-sha256.txt"
 M68K_RECEIPT="$M68K_DIR/personal-posix-tcpip-receipt.json"
+V2_READY="$RUN_DIR/v2-ready.txt"
+V1_PID=
+SQL_UI_PID=
 
-mkdir -p "$M68K_DIR" "$STATE_DIR/sql92/receipts" "$LOG_DIR"
+cleanup() {
+  if [ -n "${V1_PID:-}" ] && kill -0 "$V1_PID" 2>/dev/null; then
+    kill -TERM "$V1_PID" 2>/dev/null || true
+  fi
+  if [ -n "${SQL_UI_PID:-}" ] && kill -0 "$SQL_UI_PID" 2>/dev/null; then
+    kill -TERM "$SQL_UI_PID" 2>/dev/null || true
+  fi
+}
+trap 'cleanup' INT TERM HUP EXIT
+
+mkdir -p "$M68K_DIR" "$STATE_DIR/sql92/receipts" "$LOG_DIR" "$RUN_DIR"
+rm -f "$V2_READY"
 
 m68k-linux-gnu-gcc -std=c90 -pedantic -Wall -Wextra -Werror -static \
   -I/opt/qikvrt/include \
@@ -93,4 +108,48 @@ if [ -z "${QIKVRT_START_URL:-}" ] || [ "${QIKVRT_START_URL}" = "https://goldkelc
   export QIKVRT_START_URL="http://127.0.0.1:${SQL_UI_PORT}/"
 fi
 
-exec /usr/local/bin/qikvrt-cloud-transputer-v1
+# The inherited V1 supervisor performs its own bounded health check.  During
+# that one startup check the V2 public runtime overlay does not exist yet, so
+# the health script is explicitly told that it is observing PRECOMPOSE state.
+QIKVRT_V2_STARTUP_PRECOMPOSE=1 /usr/local/bin/qikvrt-cloud-transputer-v1 &
+V1_PID=$!
+
+ready=0
+for attempt in $(seq 1 180); do
+  if [ -s "$RUN_DIR/ready.txt" ] && [ -s "$RUN_DIR/runtime.json" ] && [ -s "$STATE_DIR/runtime.json" ]; then
+    ready=1
+    break
+  fi
+  if ! kill -0 "$V1_PID" 2>/dev/null; then
+    set +e
+    wait "$V1_PID"
+    rc=$?
+    set -e
+    printf 'BLOCK: inherited cloud-transputer supervisor exited before V2 composition rc=%s\n' "$rc" >&2
+    exit 41
+  fi
+  sleep 1
+done
+if [ "$ready" -ne 1 ]; then
+  printf '%s\n' 'BLOCK: inherited runtime did not reach bounded READY before V2 composition' >&2
+  exit 42
+fi
+
+python3 -B /opt/qikvrt/src/cloud_transputer/runtime_v2_compose.py \
+  --runtime "$RUN_DIR/runtime.json" \
+  --m68k-receipt "$M68K_RECEIPT" \
+  --output "$RUN_DIR/runtime.json" \
+  --output "$STATE_DIR/runtime.json" \
+  > "$LOG_DIR/runtime-v2-compose.json"
+
+# Reobserve the composed, public runtime before advertising the stronger V2
+# readiness marker.  This liveness check is deliberately non-effecting.
+QIKVRT_VERIFY_SQL_EFFECT_ACK=0 /usr/local/bin/qikvrt-cloud-transputer-health \
+  > "$LOG_DIR/v2-post-compose-health.log" 2>&1
+printf '%s\n' 'QIKVRT_CLOUD_TRANSPUTER_V2_READY' > "$V2_READY"
+
+set +e
+wait "$V1_PID"
+rc=$?
+set -e
+exit "$rc"
