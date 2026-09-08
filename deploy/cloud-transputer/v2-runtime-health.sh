@@ -7,14 +7,20 @@ STATE_DIR="${QIKVRT_STATE_DIR:-/var/lib/qikvrt/state}"
 SQL_UI_PORT="${QIKVRT_SQL_UI_PORT:-8772}"
 M68K_DIR="$STATE_DIR/m68k"
 VERIFY_SQL_EFFECT="${QIKVRT_VERIFY_SQL_EFFECT_ACK:-0}"
+PRECOMPOSE="${QIKVRT_V2_STARTUP_PRECOMPOSE:-0}"
 TMP_DIR="$(mktemp -d /tmp/qikvrt-v2-health.XXXXXX)"
 CAPABILITY_JSON="$TMP_DIR/sql92-capability.json"
 STATE_JSON="$TMP_DIR/sql92-state.json"
+RUNTIME_JSON="$TMP_DIR/runtime.json"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 case "$VERIFY_SQL_EFFECT" in
   0|1) ;;
   *) printf '%s\n' 'BLOCK: QIKVRT_VERIFY_SQL_EFFECT_ACK must be 0 or 1' >&2; exit 64 ;;
+esac
+case "$PRECOMPOSE" in
+  0|1) ;;
+  *) printf '%s\n' 'BLOCK: QIKVRT_V2_STARTUP_PRECOMPOSE must be 0 or 1' >&2; exit 64 ;;
 esac
 
 /usr/local/bin/qikvrt-cloud-transputer-health-v1
@@ -47,6 +53,36 @@ assert r['physical_m68000_execution_claimed'] is False
 assert r['repository_or_publication_effect_claimed'] is False
 assert r['pass'] is False and r['final_pass'] is False and r['global_effect_ack_done'] is False
 PY
+
+if [ "$PRECOMPOSE" = 0 ]; then
+  mark public_runtime_v2_overlay
+  curl -fsS http://127.0.0.1:8080/.well-known/qikvrt-cloud-transputer >"$RUNTIME_JSON"
+  python3 -B - "$RUNTIME_JSON" "$M68K_DIR/personal-posix-tcpip-receipt.json" <<'PY'
+import json,sys
+runtime=json.load(open(sys.argv[1],encoding='utf-8'))
+receipt=json.load(open(sys.argv[2],encoding='utf-8'))
+assert runtime['schema']=='qikvrt_cloud_transputer_runtime_v1'
+assert runtime['runtime_overlay_schema']=='qikvrt_cloud_transputer_runtime_v2_overlay_v1'
+assert runtime['personal_posix_state']=='REPOSITORY_C90_M68000_PROFILE_VERIFIED'
+assert runtime['personal_posix_authority']=='REPOSITORY_EXACT_BOUND_IMPLEMENTATION'
+assert runtime['personal_posix_profile']=='QIKVRT_PERSONAL_POSIX_C90_V1'
+assert runtime['personal_posix_source_sha256']==receipt['source_sha256']
+assert runtime['personal_posix_m68000_binary_sha256']==receipt['m68000_binary_sha256']
+assert runtime['personal_posix_m68000_machine_execution_observed'] is True
+assert runtime['standalone_m68000_tcp_ip_packet_engine_verified'] is True
+assert runtime['standalone_m68000_tcp_ip_packet_engine_scope']=='IPV4_TCP_UDP_PACKET_ENGINE_WITH_TCP_HTTP_BOOTSTRAP_V1'
+assert runtime['external_packet_io_adapter']=='LINUX_OCI_HOST_ADAPTER'
+assert runtime['kernel_backed_posix_tcp_ip'] is True
+assert runtime['standalone_m68000_tcp_ip_stack_claimed'] is False
+assert runtime['bare_metal_nic_driver_claimed'] is False
+assert runtime['full_posix_1_conformance_claimed'] is False
+assert runtime['physical_m68000_execution_claimed'] is False
+assert runtime['external_effect_claimed'] is False
+assert runtime['pass'] is False and runtime['final_pass'] is False and runtime['effect_ack_done'] is False
+PY
+else
+  mark public_runtime_v2_overlay_pending_startup_composition
+fi
 
 mark sql92_ui
 curl -fsS "http://127.0.0.1:${SQL_UI_PORT}/" | grep -q 'QIK-VRT SQL92 / EFFECT_ACK terminal'
@@ -103,16 +139,20 @@ fi
 
 mark sql92_state_binds_runtime_and_authority_mirror
 curl -fsS "http://127.0.0.1:${SQL_UI_PORT}/state" >"$STATE_JSON"
-python3 -B - "$STATE_JSON" "$VERIFY_SQL_EFFECT" <<'PY'
+python3 -B - "$STATE_JSON" "$VERIFY_SQL_EFFECT" "$PRECOMPOSE" <<'PY'
 import json,sys
 s=json.load(open(sys.argv[1],encoding='utf-8'))
 require_effect=sys.argv[2]=='1'
+precompose=sys.argv[3]=='1'
 assert s['schema']=='qikvrt_sql92_terminal_state_v1'
 assert s['runtime'] is not None
 assert s['authority-mirror'] is not None
 assert s['authority-mirror']['authority_repository']=='Goldkelch/qik-vrt'
 assert len(s['authority-mirror']['main_head_sha'])==40
 assert len(s['authority-mirror']['main_tree_sha'])==40
+if not precompose:
+    assert s['runtime']['personal_posix_state']=='REPOSITORY_C90_M68000_PROFILE_VERIFIED'
+    assert s['runtime']['runtime_overlay_schema']=='qikvrt_cloud_transputer_runtime_v2_overlay_v1'
 assert isinstance(s['receipt_count'],int) and s['receipt_count'] >= (1 if require_effect else 0)
 PY
 
