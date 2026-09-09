@@ -3,7 +3,6 @@
 name: QIKVRT autonomous PR-head continuation
 
 on:
-  workflow_dispatch:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review, review_requested]
   workflow_run:
@@ -18,11 +17,8 @@ on:
     types: [completed]
 
 permissions:
-  actions: write
-  # GitHub's create-repository-dispatch endpoint requires Contents: write for the
-  # workflow token. This authority is used only to emit the exact bound dispatch
-  # envelope below; the workflow never checks out with credentials or mutates files.
-  contents: write
+  actions: read
+  contents: read
   pull-requests: read
   statuses: write
 
@@ -284,7 +280,7 @@ jobs:
             '{d0:2,state:"REOBSERVE",event:$event,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,productive_effect:false,effect_ack:"NOT_REQUIRED",reason:"ZERO_JOB_ACTION_REQUIRED"}' \
             > "$root/decision-receipt.json"
 
-      - name: Dispatch exact-head REOBSERVE continuation
+      - name: Hold exact-head reobservation for the next native event
         if: steps.select.outputs.selected == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -296,81 +292,25 @@ jobs:
         run: |
           set -euo pipefail
           root=.qikvrt/autonomous-pr-head-continuation
-          dispatch_status_published=false
-          publish_dispatch_error() {
-            rc=$?
-            trap - EXIT
-            if [ "$rc" -ne 0 ] && [ "$dispatch_status_published" = true ]; then
-              set +e
-              gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
-                -f state=error \
-                -f context='QIKVRT autonomous exact-head verification' \
-                -f description='Exact-head recovery dispatch failed' \
-                -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-              set -e
-            fi
-            exit "$rc"
-          }
-          trap publish_dispatch_error EXIT
-
           live_ref="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
           test "$live_ref" = "$HEAD_SHA"
 
-          # Publish pending first. A concurrent invocation therefore HOLDs instead
-          # of dispatching a second verifier for the same exact head.
+          # A D0=2 observation is evidence, not authority to manufacture a
+          # successor workflow event. The next native PR or workflow_run event
+          # rebinds and reobserves this head; until then the exact gate holds.
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
-            -f state=pending \
+            -f state=error \
             -f context='QIKVRT autonomous exact-head verification' \
-            -f description='Trusted exact-head recovery dispatched' \
+            -f description='HOLD: await next native PR or workflow-run event' \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          dispatch_status_published=true
-
-          # D0=2 permits fresh observation/verifier execution only. It does not
-          # merge, publish, deploy, or assert EFFECT_ACK_DONE.
-          live_ref="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
-          test "$live_ref" = "$HEAD_SHA"
-          jq -n \
-            --arg repository "$GITHUB_REPOSITORY" \
-            --arg pr "$PR_NUMBER" \
-            --arg ref "$HEAD_REF" \
-            --arg head "$HEAD_SHA" \
-            --arg base "$BASE_SHA" \
-            '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base,d0:2,causal_state:"REOBSERVE"}}' \
-            | gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input -
-
-          : > "$root/dispatched-workflows.jsonl"
-          for workflow in \
-            qikvrt_batch04_integrity.yml \
-            qikvrt_ci.yml \
-            qikvrt_collective_review.yml \
-            qikvrt_global_completion.yml \
-            qikvrt_requested_review_contract.yml
-          do
-            live_ref="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
-            test "$live_ref" = "$HEAD_SHA"
-            gh api --method POST \
-              "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/dispatches" \
-              -f ref="$HEAD_REF"
-            jq -nc \
-              --arg workflow "$workflow" \
-              --arg ref "$HEAD_REF" \
-              --arg head "$HEAD_SHA" \
-              '{workflow:$workflow,ref:$ref,head:$head,d0:2,state:"REOBSERVE",productive_effect:false}' \
-              >> "$root/dispatched-workflows.jsonl"
-          done
-
-          # Requested review has no autonomous dispatch route. The review
-          # executor accepts only an exact native event or a human-supplied
-          # explicit dispatch subject; this global continuation classifier must
-          # not launder its selected PR into that interface.
 
           jq -n \
             --arg pr "$PR_NUMBER" \
             --arg head "$HEAD_SHA" \
             --arg ref "$HEAD_REF" \
-            '{pull_request:($pr|tonumber),head_sha:$head,head_ref:$ref,d0:2,state:"REOBSERVE",disposition:"DISPATCHED_EXACT_HEAD_CONTINUATION",productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
-            > "$root/dispatch-receipt.json"
-          trap - EXIT
+            '{pull_request:($pr|tonumber),head_sha:$head,head_ref:$ref,d0:1,state:"HOLD",disposition:"NATIVE_EVENT_REOBSERVATION_REQUIRED",reason:"EXACT_EVENT_SUCCESSOR_REOBSERVATION_REQUIRED",productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
+            > "$root/hold-receipt.json"
+          echo "HOLD/D0=1: no synthetic continuation was emitted for PR #${PR_NUMBER}" >&2
 
       - name: Preserve causal continuation evidence
         if: always()

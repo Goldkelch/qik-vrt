@@ -19,15 +19,14 @@ This contract applies to `Goldkelch/qik-vrt` and `ingolf-lohmann/qik-vrt`. It is
 
 The existing `QIKVRT requested review executor` is the role-local Mesh
 self-review feedback plane. It runs from trusted repository code for every
-eligible same-repository pull request supplied by an exact native event or an
-explicit exact-PR-and-head dispatch, whose bytes can be observed. An explicit human
-review request remains a useful event signal, but it is not an execution
-prerequisite.
+eligible same-repository pull request supplied by an exact native event, whose
+bytes can be observed. An explicit human review request remains a useful event
+signal, but it is not an execution prerequisite. The executor and the required
+Code-Owner gate have no manual or self-dispatch entrypoint.
 
-An explicit dispatch of that executor is a technical-review action only. Its
-completed manual workflow run is intentionally not a source for the required
-Code-Owner status; an operator who needs that status reobserved dispatches
-`QIKVRT required code-owner review` separately with the same exact PR number.
+When causal progress needs another observation, it remains fail-closed until a
+separate native pull-request, review, issue-comment, or eligible workflow-run
+event carries the exact subject again. No synthetic successor is manufactured.
 
 For every review, the executor must act without deliberate queueing:
 
@@ -69,6 +68,18 @@ deliveries by the policy rank and delivery-time/id tie-break without cancelling
 an in-progress exact review. Neither a scheduled scan, a rotating PR selector,
 nor an Actions-only pseudo-queue is permitted.
 
+The shared append-only review ledger is an evidenced serialization boundary,
+so its executor has one non-preemptive, repository-wide active writer. Its
+GitHub-native admission buffer is `queue: max`, not `queue: single`: GitHub
+keeps up to 100 pending native deliveries instead of cancelling an already
+pending request for one pull request when a later event for another arrives.
+That bounded platform buffer is not a priority queue, a durable inbox, or a
+substitute for the GitHub App broker. At its platform capacity GitHub can still
+cancel a new run before Actions receives its payload; Actions cannot turn that
+undelivered payload into a receipt. Durable/unbounded delivery retention and
+cross-event ordering therefore remain an explicit broker-provisioning blocker,
+not a silently coalesced review request.
+
 The exact role-local receipt is appended on
 `refs/heads/qikvrt/mesh-review-ledger-v1`. Its paths are:
 
@@ -87,18 +98,19 @@ at least one completed successful job; a skipped-only required run is
 `ZERO_EXECUTED_JOB_GATE`, never success. Issue comments, reviews, review comments and thread state
 are represented by canonical IDs, timestamps, states and body hashes. The
 Mesh bot's own marked `COMMENT` projection is excluded from that causal
-discussion set so feedback does not invalidate itself recursively.
-Issue-comment events enter the trusted executor directly; review and inline
-review-comment mutations enter through the permissionless Code-Owner observer's
-completed workflow signal. GitHub Actions exposes no native
+discussion set so feedback does not invalidate itself recursively. The
+executor's own exact bot `COMMENT` delivery is not a new intake event. Issue
+comments, reviews, and inline review-comment mutations enter the trusted
+executor directly; GitHub Actions exposes no native
 `pull_request_review_thread` workflow trigger. A resolve/unresolve-only thread
 transition is therefore `UNOBSERVABLE_WITHOUT_EXACT_EVENT`: it does not permit
 a scheduled scan, a rotating candidate selection, a review dispatch, or a
-metadata mutation. The next exact repository event or explicit dispatch may
-reobserve a bound subject; no prior evidence is transferred.
+metadata mutation. The next exact repository event may reobserve a bound
+subject; no prior evidence is transferred.
 
 The complete diff is transported as ordered, content-addressed packets of at
-most 1 MiB. Its canonical manifest binds an explicit packet count, every
+most 1 MiB. The versioned ledger-I/O ceiling is four packets / 4 MiB per exact
+receipt. Its canonical manifest binds an explicit packet count, every
 offset, packet byte count and packet SHA-256, the total byte count and total
 SHA-256, the deterministic packet paths and a SHA-256 over the canonical
 manifest projection. The receiver rejects a missing, reordered, altered,
@@ -110,6 +122,12 @@ does not silently lose the handoff, invent a favorable result, or reuse an
 earlier receipt. Head, tree, scope, diff, policy or intake drift still
 invalidates the receipt.
 
+An exact diff above that ceiling remains locally bound review evidence, but it
+is `DIFF_LEDGER_TRANSPORT_LIMIT_EXCEEDED`: a nonpersistent
+`HOLD_UNVERIFIED` with no packet upload or packet readback. It cannot be
+substituted with partial packets, a reused older receipt, a technical approval,
+publication, `PASS`, `FINAL_PASS`, or `EFFECT_ACK_DONE`.
+
 The ledger is initialized as an orphan root commit containing only the first
 exact receipt and diff; it therefore does not copy a predecessor repository
 tree into the evidence plane. It is append-only. Its sole writer uses a non-force,
@@ -119,20 +137,43 @@ drift yields `HOLD`; it never yields a replacement receipt or a force update.
 Receipts are role-local and cannot be transferred between Authority, Mirror or
 another Mesh node as if the review had executed there.
 
-The observer regenerates the complete snapshot, diff and receipt before the
-ledger read, immediately before and after ledger initialization or compare-and-
-swap, and before and after each PR-comment or status mutation. Both the
-evidence fingerprint and sealed receipt-payload hash must remain byte-exact.
-The stored receipt must also verify its own seal; the stored manifest must be
-byte-identical to the sealed canonical transport manifest; and the stored
-ordered packets must reassemble to the regenerated diff byte for byte and to
-its total SHA-256. Any disagreement stops the next mutation and remains
+The observer regenerates the complete snapshot, diff and receipt at decision
+time and immediately before each ledger-reference mutation. Each ledger write
+then requires its exact mutation response, bounded non-force reference
+readback, and byte-exact receipt, manifest and packet readback. After the
+selected ledger outcome, one strict full snapshot/diff/receipt recheck is
+required before any PR projection. Full strict rechecks are also required
+before and after every PR-comment or status mutation. Both the evidence
+fingerprint and sealed receipt-payload hash must remain byte-exact. The stored
+receipt must also verify its own seal; the stored manifest must be byte-
+identical to the sealed canonical transport manifest; and the stored ordered
+packets must reassemble to the regenerated diff byte for byte and to its total
+SHA-256. Any disagreement stops the next mutation and remains
 `HOLD_UNVERIFIED`.
 
 The same pull-request head may be reviewed again only when its causal evidence
 fingerprint changed, for example because a required workflow attempt, active
 writer, discussion thread or applicable gate changed. An identical fingerprint
 is an idempotent `D0=0 NOOP`, never a duplicate receipt.
+
+A `WAIT` observation records volatile workflow progress as an artifact but is
+not eligible for immutable-ledger persistence or PR projection. A later native
+repository event reobserves the exact subject once its writer lease and
+applicable gates are terminal; no workflow-dispatch successor is manufactured.
+If the GitHub App installation quota prevents the exact observation itself, the
+executor makes at most one best-effort **pending** availability-status write to
+the selector-bound head to supersede an older technical success. That marker
+has no evidence fingerprint, is recorded as `HOLD_UNVERIFIED` if the write is
+unavailable, and is only a non-positive promotion fence—not a receipt,
+approval, publication, `PASS`, `FINAL_PASS`, or `EFFECT_ACK_DONE`.
+
+Every normal or availability-hold status also names its executor run ID. A
+promotion snapshot accepts a positive technical status only when it binds the
+newest bounded executor run whose API `pull_requests` record has exactly the
+same PR number and head SHA. It deliberately ignores a workflow run's
+synthetic `head_sha` for direct-review deliveries. A newer exact run without a
+status write therefore leaves the stale status fail-closed; this source-run
+fence is technical evidence only and never an approval or promotion authority.
 
 Review receipts and review-diff manifests/packets are never committed to the
 reviewed candidate branch or to `main`. Doing so would mutate the reviewed

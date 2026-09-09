@@ -7,19 +7,9 @@ on:
     workflows:
       - "QIKVRT required code-owner review"
     types: [completed]
-  workflow_dispatch:
-    inputs:
-      pr:
-        description: "Exact open main-based pull request number"
-        required: true
-        type: string
-      expected_head:
-        description: "Exact current pull-request head SHA"
-        required: true
-        type: string
 
 permissions:
-  actions: write
+  actions: read
   contents: read
   issues: write
   pull-requests: read
@@ -33,16 +23,13 @@ jobs:
   reconcile-and-reobserve:
     if: >-
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'workflow_dispatch' ||
-       github.event.workflow_run.conclusion == 'success')
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     env:
-      GH_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
       REPOSITORY: ${{ github.repository }}
-      UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id || '' }}
-      REQUESTED_PR: ${{ inputs.pr || '' }}
-      REQUESTED_HEAD: ${{ inputs.expected_head || '' }}
+      UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id }}
       REVIEW_STATUS_CONTEXT: QIKVRT required code-owner review
       EFFECT_STATUS_CONTEXT: QIKVRT autonomous ruleset repair
       EFFECT_ROOT: /tmp/qikvrt-autonomous-ruleset-effect
@@ -106,27 +93,6 @@ jobs:
                   checkout_head=checkout,
                   observed_main=live_main,
               )
-
-          event_name = os.environ["GITHUB_EVENT_NAME"]
-          if event_name == "workflow_dispatch":
-              requested_pr = os.environ.get("REQUESTED_PR", "").strip()
-              requested_head = os.environ.get("REQUESTED_HEAD", "").strip()
-              if not requested_pr.isdigit() or int(requested_pr) <= 0:
-                  noop("MANUAL_PR_NUMBER_INVALID")
-              if not re.fullmatch(r"[0-9a-f]{40}", requested_head):
-                  noop("MANUAL_EXPECTED_HEAD_INVALID")
-              save("preselection.json", {
-                  "schema": "qikvrt_autonomous_ruleset_effect_preselection_v3",
-                  "state": "MANUAL_CANDIDATE",
-                  "first_blocker": None,
-                  "pr_number": int(requested_pr),
-                  "expected_head": requested_head,
-                  "trusted_main_sha": live_main,
-              })
-              raise SystemExit(0)
-
-          if event_name != "workflow_run":
-              noop("UNSUPPORTED_TRIGGER", event_name=event_name)
 
           raw_run_id = os.environ.get("UPSTREAM_RUN_ID", "").strip()
           if not raw_run_id.isdigit() or int(raw_run_id) <= 0:
@@ -248,10 +214,7 @@ jobs:
 
           upstream_run_id = None
           artifact_name = None
-          if pre.get("state") == "MANUAL_CANDIDATE":
-              number = pre.get("pr_number")
-              expected_head = pre.get("expected_head")
-          elif pre.get("state") == "ARTIFACT_CANDIDATE":
+          if pre.get("state") == "ARTIFACT_CANDIDATE":
               selection = json.loads(
                   (root / "upstream-selection.json").read_text(encoding="utf-8")
               )
@@ -577,7 +540,7 @@ jobs:
             }' > "$root/continuation-readback.json"
           cat "$root/continuation-readback.json"
 
-      - name: Dispatch one fresh same-head review-gate reobservation
+      - name: Record same-head reobservation hold for the next native event
         if: >-
           steps.select.outputs.state == 'CANDIDATE' &&
           steps.reconcile.outputs.state == 'CURRENT' &&
@@ -593,14 +556,10 @@ jobs:
           test "$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)" = "$EXPECTED_HEAD"
           test "$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)" = "$EXPECTED_MAIN"
           test "$(gh api "repos/${REPOSITORY}/git/ref/heads/${HEAD_REF}" --jq .object.sha)" = "$EXPECTED_HEAD"
-          jq -n --arg pr "$PR_NUMBER" '{ref:"main",inputs:{pr:$pr}}' \
-            | gh api --method POST \
-                "repos/${REPOSITORY}/actions/workflows/qikvrt_required_review_gate.yml/dispatches" \
-                --input -
           gh api --method POST "repos/${REPOSITORY}/statuses/${EXPECTED_HEAD}" \
             -f state=success \
             -f context="$EFFECT_STATUS_CONTEXT" \
-            -f description="ruleset CURRENT; exact-head gate reobservation dispatched" \
+            -f description="ruleset CURRENT; next native review event reobserves" \
             -f target_url="${GITHUB_SERVER_URL}/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
       - name: Preserve exact selection, effect, continuation, and readback receipts

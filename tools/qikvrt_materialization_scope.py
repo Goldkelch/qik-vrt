@@ -23,13 +23,11 @@ FORMALIZATION_PREFIXES = (
 )
 FORMALIZATION_PATHS = {
     "release/formalization-v2-alpha2-zenodo.json",
-    "tests/test_formalization_v2_release_workflow.py",
 }
 CONTENT_PREFIXES = (
     "tools/qikvrt_content_disposition_",
     "tools/qikvrt_batch003_",
     "release/zenodo-corpus-proof-2026-07-28/canonical-union/",
-    "tests/test_content_disposition_batch_003_",
 )
 CONTENT_PATHS = {
     "AI_PROGRESS.json",
@@ -42,7 +40,6 @@ APHORISM_PREFIXES = (
 APHORISM_PATHS = {
     "docs/publications/index.json",
     "docs/publications/index.html",
-    "tests/test_aphorism_corpus_v2.py",
     "work-units/MATERIALIZE_APHORISM_CORPUS_SCIENTIFIC_ASSESSMENT_V2.json",
 }
 
@@ -73,19 +70,28 @@ def classify(paths: Sequence[str], *, force_full: bool = False) -> dict[str, Any
     normalized = sorted(set(path.strip() for path in paths if path.strip()))
     unsafe = sorted(path for path in normalized if _unsafe(path))
     control = sorted(path for path in normalized if path in CONTROL_PATHS)
-    full = force_full or bool(unsafe) or bool(control)
 
-    formalization = full or any(
+    # Control-plane mutations demand the complete repository verification gates,
+    # but they do not by themselves causally change every generated evidence
+    # domain. Explicit/ambiguous recovery remains fail-safe by materializing
+    # every optional domain.
+    materialize_all = force_full or bool(unsafe)
+    full = materialize_all or bool(control)
+
+    # Test files are verification inputs, not generator inputs. They remain
+    # covered by the unconditional complete repository gates below; changing a
+    # test alone must never manufacture unrelated repository evidence bytes.
+    formalization = materialize_all or any(
         path in FORMALIZATION_PATHS or _starts(path, FORMALIZATION_PREFIXES)
         for path in normalized
     )
-    content_disposition = full or any(
+    content_disposition = materialize_all or any(
         path in CONTENT_PATHS
         or _starts(path, CONTENT_PREFIXES)
         or _content_work_unit(path)
         for path in normalized
     )
-    aphorism = full or any(
+    aphorism = materialize_all or any(
         path in APHORISM_PATHS or _starts(path, APHORISM_PREFIXES)
         for path in normalized
     )
@@ -93,6 +99,7 @@ def classify(paths: Sequence[str], *, force_full: bool = False) -> dict[str, Any
     return {
         "schema": "qikvrt_materialization_scope_v1",
         "full": full,
+        "materialize_all_optional_domains": materialize_all,
         "formalization": formalization,
         "content_disposition": content_disposition,
         "aphorism": aphorism,

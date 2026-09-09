@@ -19,11 +19,11 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.actor != 'github-actions[bot]' }}
 
 jobs:
   materialize:
@@ -44,6 +44,7 @@ jobs:
         with:
           ref: ${{ env.EXPECTED_HEAD }}
           fetch-depth: 2
+          persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.12"
@@ -279,6 +280,16 @@ jobs:
           python3 -B "$script" --materialize --json
           python3 -B "$script" --check --json
           python3 -B -m unittest -v tests.test_aphorism_corpus_v2
+      - name: Restore exact PR source before integrity projection
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
+          git restore --source="$EXPECTED_HEAD" --staged --worktree -- .
+          git clean -ffdx
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
       - name: Regenerate and verify repository integrity
         shell: bash
         run: |
@@ -292,7 +303,10 @@ jobs:
           make test
           python3 tools/qikvrt_integrity.py verify
       - name: Commit materialized repository evidence
-        if: github.event_name != 'pull_request'
+        id: persist
+        env:
+          REPOSITORY: ${{ github.repository }}
+          WRITER_TOKEN: ${{ secrets.QIKVRT_INGOLF_LOHMANN_REPOSITORY_WRITER_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
@@ -307,53 +321,100 @@ jobs:
             echo "remote_head=$remote_head" >&2
             exit 2
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            formalization/QIKVRT_Formalization_v2.0/claims/TEX_ENVIRONMENTS.json \
-            formalization/QIKVRT_Formalization_v2.0/claims/APPENDIX_MATRIX.json \
-            formalization/QIKVRT_Formalization_v2.0/claims/CLAIM_GRAPH.json \
-            formalization/QIKVRT_Formalization_v2.0/MANUSCRIPT_PROOF_MAP.md \
-            formalization/QIKVRT_Formalization_v2.0/VERIFICATION_REPORT.md \
-            formalization/QIKVRT_Formalization_v2.0/proofs/PROOF_OBJECT_MANIFEST.json \
-            release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.2.zip \
-            release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.2.zip.sha256 \
-            release/formalization-v2/ZENODO_SHA256SUMS-alpha.2 \
-            release/formalization-v2-alpha2-zenodo.json \
-            tools/qikvrt_content_disposition_batch_003_subject_2581811b342e505d.py \
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-2581811b342e505d \
-            work-units/EXTRACT_ARCHIVE_CONTENT_THEN_DISPOSITION_CLAIMS_BATCH_003_SUBJECT_172DD9BC2738FA43.json \
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-172dd9bc2738fa43 \
-            work-units/EXTRACT_ARCHIVE_CONTENT_THEN_DISPOSITION_CLAIMS_BATCH_003_SUBJECT_B4849E1A2D6B2270.json \
-            docs/publications/2026-08-04-aphorism-corpus-scientific-assessment \
-            docs/publications/index.json \
-            docs/publications/index.html \
-            work-units/MATERIALIZE_APHORISM_CORPUS_SCIENTIFIC_ASSESSMENT_V2.json \
-            AI_PROGRESS.json \
-            AI_STATUS.md \
-            REPOSITORY_FILE_MANIFEST.json \
-            REPOSITORY_FILE_MANIFEST.json.sha256 \
-            SHA256SUMS.txt
-          optional_paths=(
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/CONTENT_DISPOSITION_BATCH_003_RECEIPT.json
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-b4849e1a2d6b2270
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-7956d8acdc473825
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-ce2390f18618ad0c
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-780b9bf86425cee3
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-7fdb36aa7c07c07d
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/retrospective-proof-corpus
-            work-units/CREATE_VERSIONED_CORRECTED_CANDIDATES_REMAINING_CORPUS_SUBJECTS.json
-            work-units/REQUEST_SEPARATE_ZENODO_MUTATION_AUTHORIZATION_RETROSPECTIVE_PROOF_CORPUS.json
-          )
-          for path in "${optional_paths[@]}"; do
-            if [ -e "$path" ]; then
-              git add "$path"
-            fi
-          done
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git add \
+              REPOSITORY_FILE_MANIFEST.json \
+              REPOSITORY_FILE_MANIFEST.json.sha256 \
+              SHA256SUMS.txt
+          else
+            git add \
+              formalization/QIKVRT_Formalization_v2.0/claims/TEX_ENVIRONMENTS.json \
+              formalization/QIKVRT_Formalization_v2.0/claims/APPENDIX_MATRIX.json \
+              formalization/QIKVRT_Formalization_v2.0/claims/CLAIM_GRAPH.json \
+              formalization/QIKVRT_Formalization_v2.0/MANUSCRIPT_PROOF_MAP.md \
+              formalization/QIKVRT_Formalization_v2.0/VERIFICATION_REPORT.md \
+              formalization/QIKVRT_Formalization_v2.0/proofs/PROOF_OBJECT_MANIFEST.json \
+              release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.2.zip \
+              release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.2.zip.sha256 \
+              release/formalization-v2/ZENODO_SHA256SUMS-alpha.2 \
+              release/formalization-v2-alpha2-zenodo.json \
+              tools/qikvrt_content_disposition_batch_003_subject_2581811b342e505d.py \
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-2581811b342e505d \
+              work-units/EXTRACT_ARCHIVE_CONTENT_THEN_DISPOSITION_CLAIMS_BATCH_003_SUBJECT_172DD9BC2738FA43.json \
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-172dd9bc2738fa43 \
+              work-units/EXTRACT_ARCHIVE_CONTENT_THEN_DISPOSITION_CLAIMS_BATCH_003_SUBJECT_B4849E1A2D6B2270.json \
+              docs/publications/2026-08-04-aphorism-corpus-scientific-assessment \
+              docs/publications/index.json \
+              docs/publications/index.html \
+              work-units/MATERIALIZE_APHORISM_CORPUS_SCIENTIFIC_ASSESSMENT_V2.json \
+              AI_PROGRESS.json \
+              AI_STATUS.md \
+              REPOSITORY_FILE_MANIFEST.json \
+              REPOSITORY_FILE_MANIFEST.json.sha256 \
+              SHA256SUMS.txt
+            optional_paths=(
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/CONTENT_DISPOSITION_BATCH_003_RECEIPT.json
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-b4849e1a2d6b2270
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-7956d8acdc473825
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-ce2390f18618ad0c
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-780b9bf86425cee3
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-7fdb36aa7c07c07d
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/retrospective-proof-corpus
+              work-units/CREATE_VERSIONED_CORRECTED_CANDIDATES_REMAINING_CORPUS_SUBJECTS.json
+              work-units/REQUEST_SEPARATE_ZENODO_MUTATION_AUTHORIZATION_RETROSPECTIVE_PROOF_CORPUS.json
+            )
+            for path in "${optional_paths[@]}"; do
+              if [ -e "$path" ]; then
+                git add "$path"
+              fi
+            done
+          fi
           if git diff --cached --quiet; then
             echo "Repository evidence is already current."
             exit 0
           fi
+
+          authority_root="$RUNNER_TEMP/qikvrt-repository-writer-authority"
+          mkdir -p "$authority_root"
+          if [ -z "${WRITER_TOKEN:-}" ]; then
+            jq -n \
+              --arg repository "$REPOSITORY" \
+              --arg ref "$TARGET_REF" \
+              --arg head "$source_head" \
+              '{schema:"qikvrt_repository_writer_authority_v1",state:"REQUEST_AUTHORITY",first_blocker:"REPOSITORY_WRITER_CREDENTIAL_MISSING",repository:$repository,target_ref:$ref,source_head:$head,required_identity:"ingolf-lohmann",required_capability:"contents:write",mutation:"NONE",completion_claims:{PASS:false,FINAL_PASS:false,EFFECT_ACK_DONE:false}}' \
+              > "$authority_root/receipt.json"
+            echo "REQUEST_AUTHORITY: QIKVRT_INGOLF_LOHMANN_REPOSITORY_WRITER_TOKEN is required for a freshness-producing repository persistence effect." >&2
+            exit 3
+          fi
+
+          GH_TOKEN="$WRITER_TOKEN" gh api user > "$authority_root/user.json"
+          jq -e '.login == "ingolf-lohmann" and .type == "User"' \
+            "$authority_root/user.json" >/dev/null || {
+              echo "BLOCK: repository writer credential does not resolve to ingolf-lohmann User identity" >&2
+              exit 4
+            }
+          permission="$(
+            GH_TOKEN="$WRITER_TOKEN" gh api \
+              "repos/${REPOSITORY}/collaborators/ingolf-lohmann/permission" \
+              --jq .permission
+          )"
+          case "$permission" in
+            write|maintain|admin) ;;
+            *)
+              echo "BLOCK: ingolf-lohmann writer permission is not write/maintain/admin: $permission" >&2
+              exit 4
+              ;;
+          esac
+          jq -n \
+            --arg repository "$REPOSITORY" \
+            --arg ref "$TARGET_REF" \
+            --arg head "$source_head" \
+            --arg permission "$permission" \
+            '{schema:"qikvrt_repository_writer_authority_v1",state:"AUTHORIZED",repository:$repository,target_ref:$ref,source_head:$head,writer:"ingolf-lohmann",permission:$permission,capability:"contents:write",completion_claims:{PASS:false,FINAL_PASS:false,EFFECT_ACK_DONE:false}}' \
+            > "$authority_root/receipt.json"
+
+          git config user.name "ingolf-lohmann"
+          git config user.email "294949349+ingolf-lohmann@users.noreply.github.com"
           git commit -m "ci: materialize repository evidence"
           remote_head_after_commit="$(
             git ls-remote --heads origin "refs/heads/$TARGET_REF" |
@@ -365,4 +426,18 @@ jobs:
             echo "remote_head_after_commit=$remote_head_after_commit" >&2
             exit 2
           fi
+          GH_TOKEN="$WRITER_TOKEN" gh auth setup-git
           git push origin "HEAD:$TARGET_REF"
+
+      - name: Preserve exact projection and writer-authority receipt
+        if: always() && steps.persist.outcome != 'skipped'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-repository-writer-${{ github.run_id }}-${{ env.EXPECTED_HEAD }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            REPOSITORY_FILE_MANIFEST.json
+            REPOSITORY_FILE_MANIFEST.json.sha256
+            SHA256SUMS.txt
+            ${{ runner.temp }}/qikvrt-repository-writer-authority

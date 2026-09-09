@@ -20,7 +20,7 @@ A draft pull request is eligible only when its body contains the exact marker:
 <!-- qikvrt-autonomous-self-heal:enabled -->
 ```
 
-The scheduled worker processes at most one eligible pull request per run. The
+The event-driven worker processes at most one eligible pull request per run. The
 head repository must equal the executing repository, the head must still equal
 the immediately reobserved SHA, and history rewriting is forbidden.
 
@@ -35,7 +35,7 @@ REOBSERVE_MAIN_AND_PR_HEAD
 → RUN_CONTROLLER_TESTS
 → RUN_FULL_REPOSITORY_SUITE
 → PUSH_FAST_FORWARD_SUCCESSOR
-→ REPOSITORY_DISPATCH_EXACT_HEAD_REVERIFICATION
+→ NATIVE_PULL_REQUEST_EVENT_EXACT_HEAD_REVERIFICATION
 → PERSIST_COMMIT_STATUS_AND_PR_COMMENT
 ```
 
@@ -47,10 +47,8 @@ bind the changed bytes.
 
 ## Trigger semantics
 
-A push performed with the workflow-provided `GITHUB_TOKEN` does not recursively
-start ordinary push or pull-request workflows. The worker therefore emits the
-explicit repository-dispatch event
-`qikvrt_autonomous_exact_head_verify`. The receiving workflow checks out the
+A pushed successor is held until the next native pull-request or eligible
+workflow-run event reaches the exact-head verifier. The verifier checks out the
 exact candidate SHA, runs the full repository suite, re-executes the QCE finite
 formal package when present, and writes a distinct status to the candidate
 commit.

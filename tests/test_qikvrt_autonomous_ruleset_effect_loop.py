@@ -19,7 +19,7 @@ class AutonomousRulesetEffectLoopContractTest(unittest.TestCase):
             self.text,
         )
         self.assertIn("types: [completed]", self.text)
-        self.assertIn("workflow_dispatch:", self.text)
+        self.assertNotIn("workflow_dispatch:", self.text)
         self.assertNotIn("schedule:", self.text)
 
     def test_consumes_exact_trusted_selection_artifact(self):
@@ -40,6 +40,17 @@ class AutonomousRulesetEffectLoopContractTest(unittest.TestCase):
         self.assertIn("--apply", self.text)
         self.assertIn("--receipt", self.text)
         self.assertIn("rulesets/19344903", self.text)
+
+    def test_read_token_is_separate_from_admin_mutation_authority(self):
+        self.assertIn("GH_TOKEN: ${{ github.token }}", self.text)
+        self.assertIn(
+            "QIKVRT_RULESET_ADMIN_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}",
+            self.text,
+        )
+        self.assertNotIn(
+            "GH_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}",
+            self.text,
+        )
 
     def test_admin_authority_is_nonterminal_and_repository_routed(self):
         self.assertIn("QIKVRT_RULESET_ADMIN_TOKEN", self.text)
@@ -84,14 +95,8 @@ class AutonomousRulesetEffectLoopContractTest(unittest.TestCase):
             "steps.reconcile.outputs.effect_observed == 'false'",
             self.text,
         )
-        self.assertIn(
-            "qikvrt_required_review_gate.yml/dispatches",
-            self.text,
-        )
-        self.assertIn(
-            "ruleset CURRENT; exact-head gate reobservation dispatched",
-            self.text,
-        )
+        self.assertNotIn("qikvrt_required_review_gate.yml/dispatches", self.text)
+        self.assertIn("ruleset CURRENT; next native review event reobserves", self.text)
 
     def test_no_review_merge_or_publication_bypass_exists(self):
         self.assertNotIn("gh pr merge", self.text)
