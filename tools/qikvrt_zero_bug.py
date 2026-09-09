@@ -5,10 +5,67 @@ from pathlib import Path
 
 POLICY = Path("policy/ZERO_BUG_CONTINUOUS_V1.json")
 PERFECT = Path("policy/PERFECT_OPTIMUM_V1.json")
+EVENT_INGRESS_WORKFLOW = Path(".github/workflows/qikvrt_zero_bug_continuous.yml")
 
 
 def load_policy():
     return json.loads(POLICY.read_text(encoding="utf-8"))
+
+
+def event_ingress_check(policy=None):
+    """Verify that the zero-bug auditor has only native event ingress.
+
+    Direct authorized requests are handled by the caller outside GitHub Actions.
+    The repository workflow itself must remain free of periodic, manual, and
+    synthetic continuation paths.
+    """
+    policy = policy or load_policy()
+    ingress = policy.get("base_algorithm", {}).get("event_ingress", {})
+    expected_sources = ["pull_request", "push", "DIRECT_AUTHORIZED_REQUEST"]
+    forbidden_sources = [
+        "schedule",
+        "workflow_dispatch",
+        "repository_dispatch",
+        "api_workflow_dispatch",
+        "polling",
+        "retry_without_new_event",
+    ]
+    if not isinstance(ingress, dict):
+        return {"native_only": False, "reason": "EVENT_INGRESS_MISSING"}
+    workflow_path = ingress.get("workflow_path")
+    if workflow_path != str(EVENT_INGRESS_WORKFLOW):
+        return {"native_only": False, "reason": "EVENT_INGRESS_WORKFLOW_MISMATCH"}
+    try:
+        trigger_surface = EVENT_INGRESS_WORKFLOW.read_text(encoding="utf-8").split(
+            "permissions:", 1
+        )[0]
+    except OSError:
+        return {"native_only": False, "reason": "EVENT_INGRESS_WORKFLOW_MISSING"}
+    expected_native_triggers = all(
+        f"  {source}:" in trigger_surface for source in ("pull_request", "push")
+    )
+    forbidden_absent = all(token not in trigger_surface for token in forbidden_sources)
+    native_only = (
+        ingress.get("mode") == "EXACT_NATIVE_REPOSITORY_EVENT_ONLY"
+        and ingress.get("accepted_sources") == expected_sources
+        and ingress.get("forbidden_sources") == forbidden_sources
+        and ingress.get("no_new_event_state")
+        == "HOLD_UNVERIFIED_AWAIT_NEXT_NATIVE_EVENT"
+        and ingress.get("synthetic_reentry") == "FORBIDDEN"
+        and ingress.get("periodic_automation") == "FORBIDDEN"
+        and expected_native_triggers
+        and forbidden_absent
+        and "/dispatches" not in trigger_surface
+        and "sleep " not in trigger_surface
+    )
+    return {
+        "native_only": native_only,
+        "mode": ingress.get("mode"),
+        "workflow_path": workflow_path,
+        "accepted_sources": ingress.get("accepted_sources"),
+        "forbidden_sources": ingress.get("forbidden_sources"),
+        "reason": None if native_only else "EVENT_INGRESS_CONTRACT_MISMATCH",
+    }
 
 
 
@@ -203,6 +260,7 @@ def self_check(policy=None):
     registered = [x.get("id") for x in perfect.get("registered_improvers", [])]
     audit = policy.get("audit_surface", {})
     platform = policy.get("platform_promotion_surface", {})
+    ingress = event_ingress_check(policy)
     return {
         "schema": "qikvrt_zero_bug_self_check_v1",
         "recursive_debugging_contract_bound": (
@@ -218,6 +276,9 @@ def self_check(policy=None):
         "required_peer_workflows": platform.get("required_peer_workflows", []),
         "writer_workflows": audit.get("writer_workflows", []),
         "bit_audit_algorithm": audit.get("bit_audit", {}).get("canonical_index_digest"),
+        "event_ingress_mode": ingress.get("mode"),
+        "event_ingress_native_only": ingress.get("native_only"),
+        "event_ingress_reason": ingress.get("reason"),
     }
 
 
@@ -299,6 +360,7 @@ def main():
             and result["later_is_better"] is False
             and result["bit_audit_algorithm"] == "sha256"
             and result["registered_improvers"] == ["integrity_trio_materializer"]
+            and result["event_ingress_native_only"] is True
         )
     else:
         if args.derive:

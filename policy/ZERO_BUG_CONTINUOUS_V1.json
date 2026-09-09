@@ -107,7 +107,26 @@
     "capability_boundary": "Investigate and repair using already authorized capabilities; otherwise retain the exact open obligation and REQUEST_AUTHORITY without impersonation, blind retry or invented effects",
     "effect_authority": "Reuse existing registered writers and exact-scope delegations; this algorithm grants no new write, signing, administrative or external authority",
     "precedence_policy": "policy/QIKVRT_EXECUTION_PRECEDENCE_V1.json",
-    "continuous_monitor": "QIKVRT_GITHUB_PLATFORM_CONTINUOUS_MONITOR remains the only permitted continuous polling path",
+    "event_ingress": {
+      "mode": "EXACT_NATIVE_REPOSITORY_EVENT_ONLY",
+      "workflow_path": ".github/workflows/qikvrt_zero_bug_continuous.yml",
+      "accepted_sources": [
+        "pull_request",
+        "push",
+        "DIRECT_AUTHORIZED_REQUEST"
+      ],
+      "forbidden_sources": [
+        "schedule",
+        "workflow_dispatch",
+        "repository_dispatch",
+        "api_workflow_dispatch",
+        "polling",
+        "retry_without_new_event"
+      ],
+      "no_new_event_state": "HOLD_UNVERIFIED_AWAIT_NEXT_NATIVE_EVENT",
+      "synthetic_reentry": "FORBIDDEN",
+      "periodic_automation": "FORBIDDEN"
+    },
     "implementation": [
       "tools/qikvrt_zero_bug.py:recursive_debugging_plan",
       "tools/qikvrt_autonomous_self_heal.py:repair_handler",

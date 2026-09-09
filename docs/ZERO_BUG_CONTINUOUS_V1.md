@@ -39,6 +39,15 @@ Cycles, missing children and the 4096-unit per-call budget boundary retain
 HOLD; they never mean the backlog was discharged. Order comes from explicit
 causal links, not timestamps, PR numbers or array order.
 
+## Event ingress only
+
+The zero-bug audit is entered only by an exact native repository event
+(`pull_request` or `push`) or by a direct authorized request outside the
+workflow. The repository workflow has no periodic wake-up, manual re-entry, or
+synthetic dispatch endpoint. A missing new event is
+`HOLD_UNVERIFIED_AWAIT_NEXT_NATIVE_EVENT`; it is never a reason to poll, retry,
+or manufacture a continuation event.
+
 ## Executable enforcement and reuse
 
 The existing `tools/qikvrt_autonomous_self_heal.py:repair_handler` now performs

@@ -175,3 +175,8 @@ concrete open obligations after exhausting authorized resolution paths;
 independent eligible work remains executable. Every head mutation resets P2+.
 The end condition requires exact-subject symptom, cause, regression and
 original-flow readbacks, never only a status label or a promise to continue.
+
+The zero-bug continuation is entered only by an exact native repository event
+or a direct authorized request. Scheduled wake-ups, manual or synthetic
+workflow re-entry, and retries without a new event are forbidden; missing
+ingress remains `HOLD_UNVERIFIED_AWAIT_NEXT_NATIVE_EVENT`.

@@ -1,6 +1,13 @@
+import json
 import unittest
+from pathlib import Path
 
-from tools.qikvrt_zero_bug import evaluate, self_check
+from tools.qikvrt_zero_bug import evaluate, event_ingress_check, self_check
+
+
+ROOT = Path(__file__).resolve().parents[1]
+POLICY = ROOT / "policy" / "ZERO_BUG_CONTINUOUS_V1.json"
+WORKFLOW = ROOT / ".github" / "workflows" / "qikvrt_zero_bug_continuous.yml"
 
 
 class ZeroBugContinuousTests(unittest.TestCase):
@@ -26,6 +33,40 @@ class ZeroBugContinuousTests(unittest.TestCase):
         self.assertEqual(result["arbitrary_unregistered_self_modification"], "HOLD")
         self.assertEqual(result["registered_improvers"], ["integrity_trio_materializer"])
         self.assertEqual(result["bit_audit_algorithm"], "sha256")
+        self.assertEqual(result["event_ingress_mode"], "EXACT_NATIVE_REPOSITORY_EVENT_ONLY")
+        self.assertTrue(result["event_ingress_native_only"])
+        self.assertIsNone(result["event_ingress_reason"])
+
+    def test_zero_bug_workflow_accepts_only_native_event_ingress(self):
+        policy = json.loads(POLICY.read_text(encoding="utf-8"))
+        ingress = policy["base_algorithm"]["event_ingress"]
+        self.assertEqual(ingress["workflow_path"], ".github/workflows/qikvrt_zero_bug_continuous.yml")
+        self.assertEqual(
+            ingress["accepted_sources"],
+            ["pull_request", "push", "DIRECT_AUTHORIZED_REQUEST"],
+        )
+        self.assertEqual(
+            ingress["forbidden_sources"],
+            [
+                "schedule",
+                "workflow_dispatch",
+                "repository_dispatch",
+                "api_workflow_dispatch",
+                "polling",
+                "retry_without_new_event",
+            ],
+        )
+        self.assertEqual(ingress["no_new_event_state"], "HOLD_UNVERIFIED_AWAIT_NEXT_NATIVE_EVENT")
+        self.assertEqual(ingress["synthetic_reentry"], "FORBIDDEN")
+        self.assertEqual(ingress["periodic_automation"], "FORBIDDEN")
+
+        workflow = WORKFLOW.read_text(encoding="utf-8").split("permissions:", 1)[0]
+        self.assertIn("  pull_request:", workflow)
+        self.assertIn("  push:", workflow)
+        self.assertIn("types: [opened, reopened, synchronize, ready_for_review]", workflow)
+        for forbidden in ("schedule", "workflow_dispatch", "repository_dispatch", "/dispatches", "sleep "):
+            self.assertNotIn(forbidden, workflow)
+        self.assertTrue(event_ingress_check()["native_only"])
 
     def test_fresh_local_exact_head_is_local_state_only(self):
         result = evaluate(self.good())
