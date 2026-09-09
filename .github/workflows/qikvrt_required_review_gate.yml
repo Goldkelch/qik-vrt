@@ -200,7 +200,7 @@ jobs:
       REQUIRED_GATE_PATHS_JSON: >-
         {"QIKVRT CI":".github/workflows/qikvrt_ci.yml","QIKVRT repository evidence materialization":".github/workflows/qikvrt_batch04_integrity.yml","QIKVRT Collective Proposal Review":".github/workflows/qikvrt_collective_review.yml"}
       WRITER_WORKFLOWS_JSON: >-
-        ["QIK-VRT autonomous bounded self-heal","QIK-VRT autonomous draft-PR continuation","QIK-VRT expected-head promotion executor","QIKVRT repository evidence materialization","QIKVRT requested review executor"]
+        ["QIK-VRT autonomous bounded self-heal","QIK-VRT autonomous draft-PR continuation","QIKVRT repository evidence materialization","QIKVRT requested review executor"]
     steps:
       - name: Check out trusted main planner implementation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -348,10 +348,6 @@ jobs:
           gh api "$(cat "$root/artifact-url.txt")" > "$root/evidence.zip"
           mkdir "$root/artifact"
           unzip -q "$root/evidence.zip" -d "$root/artifact"
-          # upload-artifact archives the contents of its one directory search
-          # path at ZIP root. Do not search by basename: reobservation evidence
-          # can also contain a review.json, and selecting it would silently
-          # break receipt binding.
           receipt="$root/artifact/review.json"
           diff="$root/artifact/review.diff"
           ledger="$root/artifact/ledger-write.json"
@@ -556,7 +552,7 @@ jobs:
       REQUIRED_GATE_PATHS_JSON: >-
         {"QIKVRT CI": ".github/workflows/qikvrt_ci.yml", "QIKVRT repository evidence materialization": ".github/workflows/qikvrt_batch04_integrity.yml", "QIKVRT Collective Proposal Review": ".github/workflows/qikvrt_collective_review.yml"}
       WRITER_WORKFLOWS_JSON: >-
-        ["QIK-VRT autonomous bounded self-heal","QIK-VRT autonomous draft-PR continuation","QIK-VRT expected-head promotion executor","QIKVRT repository evidence materialization","QIKVRT requested review executor"]
+        ["QIK-VRT autonomous bounded self-heal","QIK-VRT autonomous draft-PR continuation","QIKVRT repository evidence materialization","QIKVRT requested review executor"]
     steps:
       - name: Check out trusted main signer implementation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -585,9 +581,6 @@ jobs:
           fi
           pr="$(python3 -B -c 'import json; print(json.load(open("/tmp/qikvrt-native-account-review/plan.json"))["pr_number"])')"
           head="$(python3 -B -c 'import json; print(json.load(open("/tmp/qikvrt-native-account-review/plan.json"))["head_sha"])')"
-          # Re-evaluate the sealed receipt from trusted main immediately before
-          # reading the signer identity. This catches changed gates, requested
-          # reviewer removal, discussion, fingerprint, base/head/tree or diff.
           GH_TOKEN="$TECHNICAL_TOKEN" python3 -B tools/qikvrt_requested_review_executor.py verify \
             --repository "$REPOSITORY" --pr-number "$pr" --current-run-id "$GITHUB_RUN_ID" \
             --required-gates-json "$REQUIRED_GATES_JSON" \
@@ -689,7 +682,7 @@ jobs:
       REQUIRED_GATE_PATHS_JSON: >-
         {"QIKVRT CI": ".github/workflows/qikvrt_ci.yml", "QIKVRT repository evidence materialization": ".github/workflows/qikvrt_batch04_integrity.yml", "QIKVRT Collective Proposal Review": ".github/workflows/qikvrt_collective_review.yml"}
       WRITER_WORKFLOWS_JSON: >-
-        ["QIK-VRT autonomous bounded self-heal","QIK-VRT autonomous draft-PR continuation","QIK-VRT expected-head promotion executor","QIKVRT repository evidence materialization","QIKVRT requested review executor"]
+        ["QIK-VRT autonomous bounded self-heal","QIK-VRT autonomous draft-PR continuation","QIKVRT repository evidence materialization","QIKVRT requested review executor"]
     steps:
       - name: Check out trusted main signer implementation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -718,9 +711,6 @@ jobs:
           fi
           pr="$(python3 -B -c 'import json; print(json.load(open("/tmp/qikvrt-native-account-review/plan.json"))["pr_number"])')"
           head="$(python3 -B -c 'import json; print(json.load(open("/tmp/qikvrt-native-account-review/plan.json"))["head_sha"])')"
-          # Re-evaluate the sealed receipt from trusted main immediately before
-          # reading the signer identity. This catches changed gates, requested
-          # reviewer removal, discussion, fingerprint, base/head/tree or diff.
           GH_TOKEN="$TECHNICAL_TOKEN" python3 -B tools/qikvrt_requested_review_executor.py verify \
             --repository "$REPOSITORY" --pr-number "$pr" --current-run-id "$GITHUB_RUN_ID" \
             --required-gates-json "$REQUIRED_GATES_JSON" \
