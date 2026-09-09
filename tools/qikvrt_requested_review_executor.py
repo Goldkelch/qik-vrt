@@ -42,10 +42,14 @@ REVIEW_QUEUE_ACK_ROOT = "state/mesh/review-queue-acks"
 TRUSTED_EVALUATOR_PATH = "tools/qikvrt_requested_review_executor.py"
 TRUSTED_WORKFLOW_PATH = ".github/workflows/qikvrt_requested_review_executor.yml"
 REVIEW_MARKER = "qikvrt-mesh-review:v1"
-LIVE_STATUS_MARKER = "qikvrt-live-status-watch"
+LIVE_STATUS_MARKER = "qikvrt-universal-terminal-live-surface-v1"
+RULESET_APPLY_MARKER = "qikvrt-ruleset-apply:"
+RULESET_AUTHORITY_MARKER = "qikvrt-ruleset-authority:"
 TRUSTED_AUTOMATION_DISCUSSION_PREFIXES = (
     f"<!-- {REVIEW_MARKER} ",
     f"<!-- {LIVE_STATUS_MARKER} -->",
+    f"<!-- {RULESET_APPLY_MARKER}",
+    f"<!-- {RULESET_AUTHORITY_MARKER}",
 )
 ACTIVE_WRITER_STATES = ("queued", "in_progress", "waiting", "requested", "pending")
 REVIEW_SELECTION_SCHEMA = "qikvrt_requested_review_selection_v1"
@@ -53,6 +57,12 @@ REVIEW_INTAKE_SCHEMA = "qikvrt_review_intake_v1"
 REVIEW_PRIORITY_POLICY_PATH = "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json"
 REVIEW_PRIORITY_POLICY_SCHEMA = "qikvrt_requested_review_and_issue_lifecycle_policy_v1"
 REF_RECONCILIATION_DELAYS_SECONDS = (0.25, 1.0, 2.0, 4.0, 8.0)
+# An installation quota is shared by all workflows using the GitHub App.  A
+# transient 403 must therefore be distinguished from malformed repository
+# evidence.  Reads receive exactly two delayed retries; mutations are never
+# retried by this helper.
+GITHUB_INSTALLATION_RATE_LIMIT_MARKER = "API rate limit exceeded for installation"
+GITHUB_READ_RATE_LIMIT_BACKOFF_SECONDS = (0, 15, 45)
 VALID_FILE_STATES = {
     "added",
     "changed",
@@ -98,6 +108,10 @@ class ReviewSnapshotError(ValueError):
 
 class ReviewObservationError(RuntimeError):
     """The repository could not be observed as one stable exact subject."""
+
+
+class GitHubInstallationRateLimit(ReviewObservationError):
+    """Every bounded retry of one read hit the shared App installation quota."""
 
 
 def _sha(value: Any, label: str, *, nullable: bool = False) -> str | None:
@@ -1471,6 +1485,16 @@ def _derived_action(state: str, blocker: str | None) -> dict[str, Any]:
             "productive_effect": False,
             "effect_ack": "HOLD_UNVERIFIED",
         }
+    if blocker == "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED":
+        # This is missing observation evidence, not an active/adverse subject
+        # condition.  The explicit HOLD contract maps it to D0=2.
+        return {
+            "d0": 2,
+            "state": "REOBSERVE",
+            "next_action": "REOBSERVE_EXACT_SUBJECT_ON_NEXT_NONSELF_REPOSITORY_INTERRUPT",
+            "productive_effect": False,
+            "effect_ack": "HOLD_UNVERIFIED",
+        }
     if blocker in {
         "BASE_DRIFT",
         "BASE_TREE_DRIFT",
@@ -2032,21 +2056,75 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
     )
 
 
-def _run_json(command: Sequence[str], *, input_text: str | None = None) -> Any:
-    completed = subprocess.run(
-        list(command),
-        input=input_text,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if completed.returncode:
+def _github_read_endpoint(command: Sequence[str]) -> str | None:
+    """Return one read-only GitHub API endpoint, never inferring a mutation."""
+    if len(command) < 3 or tuple(command[:2]) != ("gh", "api"):
+        return None
+    if "--method" in command:
+        return None
+    if command[2] == "graphql":
+        return "graphql"
+    for token in reversed(command[2:]):
+        if isinstance(token, str) and (
+            token.startswith("repos/") or token.startswith("https://")
+        ):
+            return token
+    return None
+
+
+def _run_json(
+    command: Sequence[str],
+    *,
+    input_text: str | None = None,
+    retry_delays: Sequence[float] = GITHUB_READ_RATE_LIMIT_BACKOFF_SECONDS,
+    sleeper: Callable[[float], None] = time.sleep,
+) -> Any:
+    """Run one JSON command with the repository's bounded GET-only retry rule.
+
+    ``gh api`` defaults to GET, but this function deliberately refuses to
+    retry a command which spells a method.  An exhausted shared installation
+    quota becomes a typed observation HOLD; every other command failure
+    remains a hard fail-closed observation error.
+    """
+    endpoint = _github_read_endpoint(command)
+    delays = tuple(retry_delays) if endpoint is not None else (0,)
+    if not delays or delays[0] != 0 or any(
+        isinstance(delay, bool) or not isinstance(delay, (int, float)) or delay < 0
+        for delay in delays
+    ):
+        raise ValueError(
+            "GitHub read retry delays must begin at zero and be non-negative"
+        )
+    for attempt, delay in enumerate(delays):
+        if delay:
+            sleeper(float(delay))
+        completed = subprocess.run(
+            list(command),
+            input=input_text,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if not completed.returncode:
+            try:
+                return json.loads(completed.stdout)
+            except json.JSONDecodeError as exc:
+                raise ReviewObservationError(
+                    f"command returned invalid JSON ({' '.join(command[:2])})"
+                ) from exc
+
         detail = completed.stderr.strip().replace("\n", " ")[:400]
-        raise ReviewObservationError(f"command failed ({command[0]}): {detail}")
-    try:
-        return json.loads(completed.stdout)
-    except json.JSONDecodeError as exc:
-        raise ReviewObservationError(f"command returned invalid JSON ({command[0]})") from exc
+        rate_limited = GITHUB_INSTALLATION_RATE_LIMIT_MARKER in completed.stderr
+        if endpoint is not None and rate_limited:
+            if attempt + 1 < len(delays):
+                continue
+            raise GitHubInstallationRateLimit(
+                "GitHub installation rate limit exhausted while reading "
+                f"{endpoint} after {len(delays)} bounded attempts: {detail}"
+            )
+        rendered = " ".join(command[:3])
+        raise ReviewObservationError(f"command failed ({rendered}): {detail}")
+    raise AssertionError("bounded GitHub read retry loop did not return")
 
 
 def _gh_one(path: str) -> Any:
@@ -3197,6 +3275,76 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.mode == "ledger-history" and report["ledger_safe"]
         )
         return 0 if accepted else 3
+    except GitHubInstallationRateLimit as exc:
+        # A quota exhaustion is a reobservation condition.  Preserve the
+        # selector-bound subject that is already known, but never manufacture
+        # missing snapshot/diff/ledger evidence or attempt a repository write.
+        rate_limit_snapshot = {
+            "repository": getattr(args, "repository", None),
+            "pr_number": getattr(args, "pr_number", None),
+            "head_sha": getattr(args, "expected_head", None) or None,
+            "base_ref": "main",
+        }
+        result = _result(
+            rate_limit_snapshot,
+            "WAIT",
+            "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",
+            str(exc),
+            findings=[
+                _finding(
+                    "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",
+                    "HOLD",
+                    "bounded exact GitHub API read retries were exhausted; "
+                    "no repository mutation was attempted",
+                )
+            ],
+        )
+        repository = rate_limit_snapshot["repository"]
+        pr_number = rate_limit_snapshot["pr_number"]
+        head_sha = rate_limit_snapshot["head_sha"]
+        if (
+            isinstance(repository, str)
+            and isinstance(pr_number, int)
+            and isinstance(head_sha, str)
+            and _git_sha1(head_sha) is not None
+        ):
+            result["hold_reason"] = {
+                "reason_code": "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",
+                "reason": str(exc),
+                "subject": {
+                    "repository": repository,
+                    "kind": "pull_request",
+                    "number": pr_number,
+                    "head_sha": head_sha,
+                },
+                "evidence_refs": [
+                    f"workflow-run:{getattr(args, 'current_run_id', 'unknown')}",
+                    "github-api-read-rate-limit",
+                ],
+                "owner": {
+                    "role": "EXACT_SUBJECT_OBSERVER",
+                    "actor": "github-actions[bot]",
+                },
+                "retry_condition": {
+                    "event": "repository_interrupt",
+                    "predicate": (
+                        "the GitHub App installation quota has recovered and "
+                        "the same exact pull-request head is freshly reobserved"
+                    ),
+                },
+                "next_action": (
+                    "REOBSERVE_EXACT_SUBJECT_ON_NEXT_NONSELF_REPOSITORY_INTERRUPT"
+                ),
+                "d0": 2,
+            }
+            _seal(result)
+        if getattr(args, "command", None) == "observe" and getattr(args, "receipt_out", None):
+            _write_json(pathlib.Path(args.receipt_out), result)
+        if getattr(args, "command", None) == "verify" and getattr(args, "output_dir", None):
+            output = pathlib.Path(args.output_dir)
+            _write_json(output / "verification.json", result)
+        print(json.dumps(result, sort_keys=True, indent=2))
+        return 3
     except (
         OSError,
         KeyError,
