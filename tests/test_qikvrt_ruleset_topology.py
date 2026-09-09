@@ -8,7 +8,7 @@ import pathlib
 import re
 import unittest
 
-import yaml
+from tests.qikvrt_workflow_metadata import workflow_document
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -18,13 +18,6 @@ BRIDGE_PATH = WORKFLOW_ROOT / "qikvrt_ruleset_effect_dispatch_bridge.yml"
 WATCHDOG_PATH = WORKFLOW_ROOT / "qikvrt_reflexive_repository_watchdog.yml"
 RETIRED_WRITER_PATH = WORKFLOW_ROOT / "qikvrt_ruleset_reconcile.yml"
 APP_MINT = "actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349"
-
-
-def workflow_document(path: pathlib.Path) -> dict[str, object]:
-    value = yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
-    if not isinstance(value, dict):
-        raise AssertionError(f"workflow is not a mapping: {path}")
-    return value
 
 
 def workflow_run_sources(document: dict[str, object]) -> list[str]:

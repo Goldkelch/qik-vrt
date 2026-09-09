@@ -7,7 +7,7 @@ from __future__ import annotations
 import pathlib
 import unittest
 
-import yaml
+from tests.qikvrt_workflow_metadata import workflow_document
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -17,7 +17,7 @@ WORKFLOW_ROOT = ROOT / ".github" / "workflows"
 def workflow_documents() -> dict[str, tuple[pathlib.Path, dict[str, object]]]:
     result: dict[str, tuple[pathlib.Path, dict[str, object]]] = {}
     for path in sorted((*WORKFLOW_ROOT.glob("*.yml"), *WORKFLOW_ROOT.glob("*.yaml"))):
-        value = yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+        value = workflow_document(path)
         if not isinstance(value, dict):
             raise AssertionError(f"workflow is not a mapping: {path}")
         name = value.get("name")
