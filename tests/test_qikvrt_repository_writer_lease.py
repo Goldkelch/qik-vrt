@@ -9,7 +9,11 @@ class RepositoryWriterLeaseTests(unittest.TestCase):
         text = path.read_text(encoding='utf-8')
         expected = 'group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}'
         self.assertIn(expected, text, str(path))
-        self.assertIn('cancel-in-progress: false', text, str(path))
+        self.assertIn(
+            "cancel-in-progress: ${{ github.event_name == 'pull_request' && github.actor != 'github-actions[bot]' }}",
+            text,
+            str(path),
+        )
 
     def test_batch003_separates_read_only_pr_run_from_non_pr_writer_lease(self):
         path = Path('.github/workflows/qikvrt_batch003_remaining_disposition.yml')
