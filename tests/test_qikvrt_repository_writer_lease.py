@@ -25,8 +25,10 @@ class RepositoryWriterLeaseTests(unittest.TestCase):
             text,
         )
         self.assertIn("github.actor != 'dependabot[bot]'", text)
+        self.assertIn('TARGET_PR: ${{ github.event.pull_request.number }}', text)
         self.assertIn('EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}', text)
         self.assertIn('TARGET_REF: ${{ github.head_ref }}', text)
+        self.assertIn('TARGET_BASE_SHA: ${{ github.event.pull_request.base.sha }}', text)
         self.assertNotIn('infra/live-status-default-branch', text)
         self.assertNotIn('git push --force', text)
         self.assertIn(
@@ -45,6 +47,10 @@ class RepositoryWriterLeaseTests(unittest.TestCase):
             'HOLD_UNVERIFIED: pull-request integrity persistence readback mismatch',
             text,
         )
+        self.assertIn(
+            'HOLD_UNVERIFIED: pull-request head drifted before exact-head continuation',
+            text,
+        )
         commit = text.index(
             '      - name: Commit only the deterministic integrity trio with exact-head CAS'
         )
@@ -58,6 +64,33 @@ class RepositoryWriterLeaseTests(unittest.TestCase):
         self.assertNotIn('formalization/QIKVRT_Formalization_v2.0', commit_block)
         self.assertNotIn('docs/publications/', commit_block)
         self.assertIn('git push origin "HEAD:refs/heads/$TARGET_REF"', commit_block)
+
+    def test_general_pr_integrity_writer_reobserves_bot_successor_via_exact_dispatch(self):
+        text = Path('.github/workflows/qikvrt_pr18_integrity_repair.yml').read_text(
+            encoding='utf-8'
+        )
+        commit = text.index(
+            '      - name: Commit only the deterministic integrity trio with exact-head CAS'
+        )
+        block = text[commit:]
+        push = block.index('git push origin "HEAD:refs/heads/$TARGET_REF"')
+        readback = block.index('pull-request integrity persistence readback mismatch')
+        reobserve = block.index('pull-request head drifted before exact-head continuation')
+        dispatch = block.index('qikvrt_autonomous_exact_head_verify')
+        self.assertLess(push, readback)
+        self.assertLess(readback, reobserve)
+        self.assertLess(reobserve, dispatch)
+        self.assertIn('GH_TOKEN: ${{ github.token }}', block)
+        self.assertIn('"repos/${GITHUB_REPOSITORY}/dispatches"', block)
+        self.assertIn('head_sha:$head', block)
+        self.assertIn('base_sha:$base', block)
+        self.assertIn('pull_request:($pr|tonumber)', block)
+        self.assertIn('d0:2', block)
+        self.assertIn('causal_state:"REOBSERVE"', block)
+        self.assertIn('reason:"INTEGRITY_SUCCESSOR_REOBSERVE"', block)
+        self.assertNotIn('actions/workflows/', block)
+        self.assertNotIn('gh pr merge', block)
+        self.assertNotIn('gh pr review', block)
 
     def test_batch003_separates_read_only_pr_run_from_non_pr_writer_lease(self):
         path = Path('.github/workflows/qikvrt_batch003_remaining_disposition.yml')
