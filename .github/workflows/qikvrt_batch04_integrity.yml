@@ -279,6 +279,16 @@ jobs:
           python3 -B "$script" --materialize --json
           python3 -B "$script" --check --json
           python3 -B -m unittest -v tests.test_aphorism_corpus_v2
+      - name: Restore exact PR source before integrity projection
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
+          git reset --hard "$EXPECTED_HEAD"
+          git clean -ffdx
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
       - name: Regenerate and verify repository integrity
         shell: bash
         run: |
