@@ -292,7 +292,10 @@ jobs:
           make test
           python3 tools/qikvrt_integrity.py verify
       - name: Commit materialized repository evidence
-        if: github.event_name != 'pull_request'
+        if: >-
+          github.event_name != 'pull_request' ||
+          (github.event.pull_request.head.repo.full_name == github.repository &&
+           github.actor != 'github-actions[bot]')
         shell: bash
         run: |
           set -euo pipefail
@@ -309,47 +312,54 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            formalization/QIKVRT_Formalization_v2.0/claims/TEX_ENVIRONMENTS.json \
-            formalization/QIKVRT_Formalization_v2.0/claims/APPENDIX_MATRIX.json \
-            formalization/QIKVRT_Formalization_v2.0/claims/CLAIM_GRAPH.json \
-            formalization/QIKVRT_Formalization_v2.0/MANUSCRIPT_PROOF_MAP.md \
-            formalization/QIKVRT_Formalization_v2.0/VERIFICATION_REPORT.md \
-            formalization/QIKVRT_Formalization_v2.0/proofs/PROOF_OBJECT_MANIFEST.json \
-            release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.2.zip \
-            release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.2.zip.sha256 \
-            release/formalization-v2/ZENODO_SHA256SUMS-alpha.2 \
-            release/formalization-v2-alpha2-zenodo.json \
-            tools/qikvrt_content_disposition_batch_003_subject_2581811b342e505d.py \
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-2581811b342e505d \
-            work-units/EXTRACT_ARCHIVE_CONTENT_THEN_DISPOSITION_CLAIMS_BATCH_003_SUBJECT_172DD9BC2738FA43.json \
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-172dd9bc2738fa43 \
-            work-units/EXTRACT_ARCHIVE_CONTENT_THEN_DISPOSITION_CLAIMS_BATCH_003_SUBJECT_B4849E1A2D6B2270.json \
-            docs/publications/2026-08-04-aphorism-corpus-scientific-assessment \
-            docs/publications/index.json \
-            docs/publications/index.html \
-            work-units/MATERIALIZE_APHORISM_CORPUS_SCIENTIFIC_ASSESSMENT_V2.json \
-            AI_PROGRESS.json \
-            AI_STATUS.md \
-            REPOSITORY_FILE_MANIFEST.json \
-            REPOSITORY_FILE_MANIFEST.json.sha256 \
-            SHA256SUMS.txt
-          optional_paths=(
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/CONTENT_DISPOSITION_BATCH_003_RECEIPT.json
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-b4849e1a2d6b2270
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-7956d8acdc473825
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-ce2390f18618ad0c
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-780b9bf86425cee3
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-7fdb36aa7c07c07d
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/retrospective-proof-corpus
-            work-units/CREATE_VERSIONED_CORRECTED_CANDIDATES_REMAINING_CORPUS_SUBJECTS.json
-            work-units/REQUEST_SEPARATE_ZENODO_MUTATION_AUTHORIZATION_RETROSPECTIVE_PROOF_CORPUS.json
-          )
-          for path in "${optional_paths[@]}"; do
-            if [ -e "$path" ]; then
-              git add "$path"
-            fi
-          done
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git add \
+              REPOSITORY_FILE_MANIFEST.json \
+              REPOSITORY_FILE_MANIFEST.json.sha256 \
+              SHA256SUMS.txt
+          else
+            git add \
+              formalization/QIKVRT_Formalization_v2.0/claims/TEX_ENVIRONMENTS.json \
+              formalization/QIKVRT_Formalization_v2.0/claims/APPENDIX_MATRIX.json \
+              formalization/QIKVRT_Formalization_v2.0/claims/CLAIM_GRAPH.json \
+              formalization/QIKVRT_Formalization_v2.0/MANUSCRIPT_PROOF_MAP.md \
+              formalization/QIKVRT_Formalization_v2.0/VERIFICATION_REPORT.md \
+              formalization/QIKVRT_Formalization_v2.0/proofs/PROOF_OBJECT_MANIFEST.json \
+              release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.2.zip \
+              release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.2.zip.sha256 \
+              release/formalization-v2/ZENODO_SHA256SUMS-alpha.2 \
+              release/formalization-v2-alpha2-zenodo.json \
+              tools/qikvrt_content_disposition_batch_003_subject_2581811b342e505d.py \
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-2581811b342e505d \
+              work-units/EXTRACT_ARCHIVE_CONTENT_THEN_DISPOSITION_CLAIMS_BATCH_003_SUBJECT_172DD9BC2738FA43.json \
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-172dd9bc2738fa43 \
+              work-units/EXTRACT_ARCHIVE_CONTENT_THEN_DISPOSITION_CLAIMS_BATCH_003_SUBJECT_B4849E1A2D6B2270.json \
+              docs/publications/2026-08-04-aphorism-corpus-scientific-assessment \
+              docs/publications/index.json \
+              docs/publications/index.html \
+              work-units/MATERIALIZE_APHORISM_CORPUS_SCIENTIFIC_ASSESSMENT_V2.json \
+              AI_PROGRESS.json \
+              AI_STATUS.md \
+              REPOSITORY_FILE_MANIFEST.json \
+              REPOSITORY_FILE_MANIFEST.json.sha256 \
+              SHA256SUMS.txt
+            optional_paths=(
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/CONTENT_DISPOSITION_BATCH_003_RECEIPT.json
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-b4849e1a2d6b2270
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-7956d8acdc473825
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-ce2390f18618ad0c
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-780b9bf86425cee3
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-7fdb36aa7c07c07d
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/retrospective-proof-corpus
+              work-units/CREATE_VERSIONED_CORRECTED_CANDIDATES_REMAINING_CORPUS_SUBJECTS.json
+              work-units/REQUEST_SEPARATE_ZENODO_MUTATION_AUTHORIZATION_RETROSPECTIVE_PROOF_CORPUS.json
+            )
+            for path in "${optional_paths[@]}"; do
+              if [ -e "$path" ]; then
+                git add "$path"
+              fi
+            done
+          fi
           if git diff --cached --quiet; then
             echo "Repository evidence is already current."
             exit 0
