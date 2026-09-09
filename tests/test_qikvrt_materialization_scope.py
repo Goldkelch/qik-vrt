@@ -62,6 +62,21 @@ class MaterializationScopeTests(unittest.TestCase):
         self.assertFalse(aphorism["content_disposition"])
         self.assertTrue(aphorism["aphorism"])
 
+    def test_test_only_changes_are_verification_inputs_not_generator_inputs(self) -> None:
+        result = MODULE.classify(
+            [
+                "tests/test_formalization_v2_release_workflow.py",
+                "tests/test_content_disposition_batch_003_dispatch.py",
+                "tests/test_aphorism_corpus_v2.py",
+            ]
+        )
+        self.assertFalse(result["materialize_all_optional_domains"])
+        self.assertFalse(result["formalization"])
+        self.assertFalse(result["content_disposition"])
+        self.assertFalse(result["aphorism"])
+        self.assertTrue(result["integrity"])
+        self.assertTrue(result["complete_repository_gates"])
+
     def test_control_path_requires_full_verification_without_unrelated_materialization(self) -> None:
         for path in (
             ".github/workflows/qikvrt_batch04_integrity.yml",
