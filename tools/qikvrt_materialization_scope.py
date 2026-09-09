@@ -73,19 +73,27 @@ def classify(paths: Sequence[str], *, force_full: bool = False) -> dict[str, Any
     normalized = sorted(set(path.strip() for path in paths if path.strip()))
     unsafe = sorted(path for path in normalized if _unsafe(path))
     control = sorted(path for path in normalized if path in CONTROL_PATHS)
-    full = force_full or bool(unsafe) or bool(control)
 
-    formalization = full or any(
+    # Control-plane mutations demand the complete repository verification gates,
+    # but they do not by themselves causally change every generated evidence
+    # domain.  Conflating those two scopes made each materializer repair execute
+    # unrelated formalization, corpus and aphorism generators before the exact
+    # PR source was restored.  Explicit/ambiguous recovery remains fail-safe by
+    # materializing every optional domain.
+    materialize_all = force_full or bool(unsafe)
+    full = materialize_all or bool(control)
+
+    formalization = materialize_all or any(
         path in FORMALIZATION_PATHS or _starts(path, FORMALIZATION_PREFIXES)
         for path in normalized
     )
-    content_disposition = full or any(
+    content_disposition = materialize_all or any(
         path in CONTENT_PATHS
         or _starts(path, CONTENT_PREFIXES)
         or _content_work_unit(path)
         for path in normalized
     )
-    aphorism = full or any(
+    aphorism = materialize_all or any(
         path in APHORISM_PATHS or _starts(path, APHORISM_PREFIXES)
         for path in normalized
     )
@@ -93,6 +101,7 @@ def classify(paths: Sequence[str], *, force_full: bool = False) -> dict[str, Any
     return {
         "schema": "qikvrt_materialization_scope_v1",
         "full": full,
+        "materialize_all_optional_domains": materialize_all,
         "formalization": formalization,
         "content_disposition": content_disposition,
         "aphorism": aphorism,
