@@ -9,6 +9,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
 PROMOTION_WORKFLOW = ROOT / ".github/workflows/qikvrt_expected_head_promotion.yml"
+REQUESTED_REVIEW_CONTRACT = ROOT / ".github/workflows/qikvrt_requested_review_contract.yml"
 SELF_HEAL_WORKFLOW = ROOT / ".github/workflows/qikvrt_autonomous_self_heal.yml"
 MARKER = "<!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->"
 
@@ -70,6 +71,14 @@ class ExpectedHeadPromotionContractTests(unittest.TestCase):
         compact = workflow.replace(" ", "")
         self.assertIn("other.get('base',{}).get('sha')!=current_main", compact)
         self.assertIn("other.get('head',{}).get('sha')==head", compact)
+
+    def test_requested_review_contract_checks_the_actual_verify_invocation(self) -> None:
+        invocation = "'tools/qikvrt_requested_review_executor.py','verify'"
+        self.assertIn(invocation, PROMOTION_WORKFLOW.read_text(encoding="utf-8"))
+        self.assertIn(
+            f'grep -F "{invocation}" .github/workflows/qikvrt_expected_head_promotion.yml',
+            REQUESTED_REVIEW_CONTRACT.read_text(encoding="utf-8"),
+        )
 
     def test_external_effect_claims_remain_fail_closed(self) -> None:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
