@@ -4,6 +4,34 @@ import unittest
 
 
 class RepositoryWriterLeaseTests(unittest.TestCase):
+    def test_requested_review_executor_preserves_pending_native_deliveries(self):
+        path = Path('.github/workflows/qikvrt_requested_review_executor.yml')
+        text = path.read_text(encoding='utf-8')
+        concurrency = text.split('concurrency:\n', 1)[1].split('\njobs:', 1)[0]
+        self.assertIn(
+            'group: qikvrt-requested-review-executor-${{ github.repository }}',
+            concurrency,
+        )
+        self.assertIn('queue: max', concurrency)
+        self.assertIn('cancel-in-progress: false', concurrency)
+        self.assertNotIn('queue: single', concurrency)
+        for subject_expression in (
+            'github.event.pull_request.number',
+            'github.event.issue.number',
+            'github.head_ref',
+            'github.ref',
+            'head.sha',
+        ):
+            self.assertNotIn(subject_expression, concurrency)
+        self.assertIn('LEDGER_REF: refs/heads/qikvrt/mesh-review-ledger-v1', text)
+
+        lifecycle = Path('docs/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE.md').read_text(
+            encoding='utf-8'
+        )
+        self.assertIn('GitHub-native admission buffer is `queue: max`', lifecycle)
+        self.assertIn('up to 100 pending native deliveries', lifecycle)
+        self.assertIn('substitute for the GitHub App broker', lifecycle)
+
     def test_repository_materializer_keeps_exact_target_writer_lease(self):
         path = Path('.github/workflows/qikvrt_batch04_integrity.yml')
         text = path.read_text(encoding='utf-8')
@@ -37,22 +65,6 @@ class RepositoryWriterLeaseTests(unittest.TestCase):
         self.assertIn('git config user.name "ingolf-lohmann"', text)
         self.assertNotIn('git config user.name "github-actions[bot]"', text)
         self.assertIn('qikvrt-repository-writer-authority', text)
-
-    def test_requested_review_executor_queue_is_exact_subject_scoped(self):
-        path = Path('.github/workflows/qikvrt_requested_review_executor.yml')
-        text = path.read_text(encoding='utf-8')
-        expected = (
-            'group: qikvrt-requested-review-executor-${{ github.repository }}-${{ '
-            'github.event.pull_request.number || github.event.issue.number || '
-            'github.event.workflow_run.pull_requests[0].number || github.run_id }}'
-        )
-        self.assertIn(expected, text, str(path))
-        self.assertNotIn(
-            'group: qikvrt-requested-review-executor-${{ github.repository }}\n',
-            text,
-        )
-        self.assertNotIn('queue: max', text)
-        self.assertIn('non-force fast-forward CAS', text)
 
     def test_batch003_separates_read_only_pr_run_from_non_pr_writer_lease(self):
         path = Path('.github/workflows/qikvrt_batch003_remaining_disposition.yml')
@@ -121,6 +133,7 @@ class RepositoryWriterLeaseTests(unittest.TestCase):
                 suffix = stripped[len(key):].strip()
                 self.assertIn(suffix, {'', '>-', '|-', '>', '|'}, str(path))
                 matched += 1
+                self.assertEqual(f"{key} >-", line.strip(), str(path))
                 self.assertLess(index + 1, len(lines), str(path))
                 raw = lines[index + 1].strip()
                 values = json.loads(raw)

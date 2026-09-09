@@ -25,6 +25,10 @@ REQUIRED_NATIVE_STATUS_CHECKS = {
     ("test", 15368),
     ("QIKVRT required code-owner review", 15368),
 }
+EXECUTOR_PROJECTION_SCHEMA = "qikvrt_mesh_review_repository_projection_v1"
+EXECUTOR_RECEIPT_ELIGIBILITY_SCHEMA = (
+    "qikvrt_native_account_review_receipt_eligibility_v1"
+)
 
 
 class ReviewGateInputError(ValueError):
@@ -71,6 +75,93 @@ def _selector_sha(value: Any) -> str | None:
     if any(character not in "0123456789abcdef" for character in value):
         return None
     return value
+
+
+def _fingerprint(value: Any) -> str | None:
+    if not isinstance(value, str) or len(value) != 64:
+        return None
+    if any(character not in "0123456789abcdef" for character in value):
+        return None
+    return value
+
+
+def executor_receipt_projection_eligibility(
+    receipt: Any,
+    ledger: Any,
+    projection: Any,
+    selection: Any,
+) -> dict[str, Any]:
+    """Bind a planner candidate to its current trusted projection artifact.
+
+    A ledger append alone is insufficient after a strict post-mutation
+    reobservation has produced an explicit projection HOLD.  This helper is
+    intentionally diagnostic and non-throwing: malformed or missing evidence
+    seals the native-account route rather than making it infer an effect.
+    """
+    receipt_value = receipt if isinstance(receipt, Mapping) else {}
+    ledger_value = ledger if isinstance(ledger, Mapping) else {}
+    projection_value = projection if isinstance(projection, Mapping) else {}
+    selection_value = selection if isinstance(selection, Mapping) else {}
+
+    receipt_current = (
+        receipt_value.get("persistence_eligible") is True
+        and ledger_value.get("persisted") is True
+        and ledger_value.get("projection_current") is True
+    )
+    artifact_pr = _positive_pr_number(selection_value.get("artifact_pr_number"))
+    artifact_head = _selector_sha(selection_value.get("artifact_head"))
+    artifact_fingerprint = _fingerprint(
+        selection_value.get("artifact_fingerprint")
+    )
+    receipt_pr = _positive_pr_number(receipt_value.get("pr_number"))
+    receipt_head = _selector_sha(receipt_value.get("head_sha"))
+    receipt_tree = _selector_sha(receipt_value.get("tree_sha"))
+    receipt_fingerprint = _fingerprint(
+        receipt_value.get("evidence_fingerprint")
+    )
+    ledger_commit = _selector_sha(ledger_value.get("ledger_commit"))
+
+    projection_current = (
+        isinstance(projection, Mapping)
+        and projection_value.get("schema") == EXECUTOR_PROJECTION_SCHEMA
+        and projection_value.get("projection_permitted") is True
+        and projection_value.get("mesh_disposition") == receipt_value.get("state")
+        and projection_value.get("first_blocker") is None
+        and artifact_pr is not None
+        and receipt_pr == artifact_pr
+        and artifact_head is not None
+        and receipt_head == artifact_head
+        and receipt_tree is not None
+        and projection_value.get("head_sha") == receipt_head
+        and projection_value.get("tree_sha") == receipt_tree
+        and artifact_fingerprint is not None
+        and receipt_fingerprint == artifact_fingerprint
+        and projection_value.get("evidence_fingerprint") == receipt_fingerprint
+        and ledger_commit is not None
+        and projection_value.get("ledger_commit") == ledger_commit
+    )
+    eligible = receipt_current and projection_current
+    return {
+        "schema": EXECUTOR_RECEIPT_ELIGIBILITY_SCHEMA,
+        "eligible": eligible,
+        "first_blocker": (
+            None
+            if eligible
+            else (
+                "EXECUTOR_RECEIPT_NOT_CURRENT_PERSISTED"
+                if not receipt_current
+                else "EXECUTOR_PROJECTION_NOT_CURRENT"
+            )
+        ),
+        "receipt_current": receipt_current,
+        "projection_present": projection is not None,
+        "projection_permitted": (
+            projection_value.get("projection_permitted")
+            if isinstance(projection, Mapping)
+            else None
+        ),
+        "projection_current": projection_current,
+    }
 
 
 def _workflow_run_pr_subject(

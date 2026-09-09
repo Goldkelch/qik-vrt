@@ -20,6 +20,9 @@ SPEC.loader.exec_module(MODULE)
 
 class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
     head = "b" * 40
+    tree = "c" * 40
+    fingerprint = "d" * 64
+    ledger_commit = "e" * 40
     context = "QIKVRT required code-owner review"
 
     def pr(self, **overrides):
@@ -93,6 +96,115 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
             context=self.context,
             state=state,
             description=description,
+        )
+
+    def executor_projection_eligibility(self, **overrides):
+        receipt = {
+            "persistence_eligible": True,
+            "state": "APPROVE",
+            "pr_number": 641,
+            "head_sha": self.head,
+            "tree_sha": self.tree,
+            "evidence_fingerprint": self.fingerprint,
+        }
+        ledger = {
+            "persisted": True,
+            "projection_current": True,
+            "ledger_commit": self.ledger_commit,
+        }
+        projection = {
+            "schema": MODULE.EXECUTOR_PROJECTION_SCHEMA,
+            "projection_permitted": True,
+            "mesh_disposition": "APPROVE",
+            "head_sha": self.head,
+            "tree_sha": self.tree,
+            "evidence_fingerprint": self.fingerprint,
+            "ledger_commit": self.ledger_commit,
+        }
+        selection = {
+            "artifact_pr_number": 641,
+            "artifact_head": self.head,
+            "artifact_fingerprint": self.fingerprint,
+        }
+        receipt.update(overrides.pop("receipt", {}))
+        ledger.update(overrides.pop("ledger", {}))
+        projection_value = overrides.pop("projection", projection)
+        selection.update(overrides.pop("selection", {}))
+        self.assertEqual(overrides, {})
+        return MODULE.executor_receipt_projection_eligibility(
+            receipt, ledger, projection_value, selection
+        )
+
+    def test_executor_receipt_requires_current_permitted_projection(self):
+        allowed = self.executor_projection_eligibility()
+        self.assertTrue(allowed["eligible"])
+        self.assertIsNone(allowed["first_blocker"])
+        self.assertTrue(allowed["projection_current"])
+
+        for name, overrides in {
+            "missing": {"projection": None},
+            "malformed": {"projection": "not-an-object"},
+            "false": {"projection": {"projection_permitted": False}},
+            "truthy-string": {"projection": {"projection_permitted": "true"}},
+            "head": {"projection": {"head_sha": "a" * 40}},
+            "tree": {"projection": {"tree_sha": "a" * 40}},
+            "fingerprint": {"projection": {"evidence_fingerprint": "a" * 64}},
+            "ledger": {"projection": {"ledger_commit": "a" * 40}},
+            "pr": {"selection": {"artifact_pr_number": 642}},
+        }.items():
+            with self.subTest(name=name):
+                if "projection" in overrides and isinstance(overrides["projection"], dict):
+                    projection = {
+                        "schema": MODULE.EXECUTOR_PROJECTION_SCHEMA,
+                        "projection_permitted": True,
+                        "mesh_disposition": "APPROVE",
+                        "head_sha": self.head,
+                        "tree_sha": self.tree,
+                        "evidence_fingerprint": self.fingerprint,
+                        "ledger_commit": self.ledger_commit,
+                    }
+                    projection.update(overrides["projection"])
+                    overrides = {**overrides, "projection": projection}
+                value = self.executor_projection_eligibility(**overrides)
+                self.assertFalse(value["eligible"])
+                self.assertEqual(
+                    value["first_blocker"], "EXECUTOR_PROJECTION_NOT_CURRENT"
+                )
+
+        contradictory = self.executor_projection_eligibility(
+            projection={
+                "schema": MODULE.EXECUTOR_PROJECTION_SCHEMA,
+                "projection_permitted": True,
+                "mesh_disposition": "HOLD",
+                "first_blocker": "CAUSAL_REOBSERVATION_DRIFT",
+                "head_sha": self.head,
+                "tree_sha": self.tree,
+                "evidence_fingerprint": self.fingerprint,
+                "ledger_commit": self.ledger_commit,
+            }
+        )
+        self.assertFalse(contradictory["eligible"])
+        self.assertEqual(
+            contradictory["first_blocker"], "EXECUTOR_PROJECTION_NOT_CURRENT"
+        )
+
+    def test_executor_receipt_precedence_rejects_nonpersisted_receipt(self):
+        value = self.executor_projection_eligibility(
+            receipt={"persistence_eligible": False},
+            projection={"projection_permitted": False},
+        )
+        self.assertFalse(value["eligible"])
+        self.assertEqual(
+            value["first_blocker"], "EXECUTOR_RECEIPT_NOT_CURRENT_PERSISTED"
+        )
+
+    def test_executor_receipt_nonobject_artifacts_seal_no_effect(self):
+        value = MODULE.executor_receipt_projection_eligibility(
+            [], ["not-a-ledger"], "not-a-projection", None
+        )
+        self.assertFalse(value["eligible"])
+        self.assertEqual(
+            value["first_blocker"], "EXECUTOR_RECEIPT_NOT_CURRENT_PERSISTED"
         )
 
     def test_native_rule_must_enforce_all_freshness_requirements(self):

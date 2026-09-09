@@ -137,6 +137,7 @@ jobs:
           set -euo pipefail
           python3 -B - <<'PY' > /tmp/qikvrt-promotion-snapshot.json
           import json, os, subprocess
+          from tools.qikvrt_expected_head_promotion import mesh_review_execution_fence
           from tools.qikvrt_required_review_gate import evaluate_required_review
 
           repo=os.environ['REPOSITORY']
@@ -159,17 +160,21 @@ jobs:
                   if isinstance(page,dict):
                       out.extend(page.get('workflow_runs',[]))
               return out
-          def latest_status(statuses, context):
-              matching=[s for s in statuses if s.get('context') == context]
-              if not matching:
+          def gh_executor_runs():
+              # One bounded page only.  Direct review runs can expose a
+              # synthetic workflow ``head_sha``; the core binds only the
+              # API's pull_requests PR/head association.
+              value=gh_json(
+                  f'repos/{repo}/actions/workflows/qikvrt_requested_review_executor.yml/runs?per_page=100'
+              )
+              if not isinstance(value,dict) or not isinstance(value.get('workflow_runs'),list):
                   return None
-              def key(s):
-                  return (s.get('updated_at') or s.get('created_at') or '', int(s.get('id') or 0))
-              return max(matching, key=key)
+              return value['workflow_runs']
 
           pr=gh_json(f'repos/{repo}/pulls/{pr_number}')
           current_main=gh_json(f'repos/{repo}/commits/main')['sha']
           head=pr['head']['sha']
+          executor_runs=gh_executor_runs()
           runs=gh_runs(f'repos/{repo}/actions/runs?head_sha={head}&event=pull_request&per_page=100')
           workflow_runs=[
               {'name':r.get('name'),'status':r.get('status'),'conclusion':r.get('conclusion'),'run_number':r.get('run_number')}
@@ -177,15 +182,20 @@ jobs:
           ]
 
           statuses=gh_pages(f'repos/{repo}/commits/{head}/statuses?per_page=100')
-          review_status=latest_status(statuses, review_context)
-          if review_status is None:
-              synthetic={'name':review_context,'status':'in_progress','conclusion':None,'run_number':0}
-          elif review_status.get('state') == 'success':
-              synthetic={'name':review_context,'status':'completed','conclusion':'success','run_number':int(review_status.get('id') or 0)}
-          elif review_status.get('state') == 'pending':
-              synthetic={'name':review_context,'status':'in_progress','conclusion':None,'run_number':int(review_status.get('id') or 0)}
+          execution_fence=mesh_review_execution_fence(
+              statuses,executor_runs,review_context,pr_number,head,
+          )
+          if execution_fence.get('exact') is True:
+              source_run=execution_fence['source_run']
+              synthetic={
+                  'name':review_context,'status':'completed','conclusion':'success',
+                  'run_number':source_run['run_number'],
+              }
           else:
-              synthetic={'name':review_context,'status':'completed','conclusion':'failure','run_number':int(review_status.get('id') or 0)}
+              # The core returns the concrete technical fence blocker before
+              # this synthetic non-success gate could be mistaken for review
+              # or approval authority.
+              synthetic={'name':review_context,'status':'in_progress','conclusion':None,'run_number':0}
           workflow_runs.append(synthetic)
 
           rules=gh_json(f'repos/{repo}/rules/branches/main')
@@ -215,6 +225,7 @@ jobs:
               'external_effect':'NONE',
               'required_gates':required,
               'workflow_runs':workflow_runs,
+              'mesh_review_execution_fence':execution_fence,
               'code_owner_review_gate':code_owner_review_gate,
               'competing_writer_overlaps':overlaps,
           },sort_keys=True))
@@ -276,7 +287,7 @@ jobs:
 
           python3 -B - <<'PY'
           import base64, json, os, pathlib, subprocess, sys, urllib.parse
-          from tools.qikvrt_expected_head_promotion import mesh_review_status_projection
+          from tools.qikvrt_expected_head_promotion import mesh_review_execution_fence
           from tools.qikvrt_requested_review_executor import (
               prepare_diff_transport_ledger_entries,
               reassemble_diff_transport,
@@ -296,6 +307,16 @@ jobs:
               for page in pages:
                   out.extend(page if isinstance(page,list) else [page])
               return out
+          def gh_executor_runs():
+              # Deliberately one page: a missing current exact source run is a
+              # fail-closed hold, never a reason to infer from synthetic
+              # workflow head_sha metadata.
+              value=gh_json(
+                  f'repos/{repo}/actions/workflows/qikvrt_requested_review_executor.yml/runs?per_page=100'
+              )
+              if not isinstance(value,dict) or not isinstance(value.get('workflow_runs'),list):
+                  return None
+              return value['workflow_runs']
 
           pr=gh_json(f'repos/{repo}/pulls/{pr_number}')
           if pr['head']['sha'] != expected_head:
@@ -307,10 +328,21 @@ jobs:
               raise SystemExit(f"BLOCK: independent Code Owner gate changed: {gate.get('first_blocker')}")
 
           statuses=gh_pages(f'repos/{repo}/commits/{expected_head}/statuses?per_page=100')
-          status_fence=mesh_review_status_projection(statuses,review_context)
-          if status_fence['state'] != 'success':
-              raise SystemExit(f"BLOCK: requested-review execution is {status_fence['state']}")
-          fingerprint=status_fence['evidence_fingerprint']
+          execution_fence=mesh_review_execution_fence(
+              statuses,gh_executor_runs(),review_context,pr_number,expected_head,
+          )
+          initial_snapshot=json.loads(
+              pathlib.Path('/tmp/qikvrt-promotion-snapshot.json').read_text(encoding='utf-8')
+          )
+          expected_execution_fence=initial_snapshot.get('mesh_review_execution_fence')
+          if execution_fence.get('exact') is not True:
+              raise SystemExit(
+                  'BLOCK: requested-review execution fence is not exact: '
+                  + str(execution_fence.get('first_blocker') or 'UNKNOWN')
+              )
+          if execution_fence != expected_execution_fence:
+              raise SystemExit('BLOCK: requested-review execution fence changed after snapshot')
+          fingerprint=execution_fence['status']['evidence_fingerprint']
           ledger_ref=os.environ['MESH_REVIEW_LEDGER_REF']
           root=f'state/mesh/reviews/pr-{pr_number}/{expected_head}/{fingerprint}'
 
@@ -411,7 +443,7 @@ jobs:
               raise SystemExit('BLOCK: Mesh receipt crossed its verification boundary')
           (evidence/'promotion-fence.json').write_text(json.dumps({
               'schema':'qikvrt_mesh_review_promotion_fence_v1',
-              'mesh_status':status_fence,
+              'mesh_review_execution_fence':execution_fence,
               'verification_state':'HOLD_UNVERIFIED',
               'completion_claims':{
                   'PASS':False,'FINAL_PASS':False,'EFFECT_ACK_DONE':False,'MERGE':False,
@@ -421,7 +453,7 @@ jobs:
 
           python3 -B - <<'PY'
           import json, os, pathlib, subprocess, sys
-          from tools.qikvrt_expected_head_promotion import require_unchanged_mesh_review_status, require_unchanged_promotion_marker
+          from tools.qikvrt_expected_head_promotion import require_unchanged_mesh_review_execution_fence, require_unchanged_promotion_marker
           from tools.qikvrt_required_review_gate import evaluate_required_review
 
           repo=os.environ['REPOSITORY']
@@ -435,6 +467,15 @@ jobs:
           def gh_pages(path):
               pages=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path],text=True))
               return [item for page in pages for item in page]
+          def gh_executor_runs():
+              # Do not bind direct review runs through their synthetic
+              # workflow head_sha.  The core accepts only pull_requests.
+              value=gh_json(
+                  f'repos/{repo}/actions/workflows/qikvrt_requested_review_executor.yml/runs?per_page=100'
+              )
+              if not isinstance(value,dict) or not isinstance(value.get('workflow_runs'),list):
+                  return None
+              return value['workflow_runs']
 
           evidence=pathlib.Path('/tmp/qikvrt-promotion-mesh-review')
           fence=json.loads((evidence/'promotion-fence.json').read_text(encoding='utf-8'))
@@ -447,8 +488,9 @@ jobs:
 
           statuses=gh_pages(f'repos/{repo}/commits/{expected_head}/statuses?per_page=100')
           try:
-              require_unchanged_mesh_review_status(
-                  fence['mesh_status'],statuses,review_context
+              require_unchanged_mesh_review_execution_fence(
+                  fence['mesh_review_execution_fence'],statuses,gh_executor_runs(),
+                  review_context,pr_number,expected_head,
               )
           except ValueError as exc:
               raise SystemExit(f'BLOCK: {exc}') from exc

@@ -206,7 +206,10 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertEqual(projections["actions_artifact"], "EXACT_RECEIPT_AND_DIFF_PROJECTION")
         self.assertTrue(projections["actions_artifact_includes_hidden_evidence_root"])
         self.assertEqual(projections["status_context"], "QIKVRT requested review execution")
-        self.assertEqual(projections["status_deduplication"], "LATEST_CONTEXT_STATUS_ONLY")
+        self.assertEqual(
+            projections["status_deduplication"],
+            "LATEST_CONTEXT_STATUS_AND_EXECUTOR_RUN_ID",
+        )
         self.assertEqual(projections["pull_request_review_event"], "COMMENT")
         self.assertEqual(projections["platform_review_state"], "COMMENTED")
         self.assertFalse(projections["candidate_mutation"])
@@ -259,6 +262,14 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
             plane["executor"]["eligible_subjects"],
         )
         self.assertNotIn("workflow_dispatch.exact_pr_and_head", policy["review_executor"]["event_triggers"])
+        self.assertIn(
+            "pull_request_review.submitted_edited_dismissed",
+            policy["review_executor"]["event_triggers"],
+        )
+        self.assertIn(
+            "pull_request_review_comment.created_edited_deleted",
+            policy["review_executor"]["event_triggers"],
+        )
         intake_priority = policy["review_intake_priority"]
         self.assertEqual(
             [item["class"] for item in intake_priority["priority_classes"]],

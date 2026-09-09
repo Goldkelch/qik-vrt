@@ -45,6 +45,8 @@ RETRACTION_EVENT_ACTIONS = {
         "reopened",
         }
     ),
+    "pull_request_review": frozenset({"submitted", "edited", "dismissed"}),
+    "pull_request_review_comment": frozenset({"created", "edited", "deleted"}),
     "issue_comment": frozenset({"created", "edited", "deleted"}),
     "workflow_run": frozenset({"completed"}),
 }

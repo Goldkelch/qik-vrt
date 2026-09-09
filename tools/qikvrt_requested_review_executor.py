@@ -40,10 +40,22 @@ LEDGER_ROOT = "state/mesh/reviews"
 TRUSTED_EVALUATOR_PATH = "tools/qikvrt_requested_review_executor.py"
 TRUSTED_WORKFLOW_PATH = ".github/workflows/qikvrt_requested_review_executor.yml"
 REVIEW_MARKER = "qikvrt-mesh-review:v1"
+DELEGATED_ACCOUNT_REVIEW_MARKER = "qikvrt-delegated-native-account-review:v1"
 LIVE_STATUS_MARKER = "qikvrt-live-status-watch"
+UNIVERSAL_LIVE_SURFACE_MARKER = "qikvrt-universal-terminal-live-surface-v1"
+DELEGATED_ACCOUNT_REVIEWERS = frozenset({"goldkelch", "ingolf-lohmann"})
+DELEGATED_ACCOUNT_REVIEW_STATES = {
+    "APPROVE": "approved",
+    "REQUEST_CHANGES": "changes_requested",
+    "COMMENT": "commented",
+}
 TRUSTED_AUTOMATION_DISCUSSION_PREFIXES = (
     f"<!-- {REVIEW_MARKER} ",
     f"<!-- {LIVE_STATUS_MARKER} -->",
+    # This surface is a mutable GitHub Actions journal of workflow lifecycle
+    # events.  It is not reviewer input, and its updates must not turn an
+    # otherwise identical exact subject into causal evidence drift.
+    f"<!-- {UNIVERSAL_LIVE_SURFACE_MARKER} -->",
 )
 ACTIVE_WRITER_STATES = ("queued", "in_progress", "waiting", "requested", "pending")
 REVIEW_SELECTION_SCHEMA = "qikvrt_requested_review_selection_v1"
@@ -81,6 +93,7 @@ REOBSERVATION_PROGRESS_FIELDS = frozenset({
     "latest_workflows",
     "active_writers_observed",
     "derived_action",
+    "persistence_eligible",
     "receipt_payload_sha256",
 })
 REPOSITORY_FEEDBACK_PROGRESS_FIELDS = frozenset({
@@ -323,13 +336,24 @@ def latest_status_matches_projection(
     context: str,
     state: str,
     evidence_fingerprint: str,
+    execution_run_id: str | int,
 ) -> bool:
-    """Return true only when the latest status in a context is the projection."""
+    """Return true only when the latest status is this exact run projection."""
     if not isinstance(context, str) or not context:
         raise ReviewSnapshotError("status context is missing")
     if not isinstance(state, str) or not state:
         raise ReviewSnapshotError("status state is missing")
     _sha256(evidence_fingerprint, "status evidence fingerprint")
+    if isinstance(execution_run_id, bool):
+        raise ReviewSnapshotError("status executor run id is invalid")
+    if isinstance(execution_run_id, int):
+        if execution_run_id < 1:
+            raise ReviewSnapshotError("status executor run id is invalid")
+        expected_run_id = str(execution_run_id)
+    elif isinstance(execution_run_id, str) and re.fullmatch(r"[1-9][0-9]*", execution_run_id):
+        expected_run_id = execution_run_id
+    else:
+        raise ReviewSnapshotError("status executor run id is invalid")
     matching: list[Mapping[str, Any]] = []
     for status in statuses:
         if not isinstance(status, Mapping):
@@ -350,10 +374,13 @@ def latest_status_matches_projection(
 
     latest = max(matching, key=key)
     match = re.search(r"\bfp=([0-9a-f]{64})\b", latest.get("description") or "")
+    run_match = re.search(r"\brun=([1-9][0-9]*)\b", latest.get("description") or "")
     return (
         latest.get("state") == state
         and match is not None
         and match.group(1) == evidence_fingerprint
+        and run_match is not None
+        and run_match.group(1) == expected_run_id
     )
 
 
@@ -1535,6 +1562,12 @@ def _result(
                 "QIK-VRT expected-head promotion executor",
             ],
         },
+        # A workflow-progress observation is useful evidence, but not an
+        # immutable ledger candidate.  Persist only a terminal technical
+        # disposition; native completion events will reobserve a WAIT state.
+        "persistence_eligible": state in {
+            "APPROVE", "REQUEST_CHANGES", "COMMENT_WITH_BLOCKER",
+        },
         "derived_action": _derived_action(state, blocker),
         "verification_state": "HOLD_UNVERIFIED",
         "ordinary_release": False,
@@ -2101,7 +2134,11 @@ def event_payload_pull_request(
     main base and expected head. Other event classes, malformed
     objects and any drift fail closed.
     """
-    if event_name not in {"pull_request_target", "pull_request_review"}:
+    if event_name not in {
+        "pull_request_target",
+        "pull_request_review",
+        "pull_request_review_comment",
+    }:
         return None
     if not isinstance(payload, Mapping):
         return None
@@ -2120,6 +2157,221 @@ def event_payload_pull_request(
     if reasons or subject["head_sha"] != expected_head:
         return None
     return pull_request
+
+
+def _is_own_mesh_review_comment_event(
+    payload: Any,
+    repository: str,
+    event_pr: str,
+    expected_head: str,
+    event_name: str,
+) -> bool:
+    """Recognize only this executor's exact technical COMMENT delivery.
+
+    The check is deliberately narrower than a marker search.  It admits no
+    guessed actor, malformed review, other bot, human comment, decisive review
+    state, foreign PR, or wrong-head event.  Suppressing this exact feedback
+    delivery before the live PR GET prevents a COMMENT made with another
+    credential model from recursively becoming a new review intake.
+    """
+    if event_name != "pull_request_review" or not isinstance(payload, Mapping):
+        return False
+    number = _positive_integer(event_pr)
+    head = expected_head.strip()
+    if number is None or _git_sha1(head) is None:
+        return False
+    if payload.get("action") != "submitted":
+        return False
+    embedded_pr = event_payload_pull_request(
+        payload, repository, number, head, event_name
+    )
+    if embedded_pr is None:
+        return False
+    sender = payload.get("sender")
+    review = payload.get("review")
+    if not isinstance(sender, Mapping) or not isinstance(review, Mapping):
+        return False
+    sender_login = sender.get("login")
+    reviewer = review.get("user")
+    reviewer_login = reviewer.get("login") if isinstance(reviewer, Mapping) else None
+    if not (
+        isinstance(sender_login, str)
+        and sender_login.casefold() == "github-actions[bot]"
+        and isinstance(reviewer_login, str)
+        and reviewer_login.casefold() == "github-actions[bot]"
+    ):
+        return False
+    state = review.get("state")
+    body = review.get("body")
+    if (
+        not isinstance(state, str)
+        or state.casefold() != "commented"
+        or review.get("commit_id") != head
+        or not isinstance(body, str)
+    ):
+        return False
+    header = re.compile(
+        rf"\A<!-- {re.escape(REVIEW_MARKER)} head={re.escape(head)} "
+        r"tree=[0-9a-f]{40} fingerprint=[0-9a-f]{64} "
+        r"disposition=(?:APPROVE|WAIT|REQUEST_CHANGES|COMMENT_WITH_BLOCKER) -->"
+    )
+    return header.match(body) is not None
+
+
+def _is_own_delegated_account_review_event(
+    payload: Any,
+    repository: str,
+    event_pr: str,
+    expected_head: str,
+    event_name: str,
+) -> bool:
+    """Recognize only an exact delegated native-account review delivery.
+
+    A native account review is a separately authorized GitHub review effect;
+    it is not new technical Mesh-review input.  Its resulting native event
+    must therefore be excluded before any live observation can bind that
+    effect as a new receipt.  This remains deliberately fail closed: a human
+    review, a near-miss marker, an edited or dismissed review, a foreign
+    subject, a non-User actor, or an actor/body/state/head/tree mismatch
+    remains ordinary external intake.
+    """
+    if event_name != "pull_request_review" or not isinstance(payload, Mapping):
+        return False
+    number = _positive_integer(event_pr)
+    head = expected_head.strip()
+    if number is None or _git_sha1(head) is None or payload.get("action") != "submitted":
+        return False
+    event_repository = payload.get("repository")
+    if (
+        not isinstance(event_repository, Mapping)
+        or event_repository.get("full_name") != repository
+    ):
+        return False
+    embedded_pr = event_payload_pull_request(
+        payload, repository, number, head, event_name
+    )
+    if embedded_pr is None:
+        return False
+    base = embedded_pr.get("base")
+    base_repository = base.get("repo") if isinstance(base, Mapping) else None
+    if (
+        not isinstance(base_repository, Mapping)
+        or base_repository.get("full_name") != repository
+    ):
+        return False
+    sender = payload.get("sender")
+    review = payload.get("review")
+    reviewer = review.get("user") if isinstance(review, Mapping) else None
+    author = embedded_pr.get("user")
+    if not (
+        isinstance(sender, Mapping)
+        and isinstance(review, Mapping)
+        and isinstance(reviewer, Mapping)
+        and isinstance(author, Mapping)
+        and sender.get("type") == "User"
+        and reviewer.get("type") == "User"
+        and author.get("type") == "User"
+    ):
+        return False
+    sender_login = sender.get("login")
+    reviewer_login = reviewer.get("login")
+    author_login = author.get("login")
+    if not all(isinstance(login, str) and login.strip() for login in (
+        sender_login,
+        reviewer_login,
+        author_login,
+    )):
+        return False
+    sender_account = sender_login.casefold()
+    reviewer_account = reviewer_login.casefold()
+    author_account = author_login.casefold()
+    if (
+        sender_account not in DELEGATED_ACCOUNT_REVIEWERS
+        or reviewer_account not in DELEGATED_ACCOUNT_REVIEWERS
+        or author_account not in DELEGATED_ACCOUNT_REVIEWERS
+        or sender_account != reviewer_account
+        or author_account == reviewer_account
+    ):
+        return False
+    state = review.get("state")
+    body = review.get("body")
+    if (
+        not isinstance(state, str)
+        or review.get("commit_id") != head
+        or not isinstance(body, str)
+    ):
+        return False
+    header = re.compile(
+        rf"\A<!-- {re.escape(DELEGATED_ACCOUNT_REVIEW_MARKER)} "
+        r"fingerprint=[0-9a-f]{64} "
+        rf"head={re.escape(head)} tree=[0-9a-f]{{40}} "
+        r"event=(APPROVE|REQUEST_CHANGES|COMMENT) -->"
+    )
+    marker = header.match(body)
+    return (
+        marker is not None
+        and state.casefold() == DELEGATED_ACCOUNT_REVIEW_STATES[marker.group(1)]
+    )
+
+
+def _is_trusted_live_surface_issue_comment_event(
+    payload: Any,
+    repository: str,
+    event_pr: str,
+    event_name: str,
+) -> bool:
+    """Recognize only the executor-irrelevant live terminal journal event.
+
+    ``QIKVRT live status watch`` writes this mutable journal to an issue
+    comment after native PR/review/workflow events.  The review observation
+    deliberately excludes the journal from causal discussion evidence, so the
+    journal's own ``issue_comment`` delivery must not start another complete
+    review observation.  This check is deliberately narrow: a human, another
+    bot, an embedded marker, a foreign PR URL, a mismatched number, or a
+    malformed payload remains ordinary review intake.
+    """
+    if event_name != "issue_comment" or not isinstance(payload, Mapping):
+        return False
+    number = _positive_integer(event_pr)
+    if number is None or payload.get("action") not in {"created", "edited", "deleted"}:
+        return False
+    issue = payload.get("issue")
+    comment = payload.get("comment")
+    sender = payload.get("sender")
+    if (
+        not isinstance(issue, Mapping)
+        or not isinstance(comment, Mapping)
+        or not isinstance(sender, Mapping)
+        or _positive_integer(issue.get("number")) != number
+    ):
+        return False
+    pull_request = issue.get("pull_request")
+    if not isinstance(pull_request, Mapping):
+        return False
+    # The issue-comment payload's ``pull_request`` relation supplies the
+    # canonical URL but not necessarily a redundant number.  Bind that URL to
+    # the independently delivered issue number through the same strict parser
+    # used for workflow-run PR associations.
+    bound_number, blocker = _workflow_run_pr_number(
+        {"number": number, "url": pull_request.get("url")}, repository
+    )
+    if blocker is not None or bound_number != number:
+        return False
+    sender_login = sender.get("login")
+    author = comment.get("user")
+    author_login = author.get("login") if isinstance(author, Mapping) else None
+    if not (
+        isinstance(sender_login, str)
+        and sender_login.casefold() == "github-actions[bot]"
+        and isinstance(author_login, str)
+        and author_login.casefold() == "github-actions[bot]"
+    ):
+        return False
+    body = comment.get("body")
+    return (
+        isinstance(body, str)
+        and body.startswith(f"<!-- {UNIVERSAL_LIVE_SURFACE_MARKER} -->")
+    )
 
 
 def _workflow_run_pr_number(
@@ -2151,6 +2403,7 @@ def select_review_subject(
     workflow_prs: Any,
     fetch_pull_request: Callable[[int], Mapping[str, Any]],
     requested_pr: str = "",
+    event_payload: Any = None,
 ) -> dict[str, Any]:
     """Select one exact, eligible review subject without a fallback scan.
 
@@ -2171,6 +2424,70 @@ def select_review_subject(
             first_blocker="MANUAL_EXECUTOR_DISPATCH_FORBIDDEN",
             event_source="MANUAL_INPUT_FORBIDDEN",
             eligibility_reasons=["MANUAL_EXECUTOR_DISPATCH_FORBIDDEN"],
+        )
+
+    if _is_own_mesh_review_comment_event(
+        event_payload, repository, event_pr, expected_head, event_name
+    ):
+        number = _positive_integer(event_pr)
+        assert number is not None
+        embedded_pr = event_payload_pull_request(
+            event_payload, repository, number, expected_head.strip(), event_name
+        )
+        assert embedded_pr is not None
+        return _selection_result(
+            "INELIGIBLE_EVENT_TARGET",
+            "EXACT_EVENT",
+            first_blocker="SELF_MESH_REVIEW_COMMENT_EVENT",
+            pr_number=number,
+            event_source="TRUSTED_EXECUTOR_REVIEW_EVENT",
+            expected_head=expected_head.strip(),
+            subject=_selection_subject(embedded_pr),
+            eligibility_reasons=["SELF_MESH_REVIEW_COMMENT_EVENT"],
+            subject_count=1,
+            detail="the executor's own exact technical COMMENT is not new review input",
+        )
+
+    if _is_own_delegated_account_review_event(
+        event_payload, repository, event_pr, expected_head, event_name
+    ):
+        number = _positive_integer(event_pr)
+        assert number is not None
+        embedded_pr = event_payload_pull_request(
+            event_payload, repository, number, expected_head.strip(), event_name
+        )
+        assert embedded_pr is not None
+        return _selection_result(
+            "INELIGIBLE_EVENT_TARGET",
+            "EXACT_EVENT",
+            first_blocker="SELF_DELEGATED_ACCOUNT_REVIEW_EVENT",
+            pr_number=number,
+            event_source="TRUSTED_DELEGATED_ACCOUNT_REVIEW_EVENT",
+            expected_head=expected_head.strip(),
+            subject=_selection_subject(embedded_pr),
+            eligibility_reasons=["SELF_DELEGATED_ACCOUNT_REVIEW_EVENT"],
+            subject_count=1,
+            detail=(
+                "the exact delegated native-account review is not new technical review input"
+            ),
+        )
+
+    if _is_trusted_live_surface_issue_comment_event(
+        event_payload, repository, event_pr, event_name
+    ):
+        number = _positive_integer(event_pr)
+        assert number is not None
+        return _selection_result(
+            "INELIGIBLE_EVENT_TARGET",
+            "EXACT_EVENT",
+            first_blocker="SELF_LIVE_SURFACE_ISSUE_COMMENT_EVENT",
+            pr_number=number,
+            event_source="TRUSTED_LIVE_SURFACE_ISSUE_COMMENT",
+            eligibility_reasons=["SELF_LIVE_SURFACE_ISSUE_COMMENT_EVENT"],
+            subject_count=1,
+            detail=(
+                "the trusted mutable live terminal journal is not new review input"
+            ),
         )
 
     bound_head = expected_head.strip()
@@ -2269,7 +2586,11 @@ def select_review_subject(
         )
 
     if event_pr.strip():
-        if event_name in {"pull_request_target", "pull_request_review"}:
+        if event_name in {
+            "pull_request_target",
+            "pull_request_review",
+            "pull_request_review_comment",
+        }:
             return exact_number(
                 event_pr,
                 "PULL_REQUEST_EVENT",
@@ -2679,6 +3000,24 @@ def _active_writer_observation(
     Malformed relevant-head bindings fail closed.
     """
     if (
+        not isinstance(repository, str)
+        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*", repository)
+        is None
+    ):
+        raise ReviewObservationError("active writer repository binding is invalid")
+    if (
+        isinstance(current_run_id, bool)
+        or not isinstance(current_run_id, int)
+        or current_run_id < 1
+    ):
+        raise ReviewObservationError("active writer current run binding is invalid")
+    if (
+        not isinstance(writer_names, set)
+        or not writer_names
+        or any(not isinstance(name, str) or not name for name in writer_names)
+    ):
+        raise ReviewObservationError("active writer workflow binding is invalid")
+    if (
         not isinstance(relevant_heads, set)
         or not relevant_heads
         or any(_git_sha1(value) is None for value in relevant_heads)
@@ -2686,22 +3025,78 @@ def _active_writer_observation(
         raise ReviewObservationError(
             "active writer relevant-head binding is invalid"
         )
-    observed: dict[int, dict[str, Any]] = {}
-    for status in ACTIVE_WRITER_STATES:
-        for run in _gh_runs(
-            f"repos/{repository}/actions/runs?status={status}&per_page=100"
+
+    def bounded_runs_for_head(head: str) -> list[Mapping[str, Any]]:
+        """Read exactly one complete, exact-head workflow-run page.
+
+        The repository-wide status queries previously used here performed one
+        paginated scan for every active status.  Besides multiplying GitHub App
+        reads, those scans were unrelated to the two heads that can mutate the
+        subject under review.  A single status-free query for each exact
+        relevant head lets the caller filter every active state locally.
+
+        ``per_page=100`` is a hard request bound, not permission to truncate:
+        the API's ``total_count`` must prove that the one page contains every
+        run for this exact head.  If it does not, a potentially relevant
+        active writer could be on an omitted page, so fail closed instead of
+        accepting an incomplete lease observation.
+        """
+        encoded_head = urllib.parse.quote(head, safe="")
+        response = _gh_one(
+            f"repos/{repository}/actions/runs?head_sha={encoded_head}&per_page=100"
+        )
+        if not isinstance(response, Mapping):
+            raise ReviewObservationError("active writer workflow-run response is malformed")
+        total = response.get("total_count")
+        raw_runs = response.get("workflow_runs")
+        if (
+            isinstance(total, bool)
+            or not isinstance(total, int)
+            or total < 0
+            or not isinstance(raw_runs, list)
+            or len(raw_runs) > 100
+            or total != len(raw_runs)
         ):
+            raise ReviewObservationError(
+                "active writer exact-head workflow-run page is incomplete"
+            )
+        result: list[Mapping[str, Any]] = []
+        for run in raw_runs:
+            if not isinstance(run, Mapping):
+                raise ReviewObservationError("active writer workflow run is malformed")
+            # The server-side head filter is part of the exact-subject
+            # binding.  A response that escapes it cannot be used as lease
+            # evidence, even when the escaped row would be irrelevant.
+            if run.get("head_sha") != head:
+                raise ReviewObservationError(
+                    "active writer workflow run escaped exact-head binding"
+                )
+            result.append(run)
+        return result
+
+    observed: dict[int, dict[str, Any]] = {}
+    for head in sorted(relevant_heads):
+        for run in bounded_runs_for_head(head):
             run_id = run.get("id")
+            status = run.get("status")
+            name = run.get("name")
             if (
-                isinstance(run_id, int)
-                and run_id != current_run_id
-                and run.get("name") in writer_names
-                and run.get("head_sha") in relevant_heads
+                status in ACTIVE_WRITER_STATES
+                and name in writer_names
+                and run.get("head_sha") == head
             ):
+                if (
+                    isinstance(run_id, bool)
+                    or not isinstance(run_id, int)
+                    or run_id < 1
+                ):
+                    raise ReviewObservationError("active writer run id is invalid")
+                if run_id == current_run_id:
+                    continue
                 observed[run_id] = {
                     "id": run_id,
-                    "name": run.get("name"),
-                    "status": run.get("status"),
+                    "name": name,
+                    "status": status,
                     "head_sha": run.get("head_sha"),
                     "workflow_id": run.get("workflow_id"),
                     "path": run.get("path"),

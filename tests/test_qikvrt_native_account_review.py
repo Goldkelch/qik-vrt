@@ -123,12 +123,30 @@ class NativeAccountReviewTests(unittest.TestCase):
         for intake in (
             {"event_name": "workflow_run", "event_action": "completed"},
             {"event_name": "issue_comment", "event_action": "created"},
+            {"event_name": "pull_request_review", "event_action": "submitted"},
+            {"event_name": "pull_request_review", "event_action": "edited"},
+            {"event_name": "pull_request_review", "event_action": "dismissed"},
+            {"event_name": "pull_request_review_comment", "event_action": "created"},
+            {"event_name": "pull_request_review_comment", "event_action": "edited"},
+            {"event_name": "pull_request_review_comment", "event_action": "deleted"},
         ):
             with self.subTest(intake=intake):
                 value = self.plan(receipt=self.receipt(review_intake=intake))
                 self.assertTrue(value["effect_permitted"])
                 self.assertEqual(value["event"], "APPROVE")
                 self.assertTrue(value["active_requested_counterpart_required"])
+
+    def test_direct_review_followup_rejects_unknown_action(self):
+        value = self.plan(
+            receipt=self.receipt(
+                review_intake={
+                    "event_name": "pull_request_review",
+                    "event_action": "deleted",
+                }
+            )
+        )
+        self.assertFalse(value["effect_permitted"])
+        self.assertEqual(value["first_blocker"], "REVIEW_REQUEST_EVENT_NOT_EXACT")
 
     def test_trusted_exact_followup_requires_counterpart_to_remain_requested(self):
         intake = {"event_name": "workflow_run", "event_action": "completed"}
@@ -569,7 +587,8 @@ class NativeAccountReviewTests(unittest.TestCase):
         self.assertIn("verify-readback", workflow)
         self.assertIn("persist-credentials: false", workflow)
         self.assertIn("run.get('workflow_id') != workflow.get('id')", workflow)
-        self.assertIn("allowed_events={'pull_request_target','issue_comment','workflow_run'}", workflow)
+        self.assertIn("'pull_request_review'", workflow)
+        self.assertIn("'pull_request_review_comment'", workflow)
         self.assertIn("IMMUTABLE_EXECUTOR_ARTIFACT_RETRACTION_ONLY", workflow)
         self.assertIn("executor artifact name and receipt binding differ", workflow)
         self.assertIn("executor receipt event provenance differs from the trusted run", workflow)
@@ -584,6 +603,13 @@ class NativeAccountReviewTests(unittest.TestCase):
         self.assertIn('artifact/review.json', workflow)
         self.assertIn('artifact/review.diff', workflow)
         self.assertIn('artifact/ledger-write.json', workflow)
+        self.assertIn('artifact/projection.json', workflow)
+        self.assertIn('executor_receipt_projection_eligibility', workflow)
+        self.assertIn(
+            "EXECUTOR_PROJECTION_NOT_CURRENT",
+            (ROOT / "tools/qikvrt_required_review_gate.py").read_text(encoding="utf-8"),
+        )
+        self.assertIn("steps.receipt.outputs.eligible == 'true'", workflow)
         self.assertNotIn('artifact/.qikvrt/mesh-review/review.json', workflow)
         self.assertNotIn('find "$root/artifact" -type f -name review.json', workflow)
         gold = workflow.split("  native-account-review-as-goldkelch:", 1)[1].split("  native-account-review-as-ingolf-lohmann:", 1)[0]

@@ -117,6 +117,26 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             " ".join(documentation.split()),
         )
         self.assertIn("tr '\\n' ' '", contract)
+        lifecycle = (
+            ROOT / "docs" / "REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE.md"
+        ).read_text(encoding="utf-8")
+        normalized_lifecycle = " ".join(lifecycle.split())
+        self.assertIn(
+            "immediately before each ledger-reference mutation",
+            normalized_lifecycle,
+        )
+        self.assertIn(
+            "bounded non-force reference readback",
+            normalized_lifecycle,
+        )
+        self.assertIn(
+            "one strict full snapshot/diff/receipt recheck",
+            normalized_lifecycle,
+        )
+        self.assertIn(
+            "one best-effort **pending** availability-status write",
+            normalized_lifecycle,
+        )
 
     def selector_pr(self, **overrides):
         value = {
@@ -328,6 +348,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assert_receipt_boundaries(result)
         self.assertEqual(result["mesh_disposition"], "APPROVE")
         self.assertIsNone(result["first_blocker"])
+        self.assertTrue(result["persistence_eligible"])
         self.assertIn("EXACT_DIFF_BOUND", self.finding_ids(result))
         self.assertIn("EXACT_HEAD_GATES_NON_ADVERSE", self.finding_ids(result))
         self.assertEqual(
@@ -631,6 +652,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertEqual(result["derived_action"]["d0"], 1)
         self.assertEqual(result["derived_action"]["state"], "HOLD")
         self.assertFalse(result["derived_action"]["productive_effect"])
+        self.assertFalse(result["persistence_eligible"])
 
     def test_missing_required_gate_waits_and_reobserves(self):
         snap = self.snapshot()
@@ -665,6 +687,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertEqual(result["derived_action"]["d0"], 1)
         self.assertEqual(result["derived_action"]["state"], "HOLD")
         self.assertFalse(result["derived_action"]["productive_effect"])
+        self.assertTrue(result["persistence_eligible"])
 
     def test_required_gate_name_from_untrusted_workflow_path_reobserves(self):
         snap = self.snapshot()
@@ -1117,6 +1140,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             "REQUEST_HISTORY_PRESERVING_READY_RECLASSIFICATION_AUTHORITY",
         )
         self.assertEqual(result["verification_state"], "HOLD_UNVERIFIED")
+        self.assertFalse(result["persistence_eligible"])
 
     def test_active_writer_waits_for_the_single_writer_lease(self):
         active_writer = {
@@ -1142,6 +1166,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             "WAIT_FOR_SINGLE_WRITER_LEASE",
         )
         self.assertFalse(result["derived_action"]["productive_effect"])
+        self.assertFalse(result["persistence_eligible"])
 
     def test_every_repository_writer_queue_state_is_active(self):
         for status in MODULE.ACTIVE_WRITER_STATES:
@@ -1536,6 +1561,15 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             "user": {"login": "github-actions[bot]"},
             "created_at": "2026-08-22T20:02:00Z",
         }
+        terminal_surface = {
+            "id": 7,
+            "body": (
+                "<!-- qikvrt-universal-terminal-live-surface-v1 -->\n"
+                "workflow state journal: pending"
+            ),
+            "user": {"login": "github-actions[bot]"},
+            "created_at": "2026-08-22T20:02:30Z",
+        }
         human_marker = {
             **live_status,
             "id": 4,
@@ -1559,7 +1593,10 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             if endpoint.endswith("/reviews?per_page=100"):
                 return [own]
             if endpoint.endswith("/comments?per_page=100") and "/issues/" in endpoint:
-                return [foreign, live_status, human_marker, embedded_marker, other_bot]
+                return [
+                    foreign, live_status, terminal_surface, human_marker,
+                    embedded_marker, other_bot,
+                ]
             return []
 
         with mock.patch.object(MODULE, "_gh_pages", side_effect=pages):
@@ -1576,29 +1613,30 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             "context": "QIKVRT requested review execution",
             "state": "success",
             "created_at": "2026-08-22T10:00:00Z",
-            "description": f"Mesh APPROVE; D0=3; fp={fingerprint}",
+            "description": f"Mesh APPROVE; D0=3; fp={fingerprint}; run=100",
         }
         waiting = {
             "id": 11,
             "context": "QIKVRT requested review execution",
             "state": "pending",
             "created_at": "2026-08-22T10:01:00Z",
-            "description": f"Mesh WAIT; D0=1; fp={'b' * 64}",
+            "description": f"Mesh WAIT; D0=1; fp={'b' * 64}; run=101",
         }
         reapproved = {
             **approved,
             "id": 12,
             "created_at": "2026-08-22T10:02:00Z",
+            "description": f"Mesh APPROVE; D0=3; fp={fingerprint}; run=102",
         }
 
         self.assertTrue(
             MODULE.latest_status_matches_projection(
-                [approved], approved["context"], "success", fingerprint
+                [approved], approved["context"], "success", fingerprint, 100
             )
         )
         self.assertFalse(
             MODULE.latest_status_matches_projection(
-                [approved, waiting], approved["context"], "success", fingerprint
+                [approved, waiting], approved["context"], "success", fingerprint, 100
             )
         )
         self.assertTrue(
@@ -1607,6 +1645,12 @@ class RequestedReviewExecutorTests(unittest.TestCase):
                 approved["context"],
                 "success",
                 fingerprint,
+                102,
+            )
+        )
+        self.assertFalse(
+            MODULE.latest_status_matches_projection(
+                [approved], approved["context"], "success", fingerprint, 102
             )
         )
 
@@ -1884,53 +1928,52 @@ class RequestedReviewExecutorTests(unittest.TestCase):
 
     def test_active_writer_observation_is_exact_head_scoped(self):
         writer_name = "QIK-VRT autonomous bounded self-heal"
-        runs = [
-            {
-                "id": 901,
-                "name": writer_name,
-                "status": "queued",
-                "head_sha": "e" * 40,
-                "workflow_id": 7001,
-                "path": ".github/workflows/qikvrt_autonomous_self_heal.yml",
-                "event": "schedule",
-                "run_number": 1,
-                "run_attempt": 1,
-            },
-            {
-                "id": 902,
-                "name": writer_name,
-                "status": "queued",
-                "head_sha": MAIN_SHA,
-                "workflow_id": 7001,
-                "path": ".github/workflows/qikvrt_autonomous_self_heal.yml",
-                "event": "workflow_dispatch",
-                "run_number": 2,
-                "run_attempt": 1,
-            },
-            {
-                "id": 903,
-                "name": writer_name,
-                "status": "in_progress",
-                "head_sha": HEAD_SHA,
-                "workflow_id": 7001,
-                "path": ".github/workflows/qikvrt_autonomous_self_heal.yml",
-                "event": "pull_request",
-                "run_number": 3,
-                "run_attempt": 1,
-            },
-            {
-                "id": 999,
-                "name": writer_name,
-                "status": "in_progress",
-                "head_sha": MAIN_SHA,
-                "workflow_id": 7001,
-                "path": ".github/workflows/qikvrt_autonomous_self_heal.yml",
-                "event": "workflow_dispatch",
-                "run_number": 4,
-                "run_attempt": 1,
-            },
-        ]
-        with mock.patch.object(MODULE, "_gh_runs", return_value=runs) as gh_runs:
+        runs_by_head = {
+            MAIN_SHA: [
+                {
+                    "id": 902,
+                    "name": writer_name,
+                    "status": "queued",
+                    "head_sha": MAIN_SHA,
+                    "workflow_id": 7001,
+                    "path": ".github/workflows/qikvrt_autonomous_self_heal.yml",
+                    "event": "workflow_dispatch",
+                    "run_number": 2,
+                    "run_attempt": 1,
+                },
+                {
+                    "id": 999,
+                    "name": writer_name,
+                    "status": "in_progress",
+                    "head_sha": MAIN_SHA,
+                    "workflow_id": 7001,
+                    "path": ".github/workflows/qikvrt_autonomous_self_heal.yml",
+                    "event": "workflow_dispatch",
+                    "run_number": 4,
+                    "run_attempt": 1,
+                },
+            ],
+            HEAD_SHA: [
+                {
+                    "id": 903,
+                    "name": writer_name,
+                    "status": "in_progress",
+                    "head_sha": HEAD_SHA,
+                    "workflow_id": 7001,
+                    "path": ".github/workflows/qikvrt_autonomous_self_heal.yml",
+                    "event": "pull_request",
+                    "run_number": 3,
+                    "run_attempt": 1,
+                }
+            ],
+        }
+
+        def gh_one(path):
+            head = path.split("head_sha=", 1)[1].split("&", 1)[0]
+            rows = runs_by_head[head]
+            return {"total_count": len(rows), "workflow_runs": rows}
+
+        with mock.patch.object(MODULE, "_gh_one", side_effect=gh_one) as gh_one_mock:
             observed = MODULE._active_writer_observation(
                 "example/qik-vrt",
                 999,
@@ -1939,8 +1982,73 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             )
 
         self.assertEqual([item["id"] for item in observed], [902, 903])
-        self.assertNotIn("e" * 40, {item["head_sha"] for item in observed})
-        self.assertEqual(gh_runs.call_count, len(MODULE.ACTIVE_WRITER_STATES))
+        self.assertEqual(
+            gh_one_mock.call_args_list,
+            [
+                mock.call(
+                    f"repos/example/qik-vrt/actions/runs?head_sha={MAIN_SHA}&per_page=100"
+                ),
+                mock.call(
+                    f"repos/example/qik-vrt/actions/runs?head_sha={HEAD_SHA}&per_page=100"
+                ),
+            ],
+        )
+
+    def test_active_writer_observation_rejects_incomplete_exact_head_page(self):
+        with mock.patch.object(
+            MODULE,
+            "_gh_one",
+            return_value={
+                "total_count": 101,
+                "workflow_runs": [{"head_sha": MAIN_SHA}] * 100,
+            },
+        ) as gh_one:
+            with self.assertRaisesRegex(
+                MODULE.ReviewObservationError,
+                "exact-head workflow-run page is incomplete",
+            ):
+                MODULE._active_writer_observation(
+                    "example/qik-vrt",
+                    999,
+                    {"QIK-VRT autonomous bounded self-heal"},
+                    {MAIN_SHA, HEAD_SHA},
+                )
+
+        gh_one.assert_called_once_with(
+            f"repos/example/qik-vrt/actions/runs?head_sha={MAIN_SHA}&per_page=100"
+        )
+
+    def test_active_writer_observation_rejects_response_outside_exact_head(self):
+        with mock.patch.object(
+            MODULE,
+            "_gh_one",
+            return_value={
+                "total_count": 1,
+                "workflow_runs": [{"head_sha": "e" * 40}],
+            },
+        ):
+            with self.assertRaisesRegex(
+                MODULE.ReviewObservationError,
+                "escaped exact-head binding",
+            ):
+                MODULE._active_writer_observation(
+                    "example/qik-vrt",
+                    999,
+                    {"QIK-VRT autonomous bounded self-heal"},
+                    {MAIN_SHA},
+                )
+
+    def test_active_writer_observation_rejects_unbound_repository(self):
+        with self.assertRaisesRegex(
+            MODULE.ReviewObservationError,
+            "repository binding",
+        ):
+            MODULE._active_writer_observation(
+                "example/qik-vrt?head_sha=wrong",
+                999,
+                {"QIK-VRT autonomous bounded self-heal"},
+                {MAIN_SHA},
+            )
 
     def test_active_writer_observation_rejects_unbound_head_set(self):
         with self.assertRaisesRegex(
@@ -1977,12 +2085,23 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertNotIn("inputs.", text)
         self.assertIn("GITHUB_EVENT_PATH", text)
         self.assertIn("event_payload_sha256", text)
+        self.assertIn("event_payload=payload", text)
         self.assertIn("qikvrt-review-event-context.json", text)
         self.assertIn("--event-context-file /tmp/qikvrt-review-event-context.json", text)
         self.assertIn("EXPECTED_SELECTOR_HEAD", text)
         self.assertIn('--expected-head "$EXPECTED_SELECTOR_HEAD"', text)
         self.assertNotIn("if not people and not teams", text)
-        self.assertIn("if: github.ref == 'refs/heads/main'", text)
+        self.assertIn("github.ref == 'refs/heads/main'", text)
+        self.assertIn("github.event_name == 'pull_request_review'", text)
+        self.assertIn("github.event_name == 'pull_request_review_comment'", text)
+        self.assertIn("github.event.pull_request.base.ref == 'main'", text)
+        self.assertIn(
+            "github.event.pull_request.head.repo.full_name == github.repository",
+            text,
+        )
+        self.assertIn("queue: max", text)
+        self.assertIn("cancel-in-progress: false", text)
+        self.assertNotIn("queue: single", text)
         self.assertIn("ref: main", text)
         self.assertIn("persist-credentials: false", text)
         self.assertIn('"--no-ext-diff", "--no-textconv", "--no-renames"', core)
@@ -2027,7 +2146,11 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn("blob_at(diff_path,commit) != _pretty_json_bytes(transport)", text)
         self.assertIn("'parents':[]", text)
         self.assertIn("pre-ledger-cas", text)
-        self.assertIn("post-ledger-cas", text)
+        self.assertIn("pre-ledger-initialization", text)
+        self.assertNotIn("pre-ledger-read", text)
+        self.assertNotIn("post-ledger-initialization", text)
+        self.assertNotIn("duplicate-ledger-readback", text)
+        self.assertNotIn("post-ledger-cas", text)
         self.assertIn("actions: read", text)
         self.assertIn("'--mode','ledger-history'", text)
         self.assertIn("projection_current", text)
@@ -2039,11 +2162,32 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertNotIn("review_queue_intent", core)
         self.assertNotIn("review_queue_ack", core)
         self.assertIn("EXACT_EVENT_SUCCESSOR_REOBSERVATION_REQUIRED_", text)
+        self.assertIn("SELF_MESH_REVIEW_COMMENT_EVENT", core)
+        self.assertIn("_is_own_mesh_review_comment_event", core)
         self.assertIn("_historical_receipt_binding", core)
         self.assertIn("REOBSERVATION_PROGRESS_FIELDS", core)
         self.assertIn("LIVE_STATUS_MARKER", core)
+        self.assertIn("UNIVERSAL_LIVE_SURFACE_MARKER", core)
+        self.assertIn("persistence_eligible", core)
+        self.assertIn("post-ledger-projection-readback", text)
+        self.assertNotIn("pre-projection", text)
         self.assertIn("pre-review-comment", text)
+        self.assertIn("pre-status", text)
         self.assertIn("post-status", text)
+        self.assertIn("--mode strict", text)
+        self.assertIn("record_projection_hold", text)
+        self.assertIn("steps.decision.outputs.persistence_eligible == 'true'", text)
+        self.assertIn("steps.ledger.outputs.deferred != 'true'", text)
+        phase_order = [
+            "post-ledger-projection-readback",
+            "pre-review-comment",
+            "gh api --method POST \"repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews\"",
+            "post-review-comment",
+            "pre-status",
+            "gh api --method POST \"repos/${REPOSITORY}/statuses/${EXPECTED_HEAD}\"",
+            "post-status",
+        ]
+        self.assertEqual(phase_order, sorted(phase_order, key=text.index))
         self.assertIn("event=COMMENT", text)
         self.assertNotIn("event=APPROVE", text)
         self.assertNotIn("event=REQUEST_CHANGES", text)
@@ -2052,6 +2196,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn("if-no-files-found: error", text)
         self.assertIn("include-hidden-files: true", text)
         self.assertIn("latest_status_matches_projection", text)
+        self.assertIn("'projection_permitted':True", text)
         self.assertIn("D0: ${{ steps.ledger.outputs.d0 }}", text)
         self.assertIn(
             "NEXT_ACTION: ${{ steps.ledger.outputs.next_action }}",
@@ -2067,6 +2212,9 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn("for delay in 0 15 45", text)
         self.assertIn("API rate limit exceeded for installation.", text)
         self.assertIn("rate-limit-exhausted.json", text)
+        self.assertIn("rate-limit-hold-status.json", text)
+        self.assertIn("state=pending", text)
+        self.assertIn("HOLD_UNVERIFIED; D0=2; reason=GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED", text)
         self.assertIn("GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED", text)
         self.assertIn("REOBSERVE_ON_NEXT_NATIVE_REPOSITORY_EVENT", text)
         self.assertIn("observation_complete", text)
@@ -2329,6 +2477,24 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             scheduled["first_blocker"], "SCHEDULED_OR_MANUAL_WORKFLOW_RUN_FORBIDDEN"
         )
 
+        synthetic_child = MODULE.select_review_subject(
+            repository="example/qik-vrt",
+            requested_pr="",
+            event_pr="",
+            event_name="workflow_run",
+            expected_head=HEAD_SHA,
+            workflow_event="workflow_dispatch",
+            workflow_prs=same_repository_event,
+            fetch_pull_request=lambda number: self.fail(
+                "a synthetic dispatch child must not fetch a pull request"
+            ),
+        )
+        self.assertEqual(synthetic_child["state"], "INELIGIBLE_EVENT_TARGET")
+        self.assertEqual(
+            synthetic_child["first_blocker"],
+            "SCHEDULED_OR_MANUAL_WORKFLOW_RUN_FORBIDDEN",
+        )
+
         drifted = MODULE.select_review_subject(
             repository="example/qik-vrt",
             requested_pr="",
@@ -2422,6 +2588,315 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertEqual(result["state"], "CANDIDATE")
         self.assertEqual(result["event_source"], "PULL_REQUEST_EVENT")
         self.assertEqual(result["expected_head"], HEAD_SHA)
+
+    def test_pull_request_review_comment_selects_one_exact_subject(self):
+        result = MODULE.select_review_subject(
+            repository="example/qik-vrt",
+            requested_pr="",
+            event_pr="867",
+            event_name="pull_request_review_comment",
+            expected_head=HEAD_SHA,
+            workflow_event="",
+            workflow_prs=[],
+            fetch_pull_request=lambda number: self.selector_pr(number=number),
+        )
+        self.assertEqual(result["state"], "CANDIDATE")
+        self.assertEqual(result["event_source"], "PULL_REQUEST_EVENT")
+
+    def mesh_review_comment_payload(self):
+        return {
+            "action": "submitted",
+            "sender": {"login": "github-actions[bot]"},
+            "pull_request": self.selector_pr(),
+            "review": {
+                "user": {"login": "github-actions[bot]"},
+                "state": "COMMENTED",
+                "commit_id": HEAD_SHA,
+                "body": (
+                    f"<!-- {MODULE.REVIEW_MARKER} head={HEAD_SHA} "
+                    f"tree={HEAD_TREE_SHA} fingerprint={'f' * 64} "
+                    "disposition=APPROVE -->\n"
+                    "automated technical disposition"
+                ),
+            },
+        }
+
+    def test_exact_own_technical_review_comment_is_not_new_intake(self):
+        result = MODULE.select_review_subject(
+            repository="example/qik-vrt",
+            requested_pr="",
+            event_pr="867",
+            event_name="pull_request_review",
+            expected_head=HEAD_SHA,
+            workflow_event="",
+            workflow_prs=[],
+            event_payload=self.mesh_review_comment_payload(),
+            fetch_pull_request=lambda number: self.fail(
+                "the exact self-comment must not fetch live pull-request state"
+            ),
+        )
+        self.assertEqual(result["state"], "INELIGIBLE_EVENT_TARGET")
+        self.assertEqual(
+            result["first_blocker"], "SELF_MESH_REVIEW_COMMENT_EVENT"
+        )
+        self.assertFalse(result["review_execution"])
+        self.assertEqual(result["external_effect"], "NONE")
+        self.assertEqual(
+            result["completion_claims"],
+            {"PASS": False, "FINAL_PASS": False, "EFFECT_ACK_DONE": False, "MERGE": False},
+        )
+
+    def test_near_miss_technical_review_comments_remain_external_intake(self):
+        variants: dict[str, object] = {
+            "other-action": ("action", "edited"),
+            "other-sender": ("sender", {"login": "other-bot[bot]"}),
+            "other-reviewer": ("review.user", {"login": "other-bot[bot]"}),
+            "decisive-state": ("review.state", "APPROVED"),
+            "wrong-commit": ("review.commit_id", "a" * 40),
+            "embedded-marker": (
+                "review.body",
+                "ordinary comment\n" + self.mesh_review_comment_payload()["review"]["body"],
+            ),
+            "foreign-payload-pr": (
+                "pull_request.head.repo",
+                {"full_name": "other/qik-vrt"},
+            ),
+        }
+        for name, change in variants.items():
+            with self.subTest(name=name):
+                path, value = change
+                payload = copy.deepcopy(self.mesh_review_comment_payload())
+                target = payload
+                pieces = str(path).split(".")
+                for piece in pieces[:-1]:
+                    target = target[piece]
+                target[pieces[-1]] = value
+                calls: list[int] = []
+                result = MODULE.select_review_subject(
+                    repository="example/qik-vrt",
+                    requested_pr="",
+                    event_pr="867",
+                    event_name="pull_request_review",
+                    expected_head=HEAD_SHA,
+                    workflow_event="",
+                    workflow_prs=[],
+                    event_payload=payload,
+                    fetch_pull_request=lambda number: (
+                        calls.append(number) or self.selector_pr(number=number)
+                    ),
+                )
+                self.assertEqual(result["state"], "CANDIDATE")
+                self.assertEqual(calls, [867])
+
+    def delegated_account_review_payload(self):
+        return {
+            "action": "submitted",
+            "repository": {"full_name": "example/qik-vrt"},
+            "sender": {"login": "Goldkelch", "type": "User"},
+            "pull_request": self.selector_pr(
+                base={"ref": "main", "repo": {"full_name": "example/qik-vrt"}},
+                user={"login": "ingolf-lohmann", "type": "User"},
+            ),
+            "review": {
+                "user": {"login": "Goldkelch", "type": "User"},
+                "state": "APPROVED",
+                "commit_id": HEAD_SHA,
+                "body": (
+                    f"<!-- {MODULE.DELEGATED_ACCOUNT_REVIEW_MARKER} "
+                    f"fingerprint={'e' * 64} head={HEAD_SHA} tree={HEAD_TREE_SHA} "
+                    "event=APPROVE -->\n"
+                    "QIKVRT delegated native-account review."
+                ),
+            },
+        }
+
+    def test_exact_delegated_account_review_is_not_new_technical_intake(self):
+        result = MODULE.select_review_subject(
+            repository="example/qik-vrt",
+            requested_pr="",
+            event_pr="867",
+            event_name="pull_request_review",
+            expected_head=HEAD_SHA,
+            workflow_event="",
+            workflow_prs=[],
+            event_payload=self.delegated_account_review_payload(),
+            fetch_pull_request=lambda number: self.fail(
+                "the exact delegated-account review must not fetch live pull-request state"
+            ),
+        )
+        self.assertEqual(result["state"], "INELIGIBLE_EVENT_TARGET")
+        self.assertEqual(
+            result["first_blocker"], "SELF_DELEGATED_ACCOUNT_REVIEW_EVENT"
+        )
+        self.assertEqual(
+            result["event_source"], "TRUSTED_DELEGATED_ACCOUNT_REVIEW_EVENT"
+        )
+        self.assertFalse(result["review_execution"])
+        self.assertFalse(result["review_observation_started"])
+        self.assertEqual(result["external_effect"], "NONE")
+        self.assertEqual(
+            result["completion_claims"],
+            {"PASS": False, "FINAL_PASS": False, "EFFECT_ACK_DONE": False, "MERGE": False},
+        )
+
+    def test_near_miss_delegated_account_reviews_remain_external_intake(self):
+        variants: dict[str, object] = {
+            "other-action": ("action", "edited"),
+            "foreign-event-repository": ("repository.full_name", "other/qik-vrt"),
+            "foreign-base-repository": (
+                "pull_request.base.repo.full_name",
+                "other/qik-vrt",
+            ),
+            "foreign-payload-pr": (
+                "pull_request.head.repo",
+                {"full_name": "other/qik-vrt"},
+            ),
+            "sender-reviewer-mismatch": (
+                "sender.login",
+                "ingolf-lohmann",
+            ),
+            "unconfigured-reviewer": ("review.user.login", "other-reviewer"),
+            "non-user-sender": ("sender.type", "Bot"),
+            "non-user-reviewer": ("review.user.type", "Bot"),
+            "self-review-author": ("pull_request.user.login", "Goldkelch"),
+            "wrong-state": ("review.state", "CHANGES_REQUESTED"),
+            "wrong-commit": ("review.commit_id", "a" * 40),
+            "wrong-marker-head": (
+                "review.body",
+                self.delegated_account_review_payload()["review"]["body"].replace(
+                    f"head={HEAD_SHA}", f"head={'a' * 40}"
+                ),
+            ),
+            "invalid-marker-tree": (
+                "review.body",
+                self.delegated_account_review_payload()["review"]["body"].replace(
+                    f"tree={HEAD_TREE_SHA}", "tree=not-a-tree"
+                ),
+            ),
+            "wrong-marker-event": (
+                "review.body",
+                self.delegated_account_review_payload()["review"]["body"].replace(
+                    "event=APPROVE", "event=REQUEST_CHANGES"
+                ),
+            ),
+            "embedded-marker": (
+                "review.body",
+                "ordinary reviewer input\n"
+                + self.delegated_account_review_payload()["review"]["body"],
+            ),
+        }
+        for name, change in variants.items():
+            with self.subTest(name=name):
+                path, value = change
+                payload = copy.deepcopy(self.delegated_account_review_payload())
+                target = payload
+                pieces = str(path).split(".")
+                for piece in pieces[:-1]:
+                    target = target[piece]
+                target[pieces[-1]] = value
+                calls: list[int] = []
+                result = MODULE.select_review_subject(
+                    repository="example/qik-vrt",
+                    requested_pr="",
+                    event_pr="867",
+                    event_name="pull_request_review",
+                    expected_head=HEAD_SHA,
+                    workflow_event="",
+                    workflow_prs=[],
+                    event_payload=payload,
+                    fetch_pull_request=lambda number: (
+                        calls.append(number) or self.selector_pr(number=number)
+                    ),
+                )
+                self.assertEqual(result["state"], "CANDIDATE")
+                self.assertEqual(calls, [867])
+
+    def live_surface_issue_comment_payload(self):
+        return {
+            "action": "created",
+            "sender": {"login": "github-actions[bot]"},
+            "issue": {
+                "number": 867,
+                "pull_request": {
+                    "url": "https://api.github.com/repos/example/qik-vrt/pulls/867"
+                },
+            },
+            "comment": {
+                "user": {"login": "github-actions[bot]"},
+                "body": (
+                    f"<!-- {MODULE.UNIVERSAL_LIVE_SURFACE_MARKER} -->\n"
+                    "## QIKVRT Universal Terminal — live mirror surface"
+                ),
+            },
+        }
+
+    def test_exact_trusted_live_surface_issue_comment_is_not_new_intake(self):
+        result = MODULE.select_review_subject(
+            repository="example/qik-vrt",
+            requested_pr="",
+            event_pr="867",
+            event_name="issue_comment",
+            expected_head="",
+            workflow_event="",
+            workflow_prs=[],
+            event_payload=self.live_surface_issue_comment_payload(),
+            fetch_pull_request=lambda number: self.fail(
+                "the exact live-surface journal must not fetch live pull-request state"
+            ),
+        )
+
+        self.assertEqual(result["state"], "INELIGIBLE_EVENT_TARGET")
+        self.assertEqual(
+            result["first_blocker"], "SELF_LIVE_SURFACE_ISSUE_COMMENT_EVENT"
+        )
+        self.assertEqual(
+            result["event_source"], "TRUSTED_LIVE_SURFACE_ISSUE_COMMENT"
+        )
+        self.assertFalse(result["review_execution"])
+        self.assertFalse(result["review_observation_started"])
+        self.assertEqual(result["external_effect"], "NONE")
+
+    def test_near_miss_live_surface_issue_comments_remain_external_intake(self):
+        variants: dict[str, object] = {
+            "other-action": ("action", "labeled"),
+            "human": ("sender", {"login": "Goldkelch"}),
+            "other-bot": ("comment.user", {"login": "other-bot[bot]"}),
+            "embedded-marker": (
+                "comment.body",
+                "ordinary reviewer input\n"
+                + self.live_surface_issue_comment_payload()["comment"]["body"],
+            ),
+            "foreign-pr-url": (
+                "issue.pull_request.url",
+                "https://api.github.com/repos/other/qik-vrt/pulls/867",
+            ),
+            "mismatched-issue-number": ("issue.number", 868),
+        }
+        for name, change in variants.items():
+            with self.subTest(name=name):
+                path, value = change
+                payload = copy.deepcopy(self.live_surface_issue_comment_payload())
+                target = payload
+                pieces = str(path).split(".")
+                for piece in pieces[:-1]:
+                    target = target[piece]
+                target[pieces[-1]] = value
+                calls: list[int] = []
+                result = MODULE.select_review_subject(
+                    repository="example/qik-vrt",
+                    requested_pr="",
+                    event_pr="867",
+                    event_name="issue_comment",
+                    expected_head="",
+                    workflow_event="",
+                    workflow_prs=[],
+                    event_payload=payload,
+                    fetch_pull_request=lambda number: (
+                        calls.append(number) or self.selector_pr(number=number)
+                    ),
+                )
+                self.assertEqual(result["state"], "CANDIDATE")
+                self.assertEqual(calls, [867])
 
 
 if __name__ == "__main__":

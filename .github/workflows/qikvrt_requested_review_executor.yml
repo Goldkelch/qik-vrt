@@ -7,7 +7,9 @@ on:
   pull_request_target:
     types: [opened, edited, converted_to_draft, review_requested, review_request_removed, labeled, unlabeled, synchronize, ready_for_review, reopened]
   pull_request_review:
-    types: [submitted]
+    types: [submitted, edited, dismissed]
+  pull_request_review_comment:
+    types: [created, edited, deleted]
   issue_comment:
     types: [created, edited, deleted]
   workflow_run:
@@ -17,7 +19,6 @@ on:
       - "QIKVRT Collective Proposal Review"
       - "QIK-VRT global claim completion"
       - "QIKVRT Batch-003 remaining subject disposition"
-      - "QIKVRT code-owner review observer"
     types: [completed]
 
 permissions:
@@ -29,15 +30,25 @@ permissions:
   statuses: write
 
 concurrency:
-  # Serialize native events only for the same PR subject. Cross-PR review
-  # observations must not starve behind a repository-global queue; the shared
-  # ledger itself remains protected by its non-force fast-forward CAS.
-  group: qikvrt-requested-review-executor-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  # All subjects append to one FF-CAS ledger, so retain one active writer.
+  # Do not replace a pending native delivery for PR A with a later event for
+  # PR B: GitHub's bounded `max` queue retains up to 100 pending deliveries.
+  # This is ledger admission only, not an Actions priority or durable broker.
+  group: qikvrt-requested-review-executor-${{ github.repository }}
+  queue: max
   cancel-in-progress: false
 
 jobs:
   review-one:
-    if: github.ref == 'refs/heads/main'
+    # pull_request_review runs carry refs/pull/<n>/merge, not refs/heads/main.
+    # The executor still evaluates trusted main only and accepts only a
+    # same-repository main PR in its exact selector.
+    if: >-
+      github.ref == 'refs/heads/main' ||
+      ((github.event_name == 'pull_request_review' ||
+        github.event_name == 'pull_request_review_comment') &&
+       github.event.pull_request.base.ref == 'main' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     env:
@@ -135,6 +146,7 @@ jobs:
               workflow_event=workflow_event,
               workflow_prs=workflow_prs,
               fetch_pull_request=one,
+              event_payload=payload,
           )
           print(json.dumps(value,sort_keys=True))
 
@@ -237,12 +249,34 @@ jobs:
             fi
           done
           if [ "$observed" != true ]; then
+            # This is one bounded, non-positive availability marker only.  It
+            # intentionally has no evidence fingerprint because the exact
+            # read-only snapshot did not complete; it can only supersede an
+            # older same-head technical success, never authorize anything.
+            rate_limit_status="$root/rate-limit-hold-status.json"
+            status_publication=UNAVAILABLE
+            if gh api --method POST "repos/${REPOSITORY}/statuses/${EXPECTED_SELECTOR_HEAD}" \
+              -f state=pending \
+              -f context="$STATUS_CONTEXT" \
+              -f description="HOLD_UNVERIFIED; D0=2; reason=GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED; run=${GITHUB_RUN_ID}" \
+              -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+              > "$rate_limit_status"; then
+              status_publication=POSTED
+            else
+              jq -n \
+                --arg repository "$REPOSITORY" \
+                --arg head "$EXPECTED_SELECTOR_HEAD" \
+                --arg context "$STATUS_CONTEXT" \
+                '{schema:"qikvrt_requested_review_rate_limit_status_attempt_v1",repository:$repository,head_sha:$head,status_context:$context,status_state:"pending",publication:"UNAVAILABLE",external_effect:"NONE"}' \
+                > "$rate_limit_status"
+            fi
             jq -n \
               --arg repository "$REPOSITORY" \
               --argjson pr "$PR_NUMBER" \
               --arg head "$EXPECTED_SELECTOR_HEAD" \
               --arg run "$CURRENT_RUN_ID" \
-              '{schema:"qikvrt_requested_review_rate_limit_hold_v1",state:"HOLD_UNVERIFIED",verification_state:"HOLD_UNVERIFIED",repository:$repository,pr_number:$pr,head_sha:$head,first_blocker:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",detail:"bounded GitHub installation rate-limit backoff exhausted before exact review observation",derived_action:{d0:2,state:"REOBSERVE",next_action:"REOBSERVE_ON_NEXT_NATIVE_REPOSITORY_EVENT",productive_effect:false,effect_ack:"NOT_REQUIRED"},hold_reason:{reason_code:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",reason:"The GitHub App installation quota prevented an exact read-only review observation.",subject:{repository:$repository,kind:"pull_request",number:$pr,head_sha:$head},evidence_refs:[("actions/run/"+$run),("event/selector-head/"+$head)],owner:{role:"EXACT_SUBJECT_OBSERVER",actor:"github-actions[bot]"},retry_condition:{event:"native_repository_event",predicate:"the GitHub App installation quota no longer prevents exact observation of the same pull-request head"},next_action:"REOBSERVE_ON_NEXT_NATIVE_REPOSITORY_EVENT",d0:2},completion_claims:{PASS:false,FINAL_PASS:false,EFFECT_ACK_DONE:false,MERGE:false}}' \
+              --arg status_publication "$status_publication" \
+              '{schema:"qikvrt_requested_review_rate_limit_hold_v1",state:"HOLD_UNVERIFIED",verification_state:"HOLD_UNVERIFIED",repository:$repository,pr_number:$pr,head_sha:$head,first_blocker:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",detail:"bounded GitHub installation rate-limit backoff exhausted before exact review observation",derived_action:{d0:2,state:"REOBSERVE",next_action:"REOBSERVE_ON_NEXT_NATIVE_REPOSITORY_EVENT",productive_effect:false,effect_ack:"NOT_REQUIRED"},hold_reason:{reason_code:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",reason:"The GitHub App installation quota prevented an exact read-only review observation.",subject:{repository:$repository,kind:"pull_request",number:$pr,head_sha:$head},evidence_refs:[("actions/run/"+$run),("event/selector-head/"+$head)],owner:{role:"EXACT_SUBJECT_OBSERVER",actor:"github-actions[bot]"},retry_condition:{event:"native_repository_event",predicate:"the GitHub App installation quota no longer prevents exact observation of the same pull-request head"},next_action:"REOBSERVE_ON_NEXT_NATIVE_REPOSITORY_EVENT",d0:2},status_projection:{context:"QIKVRT requested review execution",state:"pending",publication:$status_publication,authorization:false},completion_claims:{PASS:false,FINAL_PASS:false,EFFECT_ACK_DONE:false,MERGE:false}}' \
               > "$rate_limit_marker"
             cat "$rate_limit_marker"
             {
@@ -253,6 +287,7 @@ jobs:
               echo 'base='
               echo 'fingerprint='
               echo 'ledger_path='
+              echo 'persistence_eligible=false'
               echo 'd0=2'
               echo 'next_action=REOBSERVE_ON_NEXT_NATIVE_REPOSITORY_EVENT'
               echo 'blocker=GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED'
@@ -271,13 +306,17 @@ jobs:
           print(f"base={value.get('base_sha') or ''}")
           print(f"fingerprint={value.get('evidence_fingerprint') or ''}")
           print(f"ledger_path={value.get('ledger_path') or ''}")
+          print(
+              "persistence_eligible="
+              + ('true' if value.get('persistence_eligible') is True else 'false')
+          )
           print(f"d0={action['d0']}")
           print(f"next_action={action['next_action']}")
           print(f"blocker={value.get('first_blocker') or ''}")
           PY
 
       - name: Persist exact receipt and diff by ledger fast-forward CAS
-        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE' && steps.decision.outputs.observation_complete == 'true'
+        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE' && steps.decision.outputs.observation_complete == 'true' && steps.decision.outputs.persistence_eligible == 'true'
         id: ledger
         env:
           PR_NUMBER: ${{ steps.select.outputs.pr }}
@@ -417,6 +456,7 @@ jobs:
           report={
               'schema':'qikvrt_mesh_review_ledger_write_v1',
               'state':'HOLD_UNVERIFIED','persisted':False,'duplicate':False,
+              'deferred':False,
               'ledger_commit':None,'first_blocker':None,'d0':1,
               'next_action':'HOLD_LEDGER_PERSISTENCE',
               'projection_current':True,
@@ -457,10 +497,6 @@ jobs:
           try:
               if not receipt_path or not diff_path or not receipt.get('evidence_fingerprint'):
                   raise LedgerHold('review receipt lacks a persistable exact evidence fingerprint')
-              report['projection_current'] = (
-                  verify('pre-ledger-read').get('exact') is True
-                  and report['projection_current']
-              )
               ref_path=f'repos/{repo}/git/ref/heads/{short_ref}'
               ref=gh('GET',ref_path,allow_404=True)
 
@@ -502,10 +538,6 @@ jobs:
                           or transport_at(commit) != diff_bytes
                       ):
                           raise LedgerHold('LEDGER_BLOB_READBACK_MISMATCH')
-                      report['projection_current'] = (
-                          verify('post-ledger-initialization').get('exact') is True
-                          and report['projection_current']
-                      )
                       report.update(
                           persisted=True,duplicate=False,ledger_commit=commit,
                           d0=receipt['derived_action']['d0'],
@@ -529,10 +561,6 @@ jobs:
                           or transport_at(ledger_head) != diff_bytes
                       ):
                           raise LedgerHold('LEDGER_BLOB_READBACK_MISMATCH')
-                      report['projection_current'] = (
-                          verify('duplicate-ledger-readback').get('exact') is True
-                          and report['projection_current']
-                      )
                       report.update(
                           persisted=True,duplicate=True,ledger_commit=ledger_head,
                           d0=0,next_action='NOOP_IDENTICAL_RECEIPT_ALREADY_PERSISTED',
@@ -566,10 +594,6 @@ jobs:
                           or transport_at(commit) != diff_bytes
                       ):
                           raise LedgerHold('LEDGER_BLOB_READBACK_MISMATCH')
-                      report['projection_current'] = (
-                          verify('post-ledger-cas').get('exact') is True
-                          and report['projection_current']
-                      )
                       report.update(
                           persisted=True,duplicate=False,ledger_commit=commit,
                           d0=receipt['derived_action']['d0'],
@@ -578,12 +602,27 @@ jobs:
                   else:
                       raise LedgerHold('INVALID_LEDGER_APPEND_PLAN')
           except Exception as exc:
-              report['first_blocker']=str(exc)[:500]
+              blocker=str(exc)[:500]
+              report['first_blocker']=blocker
+              # A distinct native event, rather than an Action-created
+              # successor, must observe a workflow-progress successor.  No
+              # ledger mutation was attempted on this path, so it is a
+              # durable fail-closed hold rather than a false CAS failure.
+              if blocker.startswith(
+                  'EXACT_EVENT_SUCCESSOR_REOBSERVATION_REQUIRED_'
+              ):
+                  report.update(
+                      deferred=True,
+                      projection_current=False,
+                      d0=2,
+                      next_action='REOBSERVE_ON_NEXT_NATIVE_REPOSITORY_EVENT',
+                  )
 
           (root/'ledger-write.json').write_text(json.dumps(report,sort_keys=True,indent=2)+'\n',encoding='utf-8')
           with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as output:
               print(f"persisted={'true' if report['persisted'] else 'false'}",file=output)
               print(f"duplicate={'true' if report['duplicate'] else 'false'}",file=output)
+              print(f"deferred={'true' if report['deferred'] else 'false'}",file=output)
               print(f"commit={report['ledger_commit'] or ''}",file=output)
               print(f"d0={report['d0']}",file=output)
               print(f"next_action={report['next_action']}",file=output)
@@ -611,6 +650,8 @@ jobs:
         run: |
           set -euo pipefail
           root=.qikvrt/mesh-review
+          projected_review_comment=false
+          projected_status=false
           reobserve() {
             phase="$1"
             python3 -B tools/qikvrt_requested_review_executor.py verify \
@@ -621,12 +662,82 @@ jobs:
               --writer-workflows-json "$WRITER_WORKFLOWS_JSON" \
               --receipt "$root/review.json" \
               --expected-diff "$root/review.diff" \
-              --output-dir "$root/reobservations/$phase"
+              --output-dir "$root/reobservations/$phase" \
+              --mode strict
           }
-          reobserve pre-projection
+          record_projection_hold() {
+            phase="$1"
+            HOLD_PHASE="$phase" \
+            PROJECTED_REVIEW_COMMENT="$projected_review_comment" \
+            PROJECTED_STATUS_EFFECT="$projected_status" \
+            python3 -B - <<'PY'
+          import json, os, pathlib
+
+          root=pathlib.Path('.qikvrt/mesh-review')
+          phase=os.environ['HOLD_PHASE']
+          report_path=root/'reobservations'/phase/'verification.json'
+          try:
+              report=json.loads(report_path.read_text(encoding='utf-8'))
+          except (OSError, json.JSONDecodeError):
+              report={}
+          blocker=report.get('first_blocker') if isinstance(report,dict) else None
+          if not isinstance(blocker,str) or not blocker:
+              blocker=f'CAUSAL_REOBSERVATION_{phase.upper()}_UNAVAILABLE'
+          value={
+              'schema':'qikvrt_mesh_review_repository_projection_v1',
+              'head_sha':os.environ['EXPECTED_HEAD'],
+              'tree_sha':os.environ['EXPECTED_TREE'],
+              'evidence_fingerprint':os.environ['FINGERPRINT'],
+              'ledger_commit':os.environ['LEDGER_COMMIT'],
+              'mesh_disposition':'HOLD',
+              'first_blocker':blocker,
+              'd0':2,
+              'next_action':'REOBSERVE_ON_NEXT_NATIVE_REPOSITORY_EVENT',
+              'projection_phase':phase,
+              'projection_permitted':False,
+              'projected_effects':{
+                  'review_comment':os.environ['PROJECTED_REVIEW_COMMENT'] == 'true',
+                  'status':os.environ['PROJECTED_STATUS_EFFECT'] == 'true',
+              },
+              'verification_state':'HOLD_UNVERIFIED',
+              'completion_claims':{
+                  'PASS':False,'FINAL_PASS':False,
+                  'EFFECT_ACK_DONE':False,'MERGE':False,
+              },
+          }
+          (root/'projection.json').write_text(
+              json.dumps(value,sort_keys=True,indent=2)+'\n',encoding='utf-8'
+          )
+          PY
+          }
+          require_exact_reobservation() {
+            phase="$1"
+            if ! reobserve "$phase"; then
+              record_projection_hold "$phase"
+              return 1
+            fi
+            if ! python3 -B - "$root/reobservations/$phase/verification.json" <<'PY'
+          import json, pathlib, sys
+          report=json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
+          raise SystemExit(0 if report.get('exact') is True else 1)
+          PY
+            then
+              record_projection_hold "$phase"
+              return 1
+            fi
+          }
+          # Full strict reobservation after the ledger mutation and before
+          # the first PR projection.  Later PR mutations retain their own
+          # strict pre- and post-mutation guards.
+          if ! require_exact_reobservation post-ledger-projection-readback; then
+            exit 0
+          fi
 
           existing_review="$(gh api --paginate "repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews?per_page=100" --jq ".[] | select(.user.login == \"github-actions[bot]\" and .state == \"COMMENTED\" and ((.body // \"\") | contains(\"fingerprint=${FINGERPRINT}\"))) | .id" | head -n 1)"
           if [ "$DISPOSITION" != WAIT ] && [ -z "$existing_review" ]; then
+            if ! require_exact_reobservation pre-review-comment; then
+              exit 0
+            fi
             python3 -B - <<'PY'
           import json, os, pathlib
           root=pathlib.Path('.qikvrt/mesh-review')
@@ -650,11 +761,13 @@ jobs:
           """
           (root/'review-body.md').write_text(body,encoding='utf-8')
           PY
-            reobserve pre-review-comment
             gh api --method POST "repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
               -f commit_id="$EXPECTED_HEAD" -f event=COMMENT \
               --raw-field body="$(cat "$root/review-body.md")" > "$root/platform-review.json"
-            reobserve post-review-comment
+            projected_review_comment=true
+            if ! require_exact_reobservation post-review-comment; then
+              exit 0
+            fi
           fi
 
           case "$DISPOSITION" in
@@ -663,7 +776,7 @@ jobs:
             *) status=failure ;;
           esac
           export PROJECTED_STATUS="$status"
-          description="Mesh ${DISPOSITION}; D0=${D0}; fp=${FINGERPRINT}"
+          description="Mesh ${DISPOSITION}; D0=${D0}; fp=${FINGERPRINT}; run=${GITHUB_RUN_ID}"
           existing_status="$(python3 -B - <<'PY'
           import json, os, subprocess
           from tools.qikvrt_requested_review_executor import latest_status_matches_projection
@@ -675,19 +788,24 @@ jobs:
           statuses=[item for page in pages for item in page]
           if latest_status_matches_projection(
               statuses,os.environ['STATUS_CONTEXT'],os.environ['PROJECTED_STATUS'],
-              os.environ['FINGERPRINT'],
+              os.environ['FINGERPRINT'],os.environ['GITHUB_RUN_ID'],
           ):
               print('latest-exact-projection')
           PY
           )"
           if [ -z "$existing_status" ]; then
-            reobserve pre-status
+            if ! require_exact_reobservation pre-status; then
+              exit 0
+            fi
             gh api --method POST "repos/${REPOSITORY}/statuses/${EXPECTED_HEAD}" \
               -f state="$status" -f context="$STATUS_CONTEXT" \
               -f description="${description:0:140}" \
               -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
               > "$root/platform-status.json"
-            reobserve post-status
+            projected_status=true
+            if ! require_exact_reobservation post-status; then
+              exit 0
+            fi
           fi
           python3 -B - <<'PY'
           import json, os, pathlib
@@ -699,6 +817,7 @@ jobs:
               'evidence_fingerprint':os.environ['FINGERPRINT'],
               'ledger_commit':os.environ['LEDGER_COMMIT'],
               'mesh_disposition':os.environ['DISPOSITION'],
+              'projection_permitted':True,
               'd0':int(os.environ['D0']),
               'next_action':os.environ['NEXT_ACTION'],
               'verification_state':'HOLD_UNVERIFIED',
@@ -718,7 +837,7 @@ jobs:
           path: .qikvrt/mesh-review
 
       - name: Enforce fail-closed ledger persistence
-        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE' && steps.decision.outputs.observation_complete == 'true' && steps.ledger.outputs.persisted != 'true'
+        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE' && steps.decision.outputs.observation_complete == 'true' && steps.decision.outputs.persistence_eligible == 'true' && steps.ledger.outputs.persisted != 'true' && steps.ledger.outputs.deferred != 'true'
         run: |
           echo 'HOLD_UNVERIFIED: exact Mesh review receipt was not persisted by FF-CAS.'
           exit 1

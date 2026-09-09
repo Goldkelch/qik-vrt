@@ -233,7 +233,10 @@ jobs:
           run=gh(f'repos/{repo}/actions/runs/{run_id}')
           trusted_path='.github/workflows/qikvrt_requested_review_executor.yml'
           workflow=gh(f'repos/{repo}/actions/workflows/qikvrt_requested_review_executor.yml')
-          allowed_events={'pull_request_target','issue_comment','workflow_run'}
+          allowed_events={
+              'pull_request_target','pull_request_review',
+              'pull_request_review_comment','issue_comment','workflow_run',
+          }
           if (
               run.get('name') != 'QIKVRT requested review executor'
               or run.get('conclusion') != 'success'
@@ -321,6 +324,7 @@ jobs:
 
       - name: Reassemble receipt from its immutable ledger commit
         if: steps.select.outputs.state == 'CANDIDATE'
+        id: receipt
         shell: bash
         env:
           PR_NUMBER: ${{ steps.select.outputs.pr }}
@@ -351,10 +355,72 @@ jobs:
           receipt="$root/artifact/review.json"
           diff="$root/artifact/review.diff"
           ledger="$root/artifact/ledger-write.json"
-          test -f "$receipt" && test -f "$diff" && test -f "$ledger"
+          projection="$root/artifact/projection.json"
+          test -f "$receipt" && test -f "$diff"
           cp "$receipt" "$root/review.json"
           cp "$diff" "$root/review.diff"
-          cp "$ledger" "$root/ledger-write.json"
+          if test -f "$ledger"; then
+            cp "$ledger" "$root/ledger-write.json"
+          fi
+          if test -f "$projection"; then
+            cp "$projection" "$root/projection.json"
+          fi
+          eligible="$(python3 -B - <<'PY'
+          import json, pathlib
+          from tools.qikvrt_required_review_gate import (
+              executor_receipt_projection_eligibility,
+          )
+
+          root=pathlib.Path('/tmp/qikvrt-native-account-review')
+          try:
+              receipt=json.loads((root/'review.json').read_text(encoding='utf-8'))
+          except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+              receipt={}
+          if not isinstance(receipt,dict):
+              receipt={}
+          ledger_path=root/'ledger-write.json'
+          ledger={}
+          if ledger_path.is_file():
+              try:
+                  ledger=json.loads(ledger_path.read_text(encoding='utf-8'))
+              except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                  ledger={}
+              if not isinstance(ledger,dict):
+                  ledger={}
+          projection_path=root/'projection.json'
+          if projection_path.is_file():
+              try:
+                  projection=json.loads(projection_path.read_text(encoding='utf-8'))
+              except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                  projection={}
+              if not isinstance(projection,dict):
+                  projection={}
+          else:
+              projection=None
+          try:
+              selection=json.loads((root/'selection.json').read_text(encoding='utf-8'))
+          except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+              selection={}
+          value=executor_receipt_projection_eligibility(
+              receipt,ledger,projection,selection,
+          )
+          value.update(
+              persistence_eligible=receipt.get('persistence_eligible'),
+              ledger_persisted=ledger.get('persisted'),
+              ledger_projection_current=ledger.get('projection_current'),
+          )
+          (root/'receipt-eligibility.json').write_text(
+              json.dumps(value,sort_keys=True)+'\n',encoding='utf-8'
+          )
+          print('true' if value['eligible'] else 'false')
+          PY
+          )"
+          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
+          echo "blocker=$(jq -r '.first_blocker // ""' "$root/receipt-eligibility.json")" >> "$GITHUB_OUTPUT"
+          if [ "$eligible" != true ]; then
+            cat "$root/receipt-eligibility.json"
+            exit 0
+          fi
           python3 -B - <<'PY'
           import base64, json, os, pathlib, subprocess, urllib.parse
           from tools.qikvrt_requested_review_executor import (
@@ -433,7 +499,7 @@ jobs:
           PY
 
       - name: Reobserve exact receipt before native account planning
-        if: steps.select.outputs.state == 'CANDIDATE'
+        if: steps.select.outputs.state == 'CANDIDATE' && steps.receipt.outputs.eligible == 'true'
         shell: bash
         env:
           PR_NUMBER: ${{ steps.select.outputs.pr }}
@@ -462,18 +528,28 @@ jobs:
         shell: bash
         env:
           PR_NUMBER: ${{ steps.select.outputs.pr }}
+          RECEIPT_ELIGIBLE: ${{ steps.receipt.outputs.eligible || 'false' }}
+          RECEIPT_BLOCKER: ${{ steps.receipt.outputs.blocker || 'EXECUTOR_RECEIPT_NOT_CURRENT_PERSISTED' }}
         run: |
           set -euo pipefail
           root=/tmp/qikvrt-native-account-review
-          if [ "${{ steps.select.outputs.state }}" != 'CANDIDATE' ]; then
+          if [ "${{ steps.select.outputs.state }}" != 'CANDIDATE' ] || [ "${RECEIPT_ELIGIBLE:-false}" != true ]; then
             python3 -B - <<'PY' > "$root/plan.json"
           from tools.qikvrt_native_account_review import _base_plan, _sealed
           import json, os
           print(json.dumps(_sealed(_base_plan(
               repository=os.environ['REPOSITORY'],pr_number=None,expected_base=None,
               expected_head=None,expected_tree=None,fingerprint=None,
-              first_blocker='NO_EXACT_EXECUTOR_SUBJECT',
-              detail='the completed executor run did not bind one exact candidate',
+              first_blocker=(
+                  'NO_EXACT_EXECUTOR_SUBJECT'
+                  if '${{ steps.select.outputs.state }}' != 'CANDIDATE'
+                  else os.environ['RECEIPT_BLOCKER']
+              ),
+              detail=(
+                  'the completed executor run did not bind one exact candidate'
+                  if '${{ steps.select.outputs.state }}' != 'CANDIDATE'
+                  else 'the executor artifact is not a current permitted projection, not an approval candidate'
+              ),
           )),sort_keys=True,indent=2))
           PY
           else
