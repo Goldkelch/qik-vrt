@@ -67,7 +67,6 @@ FIXED_LITERAL_NON_MAIN_PUSHES = {
     "publish_ontology_difference_article_zenodo_v3.yml": "publication/ontology-difference-reverse-engineering",
     "qikvrt_escape_stages_integrity.yml": "agent/escape-stages-batch06",
     "qikvrt_physics_bridge_integrity.yml": "agent/formalization-v2-physics-bridge-01",
-    "qikvrt_pr18_integrity_repair.yml": "infra/live-status-default-branch",
     "qikvrt_proof_persistence_integrity.yml": "agent/proof-persistence-batch05",
 }
 
@@ -155,6 +154,16 @@ class WriterInventoryTests(unittest.TestCase):
             self.assertNotEqual(branch, "main", filename)
             self.assertIn(branch, text)
             self.assertIn(f"git push origin HEAD:{branch}", text)
+
+        pr_integrity = (WORKFLOWS / "qikvrt_pr18_integrity_repair.yml").read_text(encoding="utf-8")
+        self.assertNotIn("infra/live-status-default-branch", pr_integrity)
+        self.assertIn("pull_request:", pr_integrity)
+        self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", pr_integrity)
+        self.assertIn("TARGET_REF: ${{ github.head_ref }}", pr_integrity)
+        self.assertIn("EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}", pr_integrity)
+        self.assertIn('test "$source_head" = "$EXPECTED_HEAD"', pr_integrity)
+        self.assertIn('git push origin "HEAD:refs/heads/$TARGET_REF"', pr_integrity)
+        self.assertNotIn("git push --force", pr_integrity)
 
         self_heal = (WORKFLOWS / "qikvrt_autonomous_self_heal.yml").read_text(encoding="utf-8")
         self.assertIn('branch="automation/self-heal-${CANDIDATE_ID:0:24}"', self_heal)
