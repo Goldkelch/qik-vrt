@@ -27,18 +27,22 @@ SUBJECTS=[
  {'subject_id':'SUBJECT-7fdb36aa7c07c07d','records':[{'id':21267021,'doi':'10.5281/zenodo.21267021','name':'ingolf-lohmann/qik-vrt-v2.13.4av1-node-open-multi-node.zip'}],'file':{'bytes':75962793,'md5':'ed4a71499081950a2e04afc089b6a1fe','sha256':'34d396667bf075ec9d2d87f8cd74b442ffa47537c4001fdbd8aa0ee319111244'}},
 ]
 MAX_PUBLIC=128*1024*1024;MAX_DEPTH=8;MAX_ENTRIES=120000;MAX_ENTRY=768*1024*1024;MAX_TOTAL=4*1024*1024*1024;MAX_RATIO=4000.0;MAX_RETAIN=2*1024*1024
+GET_ATTEMPTS=3;GET_BACKOFF_SECONDS=(15,45);GET_TIMEOUT_SECONDS=240
+RETRYABLE_HTTP_STATUSES={408,429}
+REPOSITORY='Goldkelch/qik-vrt';RECOVERY_SCHEMA='qikvrt_batch003_remaining_archive_probe_recovery_v1'
 TEXT_EXT={'.c','.h','.cc','.cpp','.hpp','.py','.ps1','.sh','.bat','.cmd','.md','.txt','.json','.jsonl','.yaml','.yml','.toml','.ini','.cfg','.conf','.csv','.tsv','.xml','.html','.htm','.css','.js','.mjs','.cjs','.ts','.tsx','.jsx','.tex','.bib','.lean','.lake','.sha256','.sha512','.sum','.license','.notice','.gitignore','.gitattributes','.cff'}
 TEXT_NAMES={'readme','license','notice','copying','copyright','makefile','dockerfile','ai','authors','changelog','changes','package.json','package-lock.json'}
 THIRD={'node_modules','vendor','third_party','third-party','.venv','venv','site-packages','dist-info','__pycache__','.pytest_cache','.mypy_cache','.ruff_cache','.cache','.git','coverage','target'}
 class E(RuntimeError):pass
+class TransientObservationError(E):pass
 def fail(x:str):raise E(x)
 def dig(b:bytes):return {'bytes':len(b),'md5':hashlib.md5(b,usedforsecurity=False).hexdigest(),'sha256':hashlib.sha256(b).hexdigest(),'git_blob_sha1':hashlib.sha1(f'blob {len(b)}\0'.encode()+b).hexdigest()}
 def get(url:str,accept:str,limit:int)->bytes:
  last=None
- for n in range(5):
+ for n in range(GET_ATTEMPTS):
   try:
    req=urllib.request.Request(url,headers={'Accept':accept,'User-Agent':'qikvrt-batch003-remaining-read-only-probe/1.0'})
-   with urllib.request.urlopen(req,timeout=240) as r:
+   with urllib.request.urlopen(req,timeout=GET_TIMEOUT_SECONDS) as r:
     u=urllib.parse.urlsplit(r.geturl());host=(u.hostname or '').lower()
     if u.scheme!='https' or not(host=='zenodo.org' or host.endswith('.zenodo.org')):fail(f'redirect outside Zenodo: {r.geturl()}')
     out=bytearray()
@@ -48,8 +52,14 @@ def get(url:str,accept:str,limit:int)->bytes:
      out.extend(chunk)
      if len(out)>limit:fail(f'download bound exceeded: {url}')
     return bytes(out)
-  except (urllib.error.URLError,TimeoutError,OSError) as ex:last=ex;time.sleep(2**n)
- raise E(f'GET failed {url}: {last}')
+  except urllib.error.HTTPError as ex:
+   if ex.code not in RETRYABLE_HTTP_STATUSES and not 500<=ex.code<=599:raise E(f'GET failed {url}: {ex}') from ex
+   last=ex
+   if n<len(GET_BACKOFF_SECONDS):time.sleep(GET_BACKOFF_SECONDS[n])
+  except (urllib.error.URLError,TimeoutError,OSError) as ex:
+   last=ex
+   if n<len(GET_BACKOFF_SECONDS):time.sleep(GET_BACKOFF_SECONDS[n])
+ raise TransientObservationError(f'GET failed {url}: {last}')
 def files(v:Mapping[str,Any])->list[dict[str,Any]]:
  raw=v.get('files')
  if isinstance(raw,list):return [dict(x) for x in raw if isinstance(x,Mapping)]
@@ -133,15 +143,30 @@ def record(subject:Mapping[str,Any],rec:Mapping[str,Any],cache:dict[str,dict[str
  if d['sha256'] not in cache:
   rows=[];state={'entries':0,'bytes':0};inspect_zip(b,rec['name'],0,state,rows);cache[d['sha256']]={'rows':rows,'state':state}
  return {'record_id':rid,'doi':rec['doi'],'public_name':rec['name'],**d,'payload_inventory_sha256':hashlib.sha256(json.dumps(cache[d['sha256']]['rows'],sort_keys=True,separators=(',',':')).encode()).hexdigest()}
-def main():
- ap=argparse.ArgumentParser();ap.add_argument('--output',type=pathlib.Path,required=True);a=ap.parse_args();cache={};subs=[]
+def write_receipt(path:pathlib.Path,value:Mapping[str,Any]):
+ path.parent.mkdir(parents=True,exist_ok=True);path.write_text(json.dumps(value,ensure_ascii=False,sort_keys=True,indent=2)+'\n',encoding='utf-8',newline='\n')
+def recovery_receipt(state:str,blocker:str|None,detail:str)->dict[str,Any]:
+ value={'schema':RECOVERY_SCHEMA,'state':state,'verification_state':'HOLD_UNVERIFIED' if state=='HOLD' else 'BLOCK','failure_class':blocker,'first_blocker':blocker,'detail':detail,'public_get_retry_policy':{'attempts':GET_ATTEMPTS,'backoff_seconds':list(GET_BACKOFF_SECONDS),'timeout_seconds':GET_TIMEOUT_SECONDS},'external_effect':False,'zenodo_mutation_attempted':False,'d0':2,'continuation_required':True,'next_action':'REOBSERVE_EXACT_PUBLIC_ZENODO_RECORDS_ON_A_FUTURE_CARRIER','completion_claims':{'all_remaining_public_bytes_recovered':False,'all_remaining_archives_recursively_inspected':False,'all_remaining_claims_dispositioned':False,'proof_corpus_built':False,'proof_corpus_published_on_zenodo':False,'zenodo_mutation_authorized':False,'pass':False,'final_pass':False,'effect_ack_done':False}}
+ if state=='HOLD':value['hold_reason']={'reason_code':blocker,'reason':detail,'subject':{'repository':REPOSITORY,'kind':'zenodo_record_set','identifier':'batch003-remaining-archives','head_sha':None},'evidence_refs':['tools/qikvrt_batch003_remaining_archive_probe.py','zenodo.org/api/records/21244412'],'owner':{'role':'EXACT_SUBJECT_OBSERVER','actor':'qikvrt-batch003-remaining-archive-probe'},'retry_condition':{'event':'FUTURE_FRESH_ARCHIVE_PROBE_CARRIER','predicate':'the exact immutable Zenodo record set can be reobserved without a transport failure'},'next_action':'REOBSERVE_EXACT_PUBLIC_ZENODO_RECORDS_ON_A_FUTURE_CARRIER','d0':2}
+ return value
+def observe(output:pathlib.Path)->dict[str,Any]:
+ cache={};subs=[]
  for s in SUBJECTS:
   obs=[record(s,r,cache) for r in s['records']];payload=cache[s['file']['sha256']];rows=payload['rows'];c=Counter(x['content_class'] for x in rows);first=[x for x in rows if x['content_class']=='TEXT' and not x['third_party_or_cache']];thirdrows=[x for x in rows if x.get('third_party_or_cache')]
   subs.append({'subject_id':s['subject_id'],'record_observations':obs,'record_count':len(obs),'byte_identical_records':len({x['sha256'] for x in obs})==1,'payload_sha256':s['file']['sha256'],'recursive_summary':{'entry_count':len(rows),'maximum_depth':max((x['archive_depth'] for x in rows),default=0),'total_recursive_uncompressed_bytes':payload['state']['bytes'],'content_class_counts':dict(sorted(c.items())),'first_party_text_file_count':len(first),'first_party_nonempty_line_count':sum(x['nonempty_line_count'] for x in first),'first_party_json_scalar_count':sum(x['json_scalar_count'] for x in first),'third_party_or_cache_entry_count':len(thirdrows),'retained_first_party_text_file_count':sum('text_utf8_base64' in x for x in first)},'first_party_text_entries':first,'all_entries':rows})
  out={'_license':{'classification':'machine_readable_read_only_remaining_archive_probe','copyright':'Copyright 2026 Ingolf Lohmann','license':'CC-BY-NC-ND-4.0','rights_holder':'Ingolf Lohmann'},'schema':'qikvrt_batch003_remaining_archive_probe_v1','subjects':subs,'subject_count':len(subs),'safety_policy':{'absolute_paths_rejected':True,'backslashes_rejected':True,'casefold_collisions_rejected':True,'crc_verified':True,'decompression_bounds_enforced':True,'duplicates_rejected':True,'encrypted_entries_rejected':True,'nested_archives_recursively_checked':True,'symlinks_rejected':True,'traversal_rejected':True},'completion_claims':{'all_remaining_public_bytes_recovered':True,'all_remaining_archives_recursively_inspected':True,'all_remaining_claims_dispositioned':False,'proof_corpus_built':False,'proof_corpus_published_on_zenodo':False,'zenodo_mutation_authorized':False,'pass':False,'final_pass':False,'effect_ack_done':False}}
- a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(json.dumps(out,ensure_ascii=False,sort_keys=True,indent=2)+'\n',encoding='utf-8',newline='\n')
- summary={'schema':'qikvrt_batch003_remaining_archive_probe_summary_v1','subjects':[{'subject_id':x['subject_id'],**x['recursive_summary'],'record_count':x['record_count'],'payload_sha256':x['payload_sha256']} for x in subs],'completion_claims':out['completion_claims']};sp=a.output.with_name('SUMMARY.json');sp.write_text(json.dumps(summary,sort_keys=True,indent=2)+'\n')
+ output.parent.mkdir(parents=True,exist_ok=True);output.write_text(json.dumps(out,ensure_ascii=False,sort_keys=True,indent=2)+'\n',encoding='utf-8',newline='\n')
+ summary={'schema':'qikvrt_batch003_remaining_archive_probe_summary_v1','subjects':[{'subject_id':x['subject_id'],**x['recursive_summary'],'record_count':x['record_count'],'payload_sha256':x['payload_sha256']} for x in subs],'completion_claims':out['completion_claims']};sp=output.with_name('SUMMARY.json');sp.write_text(json.dumps(summary,sort_keys=True,indent=2)+'\n')
+ return summary
+def main(argv:list[str]|None=None):
+ ap=argparse.ArgumentParser();ap.add_argument('--output',type=pathlib.Path,required=True);ap.add_argument('--receipt',type=pathlib.Path);a=ap.parse_args(argv)
+ try:summary=observe(a.output)
+ except (E,OSError,UnicodeError,ValueError,json.JSONDecodeError,KeyError,TypeError,IndexError,AttributeError) as ex:
+  transient=isinstance(ex,TransientObservationError);result=recovery_receipt('HOLD' if transient else 'BLOCK','ZENODO_PUBLIC_REOBSERVATION_UNCONFIRMED' if transient else 'ZENODO_PUBLIC_EVIDENCE_VALIDATION_FAILED',str(ex))
+  if a.receipt:write_receipt(a.receipt,result)
+  print(json.dumps(result,ensure_ascii=False,sort_keys=True));return 2
+ if a.receipt:write_receipt(a.receipt,{'schema':'qikvrt_batch003_remaining_archive_probe_receipt_v1','state':'OBSERVED_READ_ONLY','probe_output':str(a.output),'external_effect':False,'zenodo_mutation_attempted':False,'completion_claims':summary['completion_claims']})
  print(json.dumps(summary,sort_keys=True));print('PASS=false\nFINAL_PASS=false\nEFFECT_ACK_DONE=false\nZENODO_MUTATION=false')
+ return 0
 if __name__=='__main__':
- try:main()
- except (E,OSError,UnicodeError,ValueError) as ex:print(f'BLOCK: {ex}');raise SystemExit(2)
+ raise SystemExit(main())

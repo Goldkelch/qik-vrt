@@ -85,7 +85,9 @@ class PullRequestHeadMutationBoundaryTests(unittest.TestCase):
         self.assertIn('git push origin "HEAD:$TARGET_REF"', persist)
         self.assertNotIn("--force", persist)
         self.assertIn("if: github.event_name != 'pull_request'", persist)
-        self.assertIn("permissions:\n  contents: write\n", text)
+        self.assertIn("permissions:\n  contents: read\n", text)
+        writer = text[text.index("  materialize:\n"):]
+        self.assertIn("permissions:\n      contents: write\n", writer)
         self.assertIn("cancel-in-progress: false", text)
 
 

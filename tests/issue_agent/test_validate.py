@@ -286,23 +286,30 @@ class ValidateIssueAgentBundleTest(unittest.TestCase):
             self.assertIn(path, workflow[stage:commit])
         self.assertIn("persisted_head", workflow[push:])
 
-    def test_internal_bot_pr_materialization_is_admitted_without_bot_push_loop(self):
+    def test_internal_bot_pr_verification_is_admitted_without_bot_push_loop(self):
         workflow = (
             ROOT / ".github/workflows/qikvrt_batch04_integrity.yml"
         ).read_text(encoding="utf-8")
-        predicate_end = workflow.index("    runs-on:", workflow.index("  materialize:"))
-        predicate = workflow[workflow.index("    if:", workflow.index("  materialize:")):predicate_end]
+        verify_start = workflow.index("  verify-pr-readonly:")
+        verify_end = workflow.index("  materialize:", verify_start)
+        predicate = workflow[workflow.index("    if:", verify_start):verify_end]
         self.assertIn("github.event_name == 'pull_request'", predicate)
         self.assertIn(
             "github.event.pull_request.head.repo.full_name == github.repository",
             predicate,
         )
         self.assertIn("github.actor != 'dependabot[bot]'", predicate)
-        self.assertIn("github.event_name == 'workflow_dispatch'", predicate)
-        self.assertIn("github.event_name == 'push'", predicate)
-        self.assertIn("github.actor != 'github-actions[bot]'", predicate)
-        pull_request_clause = predicate[:predicate.index("github.event_name == 'workflow_dispatch'")]
-        self.assertNotIn("github.actor != 'github-actions[bot]'", pull_request_clause)
+        self.assertNotIn("github.actor != 'github-actions[bot]'", predicate)
+
+        materialize_start = workflow.index("  materialize:")
+        materialize_end = workflow.index("    runs-on:", materialize_start)
+        materialize_predicate = workflow[
+            workflow.index("    if:", materialize_start):materialize_end
+        ]
+        self.assertIn("github.event_name == 'workflow_dispatch'", materialize_predicate)
+        self.assertIn("github.event_name == 'push'", materialize_predicate)
+        self.assertIn("github.actor != 'github-actions[bot]'", materialize_predicate)
+        self.assertNotIn("github.event_name == 'pull_request'", materialize_predicate)
 
     def test_backlog_resume_is_explicit_not_time_driven(self):
         workflow = (

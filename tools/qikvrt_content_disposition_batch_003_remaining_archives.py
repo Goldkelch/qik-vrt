@@ -20,7 +20,8 @@ ROOT=pathlib.Path(__file__).resolve().parents[1]
 BASE=ROOT/'release/zenodo-corpus-proof-2026-07-28/canonical-union'
 B3=BASE/'content-disposition-batch-003'
 PROOF=BASE/'retrospective-proof-corpus'
-AI_PROGRESS=ROOT/'AI_PROGRESS.json';AI_STATUS=ROOT/'AI_STATUS.md'
+RECOVERY_SCHEMA='qikvrt_remaining_archive_disposition_recovery_v1'
+AI_PROGRESS=ROOT/'AI_PROGRESS.json';AI_STATUS=ROOT/'AI_STATUS.md';VERSIONED_CANDIDATES=BASE/'versioned-corrected-candidates';VERSIONED_OWNER_RETURN_PACKAGE=VERSIONED_CANDIDATES/'OWNER_RETURN_PACKAGE.json';VERSIONED_CREATE_WORK_UNIT=ROOT/'work-units/CREATE_VERSIONED_CORRECTED_CANDIDATES_REMAINING_CORPUS_SUBJECTS.json';VERSIONED_OWNER_WORK_UNIT=ROOT/'work-units/OWNER_DECISION_VERSIONED_CORRECTED_CANDIDATES.json';VERSIONED_PROMOTION_WORK_UNIT=ROOT/'work-units/VERIFY_AND_PROMOTE_ACCEPTED_VERSIONED_CORRECTED_CANDIDATES_TO_AUTHORITY.json';VERSIONED_ACCEPTANCE_RECEIPT=VERSIONED_CANDIDATES/'OWNER_ACCEPTANCE_RECEIPT.json'
 TOOL_REL='tools/qikvrt_content_disposition_batch_003_remaining_archives.py'
 OBSERVED_AT='2026-07-30T02:54:23Z'
 PROBE_HEAD='909784cb2dd93f37559dadf9a8594e05ba53f909';PROBE_RUN=30509621588;PROBE_ARTIFACT=8746609463;PROBE_ARTIFACT_SHA256='b8fb4d81c7789c4ae33a3b3c9f4d7aea5eb1538826828af776e519ac199b0381'
@@ -190,7 +191,7 @@ def build_batch_receipt(results:list[Mapping[str,Any]]):
 def build_work_units(correction:list[Mapping[str,Any]]):
  next_effect='CREATE_VERSIONED_CORRECTED_CANDIDATES_AND_RETURN_TO_OWNER_FOR_REMAINING_CORPUS_SUBJECTS' if correction else 'REQUEST_SEPARATE_ZENODO_MUTATION_AUTHORIZATION_FOR_RETROSPECTIVE_PROOF_CORPUS'
  correction_unit={'_license':{**LIC,'classification':'machine_readable_work_unit'},'schema':'qikvrt_work_unit_v1','work_unit_id':'CREATE-VERSIONED-CORRECTED-CANDIDATES-REMAINING-CORPUS-SUBJECTS-20260730','operation':'CREATE_VERSIONED_CORRECTED_CANDIDATES_AND_RETURN_TO_OWNER','state':'READY' if correction else 'NOT_REQUIRED','subject_ids':[x['subject_id'] for x in correction],'requirements':['do not mutate historical Zenodo records','regenerate inconsistent manifests from exact candidate bytes','narrow unbound completion/effect/universality wording','run complete gates on each exact candidate head','return each candidate to Ingolf Lohmann for explicit accept or reject'],'next_deterministic_effect':next_effect}
- write(ROOT/'work-units/CREATE_VERSIONED_CORRECTED_CANDIDATES_REMAINING_CORPUS_SUBJECTS.json',correction_unit)
+ if versioned_candidate_owner_boundary() is None:write(ROOT/'work-units/CREATE_VERSIONED_CORRECTED_CANDIDATES_REMAINING_CORPUS_SUBJECTS.json',correction_unit)
  auth={'_license':{**LIC,'classification':'machine_readable_mutation_authorization_request'},'schema':'qikvrt_zenodo_mutation_authorization_request_v1','work_unit_id':'REQUEST-SEPARATE-ZENODO-MUTATION-AUTHORIZATION-RETROSPECTIVE-PROOF-CORPUS-20260730','operation':'REQUEST_SEPARATE_ZENODO_MUTATION_AUTHORIZATION','state':'WAITING_OWNER_AUTHORIZATION_AND_CORRECTION_RESOLUTION' if correction else 'WAITING_OWNER_AUTHORIZATION','proof_corpus_receipt':file_binding(PROOF/'RETROSPECTIVE_PROOF_CORPUS_RECEIPT.json'),'correction_dependencies':[x['subject_id'] for x in correction],'authorization':{'authorized':False,'authorized_by':None,'authorized_at':None,'scope':None},'completion_claims':{'proof_corpus_built_and_verified':True,'zenodo_mutation_authorized':False,'zenodo_publication_complete':False,'pass':False,'final_pass':False,'effect_ack_done':False}}
  write(ROOT/'work-units/REQUEST_SEPARATE_ZENODO_MUTATION_AUTHORIZATION_RETROSPECTIVE_PROOF_CORPUS.json',auth)
  return next_effect
@@ -233,16 +234,120 @@ def verify_materialized()->dict[str,Any]:
  if read(AI_PROGRESS)!=progress:fail('materialized output drift: AI_PROGRESS.json')
  if AI_STATUS.read_text(encoding='utf-8')!=status:fail('materialized output drift: AI_STATUS.md')
  return {'schema':'qikvrt_remaining_archive_disposition_verification_v1','state':'ALL_19_SUBJECTS_DISPOSITIONED_PROOF_CORPUS_VERIFIED_PUBLICATION_NOT_AUTHORIZED','subject_count':19,'claim_count':index['claim_count'],'explicit_open_claim_count':index['explicit_open_claim_count'],'correction_required_subject_count':len(index['correction_requirements']),'next_deterministic_effect':progress['next_action'],'pass':False,'final_pass':False,'effect_ack_done':False,'zenodo_mutation_authorized':False,'proof_corpus_published_on_zenodo':False}
+
+def verify_materialized_safely()->dict[str,Any]:
+ try:return verify_materialized()
+ except (KeyError,TypeError,IndexError,AttributeError) as ex:raise DispositionError(f'materialized evidence schema drift: {type(ex).__name__}: {ex}') from ex
+
+def versioned_candidate_owner_boundary()->str|None:
+ owner_exists=VERSIONED_OWNER_WORK_UNIT.is_file();acceptance_exists=VERSIONED_ACCEPTANCE_RECEIPT.is_file()
+ if acceptance_exists or VERSIONED_PROMOTION_WORK_UNIT.is_file():return 'ACCEPTED'
+ if owner_exists or VERSIONED_OWNER_RETURN_PACKAGE.is_file() or VERSIONED_CANDIDATES.exists():return 'RETURNED'
+ if VERSIONED_CREATE_WORK_UNIT.is_file():
+  try:create_state=read(VERSIONED_CREATE_WORK_UNIT).get('state')
+  except (OSError,ValueError,TypeError,KeyError,AttributeError):return 'RETURNED'
+  if create_state=='RETURNED_TO_OWNER':return 'RETURNED'
+ return None
+
+def owner_boundary_hold(boundary:str,offline_failure:str)->dict[str,Any]:
+ blocker='ACCEPTED_VERSIONED_CANDIDATE_EVIDENCE_DRIFT_REQUIRES_OWNER_AUTHORIZATION' if boundary=='ACCEPTED' else 'OWNER_RETURN_VERSIONED_CANDIDATE_EVIDENCE_DRIFT_REQUIRES_OWNER_AUTHORIZATION'
+ result=recovery_receipt('HOLD',blocker,offline_failure,offline_verified=False,live_reobservation_attempted=False,live_materialization_invoked=False,offline_failure=offline_failure)
+ result.update(d0=3,next_action='REQUEST_OWNER_AUTHORIZATION_FOR_VERSIONED_CANDIDATE_EVIDENCE_REPAIR')
+ result['hold_reason']={'reason_code':blocker,'reason':offline_failure,'subject':{'repository':'Goldkelch/qik-vrt','kind':'versioned_corrected_candidate_set','identifier':'remaining-corpus-six-candidates','head_sha':None},'evidence_refs':['release/zenodo-corpus-proof-2026-07-28/canonical-union/versioned-corrected-candidates/OWNER_ACCEPTANCE_RECEIPT.json','work-units/OWNER_DECISION_VERSIONED_CORRECTED_CANDIDATES.json'],'owner':{'role':'REQUIRED_AUTHORITY','actor':'Ingolf Lohmann'},'retry_condition':{'event':'EXPLICIT_OWNER_AUTHORIZATION','predicate':'the owner authorizes repair of the exact accepted or returned candidate evidence scope'},'next_action':'REQUEST_OWNER_AUTHORIZATION_FOR_VERSIONED_CANDIDATE_EVIDENCE_REPAIR','d0':3}
+ return result
+
+def materialization_output_paths()->tuple[pathlib.Path,...]:
+ values=[]
+ for config in probe.SUBJECTS:values.extend(paths(config['subject_id']).values())
+ values.extend((B3/'CONTENT_DISPOSITION_BATCH_003_RECEIPT.json',PROOF/'RETROSPECTIVE_PROOF_CORPUS_INDEX.json',PROOF/'RETROSPECTIVE_PROOF_CORPUS_RECEIPT.json',ROOT/'work-units/CREATE_VERSIONED_CORRECTED_CANDIDATES_REMAINING_CORPUS_SUBJECTS.json',ROOT/'work-units/REQUEST_SEPARATE_ZENODO_MUTATION_AUTHORIZATION_RETROSPECTIVE_PROOF_CORPUS.json',AI_PROGRESS,AI_STATUS))
+ return tuple(dict.fromkeys(values))
+
+def snapshot_materialization_outputs()->dict[pathlib.Path,bytes|None]:
+ snapshot={}
+ for path in materialization_output_paths():
+  if path.is_symlink() or (path.exists() and not path.is_file()):fail(f'unsafe materialization output path: {path}')
+  snapshot[path]=path.read_bytes() if path.is_file() else None
+ return snapshot
+
+def restore_materialization_outputs(snapshot:Mapping[pathlib.Path,bytes|None]):
+ for path,raw in snapshot.items():
+  if raw is None:
+   if path.exists():path.unlink()
+  else:
+   path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(raw)
+
+def materialize_atomically()->dict[str,Any]:
+ snapshot=snapshot_materialization_outputs()
+ try:
+  materialize()
+  return verify_materialized_safely()
+ except BaseException:
+  restore_materialization_outputs(snapshot)
+  raise
+
+def reobservation_hold_reason(blocker:str,detail:str)->dict[str,Any]:
+ return {'reason_code':blocker,'reason':detail,'subject':{'repository':'Goldkelch/qik-vrt','kind':'zenodo_record_set','identifier':'batch003-remaining-archives','head_sha':None},'evidence_refs':['tools/qikvrt_content_disposition_batch_003_remaining_archives.py','zenodo.org/api/records/21244412'],'owner':{'role':'EXACT_SUBJECT_OBSERVER','actor':'qikvrt-content-disposition-recovery'},'retry_condition':{'event':'FUTURE_FRESH_CONTENT_DISPOSITION_CARRIER','predicate':'the exact immutable Zenodo record set can be reobserved without a transport failure'},'next_action':'REOBSERVE_EXACT_PUBLIC_ZENODO_RECORDS_ON_A_FUTURE_CARRIER','d0':2}
+
+def recovery_receipt(state:str,first_blocker:str|None,detail:str,*,offline_verified:bool,live_reobservation_attempted:bool,live_materialization_invoked:bool|None=None,offline_failure:str|None=None)->dict[str,Any]:
+ invoked=live_reobservation_attempted if live_materialization_invoked is None else live_materialization_invoked
+ value={'schema':RECOVERY_SCHEMA,'state':state,'verification_state':'OFFLINE_CURRENT' if offline_verified else ('HOLD_UNVERIFIED' if state=='HOLD' else 'BLOCK'),'failure_class':first_blocker,'first_blocker':first_blocker,'detail':detail,'offline_materialization_verified':offline_verified,'live_reobservation_attempted':live_reobservation_attempted,'live_materialization_invoked':invoked,'public_get_retry_policy':{'attempts':probe.GET_ATTEMPTS,'backoff_seconds':list(probe.GET_BACKOFF_SECONDS),'timeout_seconds':probe.GET_TIMEOUT_SECONDS},'offline_validation_failure':offline_failure,'external_effect':False,'zenodo_mutation_attempted':False,'d0':0 if offline_verified else 2,'continuation_required':not offline_verified,'next_action':'REOBSERVE_EXACT_PUBLIC_ZENODO_RECORDS_ON_A_FUTURE_CARRIER' if not offline_verified else 'RETAIN_BYTE_CURRENT_OFFLINE_MATERIALIZATION','completion_claims':{'pass':False,'final_pass':False,'effect_ack_done':False,'proof_corpus_published_on_zenodo':False,'zenodo_mutation_authorized':False}}
+ if state=='HOLD' and first_blocker is not None:value['hold_reason']=reobservation_hold_reason(first_blocker,detail)
+ return value
+
+def failed_result(ex:BaseException,*,offline_failure:str|None=None,live_reobservation_attempted:bool=False,live_materialization_invoked:bool=False)->dict[str,Any]:
+ if isinstance(ex,probe.TransientObservationError):return recovery_receipt('HOLD','ZENODO_PUBLIC_REOBSERVATION_UNCONFIRMED',str(ex),offline_verified=False,live_reobservation_attempted=live_reobservation_attempted,live_materialization_invoked=live_materialization_invoked,offline_failure=offline_failure)
+ if isinstance(ex,probe.E):return recovery_receipt('BLOCK','ZENODO_PUBLIC_EVIDENCE_VALIDATION_FAILED',str(ex),offline_verified=False,live_reobservation_attempted=live_reobservation_attempted,live_materialization_invoked=live_materialization_invoked,offline_failure=offline_failure)
+ return {'schema':'qikvrt_remaining_archive_disposition_verification_v1','state':'BLOCK','verification_state':'BLOCK','failure_class':'REMAINING_ARCHIVE_CONTENT_DISPOSITION_INVALID','first_blocker':'REMAINING_ARCHIVE_CONTENT_DISPOSITION_INVALID','reason':str(ex),'external_effect':False,'zenodo_mutation_attempted':False,'d0':2,'continuation_required':True,'completion_claims':{'pass':False,'final_pass':False,'effect_ack_done':False,'proof_corpus_published_on_zenodo':False,'zenodo_mutation_authorized':False}}
+
+def verify_current_offline()->tuple[dict[str,Any],int]:
+ """Verify materialized evidence without invoking a live repair."""
+ try:
+  result=verify_materialized_safely()
+ except (DispositionError,probe.E,OSError,UnicodeError,ValueError,KeyError,TypeError,IndexError,AttributeError) as offline_error:
+  offline_failure=str(offline_error);boundary=versioned_candidate_owner_boundary()
+  if boundary is not None:return owner_boundary_hold(boundary,offline_failure),2
+  return recovery_receipt('HOLD','REMAINING_ARCHIVE_MATERIALIZATION_DRIFT_REQUIRES_EXPLICIT_REPAIR_CARRIER',offline_failure,offline_verified=False,live_reobservation_attempted=False,live_materialization_invoked=False,offline_failure=offline_failure),2
+ result['recovery']=recovery_receipt('CURRENT_OFFLINE_MATERIALIZATION',None,'Existing materialized evidence verified without a live Zenodo read.',offline_verified=True,live_reobservation_attempted=False)
+ return result,0
+
+def ensure_current()->tuple[dict[str,Any],int]:
+ """Prefer byte-bound offline evidence; use Zenodo only to repair real drift."""
+ try:
+  result=verify_materialized_safely()
+ except (DispositionError,probe.E,OSError,UnicodeError,ValueError,KeyError,TypeError,IndexError,AttributeError) as offline_error:
+  offline_failure=str(offline_error)
+ else:
+  result['recovery']=recovery_receipt('CURRENT_OFFLINE_MATERIALIZATION',None,'Existing materialized evidence verified without a live Zenodo read.',offline_verified=True,live_reobservation_attempted=False)
+  return result,0
+ boundary=versioned_candidate_owner_boundary()
+ if boundary is not None:return owner_boundary_hold(boundary,offline_failure),2
+ try:
+  result=materialize_atomically()
+ except (DispositionError,probe.E,OSError,UnicodeError,ValueError,KeyError,TypeError,IndexError,AttributeError) as live_error:
+  return failed_result(live_error,offline_failure=offline_failure,live_reobservation_attempted=isinstance(live_error,probe.E),live_materialization_invoked=True),2
+ result['recovery']=recovery_receipt('CURRENT_LIVE_REPAIRED',None,'Offline validation drift was repaired by one bounded read-only live materialization.',offline_verified=True,live_reobservation_attempted=True,offline_failure=offline_failure)
+ return result,0
 def materialize():
+ if versioned_candidate_owner_boundary() is not None:fail('live content-disposition rematerialization is forbidden after the versioned candidate owner boundary')
  cache={};results=[]
  for ordinal,config in enumerate(probe.SUBJECTS,1):results.append(materialize_subject(config,cache,ordinal))
- build_batch_receipt(results);index,receipt,correction=build_proof_corpus(results);build_work_units(correction);progress,status=build_progress_projection();write(AI_PROGRESS,progress);AI_STATUS.write_text(status,encoding='utf-8',newline='\n');verify_materialized()
-def main():
- parser=argparse.ArgumentParser();parser.add_argument('--materialize',action='store_true');parser.add_argument('--check',action='store_true');parser.add_argument('--json',action='store_true');args=parser.parse_args()
+ build_batch_receipt(results);index,receipt,correction=build_proof_corpus(results);build_work_units(correction);progress,status=build_progress_projection();write(AI_PROGRESS,progress);AI_STATUS.write_text(status,encoding='utf-8',newline='\n')
+def main(argv:list[str]|None=None):
+ parser=argparse.ArgumentParser();parser.add_argument('--materialize',action='store_true');parser.add_argument('--check',action='store_true');parser.add_argument('--ensure-current',action='store_true');parser.add_argument('--verify-current',action='store_true');parser.add_argument('--receipt',type=pathlib.Path);parser.add_argument('--json',action='store_true');args=parser.parse_args(argv)
+ if sum(bool(value) for value in (args.materialize,args.check,args.ensure_current,args.verify_current))>1:parser.error('--materialize, --check, --ensure-current, and --verify-current are mutually exclusive')
+ exit_code=0
  try:
-  if args.materialize:materialize()
-  result=verify_materialized() if args.check or not args.materialize else verify_materialized()
- except (DispositionError,OSError,UnicodeError,ValueError,json.JSONDecodeError) as ex:
-  print(json.dumps({'state':'BLOCK','failure_class':'REMAINING_ARCHIVE_CONTENT_DISPOSITION_INVALID','reason':str(ex),'pass':False,'final_pass':False,'effect_ack_done':False,'zenodo_mutation_authorized':False},ensure_ascii=False,sort_keys=True));return 2
- print(json.dumps(result,ensure_ascii=False,indent=2 if args.json else None,sort_keys=True));return 0
+  if args.ensure_current:result,exit_code=ensure_current()
+  elif args.verify_current:result,exit_code=verify_current_offline()
+  elif args.materialize:
+   boundary=versioned_candidate_owner_boundary()
+   if boundary is not None:
+    result=owner_boundary_hold(boundary,'live content-disposition rematerialization is forbidden after the versioned candidate owner boundary');exit_code=2
+   else:result=materialize_atomically()
+  else:result=verify_materialized_safely()
+ except (DispositionError,probe.E,OSError,UnicodeError,ValueError,KeyError,TypeError,IndexError,AttributeError) as ex:
+  result=failed_result(ex,live_reobservation_attempted=args.materialize and isinstance(ex,probe.E),live_materialization_invoked=args.materialize)
+  exit_code=2
+ if args.receipt:write(args.receipt,result)
+ print(json.dumps(result,ensure_ascii=False,indent=2 if args.json else None,sort_keys=True));return exit_code
 if __name__=='__main__':raise SystemExit(main())

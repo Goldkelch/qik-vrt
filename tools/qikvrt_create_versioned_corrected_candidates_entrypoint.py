@@ -11,7 +11,6 @@ regenerates and verifies every remaining active binding.
 """
 from __future__ import annotations
 
-import argparse
 import json
 import pathlib
 from typing import Any, Mapping
@@ -168,24 +167,9 @@ builder.regenerate_bindings = regenerate_with_absent_boundary
 builder.add_correction_notice = notice_with_absent_boundary
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--materialize", action="store_true")
-    group.add_argument("--check", action="store_true")
-    args = parser.parse_args()
-    result = builder.materialize() if args.materialize else builder.check()
-    print(builder.pretty(result), end="")
-    print("PASS=false")
-    print("FINAL_PASS=false")
-    print("EFFECT_ACK_DONE=false")
-    print("ZENODO_MUTATION=false")
-    return 0
+def main(argv: list[str] | None = None) -> int:
+    return builder.main(argv)
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except builder.CorrectionError as exc:
-        print(f"BLOCK: {exc}")
-        raise SystemExit(2)
+    raise SystemExit(main())

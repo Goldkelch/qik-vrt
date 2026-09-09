@@ -33,7 +33,6 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
     def test_relevant_repository_edges_are_interrupt_sources(self) -> None:
         for workflow_name in (
             "QIKVRT repository evidence materialization",
-            "QIKVRT adaptive stacked successor integrity materialization",
             "QIKVRT CI",
             "QIKVRT Collective Proposal Review",
             "QIK-VRT global claim completion",
@@ -73,7 +72,7 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
         self.assertIn("actions: write", self.text)
         self.assertIn("contents: write", self.text)
         self.assertIn("pull-requests: read", self.text)
-        self.assertIn("statuses: write", self.text)
+        self.assertIn("statuses: read", self.text)
         self.assertNotIn("pull-requests: write", self.text)
         self.assertNotIn("/merges", self.text)
         self.assertNotIn("/reviews", self.text)
@@ -92,7 +91,8 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
         self.assertIn("per_page=30", self.text)
         self.assertIn("one REOBSERVE edge per run", self.text)
         self.assertIn('test "$live_ref" = "$selected_head"', self.text)
-        self.assertIn('test "$live_ref" = "$HEAD_SHA"', self.text)
+        self.assertIn('repos/${GITHUB_REPOSITORY}/git/ref/heads/${HEAD_REF}', self.text)
+        self.assertIn('EXACT_SUBJECT_DRIFT_BEFORE_REPOSITORY_DISPATCH', self.text)
 
     def test_workflow_delegates_classification_to_one_tested_module(self) -> None:
         self.assertIn("tools/qikvrt_pr_head_recovery.py classify", self.text)
@@ -118,9 +118,9 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
     def test_exact_installation_rate_limit_uses_the_bounded_observer_backoff(self) -> None:
         self.assertIn("gh_read()", self.text)
         self.assertIn("for delay in 0 15 45", self.text)
-        self.assertIn("API rate limit exceeded for installation.", self.text)
+        self.assertIn("API rate limit exceeded for installation", self.text)
         self.assertIn("QIKVRT_GITHUB_INSTALLATION_RATE_LIMIT_BACKOFF_SECONDS", self.text)
-        self.assertIn('if ! grep -Fq "API rate limit exceeded for installation." "$error"', self.text)
+        self.assertIn('if ! grep -Fq "API rate limit exceeded for installation" "$error"', self.text)
         self.assertNotIn("until gh api", self.text)
 
     def test_false_noop_regression_runs_in_canonical_suite(self) -> None:
@@ -179,28 +179,37 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
         self.assertIn("TRUSTED_EXACT_HEAD_VERIFICATION_PENDING", self.recovery_text)
         self.assertIn("TRUSTED_EXACT_HEAD_VERIFICATION_FAILED", self.recovery_text)
 
-    def test_dispatch_failure_cannot_leave_a_permanent_pending_status(self) -> None:
-        self.assertIn("publish_dispatch_error", self.text)
-        self.assertIn("trap publish_dispatch_error EXIT", self.text)
-        self.assertIn("dispatch_status_published=true", self.text)
-        self.assertIn("state=error", self.text)
-        self.assertIn("Exact-head recovery dispatch failed", self.text)
-        self.assertIn("trap - EXIT", self.text)
+    def test_dispatch_failure_is_a_receipt_backed_hold_without_status_side_effects(self) -> None:
+        self.assertIn("repository_dispatch_intent", self.text)
+        self.assertIn("repository_dispatch_post", self.text)
+        self.assertIn("repository_dispatch_readback", self.text)
+        self.assertIn("EXACT_HEAD_VERIFIER_DISPATCH_UNCONFIRMED", self.text)
+        self.assertIn("EXACT_HEAD_TARGET_RUN_READBACK_MALFORMED", self.text)
+        self.assertIn("REOBSERVE_EXACT_HEAD_AND_TARGET_DISPATCH_RECEIPT", self.text)
+        self.assertNotIn("publish_dispatch_error", self.text)
+        self.assertNotIn("state=pending", self.text)
+        self.assertNotIn("state=error", self.text)
+        self.assertNotIn("/statuses/${HEAD_SHA}", self.text)
 
-    def test_named_exact_head_gate_surface_is_restored(self) -> None:
-        self.assertIn("qikvrt_batch04_integrity.yml", self.text)
-        self.assertIn("qikvrt_ci.yml", self.text)
-        self.assertIn("qikvrt_collective_review.yml", self.text)
-        self.assertIn("qikvrt_global_completion.yml", self.text)
-        self.assertIn("qikvrt_requested_review_contract.yml", self.text)
-        self.assertIn('-f ref="$HEAD_REF"', self.text)
+    def test_continuation_has_one_exact_target_instead_of_a_fanout(self) -> None:
+        self.assertIn('target_workflow="qikvrt_autonomous_exact_head_verify.yml"', self.text)
+        self.assertIn('target_runs_endpoint=', self.text)
+        self.assertIn('event=repository_dispatch&head_sha=${trusted_main}&per_page=100', self.text)
+        self.assertIn('exact_title="QIK-VRT exact-head verifier', self.text)
+        self.assertNotIn("qikvrt_batch04_integrity.yml", self.text)
+        self.assertNotIn("qikvrt_ci.yml", self.text)
+        self.assertNotIn("qikvrt_collective_review.yml", self.text)
+        self.assertNotIn("qikvrt_global_completion.yml", self.text)
+        self.assertNotIn("qikvrt_requested_review_contract.yml", self.text)
 
     def test_continuation_is_exact_head_bound_and_never_dispatches_review(self) -> None:
         self.assertIn('event_type:"qikvrt_autonomous_exact_head_verify"', self.text)
         self.assertIn("head_sha:$head", self.text)
         self.assertIn("base_sha:$base", self.text)
+        self.assertIn("expected_main_sha:$main", self.text)
+        self.assertIn("carrier_run_id:($carrier|tonumber)", self.text)
         self.assertIn("causal_state:\"REOBSERVE\"", self.text)
-        self.assertIn("Requested review has no autonomous dispatch route", self.text)
+        self.assertIn("exact target-workflow readback", self.text)
         self.assertNotIn("qikvrt_requested_review_executor.yml/dispatches", self.text)
         self.assertNotIn("inputs[pr]", self.text)
 
@@ -214,14 +223,15 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
             "qikvrt_requested_review_executor.yml/dispatches",
             self.exact_head_text,
         )
-        self.assertIn(
-            'current="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TARGET_PR}"',
-            self.exact_head_text,
-        )
-        self.assertIn('test "$current" = "$TARGET_SHA"', self.exact_head_text)
+        self.assertIn('pull="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TARGET_PR}")"', self.exact_head_text)
+        self.assertIn('test "$main" = "$TARGET_MAIN_SHA"', self.exact_head_text)
         self.assertIn("-f ref=main", self.exact_head_text)
         self.assertIn('-f "inputs[pr]=$TARGET_PR"', self.exact_head_text)
         self.assertIn('-f "inputs[head]=$TARGET_SHA"', self.exact_head_text)
+        self.assertIn("TARGET_MAIN_SHA", self.exact_head_text)
+        self.assertIn("TARGET_CARRIER_RUN_ID", self.exact_head_text)
+        self.assertIn("QIKVRT autonomous PR-head continuation", self.exact_head_text)
+        self.assertIn("QIK-VRT exact-head verifier pr=", self.exact_head_text)
 
     def test_exact_head_qce_verification_cannot_mutate_frozen_package_inventory(self) -> None:
         self.assertIn('qce_tmpdir="$(mktemp -d "${RUNNER_TEMP}/qikvrt-qce-exact-head.XXXXXX")"', self.exact_head_text)

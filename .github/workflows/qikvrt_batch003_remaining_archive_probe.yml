@@ -34,25 +34,90 @@ jobs:
         with:
           python-version: '3.12'
       - name: Verify and recursively inventory remaining public archives
+        id: probe
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p probe-output
+          artifact_root="$RUNNER_TEMP/qikvrt-batch003-remaining-archive-probe"
+          mkdir -p "$artifact_root"
+          output="$artifact_root/REMAINING_ARCHIVE_PROBE.json"
+          receipt="$artifact_root/RECOVERY_RECEIPT.json"
+          log="$artifact_root/REMAINING_ARCHIVE_PROBE.log"
+          capture_hold() {
+            python3 - "$receipt" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          value = {
+              "schema": "qikvrt_batch003_remaining_archive_probe_recovery_v1",
+              "state": "HOLD",
+              "verification_state": "HOLD_UNVERIFIED",
+              "first_blocker": "PROBE_EVIDENCE_CAPTURE_FAILED",
+              "d0": 2,
+              "continuation_required": True,
+              "hold_reason": {
+                  "reason_code": "PROBE_EVIDENCE_CAPTURE_FAILED",
+                  "reason": "The probe did not preserve a complete receipt and log before enforcement.",
+                  "subject": {"repository": "Goldkelch/qik-vrt", "kind": "zenodo_record_set", "identifier": "batch003-remaining-archives", "head_sha": None},
+                  "evidence_refs": ["workflow-log:batch003-remaining-archive-probe"],
+                  "owner": {"role": "EXACT_SUBJECT_OBSERVER", "actor": "github-actions[bot]"},
+                  "retry_condition": {"event": "FUTURE_FRESH_ARCHIVE_PROBE_CARRIER", "predicate": "the probe can preserve a complete receipt and log"},
+                  "next_action": "REOBSERVE_EXACT_PUBLIC_ZENODO_RECORDS_ON_A_FUTURE_CARRIER",
+                  "d0": 2
+              },
+              "completion_claims": {"all_remaining_public_bytes_recovered": False, "all_remaining_archives_recursively_inspected": False, "all_remaining_claims_dispositioned": False, "proof_corpus_built": False, "proof_corpus_published_on_zenodo": False, "zenodo_mutation_authorized": False, "pass": False, "final_pass": False, "effect_ack_done": False}
+          }
+          path.write_text(json.dumps(value, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+          PY
+          }
+          set +e
           python3 -B tools/qikvrt_batch003_remaining_archive_probe.py \
-            --output probe-output/REMAINING_ARCHIVE_PROBE.json \
-            | tee probe-output/REMAINING_ARCHIVE_PROBE.log
-          gzip -9 probe-output/REMAINING_ARCHIVE_PROBE.json
-          sha256sum probe-output/* > probe-output/SHA256SUMS.txt
-          grep -Fx 'PASS=false' probe-output/REMAINING_ARCHIVE_PROBE.log
-          grep -Fx 'FINAL_PASS=false' probe-output/REMAINING_ARCHIVE_PROBE.log
-          grep -Fx 'EFFECT_ACK_DONE=false' probe-output/REMAINING_ARCHIVE_PROBE.log
-          grep -Fx 'ZENODO_MUTATION=false' probe-output/REMAINING_ARCHIVE_PROBE.log
+            --output "$output" --receipt "$receipt" \
+            | tee "$log"
+          statuses=("${PIPESTATUS[@]}")
+          set -e
+          effective_exit="${statuses[0]}"
+          if [ "${statuses[1]}" -ne 0 ] || [ ! -s "$receipt" ]; then
+            capture_hold
+            effective_exit=2
+          fi
+          if [ "$effective_exit" -eq 0 ]; then
+            if ! grep -Fx 'PASS=false' "$log" || ! grep -Fx 'FINAL_PASS=false' "$log" || ! grep -Fx 'EFFECT_ACK_DONE=false' "$log" || ! grep -Fx 'ZENODO_MUTATION=false' "$log"; then
+              capture_hold
+              effective_exit=2
+            else
+              if ! gzip -9 "$output"; then
+                capture_hold
+                effective_exit=2
+              fi
+            fi
+          fi
+          sha256sum "$artifact_root"/* > "$artifact_root/SHA256SUMS.txt"
+          printf 'exit_code=%s\n' "$effective_exit" >> "$GITHUB_OUTPUT"
       - name: Upload immutable remaining-subject probe evidence
+        id: probe_evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: qikvrt-batch003-remaining-archive-probe
+          name: qikvrt-batch003-remaining-archive-probe-${{ github.sha }}
           retention-days: 30
           if-no-files-found: error
           compression-level: 0
-          path: probe-output/**
+          path: ${{ runner.temp }}/qikvrt-batch003-remaining-archive-probe/**
+      - name: Enforce typed archive-probe HOLD after evidence upload
+        if: >-
+          always() && steps.probe.outputs.exit_code != '' &&
+          steps.probe.outputs.exit_code != '0' &&
+          steps.probe_evidence.outcome == 'success'
+        env:
+          PROBE_EXIT: ${{ steps.probe.outputs.exit_code }}
+          RECOVERY_RECEIPT: ${{ runner.temp }}/qikvrt-batch003-remaining-archive-probe/RECOVERY_RECEIPT.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$PROBE_EXIT" =~ ^[1-9][0-9]*$ ]]
+          test -s "$RECOVERY_RECEIPT"
+          cat "$RECOVERY_RECEIPT" >&2
+          exit "$PROBE_EXIT"
