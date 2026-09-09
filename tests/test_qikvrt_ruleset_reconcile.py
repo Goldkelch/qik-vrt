@@ -103,6 +103,8 @@ class RulesetReconcileTests(unittest.TestCase):
         self.assertIn("persist-credentials: false", workflow)
         self.assertIn("--apply", workflow)
         self.assertIn("--receipt", workflow)
+        self.assertIn("set +e", workflow)
+        self.assertIn('[ "$state" != "REQUEST_AUTHORITY" ]', workflow)
         self.assertNotIn("pull-requests: write", workflow)
         self.assertNotIn("contents: write", workflow)
 

@@ -31,9 +31,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          set +e
           python3 -B tools/qikvrt_ruleset_reconcile.py \
             --apply \
             --receipt "$RUNNER_TEMP/qikvrt-main-ruleset-receipt.json"
+          reconcile_rc=$?
+          set -e
+          state="$(jq -r '.state // empty' "$RUNNER_TEMP/qikvrt-main-ruleset-receipt.json")"
+          if [ "$reconcile_rc" -ne 0 ] && [ "$state" != "REQUEST_AUTHORITY" ]; then
+            exit "$reconcile_rc"
+          fi
       - name: Preserve exact reconciliation receipt
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
