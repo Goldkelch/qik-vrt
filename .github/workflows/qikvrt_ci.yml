@@ -126,7 +126,15 @@ jobs:
           set -euo pipefail
           mkdir -p "$EVIDENCE_ROOT"
           if ! command -v ghdl >/dev/null 2>&1; then
-            sudo apt-get update
+            ubuntu_sources=/etc/apt/sources.list.d/ubuntu.sources
+            test -f "$ubuntu_sources"
+            # GHDL is provided by Ubuntu. Refresh only that authoritative source so
+            # an unrelated runner-added third-party repository cannot block the
+            # exact-head VHDL gate with inconsistent package metadata.
+            sudo apt-get update \
+              -o Dir::Etc::sourcelist="sources.list.d/ubuntu.sources" \
+              -o Dir::Etc::sourceparts="-" \
+              -o APT::Get::List-Cleanup="0"
             candidate="$(apt-cache policy ghdl | awk '/Candidate:/ {print $2}')"
             test -n "$candidate"
             test "$candidate" != '(none)'
