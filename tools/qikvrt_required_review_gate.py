@@ -107,10 +107,10 @@ def _workflow_run_pr_subject(
 def select_required_review_targets(
     *,
     repository: str,
-    requested_pr: str,
     workflow_event: str,
     workflow_run_head: str,
     event_prs: Any,
+    requested_pr: str = "",
 ) -> dict[str, Any]:
     """Resolve exactly one status subject without a scheduled repository scan."""
     if not isinstance(repository, str) or repository.count("/") != 1:
@@ -124,15 +124,10 @@ def select_required_review_targets(
             workflow_run_head=run_head,
         )
     if requested_pr.strip():
-        number = _positive_pr_number(requested_pr)
-        if number is None:
-            return _selection(
-                "INELIGIBLE_EVENT_TARGET",
-                source="WORKFLOW_DISPATCH_PR",
-                first_blocker="INVALID_EXACT_PULL_REQUEST_NUMBER",
-            )
         return _selection(
-            "CANDIDATE", source="WORKFLOW_DISPATCH_PR", pr_numbers=[number]
+            "INELIGIBLE_EVENT_TARGET",
+            source="MANUAL_INPUT_FORBIDDEN",
+            first_blocker="MANUAL_REQUIRED_REVIEW_DISPATCH_FORBIDDEN",
         )
 
     if workflow_event in {"schedule", "workflow_dispatch"}:

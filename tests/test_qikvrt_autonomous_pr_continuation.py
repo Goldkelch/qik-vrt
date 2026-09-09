@@ -47,6 +47,10 @@ class AutonomousPRContinuationTests(unittest.TestCase):
         self.assertNotIn("refs/heads/main\"", source)
         self.assertIn("make test", source)
         self.assertIn("qikvrt_autonomous_exact_head_verify", source)
+        self.assertNotIn("repository_dispatch", source)
+        self.assertNotIn('"repos/${GITHUB_REPOSITORY}/dispatches"', source)
+        self.assertNotIn("workflow_dispatch:", source)
+        self.assertNotIn("schedule:", source)
 
 
     def test_only_handler_owned_generated_conflicts_are_auto_resolved(self) -> None:

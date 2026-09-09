@@ -19,15 +19,14 @@ This contract applies to `Goldkelch/qik-vrt` and `ingolf-lohmann/qik-vrt`. It is
 
 The existing `QIKVRT requested review executor` is the role-local Mesh
 self-review feedback plane. It runs from trusted repository code for every
-eligible same-repository pull request supplied by an exact native event or an
-explicit exact-PR-and-head dispatch, whose bytes can be observed. An explicit human
-review request remains a useful event signal, but it is not an execution
-prerequisite.
+eligible same-repository pull request supplied by an exact native event, whose
+bytes can be observed. An explicit human review request remains a useful event
+signal, but it is not an execution prerequisite. The executor and the required
+Code-Owner gate have no manual or self-dispatch entrypoint.
 
-An explicit dispatch of that executor is a technical-review action only. Its
-completed manual workflow run is intentionally not a source for the required
-Code-Owner status; an operator who needs that status reobserved dispatches
-`QIKVRT required code-owner review` separately with the same exact PR number.
+When causal progress needs another observation, it remains fail-closed until a
+separate native pull-request, review, issue-comment, or eligible workflow-run
+event carries the exact subject again. No synthetic successor is manufactured.
 
 For every review, the executor must act without deliberate queueing:
 
@@ -94,8 +93,8 @@ completed workflow signal. GitHub Actions exposes no native
 `pull_request_review_thread` workflow trigger. A resolve/unresolve-only thread
 transition is therefore `UNOBSERVABLE_WITHOUT_EXACT_EVENT`: it does not permit
 a scheduled scan, a rotating candidate selection, a review dispatch, or a
-metadata mutation. The next exact repository event or explicit dispatch may
-reobserve a bound subject; no prior evidence is transferred.
+metadata mutation. The next exact repository event may reobserve a bound
+subject; no prior evidence is transferred.
 
 The complete diff is transported as ordered, content-addressed packets of at
 most 1 MiB. Its canonical manifest binds an explicit packet count, every

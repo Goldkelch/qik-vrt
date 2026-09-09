@@ -8,12 +8,6 @@ on:
       - "QIKVRT code-owner review observer"
       - "QIKVRT requested review executor"
     types: [completed]
-  workflow_dispatch:
-    inputs:
-      pr:
-        description: "Exact open main-based pull request number"
-        required: true
-        type: string
 
 permissions:
   actions: read
@@ -35,7 +29,6 @@ jobs:
       REPOSITORY: ${{ github.repository }}
       REQUIRED_CODE_OWNERS_JSON: '["Goldkelch","ingolf-lohmann"]'
       STATUS_CONTEXT: QIKVRT required code-owner review
-      REQUESTED_PR: ${{ inputs.pr || '' }}
       EVENT_WORKFLOW_EVENT: ${{ github.event.workflow_run.event || '' }}
       EVENT_WORKFLOW_RUN_HEAD: ${{ github.event.workflow_run.head_sha || '' }}
       EVENT_PRS: ${{ toJSON(github.event.workflow_run.pull_requests || fromJSON('[]')) }}
@@ -58,7 +51,6 @@ jobs:
 
           value=select_required_review_targets(
               repository=os.environ['REPOSITORY'],
-              requested_pr=os.environ.get('REQUESTED_PR','').strip(),
               workflow_event=os.environ.get('EVENT_WORKFLOW_EVENT','').strip(),
               workflow_run_head=os.environ.get('EVENT_WORKFLOW_RUN_HEAD','').strip(),
               event_prs=json.loads(os.environ.get('EVENT_PRS') or '[]'),
@@ -241,7 +233,7 @@ jobs:
           run=gh(f'repos/{repo}/actions/runs/{run_id}')
           trusted_path='.github/workflows/qikvrt_requested_review_executor.yml'
           workflow=gh(f'repos/{repo}/actions/workflows/qikvrt_requested_review_executor.yml')
-          allowed_events={'pull_request_target','issue_comment','workflow_run','workflow_dispatch'}
+          allowed_events={'pull_request_target','issue_comment','workflow_run'}
           if (
               run.get('name') != 'QIKVRT requested review executor'
               or run.get('conclusion') != 'success'

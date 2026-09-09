@@ -42,17 +42,16 @@
       "workflow_path": ".github/workflows/qikvrt_requested_review_executor.yml",
       "decision_core_path": "tools/qikvrt_requested_review_executor.py",
       "human_review_request_prerequisite": false,
-      "eligible_subjects": "SAME_REPOSITORY_PULL_REQUESTS_WITH_OBSERVABLE_BYTES_FROM_EXACT_EVENT_OR_EXPLICIT_DISPATCH",
+      "eligible_subjects": "SAME_REPOSITORY_PULL_REQUESTS_WITH_OBSERVABLE_BYTES_FROM_EXACT_NATIVE_EVENT",
       "selection": {
         "allowed_sources": [
           "EXACT_PULL_REQUEST_OR_ISSUE_EVENT",
-          "EXACT_ROLE_LOCAL_WORKFLOW_RUN_PULL_REQUEST",
-          "EXPLICIT_WORKFLOW_DISPATCH_PULL_REQUEST_AND_HEAD"
+          "EXACT_ROLE_LOCAL_WORKFLOW_RUN_PULL_REQUEST"
         ],
         "eventless_repository_scan": "FORBIDDEN",
         "scheduled_or_manual_workflow_run_source": "FORBIDDEN",
         "workflow_run_requires_role_local_url_and_matching_head": true,
-        "manual_dispatch_requires_matching_exact_head": true,
+        "manual_dispatch": "FORBIDDEN",
         "review_intake_priority_policy": "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json#/review_intake_priority",
         "github_actions_cross_event_priority_guarantee": "NOT_AVAILABLE",
         "github_app_event_broker_required_for_cross_event_priority": true,

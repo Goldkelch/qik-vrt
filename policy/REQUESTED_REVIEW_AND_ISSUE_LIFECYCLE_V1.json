@@ -24,7 +24,7 @@
   "human_contract": "docs/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE.md",
   "review_lifecycle": {
     "requested_review_default": "EXECUTE_IMMEDIATELY",
-    "mesh_self_review_default": "EXECUTE_FOR_EVERY_ELIGIBLE_EXACT_EVENT_OR_EXPLICIT_DISPATCH_SUBJECT",
+    "mesh_self_review_default": "EXECUTE_FOR_EVERY_ELIGIBLE_EXACT_NATIVE_EVENT_SUBJECT",
     "human_review_request_prerequisite": false,
     "deliberate_queueing_without_evidenced_blocker": "FORBIDDEN",
     "required_reobservation": [
@@ -196,13 +196,11 @@
       "pull_request_target.ready_for_review",
       "pull_request_target.reopened",
       "issue_comment.created_edited_deleted",
-      "workflow_run.completed",
-      "workflow_dispatch.exact_pr_and_head"
+      "workflow_run.completed"
     ],
     "eventless_review_selection": "FORBIDDEN",
     "scheduled_review_execution": "FORBIDDEN",
-    "manual_executor_dispatch_handoff": "TECHNICAL_REVIEW_ONLY_REQUIRED_CODE_OWNER_STATUS_REQUIRES_SEPARATE_EXACT_GATE_DISPATCH",
-    "manual_executor_dispatch_requires_exact_head": true,
+    "manual_executor_dispatch": "FORBIDDEN",
     "complete_diff_transport_packet_max_bytes": 1048576,
     "complete_diff_transport_acceptance": "SEQUENTIAL_EXACT_PACKET_ORDER_EXPLICIT_COUNT_PER_PACKET_AND_TOTAL_SHA256_CANONICAL_MANIFEST_SHA256_AND_EXACT_LEDGER_MANIFEST_READBACK_REQUIRED",
     "review_thread_resolution_event_boundary": "NO_NATIVE_GITHUB_ACTIONS_TRIGGER_UNOBSERVABLE_WITHOUT_EXACT_EVENT_NO_ROTATING_SCAN_OR_REVIEW_DISPATCH",
@@ -216,7 +214,7 @@
     "promotion_favorable_nondraft_review_next_action": "REQUEST_HISTORY_PRESERVING_EXACT_BASE_CAS_AUTHORITY",
     "skipped_only_required_gate": "ZERO_EXECUTED_JOB_GATE_REOBSERVE",
     "human_review_request_required": false,
-    "candidate_selection": "EXACT_EVENT_OR_EXPLICIT_DISPATCH_SUBJECT_ONLY",
+    "candidate_selection": "EXACT_NATIVE_EVENT_SUBJECT_ONLY",
     "same_head_reobservation": "ALLOWED_ONLY_WHEN_CAUSAL_EVIDENCE_FINGERPRINT_CHANGED",
     "duplicate_identical_evidence_fingerprint_review": "FORBIDDEN",
     "head_tree_or_scope_drift_invalidates_review": true,
@@ -239,7 +237,7 @@
     "executor_workflow": ".github/workflows/qikvrt_requested_review_executor.yml",
     "decision_core": "tools/qikvrt_requested_review_executor.py",
     "human_review_request_prerequisite": false,
-    "eligible_subjects": "SAME_REPOSITORY_PULL_REQUESTS_WITH_OBSERVABLE_BYTES_FROM_EXACT_EVENT_OR_EXPLICIT_DISPATCH",
+    "eligible_subjects": "SAME_REPOSITORY_PULL_REQUESTS_WITH_OBSERVABLE_BYTES_FROM_EXACT_NATIVE_EVENT",
     "exact_subject_binding": [
       "REPOSITORY_ROLE",
       "PULL_REQUEST_NUMBER",

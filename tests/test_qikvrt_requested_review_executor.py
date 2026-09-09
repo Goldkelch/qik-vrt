@@ -1867,41 +1867,6 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             [0.25, 1.0],
         )
 
-    def test_recursive_queue_intent_and_ack_are_content_addressed_and_immutable(self):
-        receipt = self.evaluate(self.snapshot())
-        predecessor = "a" * 64
-        path, intent = MODULE.review_queue_intent(receipt, predecessor)
-        self.assertEqual(
-            path,
-            f"{MODULE.REVIEW_QUEUE_ROOT}/pr-349/{HEAD_SHA}/"
-            f"{receipt['evidence_fingerprint']}.json",
-        )
-        self.assertEqual(intent["predecessor_fingerprint"], predecessor)
-        self.assertEqual(
-            intent["successor_fingerprint"], receipt["evidence_fingerprint"]
-        )
-        self.assertEqual(intent["tree_sha"], HEAD_TREE_SHA)
-        self.assertEqual(intent["base_sha"], MAIN_SHA)
-        self.assertFalse(any(intent["completion_claims"].values()))
-        self.assertEqual(
-            MODULE.review_queue_intent(receipt, predecessor),
-            (path, intent),
-        )
-
-        ack_path, ack = MODULE.review_queue_ack(
-            "example/qik-vrt",
-            349,
-            HEAD_SHA,
-            predecessor,
-            receipt["evidence_fingerprint"],
-        )
-        self.assertEqual(
-            ack_path,
-            f"{MODULE.REVIEW_QUEUE_ACK_ROOT}/pr-349/{HEAD_SHA}/{predecessor}.json",
-        )
-        self.assertEqual(ack["state"], "SUPERSEDED_BY_CAUSAL_REOBSERVATION")
-        self.assertFalse(any(ack["completion_claims"].values()))
-
     def test_conflict_marker_is_a_deterministic_review_finding(self):
         snap = self.snapshot(diff_payload=CONFLICT_DIFF_BYTES)
 
@@ -2008,7 +1973,8 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn("select_review_subject", text)
         self.assertIn("qikvrt-mesh-review-selection-", text)
         self.assertIn("EVENT_NAME: ${{ github.event_name }}", text)
-        self.assertIn("REQUESTED_HEAD: ${{ inputs.head || '' }}", text)
+        self.assertNotIn("workflow_dispatch:", text)
+        self.assertNotIn("inputs.", text)
         self.assertIn("GITHUB_EVENT_PATH", text)
         self.assertIn("event_payload_sha256", text)
         self.assertIn("qikvrt-review-event-context.json", text)
@@ -2028,7 +1994,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn("'force':False", text)
         self.assertIn("reconcile_ref_readback", core)
         self.assertIn("reconcile_ref_readback", text)
-        self.assertEqual(text.count("reconcile_after_mutation("), 4)
+        self.assertEqual(text.count("reconcile_after_mutation("), 3)
         self.assertIn("'ref_reconciliations':[]", text)
         self.assertIn("'mutation_response_sha':None", text)
         self.assertIn("_MUTATION_RESPONSE_MALFORMED", text)
@@ -2036,9 +2002,9 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertEqual(text.count("'POST',f'repos/{repo}/git/refs'"), 1)
         self.assertEqual(
             text.count("'PATCH',f'repos/{repo}/git/refs/heads/{short_ref}'"),
-            2,
+            1,
         )
-        self.assertEqual(text.count("'tree':tree,'parents':[ledger_head]"), 2)
+        self.assertEqual(text.count("'tree':tree,'parents':[ledger_head]"), 1)
         helper_start = text.index("          def reconcile_after_mutation(")
         helper_end = text.index(
             "\n          try:\n              if not receipt_path",
@@ -2062,24 +2028,17 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn("'parents':[]", text)
         self.assertIn("pre-ledger-cas", text)
         self.assertIn("post-ledger-cas", text)
-        self.assertIn("actions: write", text)
+        self.assertIn("actions: read", text)
         self.assertIn("'--mode','ledger-history'", text)
         self.assertIn("projection_current", text)
-        self.assertIn("Dispatch exactly one exact-head progress successor", text)
-        self.assertIn("'gh','workflow','run','qikvrt_requested_review_executor.yml'", text)
-        self.assertIn("f'head={head}'", text)
-        self.assertIn("f'fingerprint={fingerprint}'", text)
-        self.assertIn("steps.queue.outputs.needed == 'true'", text)
+        self.assertNotIn("gh','workflow','run'", text)
+        self.assertNotIn("/dispatches", text)
         self.assertNotIn("steps.ledger.outputs.duplicate != 'true'", text)
-        self.assertIn("Select exactly one durable recursive review work unit", text)
-        self.assertIn("review_queue_intent", text)
-        self.assertIn("review_queue_ack", text)
-        self.assertIn("successor_evidence_persisted", text)
-        self.assertIn("RECURSIVE_QUEUE_EVIDENCE_MISSING", text)
-        self.assertIn("SUPERSEDED_BY_CAUSAL_REOBSERVATION", core)
-        self.assertIn("PROGRESS_SUCCESSOR_TRANSPORT_ACK_NOT_OBSERVED", text)
-        self.assertIn("Reobserve successor transport and literal subject binding", text)
-        self.assertIn("PROGRESS_SUCCESSOR_REOBSERVATION_FAILED", text)
+        self.assertNotIn("review_queue_intent", text)
+        self.assertNotIn("review_queue_ack", text)
+        self.assertNotIn("review_queue_intent", core)
+        self.assertNotIn("review_queue_ack", core)
+        self.assertIn("EXACT_EVENT_SUCCESSOR_REOBSERVATION_REQUIRED_", text)
         self.assertIn("_historical_receipt_binding", core)
         self.assertIn("REOBSERVATION_PROGRESS_FIELDS", core)
         self.assertIn("LIVE_STATUS_MARKER", core)
@@ -2177,34 +2136,19 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertTrue(result["review_execution"])
         self.assertEqual(result["eligibility_reasons"], [])
 
-    def test_invalid_conflicting_or_unobservable_exact_target_never_executes(self):
-        invalid = MODULE.select_review_subject(
-            repository="example/qik-vrt",
-            requested_pr="not-a-number",
-            event_pr="",
-            event_name="workflow_dispatch",
-            expected_head="",
-            workflow_event="",
-            workflow_prs=[],
-            fetch_pull_request=lambda number: self.fail("invalid token must not fetch"),
-        )
-        self.assertEqual(invalid["state"], "INELIGIBLE_EVENT_TARGET")
-        self.assertEqual(invalid["first_blocker"], "INVALID_EXACT_PULL_REQUEST_NUMBER")
-
-        conflict = MODULE.select_review_subject(
+    def test_manual_or_unobservable_exact_target_never_executes(self):
+        manual = MODULE.select_review_subject(
             repository="example/qik-vrt",
             requested_pr="867",
-            event_pr="868",
-            event_name="workflow_dispatch",
+            event_pr="",
+            event_name="",
             expected_head="",
             workflow_event="",
             workflow_prs=[],
-            fetch_pull_request=lambda number: self.fail("conflicting targets must not fetch"),
+            fetch_pull_request=lambda number: self.fail("manual input must not fetch"),
         )
-        self.assertEqual(conflict["state"], "AMBIGUOUS_EVENT_SUBJECT")
-        self.assertEqual(
-            conflict["first_blocker"], "CONFLICTING_EXACT_PULL_REQUEST_SUBJECTS"
-        )
+        self.assertEqual(manual["state"], "INELIGIBLE_EVENT_TARGET")
+        self.assertEqual(manual["first_blocker"], "MANUAL_EXECUTOR_DISPATCH_FORBIDDEN")
 
         unavailable = MODULE.select_review_subject(
             repository="example/qik-vrt",
@@ -2266,33 +2210,6 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             unsupported["first_blocker"], "UNSUPPORTED_EXACT_EVENT_SOURCE"
         )
 
-    def test_explicit_dispatch_requires_the_exact_head(self):
-        missing = MODULE.select_review_subject(
-            repository="example/qik-vrt",
-            requested_pr="867",
-            event_pr="",
-            event_name="workflow_dispatch",
-            expected_head="",
-            workflow_event="",
-            workflow_prs=[],
-            fetch_pull_request=lambda number: self.fail("missing head must not fetch"),
-        )
-        self.assertEqual(missing["state"], "REOBSERVE_EXACT_EVENT_TARGET")
-        self.assertEqual(missing["first_blocker"], "WORKFLOW_DISPATCH_HEAD_MISSING")
-
-        exact = MODULE.select_review_subject(
-            repository="example/qik-vrt",
-            requested_pr="867",
-            event_pr="",
-            event_name="workflow_dispatch",
-            expected_head=HEAD_SHA,
-            workflow_event="",
-            workflow_prs=[],
-            fetch_pull_request=lambda number: self.selector_pr(number=number),
-        )
-        self.assertEqual(exact["state"], "CANDIDATE")
-        self.assertEqual(exact["expected_head"], HEAD_SHA)
-
     def test_exact_selector_head_is_enforced_before_repository_observation(self):
         with mock.patch.object(
             MODULE,
@@ -2326,7 +2243,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             fetch_pull_request=lambda number: self.fail("no event must not fetch a pull request"),
         )
         self.assertEqual(result["state"], "NO_EVENT_SUBJECT")
-        self.assertEqual(result["first_blocker"], "NO_EXACT_EVENT_OR_DISPATCH_SUBJECT")
+        self.assertEqual(result["first_blocker"], "NO_EXACT_EVENT_SUBJECT")
         self.assertFalse(result["review_execution"])
 
     def test_ambiguous_workflow_run_never_selects_one_pr_arbitrarily(self):

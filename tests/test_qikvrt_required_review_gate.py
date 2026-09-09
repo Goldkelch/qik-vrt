@@ -191,6 +191,8 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
         self.assertIn("commits/{head}/status", workflow)
         self.assertIn("STATUS_PUBLICATION_NOOP", workflow)
         self.assertNotIn("\n  schedule:\n", workflow)
+        self.assertNotIn("workflow_dispatch:", workflow)
+        self.assertNotIn("inputs.", workflow)
         self.assertNotIn("pulls?state=open", workflow)
         self.assertIn("select_required_review_targets", workflow)
         self.assertIn("EVENT_WORKFLOW_RUN_HEAD: ${{ github.event.workflow_run.head_sha || '' }}", workflow)
@@ -201,16 +203,18 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
             workflow.index("rules=gh_json(f'repos/{repo}/rules/branches/main')"),
         )
 
-    def test_target_selection_requires_one_exact_event_or_dispatch_subject(self):
-        dispatch = MODULE.select_required_review_targets(
+    def test_target_selection_requires_one_exact_native_event_subject(self):
+        manual = MODULE.select_required_review_targets(
             repository="example/qik-vrt",
             requested_pr="641",
             workflow_event="",
             workflow_run_head="",
             event_prs=[],
         )
-        self.assertEqual(dispatch["state"], "CANDIDATE")
-        self.assertEqual(dispatch["pr_numbers"], [641])
+        self.assertEqual(manual["state"], "INELIGIBLE_EVENT_TARGET")
+        self.assertEqual(
+            manual["first_blocker"], "MANUAL_REQUIRED_REVIEW_DISPATCH_FORBIDDEN"
+        )
 
         no_event = MODULE.select_required_review_targets(
             repository="example/qik-vrt",

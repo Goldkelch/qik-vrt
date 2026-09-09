@@ -37,8 +37,6 @@ NON_GATE_OBSERVER_PATHS = {
 }
 LEDGER_REF = "refs/heads/qikvrt/mesh-review-ledger-v1"
 LEDGER_ROOT = "state/mesh/reviews"
-REVIEW_QUEUE_ROOT = "state/mesh/review-queue"
-REVIEW_QUEUE_ACK_ROOT = "state/mesh/review-queue-acks"
 TRUSTED_EVALUATOR_PATH = "tools/qikvrt_requested_review_executor.py"
 TRUSTED_WORKFLOW_PATH = ".github/workflows/qikvrt_requested_review_executor.yml"
 REVIEW_MARKER = "qikvrt-mesh-review:v1"
@@ -151,86 +149,6 @@ def _historical_receipt_binding(receipt: Mapping[str, Any]) -> dict[str, Any]:
         else:
             result[field] = value
     return result
-
-
-def review_queue_intent(
-    receipt: Mapping[str, Any],
-    predecessor_fingerprint: str,
-) -> tuple[str, dict[str, Any]]:
-    """Create one immutable, content-addressed recursive review work unit."""
-    predecessor = _sha256(predecessor_fingerprint, "predecessor fingerprint")
-    repository = receipt.get("repository")
-    pr_number = receipt.get("pr_number")
-    head = _sha(receipt.get("head_sha"), "queue head_sha")
-    tree = _sha(receipt.get("tree_sha"), "queue tree_sha")
-    base = _sha(receipt.get("base_sha"), "queue base_sha")
-    fingerprint = _sha256(
-        receipt.get("evidence_fingerprint"),
-        "queue successor fingerprint",
-    )
-    receipt_path = receipt.get("ledger_path")
-    diff_path = receipt.get("ledger_diff_path")
-    if not isinstance(repository, str) or repository.count("/") != 1:
-        raise ReviewSnapshotError("queue repository is invalid")
-    if isinstance(pr_number, bool) or not isinstance(pr_number, int) or pr_number < 1:
-        raise ReviewSnapshotError("queue pull request number is invalid")
-    if not isinstance(receipt_path, str) or not isinstance(diff_path, str):
-        raise ReviewSnapshotError("queue evidence paths are invalid")
-    path = f"{REVIEW_QUEUE_ROOT}/pr-{pr_number}/{head}/{fingerprint}.json"
-    return path, {
-        "schema": "qikvrt_mesh_review_queue_intent_v1",
-        "work_unit_id": f"pr-{pr_number}/{head}/{fingerprint}",
-        "repository": repository,
-        "pr_number": pr_number,
-        "head_sha": head,
-        "tree_sha": tree,
-        "base_sha": base,
-        "predecessor_fingerprint": predecessor,
-        "successor_fingerprint": fingerprint,
-        "receipt_path": receipt_path,
-        "diff_path": diff_path,
-        "state": "QUEUED_RECURSIVE_REOBSERVATION",
-        "completion_claims": {
-            "PASS": False,
-            "FINAL_PASS": False,
-            "EFFECT_ACK_DONE": False,
-            "MERGE": False,
-        },
-    }
-
-
-def review_queue_ack(
-    repository: str,
-    pr_number: int,
-    head_sha: str,
-    predecessor_fingerprint: str,
-    successor_fingerprint: str,
-) -> tuple[str, dict[str, Any]]:
-    """Bind completion of one work unit to the observed successor receipt."""
-    head = _sha(head_sha, "queue acknowledgement head_sha")
-    predecessor = _sha256(predecessor_fingerprint, "ack predecessor fingerprint")
-    successor = _sha256(successor_fingerprint, "ack successor fingerprint")
-    if not isinstance(repository, str) or repository.count("/") != 1:
-        raise ReviewSnapshotError("queue acknowledgement repository is invalid")
-    if isinstance(pr_number, bool) or not isinstance(pr_number, int) or pr_number < 1:
-        raise ReviewSnapshotError("queue acknowledgement PR number is invalid")
-    path = f"{REVIEW_QUEUE_ACK_ROOT}/pr-{pr_number}/{head}/{predecessor}.json"
-    return path, {
-        "schema": "qikvrt_mesh_review_queue_ack_v1",
-        "work_unit_id": f"pr-{pr_number}/{head}/{predecessor}",
-        "repository": repository,
-        "pr_number": pr_number,
-        "head_sha": head,
-        "predecessor_fingerprint": predecessor,
-        "successor_fingerprint": successor,
-        "state": "SUPERSEDED_BY_CAUSAL_REOBSERVATION",
-        "completion_claims": {
-            "PASS": False,
-            "FINAL_PASS": False,
-            "EFFECT_ACK_DONE": False,
-            "MERGE": False,
-        },
-    }
 
 
 def _pretty_json_bytes(value: Any) -> bytes:
@@ -2226,13 +2144,13 @@ def _workflow_run_pr_number(
 def select_review_subject(
     *,
     repository: str,
-    requested_pr: str,
     event_pr: str,
     event_name: str,
     expected_head: str,
     workflow_event: str,
     workflow_prs: Any,
     fetch_pull_request: Callable[[int], Mapping[str, Any]],
+    requested_pr: str = "",
 ) -> dict[str, Any]:
     """Select one exact, eligible review subject without a fallback scan.
 
@@ -2246,11 +2164,20 @@ def select_review_subject(
     if not isinstance(repository, str) or repository.count("/") != 1:
         raise ReviewSnapshotError("selector repository is invalid")
 
+    if requested_pr.strip():
+        return _selection_result(
+            "INELIGIBLE_EVENT_TARGET",
+            "EXACT_EVENT",
+            first_blocker="MANUAL_EXECUTOR_DISPATCH_FORBIDDEN",
+            event_source="MANUAL_INPUT_FORBIDDEN",
+            eligibility_reasons=["MANUAL_EXECUTOR_DISPATCH_FORBIDDEN"],
+        )
+
     bound_head = expected_head.strip()
     if bound_head and _git_sha1(bound_head) is None:
         return _selection_result(
             "REOBSERVE_EXACT_EVENT_TARGET",
-            "EXACT_EVENT_OR_DISPATCH",
+            "EXACT_EVENT",
             first_blocker="INVALID_EVENT_EXPECTED_HEAD",
             event_source="EVENT_HEAD",
             expected_head=bound_head,
@@ -2268,7 +2195,7 @@ def select_review_subject(
         if number is None:
             return _selection_result(
                 "INELIGIBLE_EVENT_TARGET",
-                "EXACT_EVENT_OR_DISPATCH",
+                "EXACT_EVENT",
                 first_blocker="INVALID_EXACT_PULL_REQUEST_NUMBER",
                 event_source=source,
                 eligibility_reasons=["INVALID_EXACT_PULL_REQUEST_NUMBER"],
@@ -2276,7 +2203,7 @@ def select_review_subject(
         if require_bound_head and not bound_head:
             return _selection_result(
                 "REOBSERVE_EXACT_EVENT_TARGET",
-                "EXACT_EVENT_OR_DISPATCH",
+                "EXACT_EVENT",
                 first_blocker=missing_head_blocker,
                 pr_number=number,
                 event_source=source,
@@ -2288,7 +2215,7 @@ def select_review_subject(
         except (OSError, ValueError, ReviewObservationError) as exc:
             return _selection_result(
                 "REOBSERVE_EXACT_EVENT_TARGET",
-                "EXACT_EVENT_OR_DISPATCH",
+                "EXACT_EVENT",
                 first_blocker="PULL_REQUEST_OBSERVATION_UNAVAILABLE",
                 pr_number=number,
                 event_source=source,
@@ -2300,7 +2227,7 @@ def select_review_subject(
         if not isinstance(observed, Mapping):
             return _selection_result(
                 "INELIGIBLE_EVENT_TARGET",
-                "EXACT_EVENT_OR_DISPATCH",
+                "EXACT_EVENT",
                 first_blocker="PULL_REQUEST_OBSERVATION_MALFORMED",
                 pr_number=number,
                 event_source=source,
@@ -2310,7 +2237,7 @@ def select_review_subject(
         if reasons:
             return _selection_result(
                 "INELIGIBLE_EVENT_TARGET",
-                "EXACT_EVENT_OR_DISPATCH",
+                "EXACT_EVENT",
                 first_blocker=reasons[0],
                 pr_number=number,
                 event_source=source,
@@ -2322,7 +2249,7 @@ def select_review_subject(
         if bound_head and subject["head_sha"] != bound_head:
             return _selection_result(
                 "REOBSERVE_EXACT_EVENT_TARGET",
-                "EXACT_EVENT_OR_DISPATCH",
+                "EXACT_EVENT",
                 first_blocker="EVENT_TARGET_HEAD_DRIFT",
                 pr_number=number,
                 event_source=source,
@@ -2333,7 +2260,7 @@ def select_review_subject(
             )
         return _selection_result(
             "CANDIDATE",
-            "EXACT_EVENT_OR_DISPATCH",
+            "EXACT_EVENT",
             pr_number=number,
             event_source=source,
             expected_head=bound_head or None,
@@ -2341,29 +2268,6 @@ def select_review_subject(
             subject_count=1,
         )
 
-    if requested_pr.strip() and event_pr.strip():
-        requested_number = _positive_integer(requested_pr)
-        event_number = _positive_integer(event_pr)
-        if (
-            requested_number is not None
-            and event_number is not None
-            and requested_number != event_number
-        ):
-            return _selection_result(
-                "AMBIGUOUS_EVENT_SUBJECT",
-                "EXACT_EVENT_OR_DISPATCH",
-                first_blocker="CONFLICTING_EXACT_PULL_REQUEST_SUBJECTS",
-                event_source="WORKFLOW_DISPATCH_AND_PULL_REQUEST_EVENT",
-                subject_count=2,
-            )
-
-    if requested_pr.strip():
-        return exact_number(
-            requested_pr,
-            "WORKFLOW_DISPATCH_PR",
-            require_bound_head=True,
-            missing_head_blocker="WORKFLOW_DISPATCH_HEAD_MISSING",
-        )
     if event_pr.strip():
         if event_name in {"pull_request_target", "pull_request_review"}:
             return exact_number(
@@ -2381,7 +2285,7 @@ def select_review_subject(
             )
         return _selection_result(
             "INELIGIBLE_EVENT_TARGET",
-            "EXACT_EVENT_OR_DISPATCH",
+            "EXACT_EVENT",
             first_blocker="UNSUPPORTED_EXACT_EVENT_SOURCE",
             event_source=event_name or "UNKNOWN",
             eligibility_reasons=["UNSUPPORTED_EXACT_EVENT_SOURCE"],
@@ -2391,7 +2295,7 @@ def select_review_subject(
         return _selection_result(
             "NO_EVENT_SUBJECT",
             "NO_EVENT_SUBJECT",
-            first_blocker="NO_EXACT_EVENT_OR_DISPATCH_SUBJECT",
+            first_blocker="NO_EXACT_EVENT_SUBJECT",
             event_source="NONE",
             expected_head=bound_head or None,
         )
@@ -2400,7 +2304,7 @@ def select_review_subject(
         if workflow_event in {"schedule", "workflow_dispatch"}:
             return _selection_result(
                 "INELIGIBLE_EVENT_TARGET",
-                "EXACT_EVENT_OR_DISPATCH",
+                "EXACT_EVENT",
                 first_blocker="SCHEDULED_OR_MANUAL_WORKFLOW_RUN_FORBIDDEN",
                 event_source="WORKFLOW_RUN",
                 expected_head=bound_head or None,
@@ -2409,7 +2313,7 @@ def select_review_subject(
         if not workflow_prs:
             return _selection_result(
                 "NO_EVENT_SUBJECT",
-                "EXACT_EVENT_OR_DISPATCH",
+                "EXACT_EVENT",
                 first_blocker="NO_EXACT_WORKFLOW_RUN_PULL_REQUEST",
                 event_source="WORKFLOW_RUN",
                 expected_head=bound_head or None,
@@ -2417,7 +2321,7 @@ def select_review_subject(
         if not isinstance(workflow_prs, Sequence) or isinstance(workflow_prs, (str, bytes)):
             return _selection_result(
                 "INELIGIBLE_EVENT_TARGET",
-                "EXACT_EVENT_OR_DISPATCH",
+                "EXACT_EVENT",
                 first_blocker="MALFORMED_WORKFLOW_RUN_PULL_REQUESTS",
                 event_source="WORKFLOW_RUN_PULL_REQUESTS",
                 expected_head=bound_head or None,
@@ -2428,7 +2332,7 @@ def select_review_subject(
             if not isinstance(item, Mapping):
                 return _selection_result(
                     "INELIGIBLE_EVENT_TARGET",
-                    "EXACT_EVENT_OR_DISPATCH",
+                    "EXACT_EVENT",
                     first_blocker="MALFORMED_WORKFLOW_RUN_PULL_REQUESTS",
                     event_source="WORKFLOW_RUN_PULL_REQUESTS",
                     expected_head=bound_head or None,
@@ -2438,7 +2342,7 @@ def select_review_subject(
             if blocker is not None:
                 return _selection_result(
                     "INELIGIBLE_EVENT_TARGET",
-                    "EXACT_EVENT_OR_DISPATCH",
+                    "EXACT_EVENT",
                     first_blocker=blocker,
                     event_source="WORKFLOW_RUN_PULL_REQUESTS",
                     expected_head=bound_head or None,
@@ -2449,7 +2353,7 @@ def select_review_subject(
         if len(numbers) != 1:
             return _selection_result(
                 "AMBIGUOUS_EVENT_SUBJECT",
-                "EXACT_EVENT_OR_DISPATCH",
+                "EXACT_EVENT",
                 first_blocker="WORKFLOW_RUN_MULTIPLE_PULL_REQUESTS",
                 event_source="WORKFLOW_RUN_PULL_REQUESTS",
                 expected_head=bound_head or None,
@@ -2465,7 +2369,7 @@ def select_review_subject(
     return _selection_result(
         "NO_EVENT_SUBJECT",
         "NO_EVENT_SUBJECT",
-        first_blocker="NO_EXACT_EVENT_OR_DISPATCH_SUBJECT",
+        first_blocker="NO_EXACT_EVENT_SUBJECT",
         event_source="NONE",
     )
 

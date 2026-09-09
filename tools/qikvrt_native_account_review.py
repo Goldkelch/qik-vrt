@@ -429,8 +429,6 @@ def _exact_followup_event(intake: Mapping[str, Any]) -> bool:
     """Accept one trusted exact event that can close a still-live request."""
     event_name = intake.get("event_name")
     event_action = intake.get("event_action")
-    if event_name == "workflow_dispatch":
-        return event_action == ""
     if event_name == "pull_request_target" and event_action in {
         "review_requested",
         "review_request_removed",

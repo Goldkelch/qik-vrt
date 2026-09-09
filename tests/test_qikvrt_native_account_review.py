@@ -122,7 +122,6 @@ class NativeAccountReviewTests(unittest.TestCase):
     def test_trusted_exact_followup_closes_a_live_request(self):
         for intake in (
             {"event_name": "workflow_run", "event_action": "completed"},
-            {"event_name": "workflow_dispatch", "event_action": ""},
             {"event_name": "issue_comment", "event_action": "created"},
         ):
             with self.subTest(intake=intake):
@@ -570,7 +569,7 @@ class NativeAccountReviewTests(unittest.TestCase):
         self.assertIn("verify-readback", workflow)
         self.assertIn("persist-credentials: false", workflow)
         self.assertIn("run.get('workflow_id') != workflow.get('id')", workflow)
-        self.assertIn("allowed_events={'pull_request_target','issue_comment','workflow_run','workflow_dispatch'}", workflow)
+        self.assertIn("allowed_events={'pull_request_target','issue_comment','workflow_run'}", workflow)
         self.assertIn("IMMUTABLE_EXECUTOR_ARTIFACT_RETRACTION_ONLY", workflow)
         self.assertIn("executor artifact name and receipt binding differ", workflow)
         self.assertIn("executor receipt event provenance differs from the trusted run", workflow)

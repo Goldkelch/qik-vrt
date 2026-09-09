@@ -90,7 +90,7 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertEqual(executor["workflow_name"], "QIKVRT requested review executor")
         self.assertEqual(
             executor["eligible_subjects"],
-            "SAME_REPOSITORY_PULL_REQUESTS_WITH_OBSERVABLE_BYTES_FROM_EXACT_EVENT_OR_EXPLICIT_DISPATCH",
+            "SAME_REPOSITORY_PULL_REQUESTS_WITH_OBSERVABLE_BYTES_FROM_EXACT_NATIVE_EVENT",
         )
         self.assertFalse(executor["human_review_request_prerequisite"])
         self.assertEqual(executor["platform_review_event"], "COMMENT")
@@ -100,7 +100,6 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
             [
                 "EXACT_PULL_REQUEST_OR_ISSUE_EVENT",
                 "EXACT_ROLE_LOCAL_WORKFLOW_RUN_PULL_REQUEST",
-                "EXPLICIT_WORKFLOW_DISPATCH_PULL_REQUEST_AND_HEAD",
             ],
         )
         self.assertEqual(executor["selection"]["eventless_repository_scan"], "FORBIDDEN")
@@ -109,7 +108,7 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
             "FORBIDDEN",
         )
         self.assertTrue(executor["selection"]["workflow_run_requires_role_local_url_and_matching_head"])
-        self.assertTrue(executor["selection"]["manual_dispatch_requires_matching_exact_head"])
+        self.assertEqual(executor["selection"]["manual_dispatch"], "FORBIDDEN")
         self.assertEqual(
             executor["selection"]["review_intake_priority_policy"],
             "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json#/review_intake_priority",
@@ -253,13 +252,13 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertFalse(policy["review_executor"]["human_review_request_required"])
         self.assertEqual(
             policy["review_lifecycle"]["mesh_self_review_default"],
-            "EXECUTE_FOR_EVERY_ELIGIBLE_EXACT_EVENT_OR_EXPLICIT_DISPATCH_SUBJECT",
+            "EXECUTE_FOR_EVERY_ELIGIBLE_EXACT_NATIVE_EVENT_SUBJECT",
         )
         self.assertEqual(
             policy_plane["eligible_subjects"],
             plane["executor"]["eligible_subjects"],
         )
-        self.assertIn("workflow_dispatch.exact_pr_and_head", policy["review_executor"]["event_triggers"])
+        self.assertNotIn("workflow_dispatch.exact_pr_and_head", policy["review_executor"]["event_triggers"])
         intake_priority = policy["review_intake_priority"]
         self.assertEqual(
             [item["class"] for item in intake_priority["priority_classes"]],
@@ -274,10 +273,7 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertTrue(
             intake_priority["ordering"]["github_app_event_broker_required_for_cross_event_priority"]
         )
-        self.assertEqual(
-            policy["review_executor"]["manual_executor_dispatch_handoff"],
-            "TECHNICAL_REVIEW_ONLY_REQUIRED_CODE_OWNER_STATUS_REQUIRES_SEPARATE_EXACT_GATE_DISPATCH",
-        )
+        self.assertEqual(policy["review_executor"]["manual_executor_dispatch"], "FORBIDDEN")
         self.assertEqual(
             policy["mesh_self_review_owner_delegation"],
             "state/authorization/delegations/OWNER_MESH_REPOSITORY_SELF_REVIEW_FEEDBACK_V1.json",
@@ -317,8 +313,8 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
             documentation,
         )
         self.assertIn("D0=3 REQUEST_AUTHORITY", documentation)
-        self.assertIn("exact native event or an\nexplicit exact-PR-and-head dispatch", documentation)
-        self.assertIn("technical-review action only", documentation)
+        self.assertIn("supplied by an exact native event", documentation)
+        self.assertIn("no manual or self-dispatch entrypoint", documentation)
         self.assertIn("may submit only a\n`COMMENT` review event", documentation)
 
     def test_self_healing_and_node_policy_point_to_the_same_continuity_contract(self) -> None:

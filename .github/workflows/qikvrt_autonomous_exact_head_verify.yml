@@ -3,17 +3,24 @@
 name: QIK-VRT autonomous exact-head verification
 
 on:
-  repository_dispatch:
-    types: [qikvrt_autonomous_exact_head_verify]
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, review_requested]
+  workflow_run:
+    workflows:
+      - "QIKVRT CI"
+      - "QIKVRT repository evidence materialization"
+      - "QIKVRT Collective Proposal Review"
+      - "QIK-VRT global claim completion"
+      - "QIKVRT code-owner review observer"
+    types: [completed]
 
 permissions:
-  actions: write
   contents: read
   pull-requests: write
   statuses: write
 
 concurrency:
-  group: qikvrt-autonomous-exact-head-${{ github.event.client_payload.pull_request }}-${{ github.event.client_payload.head_sha }}
+  group: qikvrt-autonomous-exact-head-${{ github.event.pull_request.number || github.event.workflow_run.id }}-${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha }}
   cancel-in-progress: false
 
 jobs:
@@ -21,28 +28,55 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      TARGET_REPOSITORY: ${{ github.event.client_payload.repository }}
-      TARGET_PR: ${{ github.event.client_payload.pull_request }}
-      TARGET_REF: ${{ github.event.client_payload.head_ref }}
-      TARGET_SHA: ${{ github.event.client_payload.head_sha }}
-      TARGET_BASE_SHA: ${{ github.event.client_payload.base_sha }}
+      EVENT_NAME: ${{ github.event_name }}
+      EVENT_PR: ${{ github.event.pull_request.number || '' }}
+      EVENT_SHA: ${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha || '' }}
+      EVENT_WORKFLOW_EVENT: ${{ github.event.workflow_run.event || '' }}
+      EVENT_WORKFLOW_PRS: ${{ toJSON(github.event.workflow_run.pull_requests || fromJSON('[]')) }}
+      TARGET_REPOSITORY: ${{ github.repository }}
     steps:
-      - name: Validate dispatch envelope
+      - name: Bind one exact native event subject
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           test "$TARGET_REPOSITORY" = "$GITHUB_REPOSITORY"
-          test "${#TARGET_SHA}" -eq 40
-          test "${#TARGET_BASE_SHA}" -eq 40
-          current="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TARGET_PR}" --jq '.head.sha')"
-          test "$current" = "$TARGET_SHA"
+          target_pr=""
+          case "$EVENT_NAME" in
+            pull_request_target)
+              target_pr="$EVENT_PR"
+              ;;
+            workflow_run)
+              test "$EVENT_WORKFLOW_EVENT" = pull_request
+              test "$(jq 'length' <<<"$EVENT_WORKFLOW_PRS")" -eq 1
+              target_pr="$(jq -r '.[0].number // empty' <<<"$EVENT_WORKFLOW_PRS")"
+              ;;
+            *)
+              echo "HOLD_UNVERIFIED: unsupported native event $EVENT_NAME" >&2
+              exit 2
+              ;;
+          esac
+          test "$target_pr" -gt 0
+          test "${#EVENT_SHA}" -eq 40
+          live="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${target_pr}")"
+          test "$(jq -r '.state' <<<"$live")" = open
+          test "$(jq -r '.head.repo.full_name // empty' <<<"$live")" = "$GITHUB_REPOSITORY"
+          test "$(jq -r '.base.ref' <<<"$live")" = main
+          target_sha="$(jq -r '.head.sha' <<<"$live")"
+          target_base_sha="$(jq -r '.base.sha' <<<"$live")"
+          test "$target_sha" = "$EVENT_SHA"
+          test "${#target_base_sha}" -eq 40
+          {
+            echo "TARGET_PR=$target_pr"
+            echo "TARGET_SHA=$target_sha"
+            echo "TARGET_BASE_SHA=$target_base_sha"
+          } >> "$GITHUB_ENV"
 
       - name: Check out exact candidate head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event.client_payload.head_sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -113,21 +147,6 @@ jobs:
           Repository-internal deterministic gates are green for this verification scope. Any declared independent human review, Mirror promotion, or separately authorized publication remains a distinct downstream gate. No repository-wide PASS, FINAL_PASS, or EFFECT_ACK_DONE is claimed.
           EOF
           gh pr comment "$TARGET_PR" --body-file /tmp/qikvrt-autonomous-verified.md
-
-      - name: Dispatch exact-head requested-review continuation
-        if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          current="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TARGET_PR}" --jq '.head.sha')"
-          test "$current" = "$TARGET_SHA"
-          gh api --method POST \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_requested_review_executor.yml/dispatches" \
-            -f ref=main \
-            -f "inputs[pr]=$TARGET_PR" \
-            -f "inputs[head]=$TARGET_SHA"
 
       - name: Publish exact-head failure status
         if: failure()
