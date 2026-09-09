@@ -33,7 +33,6 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
     def test_relevant_repository_edges_are_interrupt_sources(self) -> None:
         for workflow_name in (
             "QIKVRT repository evidence materialization",
-            "QIKVRT adaptive stacked successor integrity materialization",
             "QIKVRT CI",
             "QIKVRT Collective Proposal Review",
             "QIK-VRT global claim completion",

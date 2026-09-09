@@ -21,6 +21,7 @@ on:
 permissions:
   contents: write
   actions: read
+  pull-requests: write
 
 concurrency:
   group: qikvrt-universal-terminal-${{ github.repository }}
@@ -52,7 +53,8 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Fail closed unless observed SHA is current Trusted Main
+      - name: Bind current Trusted Main or terminally hold
+        id: trusted-main
         env:
           SUBJECT_SHA: ${{ steps.subject.outputs.sha }}
         shell: bash
@@ -62,10 +64,19 @@ jobs:
           main_sha="$(git rev-parse origin/main)"
           if [ "$SUBJECT_SHA" != "$main_sha" ]; then
             echo "HOLD_UNVERIFIED stale subject=$SUBJECT_SHA current_main=$main_sha"
-            exit 0
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            {
+              echo '### Stale universal-terminal subject'
+              echo
+              echo "HOLD_UNVERIFIED stale subject=$SUBJECT_SHA current_main=$main_sha"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 2
           fi
+          echo "current=true" >> "$GITHUB_OUTPUT"
+          echo "main_sha=$main_sha" >> "$GITHUB_OUTPUT"
 
       - name: Run Lean/Lake proof build when configured
+        if: steps.trusted-main.outputs.current == 'true'
         id: lake
         shell: bash
         run: |
@@ -80,6 +91,7 @@ jobs:
           fi
 
       - name: Materialize live events, proof index and recursive terminal graph
+        if: steps.trusted-main.outputs.current == 'true'
         env:
           QIKVRT_EXACT_SHA: ${{ steps.subject.outputs.sha }}
           QIKVRT_SOURCE_EVENT: ${{ steps.subject.outputs.source }}
@@ -87,6 +99,7 @@ jobs:
         run: python3 tools/qikvrt_universal_terminal_materialize.py
 
       - name: Bind Lean/Lake execution receipt to exact subject
+        if: steps.trusted-main.outputs.current == 'true'
         env:
           SUBJECT_SHA: ${{ steps.subject.outputs.sha }}
           LAKE_STATE: ${{ steps.lake.outputs.state }}
@@ -113,16 +126,121 @@ jobs:
           p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+'\n')
           PY
 
-      - name: Commit only productive materialized delta
+      - name: Create one exact-main-bound draft materialization candidate
+        if: steps.trusted-main.outputs.current == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_EVENT: ${{ steps.subject.outputs.source }}
         shell: bash
         run: |
           set -euo pipefail
+          source_head="$(git rev-parse --verify HEAD^{commit})"
+          test "$source_head" = "${{ steps.trusted-main.outputs.main_sha }}"
+          remote_main="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 { print $1 }')"
+          test "$remote_main" = "$source_head" || {
+            echo "HOLD_UNVERIFIED main advanced before terminal materialization" >&2
+            exit 2
+          }
           git add docs/science/index.json docs/science/status.json docs/science/terminals.json docs/science/live-events.jsonl state/live/QIKVRT_LIVE_EVENTS.jsonl
           if git diff --cached --quiet; then
             echo 'NOOP: terminal projection already current'
             exit 0
           fi
+          expected_tree="$(git write-tree)"
+          branch="automation/universal-terminal-materialization-${source_head:0:16}"
+          if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
+            candidate_head="$(git ls-remote --heads origin "refs/heads/$branch" | awk 'NR == 1 { print $1 }')"
+            test -n "$candidate_head" || {
+              echo "HOLD_UNVERIFIED: existing terminal candidate ref has no exact head" >&2
+              exit 2
+            }
+            git fetch --no-tags origin "refs/heads/$branch:refs/remotes/origin/$branch"
+            fetched_candidate_head="$(git rev-parse --verify "refs/remotes/origin/$branch^{commit}")"
+            test "$fetched_candidate_head" = "$candidate_head" || {
+              echo "HOLD_UNVERIFIED terminal candidate ref advanced during exact reobservation" >&2
+              exit 2
+            }
+            remote_main_before_existing="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 { print $1 }')"
+            test "$remote_main_before_existing" = "$source_head" || {
+              echo "HOLD_UNVERIFIED main advanced before existing terminal candidate reobservation" >&2
+              exit 2
+            }
+            pr_readback="$RUNNER_TEMP/qikvrt-universal-terminal-existing-pr-readback.json"
+            gh pr view "$branch" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json number,url,isDraft,baseRefName,baseRefOid,headRefName,headRefOid > "$pr_readback"
+            receipt="$RUNNER_TEMP/qikvrt-universal-terminal-existing-pr-receipt.json"
+            python3 -B tools/qikvrt_candidate_pr_receipt.py \
+              --readback "$pr_readback" \
+              --expected-base "$source_head" \
+              --expected-head "$candidate_head" \
+              --expected-branch "$branch" \
+              --expected-tree "$expected_tree" \
+              --repository . \
+              --receipt "$receipt"
+            remote_main_after_existing="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 { print $1 }')"
+            test "$remote_main_after_existing" = "$source_head" || {
+              echo "HOLD_UNVERIFIED main advanced during existing terminal candidate reobservation" >&2
+              exit 2
+            }
+            {
+              echo '### Reobserved existing universal-terminal draft candidate'
+              echo
+              cat "$receipt"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c "$branch"
           git commit -m 'ci: materialize universal terminal live proof state'
-          git push origin HEAD:main
+          candidate_head="$(git rev-parse --verify HEAD^{commit})"
+          remote_main_after_commit="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 { print $1 }')"
+          test "$remote_main_after_commit" = "$source_head" || {
+            echo "HOLD_UNVERIFIED main advanced while terminal materialization was prepared" >&2
+            exit 2
+          }
+          git push origin "HEAD:refs/heads/$branch"
+          remote_main_before_pr="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 { print $1 }')"
+          test "$remote_main_before_pr" = "$source_head" || {
+            echo "HOLD_UNVERIFIED main advanced before terminal candidate pull request" >&2
+            exit 2
+          }
+          pr_body="$RUNNER_TEMP/qikvrt-universal-terminal-pr.md"
+          {
+            printf '%s\n' '<!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->' ''
+            printf '%s\n' 'Exact trusted-main materialization candidate.' ''
+            printf '%s`%s`\n' '- observed main base: ' "$source_head"
+            printf '%s`%s`\n' '- candidate head: ' "$candidate_head"
+            printf '%s`%s`\n' '- source: ' "$SOURCE_EVENT"
+            printf '%s\n' '' "This workflow did not write protected \`main\`. The candidate needs its own exact-head checks and the repository's protected pull-request route. No review, merge, release, publication, PASS, FINAL_PASS, or EFFECT_ACK_DONE is implied."
+          } > "$pr_body"
+          gh pr create \
+            --draft \
+            --base main \
+            --head "$branch" \
+            --title "ci: materialize universal terminal state ${source_head:0:16}" \
+            --body-file "$pr_body"
+          pr_readback="$RUNNER_TEMP/qikvrt-universal-terminal-pr-readback.json"
+          gh pr view "$branch" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json number,url,isDraft,baseRefName,baseRefOid,headRefName,headRefOid > "$pr_readback"
+          receipt="$RUNNER_TEMP/qikvrt-universal-terminal-pr-receipt.json"
+          python3 -B tools/qikvrt_candidate_pr_receipt.py \
+            --readback "$pr_readback" \
+            --expected-base "$source_head" \
+            --expected-head "$candidate_head" \
+            --expected-branch "$branch" \
+            --expected-tree "$expected_tree" \
+            --repository . \
+            --receipt "$receipt"
+          remote_main_after_pr="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 { print $1 }')"
+          test "$remote_main_after_pr" = "$source_head" || {
+            echo "HOLD_UNVERIFIED main advanced during terminal candidate pull-request creation" >&2
+            exit 2
+          }
+          {
+            echo '### Exact universal-terminal draft candidate receipt'
+            echo
+            cat "$receipt"
+          } >> "$GITHUB_STEP_SUMMARY"

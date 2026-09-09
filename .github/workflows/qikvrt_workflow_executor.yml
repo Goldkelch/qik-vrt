@@ -4,8 +4,6 @@ name: QIKVRT workflow executor
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "23 * * * *"
   push:
     branches: [main]
     paths:
@@ -49,34 +47,117 @@ jobs:
           python-version: "3.12"
 
       - name: Reobserve exact Authority head and bounded workflow-run baseline
+        id: observe
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p .qikvrt/workflow-executor
-          local_head="$(git rev-parse --verify HEAD^{commit})"
-          live_head="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
-          test "$local_head" = "$live_head"
-          printf '%s\n' "$live_head" > .qikvrt/workflow-executor/observed-main-head.txt
-          git rev-parse --verify HEAD^{tree} > .qikvrt/workflow-executor/observed-main-tree.txt
-          gh api "repos/${GITHUB_REPOSITORY}/actions/runs?branch=main&per_page=100" \
-            > .qikvrt/workflow-executor/current-runs.json
+          root=.qikvrt/workflow-executor
+          mkdir -p "$root"
+          rate_limit_marker="$root/rate-limit-exhausted.json"
+          github_installation_rate_limit_response='API rate limit exceeded for installation.'
+          rm -f "$rate_limit_marker" "$root/dispatch-receipt.json"
 
-          previous_run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_workflow_executor.yml/runs?branch=main&status=completed&per_page=20" \
-            --jq '.workflow_runs[0].id // empty' 2>/dev/null || true)"
+          emit_rate_limit_reobserve() {
+            local phase endpoint
+            phase="$1"
+            endpoint="$(jq -r '.endpoint' "$rate_limit_marker")"
+            jq -n \
+              --arg phase "$phase" \
+              --arg endpoint "$endpoint" \
+              --arg marker_path "$rate_limit_marker" \
+              --arg response_marker "$github_installation_rate_limit_response" \
+              --arg repository "$GITHUB_REPOSITORY" \
+              --arg run_id "$GITHUB_RUN_ID" \
+              --argjson retry_delays_seconds '[0,15,45]' \
+              '{schema:"qikvrt_workflow_executor_dispatch_receipt_v1",phase:$phase,d0:2,state:"REOBSERVE",reason_code:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",first_causal_blocker:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",hold_reason:{reason_code:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",reason:"the exact GitHub installation rate-limit response exhausted bounded GET retries",subject:{repository:$repository,kind:"workflow_executor",identifier:$run_id},evidence_refs:[{path:$marker_path,endpoint:$endpoint,response_marker:$response_marker}],owner:"QIKVRT_WORKFLOW_EXECUTOR",retry_condition:"NEXT_NONSELF_REPOSITORY_INTERRUPT_WITH_FRESH_EXACT_GET_REOBSERVATION",next_action:"REOBSERVE_EXACT_AUTHORITY_HEAD_ON_NEXT_NONSELF_REPOSITORY_INTERRUPT",d0:2},get_retry_delays_seconds:$retry_delays_seconds,dispatch_attempted:false,dispatch_post_count:0,productive_effect:false,effect_ack:"NOT_REQUIRED",completion_claims:{merge:false,pass:false,final_pass:false,effect_ack_done:false}}' \
+              > "$root/dispatch-receipt.json"
+            echo "rate_limited=true" >> "$GITHUB_OUTPUT"
+            echo "REOBSERVE/D0=2: bounded GitHub installation rate-limit GET backoff exhausted"
+          }
+
+          # Retry only GitHub's exact installation quota response.  A completed
+          # three-attempt read is missing observation evidence, so the caller
+          # records a D0=2 receipt and never reaches a dispatch mutation.
+          gh_read() {
+            local output error delay endpoint
+            endpoint="$1"
+            output="$(mktemp)"
+            error="$(mktemp)"
+            for delay in 0 15 45; do
+              if [ "$delay" -gt 0 ]; then
+                echo "QIKVRT_GITHUB_INSTALLATION_RATE_LIMIT_BACKOFF_SECONDS=$delay" >&2
+                sleep "$delay"
+              fi
+              if gh api --method GET "$@" >"$output" 2>"$error"; then
+                cat "$output"
+                rm -f "$output" "$error"
+                return 0
+              fi
+              if ! grep -Fq "API rate limit exceeded for installation." "$error"; then
+                cat "$error" >&2
+                rm -f "$output" "$error"
+                return 1
+              fi
+            done
+            cat "$error" >&2
+            jq -n \
+              --arg endpoint "$endpoint" \
+              --arg response_marker "$github_installation_rate_limit_response" \
+              --argjson retry_delays_seconds '[0,15,45]' \
+              '{schema:"qikvrt_workflow_executor_installation_rate_limit_marker_v1",method:"GET",endpoint:$endpoint,response_marker:$response_marker,get_retry_delays_seconds:$retry_delays_seconds,get_attempts:3,d0:2,state:"REOBSERVE",reason_code:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
+              > "$rate_limit_marker"
+            # Callers inspect the marker before consuming this placeholder;
+            # keep the one polling consumer syntactically type-safe as well.
+            printf '{"workflow_runs":[]}\n'
+            rm -f "$output" "$error"
+            return 0
+          }
+
+          local_head="$(git rev-parse --verify HEAD^{commit})"
+          live_head="$(gh_read "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          if [ -f "$rate_limit_marker" ]; then
+            emit_rate_limit_reobserve "PRE_DISPATCH_OBSERVATION"
+            exit 0
+          fi
+          test "$local_head" = "$live_head"
+          printf '%s\n' "$live_head" > "$root/observed-main-head.txt"
+          git rev-parse --verify HEAD^{tree} > "$root/observed-main-tree.txt"
+          gh_read "repos/${GITHUB_REPOSITORY}/actions/runs?branch=main&per_page=100" \
+            > "$root/current-runs.json"
+          if [ -f "$rate_limit_marker" ]; then
+            emit_rate_limit_reobserve "PRE_DISPATCH_OBSERVATION"
+            exit 0
+          fi
+
+          previous_run="$(gh_read "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_workflow_executor.yml/runs?branch=main&status=completed&per_page=20" \
+            --jq '.workflow_runs[0].id // empty')"
+          if [ -f "$rate_limit_marker" ]; then
+            emit_rate_limit_reobserve "PRE_DISPATCH_OBSERVATION"
+            exit 0
+          fi
           if test -n "$previous_run"; then
-            previous_artifact="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${previous_run}/artifacts?per_page=100" \
-              --jq '[.artifacts[] | select(.name | startswith("qikvrt-workflow-executor-snapshot-"))][0].id // empty' 2>/dev/null || true)"
+            previous_artifact="$(gh_read "repos/${GITHUB_REPOSITORY}/actions/runs/${previous_run}/artifacts?per_page=100" \
+              --jq '[.artifacts[] | select(.name | startswith("qikvrt-workflow-executor-snapshot-"))][0].id // empty')"
+            if [ -f "$rate_limit_marker" ]; then
+              emit_rate_limit_reobserve "PRE_DISPATCH_OBSERVATION"
+              exit 0
+            fi
             if test -n "$previous_artifact"; then
-              gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${previous_artifact}/zip" \
-                > .qikvrt/workflow-executor/previous-snapshot.zip
-              unzip -p .qikvrt/workflow-executor/previous-snapshot.zip workflow-executor-snapshot.json \
-                > .qikvrt/workflow-executor/previous-snapshot.json || true
+              gh_read "repos/${GITHUB_REPOSITORY}/actions/artifacts/${previous_artifact}/zip" \
+                > "$root/previous-snapshot.zip"
+              if [ -f "$rate_limit_marker" ]; then
+                emit_rate_limit_reobserve "PRE_DISPATCH_OBSERVATION"
+                exit 0
+              fi
+              unzip -p "$root/previous-snapshot.zip" workflow-executor-snapshot.json \
+                > "$root/previous-snapshot.json" || true
             fi
           fi
 
       - name: Build exact-head dispatch plan
+        if: steps.observe.outputs.rate_limited != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -91,11 +172,96 @@ jobs:
             > .qikvrt/workflow-executor/workflow-executor-snapshot.json
 
       - name: Dispatch only a newly eligible no-effect exact-head watchdog
+        if: steps.observe.outputs.rate_limited != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
+          root=.qikvrt/workflow-executor
+          rate_limit_marker="$root/rate-limit-exhausted.json"
+          github_installation_rate_limit_response='API rate limit exceeded for installation.'
+
+          write_post_rate_limit_marker() {
+            local endpoint
+            endpoint="$1"
+            jq -n \
+              --arg endpoint "$endpoint" \
+              --arg response_marker "$github_installation_rate_limit_response" \
+              '{schema:"qikvrt_workflow_executor_installation_rate_limit_marker_v1",method:"POST",endpoint:$endpoint,response_marker:$response_marker,post_attempts:1,d0:2,state:"REOBSERVE",reason_code:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
+              > "$rate_limit_marker"
+          }
+
+          emit_rate_limit_reobserve() {
+            local phase dispatch_attempted dispatch_post_count workflow_id workflow_name head tree dispatched_at endpoint marker_method
+            phase="$1"
+            dispatch_attempted="$2"
+            dispatch_post_count="$3"
+            workflow_id="$4"
+            workflow_name="$5"
+            head="$6"
+            tree="$7"
+            dispatched_at="$8"
+            endpoint="$(jq -r '.endpoint' "$rate_limit_marker")"
+            marker_method="$(jq -r '.method' "$rate_limit_marker")"
+            jq -n \
+              --arg phase "$phase" \
+              --arg endpoint "$endpoint" \
+              --arg marker_method "$marker_method" \
+              --arg marker_path "$rate_limit_marker" \
+              --arg response_marker "$github_installation_rate_limit_response" \
+              --arg repository "$GITHUB_REPOSITORY" \
+              --arg run_id "$GITHUB_RUN_ID" \
+              --arg workflow_id "$workflow_id" \
+              --arg workflow_name "$workflow_name" \
+              --arg head "$head" \
+              --arg tree "$tree" \
+              --arg dispatched_at "$dispatched_at" \
+              --argjson dispatch_attempted "$dispatch_attempted" \
+              --argjson dispatch_post_count "$dispatch_post_count" \
+              --argjson retry_delays_seconds '[0,15,45]' \
+              '{schema:"qikvrt_workflow_executor_dispatch_receipt_v1",phase:$phase,d0:2,state:"REOBSERVE",reason_code:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",first_causal_blocker:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",hold_reason:{reason_code:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",reason:"the exact GitHub installation rate-limit response left the exact watchdog dispatch unobserved",subject:{repository:$repository,kind:"workflow_executor",identifier:$run_id},evidence_refs:[{path:$marker_path,endpoint:$endpoint,response_marker:$response_marker,method:$marker_method}],owner:"QIKVRT_WORKFLOW_EXECUTOR",retry_condition:"NEXT_NONSELF_REPOSITORY_INTERRUPT_WITH_FRESH_EXACT_GET_REOBSERVATION",next_action:"REOBSERVE_EXACT_AUTHORITY_HEAD_AND_DISPATCH_RECEIPT_ON_NEXT_NONSELF_REPOSITORY_INTERRUPT",d0:2},workflow:{id:(if $workflow_id == "" then null else $workflow_id end),name:(if $workflow_name == "" then null else $workflow_name end),ref:"main",head_sha:(if $head == "" then null else $head end),tree_sha:(if $tree == "" then null else $tree end),dispatched_at:(if $dispatched_at == "" then null else $dispatched_at end)},get_retry_delays_seconds:(if $marker_method == "GET" then $retry_delays_seconds else [] end),dispatch_attempted:$dispatch_attempted,dispatch_post_count:$dispatch_post_count,productive_effect:false,effect_ack:"NOT_REQUIRED",completion_claims:{merge:false,pass:false,final_pass:false,effect_ack_done:false}}' \
+              > "$root/dispatch-receipt.json"
+            echo "REOBSERVE/D0=2: GitHub installation rate limit leaves no repeat dispatch path"
+          }
+
+          # GET observation is retryable only for the exact installation quota
+          # response.  A POST is deliberately outside this helper.
+          gh_read() {
+            local output error delay endpoint
+            endpoint="$1"
+            output="$(mktemp)"
+            error="$(mktemp)"
+            for delay in 0 15 45; do
+              if [ "$delay" -gt 0 ]; then
+                echo "QIKVRT_GITHUB_INSTALLATION_RATE_LIMIT_BACKOFF_SECONDS=$delay" >&2
+                sleep "$delay"
+              fi
+              if gh api --method GET "$@" >"$output" 2>"$error"; then
+                cat "$output"
+                rm -f "$output" "$error"
+                return 0
+              fi
+              if ! grep -Fq "API rate limit exceeded for installation." "$error"; then
+                cat "$error" >&2
+                rm -f "$output" "$error"
+                return 1
+              fi
+            done
+            cat "$error" >&2
+            jq -n \
+              --arg endpoint "$endpoint" \
+              --arg response_marker "$github_installation_rate_limit_response" \
+              --argjson retry_delays_seconds '[0,15,45]' \
+              '{schema:"qikvrt_workflow_executor_installation_rate_limit_marker_v1",method:"GET",endpoint:$endpoint,response_marker:$response_marker,get_retry_delays_seconds:$retry_delays_seconds,get_attempts:3,d0:2,state:"REOBSERVE",reason_code:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
+              > "$rate_limit_marker"
+            # Callers inspect the marker before consuming this placeholder;
+            # keep the one polling consumer syntactically type-safe as well.
+            printf '{"workflow_runs":[]}\n'
+            rm -f "$output" "$error"
+            return 0
+          }
+
           plan=.qikvrt/workflow-executor/dispatch-plan.json
           head="$(cat .qikvrt/workflow-executor/observed-main-head.txt)"
           tree="$(cat .qikvrt/workflow-executor/observed-main-tree.txt)"
@@ -104,17 +270,39 @@ jobs:
           : > .qikvrt/workflow-executor/dispatched-runs.jsonl
           while IFS=$'\t' read -r workflow_id workflow_name; do
             test -n "$workflow_id"
-            refreshed_head="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+            refreshed_head="$(gh_read "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+            if [ -f "$rate_limit_marker" ]; then
+              emit_rate_limit_reobserve "PRE_DISPATCH_FINAL_REOBSERVATION" false 0 "$workflow_id" "$workflow_name" "$head" "$tree" ""
+              exit 0
+            fi
             test "$refreshed_head" = "$head"
             dispatched_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-            gh api --method POST \
-              "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/dispatches" \
-              -f ref=main
+            dispatch_endpoint="repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/dispatches"
+            post_output="$(mktemp)"
+            post_error="$(mktemp)"
+            if gh api --method POST "$dispatch_endpoint" -f ref=main >"$post_output" 2>"$post_error"; then
+              dispatch_post_count=1
+              rm -f "$post_output" "$post_error"
+            else
+              if grep -Fq "API rate limit exceeded for installation." "$post_error"; then
+                write_post_rate_limit_marker "$dispatch_endpoint"
+                rm -f "$post_output" "$post_error"
+                emit_rate_limit_reobserve "DISPATCH_POST_RATE_LIMITED" true 1 "$workflow_id" "$workflow_name" "$head" "$tree" "$dispatched_at"
+                exit 0
+              fi
+              cat "$post_error" >&2
+              rm -f "$post_output" "$post_error"
+              exit 1
+            fi
             run_id=""
             for _ in $(seq 1 12); do
-              run_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/runs?event=workflow_dispatch&branch=main&per_page=100" \
+              run_id="$(gh_read "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/runs?event=workflow_dispatch&branch=main&per_page=100" \
                 | jq -r --arg head "$head" --arg started "$dispatched_at" \
                   '[.workflow_runs[] | select(.head_sha == $head and .created_at >= $started)][0].id // empty')"
+              if [ -f "$rate_limit_marker" ]; then
+                emit_rate_limit_reobserve "POST_DISPATCH_RUN_RECEIPT_REOBSERVATION" true "$dispatch_post_count" "$workflow_id" "$workflow_name" "$head" "$tree" "$dispatched_at"
+                exit 0
+              fi
               test -n "$run_id" && break
               sleep 5
             done

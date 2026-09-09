@@ -9,8 +9,6 @@ on:
         description: "Optional PR number; still requires the repository promotion marker"
         required: false
         type: string
-  schedule:
-    - cron: "*/10 * * * *"
   workflow_run:
     workflows:
       - "QIKVRT CI"
@@ -51,7 +49,7 @@ jobs:
       MESH_REVIEW_REQUIRED_GATE_PATHS_JSON: >-
         {"QIKVRT CI":".github/workflows/qikvrt_ci.yml","QIKVRT repository evidence materialization":".github/workflows/qikvrt_batch04_integrity.yml","QIKVRT Collective Proposal Review":".github/workflows/qikvrt_collective_review.yml"}
       MESH_REVIEW_WRITER_WORKFLOWS_JSON: >-
-        ["QIK-VRT autonomous bounded self-heal","QIK-VRT autonomous draft-PR continuation","QIK-VRT expected-head promotion executor","QIKVRT repository evidence materialization","QIKVRT requested review executor"]
+        ["Autonomous issue processing","QIK-VRT autonomous bounded self-heal","QIK-VRT autonomous draft-PR continuation","QIK-VRT expected-head promotion executor","QIKVRT Batch-003 remaining subject disposition","QIKVRT repository evidence materialization","QIKVRT universal terminal materialization","QIKVRT requested review executor"]
       CURRENT_RUN_ID: ${{ github.run_id }}
       REQUIRED_GATES_JSON: >-
         ["QIKVRT CI","QIKVRT repository evidence materialization","QIKVRT Collective Proposal Review","QIK-VRT global claim completion","QIKVRT requested review execution"]

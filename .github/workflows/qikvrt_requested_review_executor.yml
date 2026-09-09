@@ -53,7 +53,16 @@ concurrency:
 
 jobs:
   review-one:
-    if: github.ref == 'refs/heads/main'
+    # The technical COMMENT projected by this executor is a repository-owned
+    # receipt, not a new review work unit.  Stop that exact self-feedback edge
+    # before selection or any GitHub API observation; human review events stay
+    # eligible and continue through the ordinary exact-subject path.
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      !(github.event_name == 'pull_request_review' &&
+        github.event.review.user.login == 'github-actions[bot]' &&
+        github.event.review.state == 'commented' &&
+        startsWith(github.event.review.body, '<!-- qikvrt-mesh-review:v1 '))
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     env:
@@ -68,7 +77,7 @@ jobs:
       REQUIRED_GATE_PATHS_JSON: >-
         {"QIKVRT CI":".github/workflows/qikvrt_ci.yml","QIKVRT repository evidence materialization":".github/workflows/qikvrt_batch04_integrity.yml","QIKVRT Collective Proposal Review":".github/workflows/qikvrt_collective_review.yml"}
       WRITER_WORKFLOWS_JSON: >-
-        ["QIK-VRT autonomous bounded self-heal","QIK-VRT autonomous draft-PR continuation","QIK-VRT expected-head promotion executor","QIKVRT repository evidence materialization","QIKVRT requested review executor"]
+        ["Autonomous issue processing","QIK-VRT autonomous bounded self-heal","QIK-VRT autonomous draft-PR continuation","QIK-VRT expected-head promotion executor","QIKVRT Batch-003 remaining subject disposition","QIKVRT repository evidence materialization","QIKVRT universal terminal materialization","QIKVRT requested review executor"]
     steps:
       - name: Check out current trusted main review code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -214,7 +223,7 @@ jobs:
             /tmp/qikvrt-review-selection.json
             /tmp/qikvrt-review-event-context.json
 
-      - name: Observe exact subject and derive causal Mesh receipt
+      - name: Observe exact subject or preserve bounded rate-limit HOLD
         if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE'
         id: decision
         env:
@@ -226,6 +235,7 @@ jobs:
           set -euo pipefail
           root=.qikvrt/mesh-review
           mkdir -p "$root"
+          set +e
           python3 -B tools/qikvrt_requested_review_executor.py observe \
             --repository "$REPOSITORY" \
             --pr-number "$PR_NUMBER" \
@@ -238,9 +248,31 @@ jobs:
             --snapshot-out "$root/snapshot.json" \
             --diff-out "$root/review.diff" \
             --receipt-out "$root/review.json"
+          observation_status=$?
+          set -e
+          test -f "$root/review.json"
           cat "$root/review.json"
-          python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
+          rate_limit_hold="$(python3 -B - <<'PY'
           import json
+          value=json.load(open('.qikvrt/mesh-review/review.json',encoding='utf-8'))
+          print('true' if (
+              value.get('first_blocker') == 'GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED'
+              and value.get('derived_action',{}).get('d0') == 2
+              and value.get('derived_action',{}).get('state') == 'REOBSERVE'
+          ) else 'false')
+          PY
+          )"
+          if [ "$observation_status" -eq 0 ]; then
+            observation_ready=true
+          elif [ "$observation_status" -eq 3 ] && [ "$rate_limit_hold" = true ]; then
+            observation_ready=false
+            echo "HOLD/D0=2: bounded GitHub installation rate-limit read retries exhausted"
+          else
+            exit "$observation_status"
+          fi
+          export OBSERVATION_READY="$observation_ready"
+          python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
           value=json.load(open('.qikvrt/mesh-review/review.json',encoding='utf-8'))
           action=value['derived_action']
           print(f"state={value['state']}")
@@ -252,10 +284,11 @@ jobs:
           print(f"d0={action['d0']}")
           print(f"next_action={action['next_action']}")
           print(f"blocker={value.get('first_blocker') or ''}")
+          print(f"observation_ready={os.environ['OBSERVATION_READY']}")
           PY
 
       - name: Persist exact receipt and diff by ledger fast-forward CAS
-        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE'
+        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE' && steps.decision.outputs.observation_ready == 'true'
         id: ledger
         env:
           PR_NUMBER: ${{ steps.select.outputs.pr }}
@@ -676,7 +709,10 @@ jobs:
                       )
 
                   predecessor=current_fingerprint
-                  for transition_index in range(4):
+                  # A child workflow owns the next causal observation.  This
+                  # run may persist at most one successor, preventing one
+                  # receipt from recursively multiplying API observations.
+                  for transition_index in range(1):
                       fingerprint=successor.get('fingerprint')
                       if not isinstance(fingerprint,str) or fingerprint == predecessor:
                           break
@@ -723,8 +759,6 @@ jobs:
                           observed.get('exact') is True
                           and report['projection_current']
                       )
-                  else:
-                      raise LedgerHold('RECURSIVE_SUCCESSOR_DEPTH_EXCEEDED')
               except Exception as exc:
                   report['persisted']=False
                   report['first_blocker']=str(exc)[:500]
@@ -1219,14 +1253,14 @@ jobs:
         if: always() && steps.select.outputs.state == 'CANDIDATE'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: qikvrt-mesh-review-pr-${{ steps.select.outputs.pr }}-${{ steps.decision.outputs.head }}-${{ steps.decision.outputs.fingerprint }}
+          name: qikvrt-mesh-review-pr-${{ steps.select.outputs.pr }}-${{ steps.decision.outputs.head || steps.select.outputs.expected_head }}-${{ steps.decision.outputs.fingerprint || steps.decision.outputs.blocker }}
           if-no-files-found: error
           include-hidden-files: true
           retention-days: 90
           path: .qikvrt/mesh-review
 
       - name: Enforce fail-closed ledger persistence
-        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE' && steps.ledger.outputs.persisted != 'true'
+        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE' && steps.decision.outputs.observation_ready == 'true' && steps.ledger.outputs.persisted != 'true'
         run: |
           echo 'HOLD_UNVERIFIED: exact Mesh review receipt was not persisted by FF-CAS.'
           exit 1

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import copy
+import contextlib
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -13,6 +15,8 @@ import sys
 import tempfile
 import unittest
 from unittest import mock
+
+from tools.qikvrt_hold_contract import validate_hold_object
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "qikvrt_requested_review_executor.yml"
@@ -982,6 +986,120 @@ class RequestedReviewExecutorTests(unittest.TestCase):
                 MODULE._gh_jobs(
                     "repos/example/qik-vrt/actions/runs/7/jobs?per_page=100"
                 )
+
+    def test_installation_rate_limit_read_is_retried_with_the_bounded_policy(self):
+        attempts = [
+            subprocess.CompletedProcess(
+                ["gh"],
+                1,
+                stdout="",
+                stderr="gh: API rate limit exceeded for installation. (HTTP 403)",
+            ),
+            subprocess.CompletedProcess(["gh"], 0, stdout='{"ok":true}', stderr=""),
+        ]
+        sleeps: list[float] = []
+        with mock.patch.object(MODULE.subprocess, "run", side_effect=attempts) as run:
+            value = MODULE._run_json(
+                ("gh", "api", "repos/example/qik-vrt/pulls/867"),
+                sleeper=sleeps.append,
+            )
+
+        self.assertEqual(value, {"ok": True})
+        self.assertEqual(sleeps, [15.0])
+        self.assertEqual(run.call_count, 2)
+
+    def test_exhausted_installation_rate_limit_is_typed_and_endpoint_bound(self):
+        attempts = [
+            subprocess.CompletedProcess(
+                ["gh"],
+                1,
+                stdout="",
+                stderr="gh: API rate limit exceeded for installation. (HTTP 403)",
+            )
+            for _ in range(3)
+        ]
+        sleeps: list[float] = []
+        endpoint = "repos/example/qik-vrt/actions/runs?head_sha=" + HEAD_SHA
+        with mock.patch.object(MODULE.subprocess, "run", side_effect=attempts) as run:
+            with self.assertRaises(MODULE.GitHubInstallationRateLimit) as raised:
+                MODULE._run_json(("gh", "api", endpoint), sleeper=sleeps.append)
+
+        self.assertIn(endpoint, str(raised.exception))
+        self.assertEqual(sleeps, [15.0, 45.0])
+        self.assertEqual(run.call_count, 3)
+
+    def test_non_quota_failure_and_mutation_are_never_retried(self):
+        cases = (
+            (
+                ("gh", "api", "repos/example/qik-vrt/pulls/867"),
+                "gh: forbidden (HTTP 403)",
+            ),
+            (
+                ("gh", "api", "--method", "POST", "repos/example/qik-vrt/statuses/" + HEAD_SHA),
+                "gh: API rate limit exceeded for installation. (HTTP 403)",
+            ),
+        )
+        for command, stderr in cases:
+            with self.subTest(command=command), mock.patch.object(
+                MODULE.subprocess,
+                "run",
+                return_value=subprocess.CompletedProcess(
+                    ["gh"], 1, stdout="", stderr=stderr
+                ),
+            ) as run:
+                with self.assertRaises(MODULE.ReviewObservationError):
+                    MODULE._run_json(command, sleeper=self.fail)
+            self.assertEqual(run.call_count, 1)
+
+    def test_rate_limit_observe_receipt_is_explicit_d0_two_hold(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            snapshot = root / "snapshot.json"
+            diff = root / "review.diff"
+            receipt = root / "review.json"
+            args = [
+                "observe",
+                "--repository", "example/qik-vrt",
+                "--pr-number", "867",
+                "--expected-head", HEAD_SHA,
+                "--current-run-id", "73",
+                "--required-gates-json", "[]",
+                "--required-gate-paths-json", "{}",
+                "--writer-workflows-json", "[]",
+                "--snapshot-out", str(snapshot),
+                "--diff-out", str(diff),
+                "--receipt-out", str(receipt),
+            ]
+            with (
+                mock.patch.object(
+                    MODULE,
+                    "observe_repository",
+                    side_effect=MODULE.GitHubInstallationRateLimit(
+                        "GitHub installation rate limit exhausted while reading "
+                        "repos/example/qik-vrt/pulls/867"
+                    ),
+                ),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                code = MODULE.main(args)
+
+            value = json.loads(receipt.read_text(encoding="utf-8"))
+            self.assertEqual(code, 3)
+            self.assertEqual(value["state"], "WAIT")
+            self.assertEqual(
+                value["first_blocker"],
+                "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",
+            )
+            self.assertEqual(value["derived_action"]["d0"], 2)
+            self.assertEqual(value["derived_action"]["state"], "REOBSERVE")
+            self.assertEqual(
+                value["derived_action"]["next_action"],
+                "REOBSERVE_EXACT_SUBJECT_ON_NEXT_NONSELF_REPOSITORY_INTERRUPT",
+            )
+            self.assertEqual(validate_hold_object(value)["d0"], 2)
+            self.assertEqual(value["hold_reason"]["subject"]["head_sha"], HEAD_SHA)
+            self.assertFalse(snapshot.exists())
+            self.assertFalse(diff.exists())
 
     def test_workflow_observation_projects_every_job(self):
         raw_run = self.workflow_run("QIKVRT CI", identifier=101, run_number=10)
@@ -2016,7 +2134,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn("EXPECTED_SELECTOR_HEAD", text)
         self.assertIn('--expected-head "$EXPECTED_SELECTOR_HEAD"', text)
         self.assertNotIn("if not people and not teams", text)
-        self.assertIn("if: github.ref == 'refs/heads/main'", text)
+        self.assertIn("github.ref == 'refs/heads/main'", text)
         self.assertIn("ref: main", text)
         self.assertIn("persist-credentials: false", text)
         self.assertIn('"--no-ext-diff", "--no-textconv", "--no-renames"', core)
@@ -2112,6 +2230,35 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn(
             "- qikvrt/mesh-review-ledger-v1",
             CI_WORKFLOW.read_text(encoding="utf-8"),
+        )
+
+    def test_installation_rate_limit_hold_skips_every_persistence_or_dispatch_step(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        core = (ROOT / "tools/qikvrt_requested_review_executor.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED", core)
+        self.assertIn("GITHUB_READ_RATE_LIMIT_BACKOFF_SECONDS = (0, 15, 45)", core)
+        self.assertIn("GitHubInstallationRateLimit", core)
+        self.assertIn("observation_ready=false", text)
+        self.assertIn("HOLD/D0=2", text)
+        self.assertIn("github.event.review.user.login == 'github-actions[bot]'", text)
+        self.assertIn("startsWith(github.event.review.body, '<!-- qikvrt-mesh-review:v1 ')", text)
+        self.assertIn("for transition_index in range(1):", text)
+        self.assertNotIn("for transition_index in range(4):", text)
+        self.assertIn(
+            "steps.decision.outputs.observation_ready == 'true'",
+            text,
+        )
+        ledger = text.index("- name: Persist exact receipt and diff by ledger fast-forward CAS")
+        projection = text.index("- name: Project persisted receipt into PR comment and exact-head status")
+        successor = text.index("- name: Dispatch exactly one exact-head progress successor")
+        for offset in (ledger, projection, successor):
+            block = text[offset : offset + 450]
+            self.assertIn("if:", block)
+        self.assertIn(
+            "steps.decision.outputs.observation_ready == 'true'",
+            text[ledger : ledger + 450],
         )
 
     def test_exact_event_selection_is_diagnostic_and_fail_closed(self):
