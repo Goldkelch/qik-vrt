@@ -435,7 +435,8 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertIn("actions: write", executor)
         self.assertIn("qikvrt_workflow_executor.py", executor)
         self.assertIn("/dispatches", executor)
-        self.assertIn("test \"$refreshed_head\" = \"$head\"", executor)
+        self.assertIn('if [ "$refreshed_head" != "$head" ]; then', executor)
+        self.assertIn("CURRENT_MAIN_HEAD_DRIFT", executor)
         self.assertNotIn("gh pr merge", executor)
         self.assertNotIn("zenodo", executor.casefold())
         self.assertNotIn("ietf", executor.casefold())
@@ -450,12 +451,111 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertIn("repos/$REPOSITORY/issues/$pr/comments", live_watch)
         self.assertNotIn("pull_request_target:", live_watch)
 
-    def test_watchdog_binds_the_literal_pull_request_head(self) -> None:
+    def test_executor_dispatch_is_write_ahead_carrier_bound_and_receipted(self) -> None:
+        executor = EXECUTOR_WORKFLOW.read_text(encoding="utf-8")
+        exact_marker = "API rate limit exceeded for installation"
+        dispatch = executor.split(
+            "      - name: Dispatch only a newly eligible no-effect exact-head watchdog\n", 1
+        )[1].split("      - name: Preserve exact-head plan and dispatch receipt\n", 1)[0]
+
+        self.assertIn('rate_limit_marker="$root/rate-limit-exhausted.json"', executor)
+        self.assertIn(exact_marker, executor)
+        self.assertIn("for delay in 0 15 45", executor)
+        self.assertIn('gh api --method GET "$@"', executor)
+        self.assertIn(
+            'if ! grep -Fq "API rate limit exceeded for installation" "$error"; then',
+            executor,
+        )
+        self.assertNotIn("until gh api", executor)
+        for endpoint in (
+            'gh_read "repos/${GITHUB_REPOSITORY}/git/ref/heads/main"',
+            'gh_read "repos/${GITHUB_REPOSITORY}/actions/runs?branch=main&per_page=100"',
+            'gh_read "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_workflow_executor.yml/runs?branch=main&status=completed&per_page=20"',
+            'gh_read "repos/${GITHUB_REPOSITORY}/actions/runs/${previous_run}/artifacts?per_page=100"',
+            'gh_read "repos/${GITHUB_REPOSITORY}/actions/artifacts/${previous_artifact}/zip"',
+        ):
+            self.assertIn(endpoint, executor)
+
+        self.assertIn('d0:2,state:"REOBSERVE"', executor)
+        self.assertIn('reason_code:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED"', executor)
+        self.assertIn("hold_reason:{reason_code:", executor)
+        self.assertIn('productive_effect:false', executor)
+        self.assertIn('completion_claims:{merge:false,pass:false,final_pass:false,effect_ack_done:false}', executor)
+        self.assertIn("if: steps.observe.outputs.rate_limited != 'true'", executor)
+
+        self.assertIn('schema:"qikvrt_workflow_executor_dispatch_receipt_v2"', dispatch)
+        self.assertIn("emit_receipt HOLD", dispatch)
+        self.assertIn('verification_state:(if $state == "HOLD" then "HOLD_UNVERIFIED"', dispatch)
+        self.assertIn('continuation_required:($state == "HOLD")', dispatch)
+        self.assertIn('if ! attempts="$(effect_attempts 2>/dev/null)"; then', dispatch)
+        self.assertIn("attempts='[]'", dispatch)
+        self.assertIn('if ! summary="$(effect_summary 2>/dev/null)"; then', dispatch)
+        self.assertIn('summary=\'{"effect_transport_attempted":false,"effect_observed":false,"mutation":"NONE"}\'', dispatch)
+        self.assertIn('tools/qikvrt_github_observe.py -- "$@"', dispatch)
+        self.assertIn('tools/qikvrt_effect_attempts.py create --ledger "$ledger"', dispatch)
+        self.assertIn('tools/qikvrt_effect_attempts.py append --ledger "$ledger"', dispatch)
+        self.assertIn('dispatch_error_trap()', dispatch)
+        self.assertIn('emit_hold EXECUTOR_DISPATCH_EXECUTION_FAILED', dispatch)
+
+        intent = '--kind workflow_dispatch_intent'
+        post = 'gh api --method POST "$dispatch_endpoint" --input -'
+        self.assertEqual(dispatch.count(post), 1)
+        self.assertLess(dispatch.index(intent), dispatch.index(post))
+        self.assertLess(dispatch.index('dispatch_post_count=1'), dispatch.index(post))
+        self.assertIn(
+            '{ref:"main",inputs:{expected_main:$main,expected_tree:$tree,carrier_run_id:$carrier}}',
+            dispatch,
+        )
+        self.assertNotIn('-f ref=main', dispatch)
+        self.assertNotIn('exit 1', dispatch)
+        self.assertIn('for delay in 0 2 5 10', dispatch)
+        self.assertIn('POST_UNCONFIRMED_RATE_LIMIT', dispatch)
+        self.assertIn('POST_UNCONFIRMED_TRANSPORT_FAILED', dispatch)
+        self.assertIn('POST_UNCONFIRMED_READBACK_FAILED', dispatch)
+        self.assertIn('UNCONFIRMED_READBACK_FAILED', dispatch)
+
+        self.assertIn('expected_run_name="QIKVRT workflow executor watchdog main=${head} tree=${tree} carrier=${carrier_run_id}"', dispatch)
+        self.assertIn('.display_title == $title', dispatch)
+        self.assertIn('.path == $workflow_path or .path == ($workflow_path + "@main")', dispatch)
+        self.assertIn('.head_branch == "main" and .head_sha == $head', dispatch)
+        self.assertIn('.repository.full_name == $repository', dispatch)
+        self.assertIn('.event == "workflow_dispatch"', dispatch)
+        self.assertIn('head_sha=${head}&per_page=100', dispatch)
+        self.assertIn('carrier-bound target workflow run is ambiguous or malformed', dispatch)
+        self.assertIn('EQUIVALENT_EXACT_HEAD_TARGET_RUN_EXISTS', dispatch)
+        self.assertLess(
+            dispatch.index('readback:carrier-bound-watchdog:${target_run_id}'),
+            dispatch.index('if ! emit_confirmed; then'),
+        )
+
+        self.assertIn('CURRENT_MAIN_HEAD_DRIFT', dispatch)
+        self.assertIn('CURRENT_MAIN_TREE_DRIFT', dispatch)
+
+    def test_watchdog_binds_literal_pull_request_or_executor_carrier_inputs(self) -> None:
         watchdog = WATCHDOG_WORKFLOW.read_text(encoding="utf-8")
-        exact_event_head = "${{ github.event.pull_request.head.sha || github.sha }}"
+        exact_event_head = "${{ inputs.expected_main || github.event.pull_request.head.sha || github.sha }}"
+        self.assertIn("run-name: QIKVRT workflow executor watchdog main=${{ inputs.expected_main", watchdog)
+        self.assertIn("expected_main:", watchdog)
+        self.assertIn("expected_tree:", watchdog)
+        self.assertIn("carrier_run_id:", watchdog)
         self.assertIn(f"ref: {exact_event_head}", watchdog)
         self.assertIn(f"EXPECTED_HEAD: {exact_event_head}", watchdog)
+        self.assertIn("EXPECTED_MAIN_INPUT: ${{ inputs.expected_main || '' }}", watchdog)
+        self.assertIn("EXPECTED_TREE_INPUT: ${{ inputs.expected_tree || '' }}", watchdog)
+        self.assertIn("CARRIER_RUN_ID_INPUT: ${{ inputs.carrier_run_id || '' }}", watchdog)
         self.assertIn('test "$head" = "$EXPECTED_HEAD"', watchdog)
+        self.assertIn('test "$supplied_inputs" -eq 3', watchdog)
+        self.assertIn('[[ "$EXPECTED_MAIN_INPUT" =~ ^[0-9a-f]{40}$ ]]', watchdog)
+        self.assertIn('[[ "$EXPECTED_TREE_INPUT" =~ ^[0-9a-f]{40}$ ]]', watchdog)
+        self.assertIn('[[ "$CARRIER_RUN_ID_INPUT" =~ ^[1-9][0-9]*$ ]]', watchdog)
+        self.assertIn('test "$GITHUB_REF" = refs/heads/main', watchdog)
+        self.assertIn('test "$head" = "$EXPECTED_MAIN_INPUT"', watchdog)
+        self.assertIn('test "$tree" = "$EXPECTED_TREE_INPUT"', watchdog)
+        self.assertIn(
+            "group: qikvrt-workflow-executor-watchdog-${{ github.repository }}-${{ inputs.expected_main",
+            watchdog,
+        )
+        self.assertIn("cancel-in-progress: false", watchdog)
         self.assertIn('snapshot --expect-head "$EXPECTED_HEAD"', watchdog)
         self.assertNotIn('snapshot --expect-head "$head"', watchdog)
 

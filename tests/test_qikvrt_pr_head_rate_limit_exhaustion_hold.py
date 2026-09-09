@@ -15,7 +15,7 @@ class PrHeadRateLimitExhaustionHoldTests(unittest.TestCase):
 
     def test_bounded_backoff_is_preserved(self) -> None:
         self.assertIn("for delay in 0 15 45", self.text)
-        self.assertIn("API rate limit exceeded for installation.", self.text)
+        self.assertIn("API rate limit exceeded for installation", self.text)
         self.assertNotIn("until gh api", self.text)
 
     def test_exhaustion_is_persisted_as_hold_not_selector_failure(self) -> None:
@@ -24,7 +24,10 @@ class PrHeadRateLimitExhaustionHoldTests(unittest.TestCase):
         self.assertIn('reason:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED"', self.text)
         self.assertIn('first_causal_blocker:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED"', self.text)
         self.assertIn('next_action:"REOBSERVE_ON_NEXT_REPOSITORY_INTERRUPT"', self.text)
-        self.assertIn('{d0:1,state:"HOLD"', self.text)
+        self.assertIn('state:"HOLD"', self.text)
+        self.assertIn('d0:2', self.text)
+        self.assertGreaterEqual(self.text.count('hold_reason:{'), 3)
+        self.assertIn("HOLD/D0=2", self.text)
         self.assertIn('echo "selected=false" >> "$GITHUB_OUTPUT"', self.text)
 
     def test_exhausted_reads_return_only_type_safe_fail_closed_placeholders(self) -> None:
@@ -35,7 +38,7 @@ class PrHeadRateLimitExhaustionHoldTests(unittest.TestCase):
         self.assertGreaterEqual(self.text.count('if [ -f "$rate_limit_marker" ]'), 5)
 
     def test_non_quota_api_failure_remains_hard_failure(self) -> None:
-        needle = 'if ! grep -Fq "API rate limit exceeded for installation." "$error"; then'
+        needle = 'if ! grep -Fq "API rate limit exceeded for installation" "$error"; then'
         self.assertIn(needle, self.text)
         start = self.text.index(needle)
         hard_failure_slice = self.text[start : start + 300]

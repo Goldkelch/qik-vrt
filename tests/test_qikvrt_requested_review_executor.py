@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import copy
+import contextlib
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
 import unittest
 from unittest import mock
+
+from tools.qikvrt_hold_contract import validate_hold_object
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "qikvrt_requested_review_executor.yml"
@@ -68,6 +73,109 @@ CONFLICT_DIFF_BYTES = DEFAULT_DIFF_BYTES + b"""+<<<<<<< HEAD
 """
 
 
+def yaml_indentation(line: str) -> int:
+    """Return spaces of indentation for the narrow workflow-YAML reader.
+
+    The Actions contract tests run with only the Python standard library. This
+    deliberately accepts the small mapping/block-scalar subset needed below
+    rather than depending on a runner-provided YAML package.
+    """
+
+    prefix = line[: len(line) - len(line.lstrip(" \t"))]
+    if "\t" in prefix:
+        raise AssertionError("workflow YAML may not use tabs for indentation")
+    return len(prefix)
+
+
+def yaml_block_end(lines: list[str], start: int, indent: int) -> int:
+    for index in range(start + 1, len(lines)):
+        stripped = lines[index].strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if yaml_indentation(lines[index]) <= indent:
+            return index
+    return len(lines)
+
+
+def yaml_mapping_entry(
+    lines: list[str],
+    start: int,
+    end: int,
+    key: str,
+    indent: int,
+) -> tuple[int, str] | None:
+    expression = re.compile(
+        rf"^{' ' * indent}(?:{re.escape(key)}|['\"]{re.escape(key)}['\"]):"
+        r"(?:[ \t]*(.*))?$"
+    )
+    for index in range(start, end):
+        line = lines[index]
+        if yaml_indentation(line) != indent:
+            continue
+        match = expression.match(line)
+        if match:
+            return index, (match.group(1) or "").strip()
+    return None
+
+
+def workflow_job_if_expression(path: pathlib.Path, job_name: str) -> str:
+    """Read exactly one job's if expression, including folded YAML.
+
+    This is intentionally job-scoped: matching an expression token elsewhere
+    in the workflow must not establish the review executor's ingress gate.
+    """
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    jobs = yaml_mapping_entry(lines, 0, len(lines), "jobs", 0)
+    if jobs is None or jobs[1]:
+        raise AssertionError("workflow jobs must be a block mapping")
+    jobs_index, _jobs_value = jobs
+    jobs_end = yaml_block_end(lines, jobs_index, 0)
+    job = yaml_mapping_entry(lines, jobs_index + 1, jobs_end, job_name, 2)
+    if job is None or job[1]:
+        raise AssertionError(f"workflow job {job_name!r} must be a block mapping")
+    job_index, _job_value = job
+    job_end = yaml_block_end(lines, job_index, 2)
+    condition = yaml_mapping_entry(lines, job_index + 1, job_end, "if", 4)
+    if condition is None:
+        raise AssertionError(f"workflow job {job_name!r} has no if condition")
+    condition_index, scalar = condition
+    if scalar in {">", ">-", ">+"}:
+        scalar_end = yaml_block_end(lines, condition_index, 4)
+        folded_lines = [
+            line.strip()
+            for line in lines[condition_index + 1 : scalar_end]
+            if line.strip()
+        ]
+        if not folded_lines:
+            raise AssertionError(f"workflow job {job_name!r} has an empty folded if condition")
+        return " ".join(folded_lines)
+    if not scalar or scalar.startswith("#"):
+        raise AssertionError(f"workflow job {job_name!r} has an empty if condition")
+    return scalar
+
+
+def negated_parenthetical_expressions(expression: str) -> list[str]:
+    """Return balanced parenthetical expressions immediately preceded by !."""
+
+    values: list[str] = []
+    for match in re.finditer(r"!\s*\(", expression):
+        start = match.end() - 1
+        depth = 0
+        for end in range(start, len(expression)):
+            character = expression[end]
+            if character == "(":
+                depth += 1
+            elif character == ")":
+                depth -= 1
+                if depth == 0:
+                    values.append(expression[start + 1 : end])
+                    break
+        else:
+            raise AssertionError("workflow if condition has an unbalanced negated expression")
+    return values
+
+
 def sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
@@ -106,8 +214,8 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertEqual([], offenders)
 
     def test_review_contract_normalizes_semantic_document_whitespace(self):
-        contract = (
-            ROOT / ".github" / "workflows" / "qikvrt_requested_review_contract.yml"
+        static_guard = (
+            ROOT / "tests" / "test_qikvrt_requested_review_contract_static.sh"
         ).read_text(encoding="utf-8")
         documentation = (
             ROOT / "docs" / "DELEGATED_NATIVE_ACCOUNT_REVIEW_AUTOMATION.md"
@@ -116,7 +224,83 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             "delegated platform-account action",
             " ".join(documentation.split()),
         )
-        self.assertIn("tr '\\n' ' '", contract)
+        self.assertIn("tr '\\n' ' '", static_guard)
+
+    def test_review_contract_static_guard_accepts_the_folded_trusted_main_gate(self):
+        static_guard = (
+            ROOT / "tests" / "test_qikvrt_requested_review_contract_static.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            'grep -F "github.ref == \'refs/heads/main\'"',
+            static_guard,
+        )
+        self.assertNotIn(
+            'grep -F "if: github.ref == \'refs/heads/main\'"',
+            static_guard,
+        )
+        self.assertIn(
+            "github.event.review.user.login == 'github-actions[bot]'",
+            static_guard,
+        )
+        self.assertIn(
+            "github.event.review.state == 'commented'",
+            static_guard,
+        )
+        self.assertIn(
+            "startsWith(github.event.review.body, '<!-- qikvrt-mesh-review:v1 ')",
+            static_guard,
+        )
+        self.assertIn(
+            "github.event_name == 'issue_comment'",
+            static_guard,
+        )
+        self.assertIn(
+            "github.event.comment.user.login == 'github-actions[bot]'",
+            static_guard,
+        )
+        self.assertIn("qikvrt-universal-terminal-live-surface-v1", static_guard)
+        self.assertIn("qikvrt-ruleset-apply:", static_guard)
+        self.assertIn("qikvrt-ruleset-authority:", static_guard)
+
+    def test_review_one_gate_binds_main_and_excludes_its_own_technical_feedback(self):
+        condition = workflow_job_if_expression(WORKFLOW, "review-one")
+        self.assertRegex(
+            condition,
+            r"^github\.ref\s*==\s*'refs/heads/main'\s*&&",
+        )
+
+        self_feedback_terms = (
+            "github.event_name == 'pull_request_review'",
+            "github.event.review.user.login == 'github-actions[bot]'",
+            "github.event.review.state == 'commented'",
+            "startsWith(github.event.review.body, '<!-- qikvrt-mesh-review:v1 ')",
+        )
+        negated_clauses = negated_parenthetical_expressions(condition)
+        self.assertTrue(
+            any(
+                all(term in clause for term in self_feedback_terms)
+                for clause in negated_clauses
+            ),
+            (
+                "review-one must negate the exact technical mesh-comment "
+                f"self-feedback predicate; got: {condition!r}"
+            ),
+        )
+
+        issue_comment_terms = (
+            "github.event_name == 'issue_comment'",
+            "github.event.comment.user.login == 'github-actions[bot]'",
+        )
+        self.assertTrue(
+            any(
+                all(term in clause for term in issue_comment_terms)
+                for clause in negated_clauses
+            ),
+            (
+                "review-one must exclude every github-actions[bot] issue "
+                f"comment before selection; got: {condition!r}"
+            ),
+        )
 
     def selector_pr(self, **overrides):
         value = {
@@ -983,6 +1167,120 @@ class RequestedReviewExecutorTests(unittest.TestCase):
                     "repos/example/qik-vrt/actions/runs/7/jobs?per_page=100"
                 )
 
+    def test_installation_rate_limit_read_is_retried_with_the_bounded_policy(self):
+        attempts = [
+            subprocess.CompletedProcess(
+                ["gh"],
+                1,
+                stdout="",
+                stderr="gh: API rate limit exceeded for installation ID 12345. (HTTP 403)",
+            ),
+            subprocess.CompletedProcess(["gh"], 0, stdout='{"ok":true}', stderr=""),
+        ]
+        sleeps: list[float] = []
+        with mock.patch.object(MODULE.subprocess, "run", side_effect=attempts) as run:
+            value = MODULE._run_json(
+                ("gh", "api", "repos/example/qik-vrt/pulls/867"),
+                sleeper=sleeps.append,
+            )
+
+        self.assertEqual(value, {"ok": True})
+        self.assertEqual(sleeps, [15.0])
+        self.assertEqual(run.call_count, 2)
+
+    def test_exhausted_installation_rate_limit_is_typed_and_endpoint_bound(self):
+        attempts = [
+            subprocess.CompletedProcess(
+                ["gh"],
+                1,
+                stdout="",
+                stderr="gh: API rate limit exceeded for installation. (HTTP 403)",
+            )
+            for _ in range(3)
+        ]
+        sleeps: list[float] = []
+        endpoint = "repos/example/qik-vrt/actions/runs?head_sha=" + HEAD_SHA
+        with mock.patch.object(MODULE.subprocess, "run", side_effect=attempts) as run:
+            with self.assertRaises(MODULE.GitHubInstallationRateLimit) as raised:
+                MODULE._run_json(("gh", "api", endpoint), sleeper=sleeps.append)
+
+        self.assertIn(endpoint, str(raised.exception))
+        self.assertEqual(sleeps, [15.0, 45.0])
+        self.assertEqual(run.call_count, 3)
+
+    def test_non_quota_failure_and_mutation_are_never_retried(self):
+        cases = (
+            (
+                ("gh", "api", "repos/example/qik-vrt/pulls/867"),
+                "gh: forbidden (HTTP 403)",
+            ),
+            (
+                ("gh", "api", "--method", "POST", "repos/example/qik-vrt/statuses/" + HEAD_SHA),
+                "gh: API rate limit exceeded for installation. (HTTP 403)",
+            ),
+        )
+        for command, stderr in cases:
+            with self.subTest(command=command), mock.patch.object(
+                MODULE.subprocess,
+                "run",
+                return_value=subprocess.CompletedProcess(
+                    ["gh"], 1, stdout="", stderr=stderr
+                ),
+            ) as run:
+                with self.assertRaises(MODULE.ReviewObservationError):
+                    MODULE._run_json(command, sleeper=self.fail)
+            self.assertEqual(run.call_count, 1)
+
+    def test_rate_limit_observe_receipt_is_explicit_d0_two_hold(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            snapshot = root / "snapshot.json"
+            diff = root / "review.diff"
+            receipt = root / "review.json"
+            args = [
+                "observe",
+                "--repository", "example/qik-vrt",
+                "--pr-number", "867",
+                "--expected-head", HEAD_SHA,
+                "--current-run-id", "73",
+                "--required-gates-json", "[]",
+                "--required-gate-paths-json", "{}",
+                "--writer-workflows-json", "[]",
+                "--snapshot-out", str(snapshot),
+                "--diff-out", str(diff),
+                "--receipt-out", str(receipt),
+            ]
+            with (
+                mock.patch.object(
+                    MODULE,
+                    "observe_repository",
+                    side_effect=MODULE.GitHubInstallationRateLimit(
+                        "GitHub installation rate limit exhausted while reading "
+                        "repos/example/qik-vrt/pulls/867"
+                    ),
+                ),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                code = MODULE.main(args)
+
+            value = json.loads(receipt.read_text(encoding="utf-8"))
+            self.assertEqual(code, 3)
+            self.assertEqual(value["state"], "WAIT")
+            self.assertEqual(
+                value["first_blocker"],
+                "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",
+            )
+            self.assertEqual(value["derived_action"]["d0"], 2)
+            self.assertEqual(value["derived_action"]["state"], "REOBSERVE")
+            self.assertEqual(
+                value["derived_action"]["next_action"],
+                "REOBSERVE_EXACT_SUBJECT_ON_NEXT_NONSELF_REPOSITORY_INTERRUPT",
+            )
+            self.assertEqual(validate_hold_object(value)["d0"], 2)
+            self.assertEqual(value["hold_reason"]["subject"]["head_sha"], HEAD_SHA)
+            self.assertFalse(snapshot.exists())
+            self.assertFalse(diff.exists())
+
     def test_workflow_observation_projects_every_job(self):
         raw_run = self.workflow_run("QIKVRT CI", identifier=101, run_number=10)
         raw_run.pop("jobs_total")
@@ -1515,7 +1813,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertTrue(report["checks"]["stored_receipt_parses_as_expected"])
         self.assertFalse(report["checks"]["stored_receipt_bytes"])
 
-    def test_own_mesh_projection_is_excluded_from_causal_discussion(self):
+    def test_repository_automation_projections_are_excluded_from_causal_discussion(self):
         own = {
             "id": 1,
             "body": "<!-- qikvrt-mesh-review:v1 head=abc -->",
@@ -1532,7 +1830,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         }
         live_status = {
             "id": 3,
-            "body": "<!-- qikvrt-live-status-watch -->\nExact status projection.",
+            "body": "<!-- qikvrt-universal-terminal-live-surface-v1 -->\nExact status projection.",
             "user": {"login": "github-actions[bot]"},
             "created_at": "2026-08-22T20:02:00Z",
         }
@@ -1545,7 +1843,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         embedded_marker = {
             **live_status,
             "id": 5,
-            "body": "Telemetry follows <!-- qikvrt-live-status-watch -->",
+            "body": "Telemetry follows <!-- qikvrt-universal-terminal-live-surface-v1 -->",
             "created_at": "2026-08-22T20:04:00Z",
         }
         other_bot = {
@@ -1554,12 +1852,32 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             "user": {"login": "dependabot[bot]"},
             "created_at": "2026-08-22T20:05:00Z",
         }
+        ruleset_apply = {
+            **live_status,
+            "id": 7,
+            "body": "<!-- qikvrt-ruleset-apply:abcdef -->\nExact apply receipt.",
+            "created_at": "2026-08-22T20:06:00Z",
+        }
+        ruleset_authority = {
+            **live_status,
+            "id": 8,
+            "body": "<!-- qikvrt-ruleset-authority:abcdef -->\nAuthority continuation.",
+            "created_at": "2026-08-22T20:07:00Z",
+        }
 
         def pages(endpoint):
             if endpoint.endswith("/reviews?per_page=100"):
                 return [own]
             if endpoint.endswith("/comments?per_page=100") and "/issues/" in endpoint:
-                return [foreign, live_status, human_marker, embedded_marker, other_bot]
+                return [
+                    foreign,
+                    live_status,
+                    human_marker,
+                    embedded_marker,
+                    other_bot,
+                    ruleset_apply,
+                    ruleset_authority,
+                ]
             return []
 
         with mock.patch.object(MODULE, "_gh_pages", side_effect=pages):
@@ -2016,7 +2334,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn("EXPECTED_SELECTOR_HEAD", text)
         self.assertIn('--expected-head "$EXPECTED_SELECTOR_HEAD"', text)
         self.assertNotIn("if not people and not teams", text)
-        self.assertIn("if: github.ref == 'refs/heads/main'", text)
+        self.assertIn("github.ref == 'refs/heads/main'", text)
         self.assertIn("ref: main", text)
         self.assertIn("persist-credentials: false", text)
         self.assertIn('"--no-ext-diff", "--no-textconv", "--no-renames"', core)
@@ -2112,6 +2430,35 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn(
             "- qikvrt/mesh-review-ledger-v1",
             CI_WORKFLOW.read_text(encoding="utf-8"),
+        )
+
+    def test_installation_rate_limit_hold_skips_every_persistence_or_dispatch_step(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        core = (ROOT / "tools/qikvrt_requested_review_executor.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED", core)
+        self.assertIn("GITHUB_READ_RATE_LIMIT_BACKOFF_SECONDS = (0, 15, 45)", core)
+        self.assertIn("GitHubInstallationRateLimit", core)
+        self.assertIn("observation_ready=false", text)
+        self.assertIn("HOLD/D0=2", text)
+        self.assertIn("github.event.review.user.login == 'github-actions[bot]'", text)
+        self.assertIn("startsWith(github.event.review.body, '<!-- qikvrt-mesh-review:v1 ')", text)
+        self.assertIn("for transition_index in range(1):", text)
+        self.assertNotIn("for transition_index in range(4):", text)
+        self.assertIn(
+            "steps.decision.outputs.observation_ready == 'true'",
+            text,
+        )
+        ledger = text.index("- name: Persist exact receipt and diff by ledger fast-forward CAS")
+        projection = text.index("- name: Project persisted receipt into PR comment and exact-head status")
+        successor = text.index("- name: Dispatch exactly one exact-head progress successor")
+        for offset in (ledger, projection, successor):
+            block = text[offset : offset + 450]
+            self.assertIn("if:", block)
+        self.assertIn(
+            "steps.decision.outputs.observation_ready == 'true'",
+            text[ledger : ledger + 450],
         )
 
     def test_exact_event_selection_is_diagnostic_and_fail_closed(self):

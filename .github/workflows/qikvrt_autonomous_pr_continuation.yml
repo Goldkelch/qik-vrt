@@ -4,8 +4,6 @@ name: QIK-VRT autonomous draft-PR continuation
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "37 * * * *"
   push:
     branches: [main]
     paths:
@@ -103,6 +101,10 @@ jobs:
         run: |
           set -euo pipefail
           test "$BASE_REF" = "main"
+          # A draft PR must never be allowed to turn this continuation into a
+          # protected-main ref writer, even if an unexpected API payload is
+          # returned before the push.
+          test "$HEAD_REF" != "main"
           checked_main="$(git rev-parse --verify HEAD^{commit})"
           live_main="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
           test "$checked_main" = "$live_main"

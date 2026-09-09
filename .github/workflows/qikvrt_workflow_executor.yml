@@ -4,8 +4,6 @@ name: QIKVRT workflow executor
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "23 * * * *"
   push:
     branches: [main]
     paths:
@@ -49,34 +47,117 @@ jobs:
           python-version: "3.12"
 
       - name: Reobserve exact Authority head and bounded workflow-run baseline
+        id: observe
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p .qikvrt/workflow-executor
-          local_head="$(git rev-parse --verify HEAD^{commit})"
-          live_head="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
-          test "$local_head" = "$live_head"
-          printf '%s\n' "$live_head" > .qikvrt/workflow-executor/observed-main-head.txt
-          git rev-parse --verify HEAD^{tree} > .qikvrt/workflow-executor/observed-main-tree.txt
-          gh api "repos/${GITHUB_REPOSITORY}/actions/runs?branch=main&per_page=100" \
-            > .qikvrt/workflow-executor/current-runs.json
+          root=.qikvrt/workflow-executor
+          mkdir -p "$root"
+          rate_limit_marker="$root/rate-limit-exhausted.json"
+          github_installation_rate_limit_response='API rate limit exceeded for installation'
+          rm -f "$rate_limit_marker" "$root/dispatch-receipt.json"
 
-          previous_run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_workflow_executor.yml/runs?branch=main&status=completed&per_page=20" \
-            --jq '.workflow_runs[0].id // empty' 2>/dev/null || true)"
+          emit_rate_limit_reobserve() {
+            local phase endpoint
+            phase="$1"
+            endpoint="$(jq -r '.endpoint' "$rate_limit_marker")"
+            jq -n \
+              --arg phase "$phase" \
+              --arg endpoint "$endpoint" \
+              --arg marker_path "$rate_limit_marker" \
+              --arg response_marker "$github_installation_rate_limit_response" \
+              --arg repository "$GITHUB_REPOSITORY" \
+              --arg run_id "$GITHUB_RUN_ID" \
+              --argjson retry_delays_seconds '[0,15,45]' \
+              '{schema:"qikvrt_workflow_executor_dispatch_receipt_v1",phase:$phase,d0:2,state:"REOBSERVE",reason_code:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",first_causal_blocker:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",hold_reason:{reason_code:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",reason:"the exact GitHub installation rate-limit response exhausted bounded GET retries",subject:{repository:$repository,kind:"workflow_executor",identifier:$run_id},evidence_refs:[{path:$marker_path,endpoint:$endpoint,response_marker:$response_marker}],owner:"QIKVRT_WORKFLOW_EXECUTOR",retry_condition:"NEXT_NONSELF_REPOSITORY_INTERRUPT_WITH_FRESH_EXACT_GET_REOBSERVATION",next_action:"REOBSERVE_EXACT_AUTHORITY_HEAD_ON_NEXT_NONSELF_REPOSITORY_INTERRUPT",d0:2},get_retry_delays_seconds:$retry_delays_seconds,dispatch_attempted:false,dispatch_post_count:0,productive_effect:false,effect_ack:"NOT_REQUIRED",completion_claims:{merge:false,pass:false,final_pass:false,effect_ack_done:false}}' \
+              > "$root/dispatch-receipt.json"
+            echo "rate_limited=true" >> "$GITHUB_OUTPUT"
+            echo "REOBSERVE/D0=2: bounded GitHub installation rate-limit GET backoff exhausted"
+          }
+
+          # Retry only GitHub's exact installation quota response.  A completed
+          # three-attempt read is missing observation evidence, so the caller
+          # records a D0=2 receipt and never reaches a dispatch mutation.
+          gh_read() {
+            local output error delay endpoint
+            endpoint="$1"
+            output="$(mktemp)"
+            error="$(mktemp)"
+            for delay in 0 15 45; do
+              if [ "$delay" -gt 0 ]; then
+                echo "QIKVRT_GITHUB_INSTALLATION_RATE_LIMIT_BACKOFF_SECONDS=$delay" >&2
+                sleep "$delay"
+              fi
+              if gh api --method GET "$@" >"$output" 2>"$error"; then
+                cat "$output"
+                rm -f "$output" "$error"
+                return 0
+              fi
+              if ! grep -Fq "API rate limit exceeded for installation" "$error"; then
+                cat "$error" >&2
+                rm -f "$output" "$error"
+                return 1
+              fi
+            done
+            cat "$error" >&2
+            jq -n \
+              --arg endpoint "$endpoint" \
+              --arg response_marker "$github_installation_rate_limit_response" \
+              --argjson retry_delays_seconds '[0,15,45]' \
+              '{schema:"qikvrt_workflow_executor_installation_rate_limit_marker_v1",method:"GET",endpoint:$endpoint,response_marker:$response_marker,get_retry_delays_seconds:$retry_delays_seconds,get_attempts:3,d0:2,state:"REOBSERVE",reason_code:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
+              > "$rate_limit_marker"
+            # Callers inspect the marker before consuming this placeholder;
+            # keep the one polling consumer syntactically type-safe as well.
+            printf '{"workflow_runs":[]}\n'
+            rm -f "$output" "$error"
+            return 0
+          }
+
+          local_head="$(git rev-parse --verify HEAD^{commit})"
+          live_head="$(gh_read "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          if [ -f "$rate_limit_marker" ]; then
+            emit_rate_limit_reobserve "PRE_DISPATCH_OBSERVATION"
+            exit 0
+          fi
+          test "$local_head" = "$live_head"
+          printf '%s\n' "$live_head" > "$root/observed-main-head.txt"
+          git rev-parse --verify HEAD^{tree} > "$root/observed-main-tree.txt"
+          gh_read "repos/${GITHUB_REPOSITORY}/actions/runs?branch=main&per_page=100" \
+            > "$root/current-runs.json"
+          if [ -f "$rate_limit_marker" ]; then
+            emit_rate_limit_reobserve "PRE_DISPATCH_OBSERVATION"
+            exit 0
+          fi
+
+          previous_run="$(gh_read "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_workflow_executor.yml/runs?branch=main&status=completed&per_page=20" \
+            --jq '.workflow_runs[0].id // empty')"
+          if [ -f "$rate_limit_marker" ]; then
+            emit_rate_limit_reobserve "PRE_DISPATCH_OBSERVATION"
+            exit 0
+          fi
           if test -n "$previous_run"; then
-            previous_artifact="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${previous_run}/artifacts?per_page=100" \
-              --jq '[.artifacts[] | select(.name | startswith("qikvrt-workflow-executor-snapshot-"))][0].id // empty' 2>/dev/null || true)"
+            previous_artifact="$(gh_read "repos/${GITHUB_REPOSITORY}/actions/runs/${previous_run}/artifacts?per_page=100" \
+              --jq '[.artifacts[] | select(.name | startswith("qikvrt-workflow-executor-snapshot-"))][0].id // empty')"
+            if [ -f "$rate_limit_marker" ]; then
+              emit_rate_limit_reobserve "PRE_DISPATCH_OBSERVATION"
+              exit 0
+            fi
             if test -n "$previous_artifact"; then
-              gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${previous_artifact}/zip" \
-                > .qikvrt/workflow-executor/previous-snapshot.zip
-              unzip -p .qikvrt/workflow-executor/previous-snapshot.zip workflow-executor-snapshot.json \
-                > .qikvrt/workflow-executor/previous-snapshot.json || true
+              gh_read "repos/${GITHUB_REPOSITORY}/actions/artifacts/${previous_artifact}/zip" \
+                > "$root/previous-snapshot.zip"
+              if [ -f "$rate_limit_marker" ]; then
+                emit_rate_limit_reobserve "PRE_DISPATCH_OBSERVATION"
+                exit 0
+              fi
+              unzip -p "$root/previous-snapshot.zip" workflow-executor-snapshot.json \
+                > "$root/previous-snapshot.json" || true
             fi
           fi
 
       - name: Build exact-head dispatch plan
+        if: steps.observe.outputs.rate_limited != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -91,38 +172,416 @@ jobs:
             > .qikvrt/workflow-executor/workflow-executor-snapshot.json
 
       - name: Dispatch only a newly eligible no-effect exact-head watchdog
+        if: steps.observe.outputs.rate_limited != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          plan=.qikvrt/workflow-executor/dispatch-plan.json
-          head="$(cat .qikvrt/workflow-executor/observed-main-head.txt)"
-          tree="$(cat .qikvrt/workflow-executor/observed-main-tree.txt)"
-          count="$(jq '[.candidates[] | select(.disposition == "DISPATCH")] | length' "$plan")"
-          test "$count" -le 1
-          : > .qikvrt/workflow-executor/dispatched-runs.jsonl
-          while IFS=$'\t' read -r workflow_id workflow_name; do
-            test -n "$workflow_id"
-            refreshed_head="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
-            test "$refreshed_head" = "$head"
-            dispatched_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-            gh api --method POST \
-              "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/dispatches" \
-              -f ref=main
-            run_id=""
-            for _ in $(seq 1 12); do
-              run_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/runs?event=workflow_dispatch&branch=main&per_page=100" \
-                | jq -r --arg head "$head" --arg started "$dispatched_at" \
-                  '[.workflow_runs[] | select(.head_sha == $head and .created_at >= $started)][0].id // empty')"
-              test -n "$run_id" && break
-              sleep 5
-            done
-            test -n "$run_id"
-            printf '{"workflow_id":"%s","workflow_name":"%s","ref":"main","head_sha":"%s","tree_sha":"%s","run_id":%s}\n' \
-              "$workflow_id" "$workflow_name" "$head" "$tree" "$run_id" \
-              >> .qikvrt/workflow-executor/dispatched-runs.jsonl
-          done < <(jq -r '.candidates[] | select(.disposition == "DISPATCH") | [.workflow_id, .workflow_name] | @tsv' "$plan")
+          root=.qikvrt/workflow-executor
+          ledger="$root/dispatch-effect-attempts.json"
+          receipt="$root/dispatch-receipt.json"
+          plan="$root/dispatch-plan.json"
+          dispatched_runs="$root/dispatched-runs.jsonl"
+          workflow_id=""
+          workflow_name=""
+          workflow_path=""
+          head=""
+          tree=""
+          carrier_run_id="${GITHUB_RUN_ID}"
+          dispatch_endpoint="executor:dispatch-unbound"
+          target_runs_endpoint="executor:target-runs-unbound"
+          expected_run_name=""
+          target_run_id=""
+          dispatch_post_count=0
+          post_intent_persisted=false
+          mkdir -p "$root"
+
+          # All GETs use the shared wrapper: it admits only GET-shaped API
+          # grammar and maps the installation quota to a bounded D0=2 hold.
+          gh_read() {
+            python3 -B tools/qikvrt_github_observe.py -- "$@"
+          }
+
+          append_effect_attempt() {
+            python3 -B tools/qikvrt_effect_attempts.py append --ledger "$ledger" "$@"
+          }
+
+          effect_attempts() {
+            python3 -B tools/qikvrt_effect_attempts.py show --ledger "$ledger"
+          }
+
+          effect_summary() {
+            python3 -B tools/qikvrt_effect_attempts.py summary --ledger "$ledger"
+          }
+
+          emit_receipt() {
+            local state="$1" blocker="$2" endpoint="$3" expected_attempted="$4" target_id="${5:-}"
+            local attempts summary
+            if ! attempts="$(effect_attempts 2>/dev/null)"; then
+              attempts='[]'
+            fi
+            if ! summary="$(effect_summary 2>/dev/null)"; then
+              summary='{"effect_transport_attempted":false,"effect_observed":false,"mutation":"NONE"}'
+            fi
+            jq -n \
+              --arg state "$state" \
+              --arg blocker "$blocker" \
+              --arg endpoint "$endpoint" \
+              --arg repository "$GITHUB_REPOSITORY" \
+              --arg carrier "$carrier_run_id" \
+              --arg workflow_id "$workflow_id" \
+              --arg workflow_name "$workflow_name" \
+              --arg workflow_path "$workflow_path" \
+              --arg head "$head" \
+              --arg tree "$tree" \
+              --arg title "$expected_run_name" \
+              --arg target_id "$target_id" \
+              --argjson expected_attempted "$expected_attempted" \
+              --argjson dispatch_post_count "$dispatch_post_count" \
+              --argjson effect_attempts "$attempts" \
+              --argjson effect_summary "$summary" \
+              '{
+                schema:"qikvrt_workflow_executor_dispatch_receipt_v2",
+                state:$state,
+                verification_state:(if $state == "HOLD" then "HOLD_UNVERIFIED" elif $state == "DISPATCH_CONFIRMED" then "TARGET_RUN_READBACK_CONFIRMED" else "NO_EFFECT_REQUIRED" end),
+                d0:(if $state == "HOLD" then 2 else 0 end),
+                continuation_required:($state == "HOLD"),
+                first_causal_blocker:(if $blocker == "" then null else $blocker end),
+                repository:$repository,
+                executor_carrier_run_id:$carrier,
+                subject_binding:(if $head == "" or $tree == "" then "UNBOUND" else "BOUND" end),
+                endpoint:$endpoint,
+                workflow:{
+                  id:(if $workflow_id == "" then null else $workflow_id end),
+                  name:(if $workflow_name == "" then null else $workflow_name end),
+                  path:(if $workflow_path == "" then null else $workflow_path end),
+                  ref:"main",
+                  expected_main_sha:(if $head == "" then null else $head end),
+                  expected_tree_sha:(if $tree == "" then null else $tree end),
+                  expected_run_name:(if $title == "" then null else $title end),
+                  target_run_id:(if $target_id == "" then null else ($target_id | tonumber) end)
+                },
+                effect_transport_attempted:($effect_summary.effect_transport_attempted or $expected_attempted),
+                effect_observed:$effect_summary.effect_observed,
+                mutation:(if $effect_summary.mutation == "NONE" and ($effect_summary.effect_transport_attempted or $expected_attempted) then "POST" else $effect_summary.mutation end),
+                effect_attempts:$effect_attempts,
+                dispatch_post_count:$dispatch_post_count,
+                productive_effect:false,
+                effect_ack:(if $state == "DISPATCH_CONFIRMED" then "TARGET_RUN_READBACK_CONFIRMED" else "NOT_REQUIRED" end),
+                hold_reason:(if $state == "HOLD" then {
+                  reason_code:$blocker,
+                  reason:"The exact watchdog dispatch may have been attempted but its carrier-bound target run cannot be fully confirmed in this executor run.",
+                  subject:{repository:$repository,kind:"workflow_executor",identifier:$carrier,head_sha:(if $head == "" then null else $head end),tree_sha:(if $tree == "" then null else $tree end)},
+                  evidence_refs:["github-actions-run:" + $carrier,"github-api:" + $endpoint],
+                  owner:{role:"EXACT_SUBJECT_OBSERVER",actor:"qikvrt-workflow-executor"},
+                  retry_condition:{event:"NEXT_NONSELF_REPOSITORY_INTERRUPT",predicate:"a fresh executor reobserves the exact main/tree subject and any prior carrier-bound target run before another dispatch"},
+                  next_action:"REOBSERVE_EXACT_MAIN_TREE_AND_CARRIER_BOUND_TARGET_RUN_BEFORE_ANY_WORKFLOW_DISPATCH",
+                  d0:2
+                } else null end),
+                completion_claims:{merge:false,pass:false,final_pass:false,effect_ack_done:false}
+              }' > "$receipt"
+          }
+
+          emit_hold() {
+            emit_receipt HOLD "$1" "$2" "${3:-$post_intent_persisted}" "${4:-}"
+          }
+
+          emit_noop() {
+            emit_receipt NOOP "$1" "$2" false "${3:-}"
+          }
+
+          emit_confirmed() {
+            emit_receipt DISPATCH_CONFIRMED "" "$dispatch_endpoint" true "$target_run_id"
+          }
+
+          read_text() {
+            local destination="$1" endpoint="$2" rc
+            shift 2
+            if gh_read "$@" > "$destination"; then
+              return 0
+            else
+              rc=$?
+            fi
+            if [ "$rc" -eq 75 ]; then
+              emit_hold GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED "$endpoint" || true
+            else
+              emit_hold GITHUB_READ_OBSERVATION_FAILED "$endpoint" || true
+            fi
+            return 1
+          }
+
+          observe_no_equivalent_target_run() {
+            local selection
+            if ! selection="$(jq -ce --arg repository "$GITHUB_REPOSITORY" --arg workflow_name "$workflow_name" --arg head "$head" '
+              if type != "object"
+                or (.total_count | type) != "number"
+                or .total_count < 0
+                or (.workflow_runs | type) != "array"
+                or any(.workflow_runs[]; type != "object")
+              then error("malformed target workflow-run observation")
+              else [ .workflow_runs[] | select(
+                .name == $workflow_name and .head_branch == "main" and .head_sha == $head and
+                .repository.full_name == $repository and .event == "workflow_dispatch"
+              ) ] | if length == 0 then {state:"ABSENT"}
+                elif length == 1 and ((.[0].id | type) == "number") and .[0].id > 0 then {state:"EXISTS",run_id:.[0].id}
+                else error("equivalent target workflow run is ambiguous or malformed") end
+              end
+            ' "$root/pre-dispatch-target-runs.json")"; then
+              emit_hold EXACT_TARGET_RUN_PRE_DISPATCH_READBACK_MALFORMED "$target_runs_endpoint" || true
+              return 1
+            fi
+            if [ "$(jq -r .state <<<"$selection")" = EXISTS ]; then
+              target_run_id="$(jq -r .run_id <<<"$selection")"
+            fi
+          }
+
+          select_exact_target_run() {
+            local selection state
+            target_run_id=""
+            if ! selection="$(jq -ce \
+              --arg repository "$GITHUB_REPOSITORY" \
+              --arg workflow_name "$workflow_name" \
+              --arg workflow_path "$workflow_path" \
+              --arg head "$head" \
+              --arg title "$expected_run_name" '
+              if type != "object"
+                or (.total_count | type) != "number"
+                or .total_count < 0
+                or (.workflow_runs | type) != "array"
+                or any(.workflow_runs[]; type != "object")
+              then error("malformed target workflow-run observation")
+              else [ .workflow_runs[] | select(
+                .event == "workflow_dispatch" and .name == $workflow_name and
+                (.path == $workflow_path or .path == ($workflow_path + "@main") or .path == ($workflow_path + "@refs/heads/main")) and
+                .head_branch == "main" and .head_sha == $head and .repository.full_name == $repository and
+                .display_title == $title
+              ) ] | if length == 0 then {state:"ABSENT"}
+                elif length == 1 and ((.[0].id | type) == "number") and .[0].id > 0
+                  and ((.[0].status | type) == "string") then {state:"EXACT",run_id:.[0].id,status:.[0].status}
+                else error("carrier-bound target workflow run is ambiguous or malformed") end
+              end
+            ' "$root/target-runs.json")"; then
+              emit_hold EXACT_TARGET_RUN_READBACK_MALFORMED "$target_runs_endpoint" true || true
+              return 1
+            fi
+            state="$(jq -r .state <<<"$selection")"
+            if [ "$state" = EXACT ]; then
+              target_run_id="$(jq -r .run_id <<<"$selection")"
+            fi
+          }
+
+          dispatch_error_trap() {
+            local rc=$?
+            trap - ERR
+            set +e
+            if [ "$rc" -ne 0 ]; then
+              emit_hold EXECUTOR_DISPATCH_EXECUTION_FAILED "${dispatch_endpoint:-executor:dispatch-error-trap}" "${post_intent_persisted:-false}" "${target_run_id:-}" || true
+            fi
+            exit 0
+          }
+
+          if ! python3 -B tools/qikvrt_effect_attempts.py create --ledger "$ledger" >/dev/null; then
+            emit_hold EFFECT_ATTEMPT_LEDGER_CREATION_FAILED executor:dispatch-ledger false || true
+            exit 0
+          fi
+          trap dispatch_error_trap ERR
+
+          head="$(cat "$root/observed-main-head.txt")"
+          tree="$(cat "$root/observed-main-tree.txt")"
+          if ! [[ "$head" =~ ^[0-9a-f]{40}$ ]] || ! [[ "$tree" =~ ^[0-9a-f]{40}$ ]] \
+            || ! [[ "$carrier_run_id" =~ ^[1-9][0-9]*$ ]]; then
+            emit_hold EXECUTOR_SUBJECT_BINDING_INVALID executor:subject-binding false || true
+            exit 0
+          fi
+          if ! observed_tree="$(git rev-parse --verify "${head}^{tree}")"; then
+            emit_hold CURRENT_MAIN_TREE_REOBSERVATION_FAILED executor:local-tree false || true
+            exit 0
+          fi
+          if [ "$observed_tree" != "$tree" ]; then
+            emit_noop CURRENT_MAIN_TREE_DRIFT executor:local-tree || true
+            exit 0
+          fi
+          if ! candidates="$(jq -ce '
+            if type != "object" or .schema != "qikvrt_workflow_executor_plan_v1"
+              or (.candidates | type) != "array" or any(.candidates[]; type != "object")
+            then error("malformed dispatch plan")
+            else [.candidates[] | select(.disposition == "DISPATCH")] end
+          ' "$plan")"; then
+            emit_hold DISPATCH_PLAN_MALFORMED executor:dispatch-plan false || true
+            exit 0
+          fi
+          if [ "$candidates" = '[]' ]; then
+            emit_noop NO_DISPATCH_CANDIDATE executor:dispatch-plan || true
+            exit 0
+          fi
+          if ! workflow_tuple="$(jq -er --arg head "$head" --arg tree "$tree" '
+            if length != 1 then error("dispatch plan has more than one candidate")
+            else .[0] | if .workflow_id == "qikvrt_workflow_executor_watchdog.yml"
+              and .workflow_name == "QIKVRT workflow executor watchdog"
+              and .workflow_path == ".github/workflows/qikvrt_workflow_executor_watchdog.yml"
+              and .ref == "main" and .head_sha == $head and .tree_sha == $tree
+              and .external_effect == "NONE"
+              and ((.workflow_blob_sha | type) == "string" and (.workflow_blob_sha | test("^[0-9a-f]{40}$")))
+            then [.workflow_id,.workflow_name,.workflow_path] | @tsv
+            else error("dispatch candidate is not the exact authorized no-effect watchdog") end end
+          ' <<<"$candidates")"; then
+            emit_hold DISPATCH_CANDIDATE_INVALID executor:dispatch-plan false || true
+            exit 0
+          fi
+          IFS=$'\t' read -r workflow_id workflow_name workflow_path <<<"$workflow_tuple"
+          dispatch_endpoint="repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/dispatches"
+          target_runs_endpoint="repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/runs?event=workflow_dispatch&branch=main&head_sha=${head}&per_page=100"
+          expected_run_name="QIKVRT workflow executor watchdog main=${head} tree=${tree} carrier=${carrier_run_id}"
+          : > "$dispatched_runs"
+
+          if ! read_text "$root/final-main-head.txt" "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" \
+            "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha'; then
+            exit 0
+          fi
+          refreshed_head="$(cat "$root/final-main-head.txt")"
+          if ! [[ "$refreshed_head" =~ ^[0-9a-f]{40}$ ]]; then
+            emit_hold CURRENT_MAIN_HEAD_READBACK_MALFORMED "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" false || true
+            exit 0
+          fi
+          if [ "$refreshed_head" != "$head" ]; then
+            emit_noop CURRENT_MAIN_HEAD_DRIFT "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" || true
+            exit 0
+          fi
+          if ! read_text "$root/pre-dispatch-target-runs.json" "$target_runs_endpoint" "$target_runs_endpoint"; then
+            exit 0
+          fi
+          if ! observe_no_equivalent_target_run; then
+            exit 0
+          fi
+          if [ -n "$target_run_id" ]; then
+            if ! append_effect_attempt \
+              --kind workflow_dispatch_readback \
+              --endpoint-or-subject "$target_runs_endpoint" \
+              --mutation NONE \
+              --effect-transport-attempted false \
+              --transport-outcome OBSERVED_READBACK \
+              --effect-observed true \
+              --evidence-ref "readback:preexisting-exact-watchdog:${target_run_id}" >/dev/null; then
+              emit_hold EFFECT_ATTEMPT_LEDGER_APPEND_FAILED "$target_runs_endpoint" false "$target_run_id" || true
+              exit 0
+            fi
+            emit_noop EQUIVALENT_EXACT_HEAD_TARGET_RUN_EXISTS "$target_runs_endpoint" "$target_run_id" || true
+            exit 0
+          fi
+
+          # This append is write-ahead evidence.  It is deliberately before
+          # the sole POST so any lost acknowledgement remains a HOLD rather
+          # than opening a second dispatch attempt.
+          if ! append_effect_attempt \
+            --kind workflow_dispatch_intent \
+            --endpoint-or-subject "$dispatch_endpoint" \
+            --mutation POST \
+            --effect-transport-attempted true \
+            --transport-outcome ATTEMPTED_PENDING_READBACK \
+            --effect-observed false \
+            --evidence-ref "post-intent:workflow-executor:${carrier_run_id}:main-${head}:tree-${tree}" >/dev/null; then
+            emit_hold EFFECT_ATTEMPT_LEDGER_APPEND_FAILED "$dispatch_endpoint" false || true
+            exit 0
+          fi
+          post_intent_persisted=true
+          dispatch_post_count=1
+          post_error="$root/watchdog-dispatch-post.stderr"
+          if jq -n --arg main "$head" --arg tree "$tree" --arg carrier "$carrier_run_id" \
+            '{ref:"main",inputs:{expected_main:$main,expected_tree:$tree,carrier_run_id:$carrier}}' \
+            | gh api --method POST "$dispatch_endpoint" --input - 2>"$post_error"; then
+            if ! append_effect_attempt \
+              --kind workflow_dispatch_post \
+              --endpoint-or-subject "$dispatch_endpoint" \
+              --mutation POST \
+              --effect-transport-attempted true \
+              --transport-outcome ACKED \
+              --effect-observed false \
+              --evidence-ref "post-response:workflow-executor:${carrier_run_id}" >/dev/null; then
+              emit_hold EFFECT_ATTEMPT_LEDGER_APPEND_FAILED "$dispatch_endpoint" true || true
+              exit 0
+            fi
+          else
+            if grep -Fq "API rate limit exceeded for installation" "$post_error"; then
+              outcome=UNCONFIRMED_RATE_LIMIT
+              mutation=POST_UNCONFIRMED_RATE_LIMIT
+              blocker=GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED
+            else
+              outcome=UNCONFIRMED_TRANSPORT_FAILED
+              mutation=POST_UNCONFIRMED_TRANSPORT_FAILED
+              blocker=WORKFLOW_EXECUTOR_DISPATCH_UNCONFIRMED
+            fi
+            if ! append_effect_attempt \
+              --kind workflow_dispatch_post \
+              --endpoint-or-subject "$dispatch_endpoint" \
+              --mutation "$mutation" \
+              --effect-transport-attempted true \
+              --transport-outcome "$outcome" \
+              --effect-observed false \
+              --evidence-ref "post-stderr:workflow-executor:${carrier_run_id}" >/dev/null; then
+              emit_hold EFFECT_ATTEMPT_LEDGER_APPEND_FAILED "$dispatch_endpoint" true || true
+              exit 0
+            fi
+          fi
+
+          target_run_id=""
+          for delay in 0 2 5 10; do
+            if [ "$delay" -gt 0 ]; then
+              sleep "$delay"
+            fi
+            if ! read_text "$root/target-runs.json" "$target_runs_endpoint" "$target_runs_endpoint"; then
+              exit 0
+            fi
+            if ! select_exact_target_run; then
+              exit 0
+            fi
+            if [ -n "$target_run_id" ]; then
+              break
+            fi
+          done
+          if [ -z "$target_run_id" ] || ! [[ "$target_run_id" =~ ^[1-9][0-9]*$ ]]; then
+            if ! append_effect_attempt \
+              --kind workflow_dispatch_readback \
+              --endpoint-or-subject "$target_runs_endpoint" \
+              --mutation POST_UNCONFIRMED_READBACK_FAILED \
+              --effect-transport-attempted true \
+              --transport-outcome UNCONFIRMED_READBACK_FAILED \
+              --effect-observed false \
+              --evidence-ref "readback:carrier-bound-watchdog-absent:${carrier_run_id}" >/dev/null; then
+              emit_hold EFFECT_ATTEMPT_LEDGER_APPEND_FAILED "$target_runs_endpoint" true || true
+              exit 0
+            fi
+            emit_hold WORKFLOW_EXECUTOR_DISPATCH_UNCONFIRMED "$target_runs_endpoint" true || true
+            exit 0
+          fi
+          if ! append_effect_attempt \
+            --kind workflow_dispatch_readback \
+            --endpoint-or-subject "$target_runs_endpoint" \
+            --mutation NONE \
+            --effect-transport-attempted false \
+            --transport-outcome OBSERVED_READBACK \
+            --effect-observed true \
+            --evidence-ref "readback:carrier-bound-watchdog:${target_run_id}" >/dev/null; then
+            emit_hold EFFECT_ATTEMPT_LEDGER_APPEND_FAILED "$target_runs_endpoint" true "$target_run_id" || true
+            exit 0
+          fi
+          if ! jq -n \
+            --arg workflow_id "$workflow_id" \
+            --arg workflow_name "$workflow_name" \
+            --arg head "$head" \
+            --arg tree "$tree" \
+            --arg title "$expected_run_name" \
+            --argjson run_id "$target_run_id" \
+            '{workflow_id:$workflow_id,workflow_name:$workflow_name,ref:"main",head_sha:$head,tree_sha:$tree,expected_run_name:$title,run_id:$run_id}' \
+            >> "$dispatched_runs"; then
+            emit_hold DISPATCH_RECEIPT_LEDGER_APPEND_FAILED "$target_runs_endpoint" true "$target_run_id" || true
+            exit 0
+          fi
+          if ! emit_confirmed; then
+            emit_hold DISPATCH_RECEIPT_FINALIZATION_FAILED "$target_runs_endpoint" true "$target_run_id" || true
+            exit 0
+          fi
+          trap - ERR
 
       - name: Preserve exact-head plan and dispatch receipt
         if: always()

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
 name: QIKVRT autonomous PR-head continuation
+run-name: QIKVRT PR-head carrier=${{ github.run_id }} event=${{ github.event_name }}
 
 on:
   workflow_dispatch:
@@ -9,7 +10,6 @@ on:
   workflow_run:
     workflows:
       - "QIKVRT repository evidence materialization"
-      - "QIKVRT adaptive stacked successor integrity materialization"
       - "QIKVRT CI"
       - "QIKVRT Collective Proposal Review"
       - "QIK-VRT global claim completion"
@@ -24,7 +24,7 @@ permissions:
   # envelope below; the workflow never checks out with credentials or mutates files.
   contents: write
   pull-requests: read
-  statuses: write
+  statuses: read
 
 concurrency:
   group: qikvrt-autonomous-pr-head-continuation-${{ github.repository }}
@@ -83,9 +83,30 @@ jobs:
             echo "selected=false" >> "$GITHUB_OUTPUT"
             jq -n \
               --arg event "$GITHUB_EVENT_NAME" \
-              '{d0:1,state:"HOLD",event:$event,productive_effect:false,effect_ack:"NOT_REQUIRED",reason:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",first_causal_blocker:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",next_action:"REOBSERVE_ON_NEXT_REPOSITORY_INTERRUPT"}' \
+              --arg repository "$GITHUB_REPOSITORY" \
+              --arg run "$GITHUB_RUN_ID" \
+              '{
+                d0:2,
+                state:"HOLD",
+                event:$event,
+                productive_effect:false,
+                effect_ack:"NOT_REQUIRED",
+                reason:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",
+                first_causal_blocker:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",
+                next_action:"REOBSERVE_ON_NEXT_REPOSITORY_INTERRUPT",
+                hold_reason:{
+                  reason_code:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",
+                  reason:"GitHub installation rate limit exhausted while selecting one bounded internal pull-request continuation.",
+                  subject:{repository:$repository,kind:"repository",identifier:"autonomous-pr-head-continuation",head_sha:null},
+                  evidence_refs:["github-actions-run:" + $run,"autonomous-pr-head-continuation:rate-limit"],
+                  owner:{role:"EXACT_SUBJECT_OBSERVER",actor:"qikvrt-autonomous-pr-head-continuation"},
+                  retry_condition:{event:"NEXT_REPOSITORY_INTERRUPT",predicate:"the GitHub installation rate-limit response no longer applies to bounded exact-head observation"},
+                  next_action:"REOBSERVE_ON_NEXT_REPOSITORY_INTERRUPT",
+                  d0:2
+                }
+              }' \
               > "$root/decision-receipt.json"
-            echo "HOLD/D0=1: bounded GitHub installation rate-limit backoff exhausted"
+            echo "HOLD/D0=2: bounded GitHub installation rate-limit backoff exhausted"
           }
 
           # Retry only the exact GitHub installation quota response after the
@@ -108,7 +129,7 @@ jobs:
                 rm -f "$output" "$error"
                 return 0
               fi
-              if ! grep -Fq "API rate limit exceeded for installation." "$error"; then
+              if ! grep -Fq "API rate limit exceeded for installation" "$error"; then
                 cat "$error" >&2
                 rm -f "$output" "$error"
                 return 1
@@ -117,7 +138,26 @@ jobs:
             cat "$error" >&2
             jq -n \
               --arg endpoint "$endpoint" \
-              '{state:"HOLD",d0:1,reason:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",endpoint:$endpoint,productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
+              --arg repository "$GITHUB_REPOSITORY" \
+              --arg run "$GITHUB_RUN_ID" \
+              '{
+                state:"HOLD",
+                d0:2,
+                reason:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",
+                endpoint:$endpoint,
+                productive_effect:false,
+                effect_ack:"NOT_REQUIRED",
+                hold_reason:{
+                  reason_code:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",
+                  reason:"GitHub installation rate limit exhausted during bounded exact-head continuation observation.",
+                  subject:{repository:$repository,kind:"repository",identifier:"autonomous-pr-head-continuation",head_sha:null},
+                  evidence_refs:["github-actions-run:" + $run,"endpoint:" + $endpoint],
+                  owner:{role:"EXACT_SUBJECT_OBSERVER",actor:"qikvrt-autonomous-pr-head-continuation"},
+                  retry_condition:{event:"NEXT_REPOSITORY_INTERRUPT",predicate:"the GitHub installation rate-limit response no longer applies to the bounded continuation observation"},
+                  next_action:"REOBSERVE_ON_NEXT_REPOSITORY_INTERRUPT",
+                  d0:2
+                }
+              }' \
               > "$rate_limit_marker"
             case "$endpoint" in
               *"/pulls?"*) printf '[]\n' ;;
@@ -213,7 +253,7 @@ jobs:
 
             exact_head_status="$(
               gh_read "repos/${GITHUB_REPOSITORY}/commits/${head}/status" \
-                --jq '[.statuses[] | select(.context == "QIKVRT autonomous exact-head verification")][0].state // "missing"'
+                --jq 'if type != "object" or (.total_count | type) != "number" or .total_count < 0 or .total_count > 100 or (.statuses | type) != "array" or (.statuses | length) != .total_count or any(.statuses[]; type != "object") then error("exact-head status observation is incomplete or malformed") else [.statuses[] | select(.context == "QIKVRT autonomous exact-head verification")] | if length == 0 then "missing" else (max_by(.id).state // "missing") end end'
             )"
             if [ -f "$rate_limit_marker" ]; then
               break
@@ -255,7 +295,26 @@ jobs:
             if jq -e 'select(.d0 == 1)' "$root/decisions.jsonl" >/dev/null 2>&1; then
               jq -n \
                 --arg event "$GITHUB_EVENT_NAME" \
-                '{d0:1,state:"HOLD",event:$event,productive_effect:false,effect_ack:"NOT_REQUIRED",reason:"NO_REOBSERVE_EDGE_WITH_ACTIVE_OR_ADVERSE_WORK"}' \
+                --arg repository "$GITHUB_REPOSITORY" \
+                --arg run "$GITHUB_RUN_ID" \
+                '{
+                  d0:1,
+                  state:"HOLD",
+                  event:$event,
+                  productive_effect:false,
+                  effect_ack:"NOT_REQUIRED",
+                  reason:"NO_REOBSERVE_EDGE_WITH_ACTIVE_OR_ADVERSE_WORK",
+                  hold_reason:{
+                    reason_code:"NO_REOBSERVE_EDGE_WITH_ACTIVE_OR_ADVERSE_WORK",
+                    reason:"The bounded observation found active or adverse exact-head work, so no second verifier may be dispatched.",
+                    subject:{repository:$repository,kind:"repository",identifier:"autonomous-pr-head-continuation",head_sha:null},
+                    evidence_refs:["github-actions-run:" + $run,"autonomous-pr-head-continuation:decisions"],
+                    owner:{role:"EXACT_SUBJECT_OBSERVER",actor:"qikvrt-autonomous-pr-head-continuation"},
+                    retry_condition:{event:"NEXT_REPOSITORY_INTERRUPT",predicate:"the active or adverse exact-head work is terminal and the bounded classifier can reobserve its exact result"},
+                    next_action:"REOBSERVE_ON_NEXT_REPOSITORY_INTERRUPT",
+                    d0:1
+                  }
+                }' \
                 > "$root/decision-receipt.json"
               echo "HOLD/D0=1: active or adverse exact-head work prevents dispatch"
             else
@@ -296,81 +355,280 @@ jobs:
         run: |
           set -euo pipefail
           root=.qikvrt/autonomous-pr-head-continuation
-          dispatch_status_published=false
-          publish_dispatch_error() {
-            rc=$?
-            trap - EXIT
-            if [ "$rc" -ne 0 ] && [ "$dispatch_status_published" = true ]; then
-              set +e
-              gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
-                -f state=error \
-                -f context='QIKVRT autonomous exact-head verification' \
-                -f description='Exact-head recovery dispatch failed' \
-                -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-              set -e
-            fi
-            exit "$rc"
+          mkdir -p "$root"
+          ledger="$root/dispatch-effect-attempts.json"
+
+          gh_read() {
+            python3 -B tools/qikvrt_github_observe.py -- "$@"
           }
-          trap publish_dispatch_error EXIT
 
-          live_ref="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
-          test "$live_ref" = "$HEAD_SHA"
+          append_effect_attempt() {
+            python3 -B tools/qikvrt_effect_attempts.py append --ledger "$ledger" "$@"
+          }
 
-          # Publish pending first. A concurrent invocation therefore HOLDs instead
-          # of dispatching a second verifier for the same exact head.
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
-            -f state=pending \
-            -f context='QIKVRT autonomous exact-head verification' \
-            -f description='Trusted exact-head recovery dispatched' \
-            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          dispatch_status_published=true
+          effect_attempts() {
+            python3 -B tools/qikvrt_effect_attempts.py show --ledger "$ledger"
+          }
 
-          # D0=2 permits fresh observation/verifier execution only. It does not
-          # merge, publish, deploy, or assert EFFECT_ACK_DONE.
-          live_ref="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
-          test "$live_ref" = "$HEAD_SHA"
-          jq -n \
+          effect_summary() {
+            python3 -B tools/qikvrt_effect_attempts.py summary --ledger "$ledger"
+          }
+
+          write_dispatch_hold() {
+            local blocker="$1" stage="$2" attempted="${3:-}" summary attempts transport observed mutation
+            attempts='[]'
+            summary='{"mutation":"NONE","effect_transport_attempted":false,"effect_observed":false}'
+            if effect_attempts > "$root/dispatch-attempts-readback.json" 2>/dev/null; then
+              attempts="$(cat "$root/dispatch-attempts-readback.json")"
+            fi
+            if effect_summary > "$root/dispatch-summary-readback.json" 2>/dev/null; then
+              summary="$(cat "$root/dispatch-summary-readback.json")"
+            fi
+            if [ -n "$attempted" ]; then
+              transport="$attempted"
+            elif ! transport="$(jq -er '.effect_transport_attempted | select(type == "boolean")' <<<"$summary")"; then
+              transport=false
+            fi
+            if ! observed="$(jq -er '.effect_observed | select(type == "boolean")' <<<"$summary")"; then
+              observed=false
+            fi
+            if ! mutation="$(jq -er '.mutation | select(type == "string" and length > 0)' <<<"$summary")"; then
+              mutation=NONE
+            fi
+            jq -n \
+              --arg blocker "$blocker" \
+              --arg stage "$stage" \
+              --arg repository "$GITHUB_REPOSITORY" \
+              --arg pr "$PR_NUMBER" \
+              --arg head "$HEAD_SHA" \
+              --arg ref "$HEAD_REF" \
+              --arg base "$BASE_SHA" \
+              --arg run "$GITHUB_RUN_ID" \
+              --argjson effect_attempts "$attempts" \
+              --argjson effect_transport_attempted "$transport" \
+              --argjson effect_observed "$observed" \
+              --arg mutation "$mutation" \
+              '{
+                schema:"qikvrt_autonomous_pr_head_dispatch_receipt_v2",
+                state:"HOLD",
+                verification_state:"HOLD_UNVERIFIED",
+                d0:2,
+                continuation_required:true,
+                first_blocker:$blocker,
+                next_action:"REOBSERVE_EXACT_HEAD_AND_TARGET_DISPATCH_RECEIPT",
+                failure_stage:$stage,
+                pull_request:(if ($pr | test("^[1-9][0-9]*$")) then ($pr|tonumber) else null end),
+                head_sha:$head,
+                head_ref:$ref,
+                base_sha:$base,
+                carrier_run_id:($run|tonumber),
+                mutation:$mutation,
+                effect_transport_attempted:$effect_transport_attempted,
+                effect_observed:$effect_observed,
+                effect_attempts:$effect_attempts,
+                productive_effect:false,
+                effect_ack:"NOT_REQUIRED",
+                hold_reason:{
+                  reason_code:$blocker,
+                  reason:"An exact-head repository dispatch was not proved by an exact target-workflow readback; no duplicate verifier dispatch is allowed before remote reobservation.",
+                  subject:{repository:$repository,kind:"pull_request",number:($pr|tonumber),head_sha:$head},
+                  evidence_refs:["github-actions-run:" + $run,"autonomous-pr-head-dispatch:" + $stage],
+                  owner:{role:"EXACT_SUBJECT_OBSERVER",actor:"qikvrt-autonomous-pr-head-continuation"},
+                  retry_condition:{event:"NEXT_REPOSITORY_INTERRUPT",predicate:"the same exact pull-request head and target workflow run can be rebound before any replay"},
+                  next_action:"REOBSERVE_EXACT_HEAD_AND_TARGET_DISPATCH_RECEIPT",
+                  d0:2
+                }
+              }' > "$root/dispatch-receipt.json"
+            cat "$root/dispatch-receipt.json"
+          }
+
+          write_dispatch_noop() {
+            local blocker="$1"
+            jq -n \
+              --arg blocker "$blocker" \
+              --arg repository "$GITHUB_REPOSITORY" \
+              --arg pr "$PR_NUMBER" \
+              --arg head "$HEAD_SHA" \
+              --arg ref "$HEAD_REF" \
+              --arg base "$BASE_SHA" \
+              '{schema:"qikvrt_autonomous_pr_head_dispatch_receipt_v2",state:"NOOP",d0:0,first_blocker:$blocker,repository:$repository,pull_request:(if ($pr | test("^[1-9][0-9]*$")) then ($pr|tonumber) else null end),head_sha:$head,head_ref:$ref,base_sha:$base,mutation:"NONE",effect_transport_attempted:false,effect_observed:false,productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
+              > "$root/dispatch-receipt.json"
+            cat "$root/dispatch-receipt.json"
+          }
+
+          read_or_hold() {
+            local destination="$1" endpoint="$2" rc
+            shift 2
+            if gh_read "$@" > "$destination"; then
+              return 0
+            else
+              rc=$?
+            fi
+            if [ "$rc" -eq 75 ]; then
+              write_dispatch_hold "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED" "$endpoint"
+            else
+              write_dispatch_hold "GITHUB_READ_OBSERVATION_FAILED" "$endpoint"
+            fi
+            return 1
+          }
+
+          if ! [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]] \
+            || ! [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || ! [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || ! git check-ref-format --branch "$HEAD_REF" >/dev/null; then
+            write_dispatch_noop "DISPATCH_INPUT_INVALID"
+            exit 0
+          fi
+          if ! read_or_hold "$root/dispatch-main.txt" "repos/${GITHUB_REPOSITORY}/commits/main" "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha \
+            || ! read_or_hold "$root/dispatch-pull.json" "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+            || ! read_or_hold "$root/dispatch-head-ref.txt" "repos/${GITHUB_REPOSITORY}/git/ref/heads/${HEAD_REF}" "repos/${GITHUB_REPOSITORY}/git/ref/heads/${HEAD_REF}" --jq .object.sha; then
+            exit 0
+          fi
+          trusted_main="$(cat "$root/dispatch-main.txt")"
+          if [ "$trusted_main" != "$BASE_SHA" ] \
+            || ! jq -e --arg repository "$GITHUB_REPOSITORY" --arg head "$HEAD_SHA" --arg ref "$HEAD_REF" --arg base "$BASE_SHA" '
+              .state == "open" and .base.ref == "main" and .base.sha == $base and
+              .head.repo.full_name == $repository and .head.ref == $ref and .head.sha == $head
+            ' "$root/dispatch-pull.json" >/dev/null \
+            || [ "$(cat "$root/dispatch-head-ref.txt")" != "$HEAD_SHA" ]; then
+            write_dispatch_noop "EXACT_SUBJECT_DRIFT_BEFORE_REPOSITORY_DISPATCH"
+            exit 0
+          fi
+
+          target_workflow="qikvrt_autonomous_exact_head_verify.yml"
+          target_runs_endpoint="repos/${GITHUB_REPOSITORY}/actions/workflows/${target_workflow}/runs?event=repository_dispatch&head_sha=${trusted_main}&per_page=100"
+          exact_title="QIK-VRT exact-head verifier pr=${PR_NUMBER} head=${HEAD_SHA} base=${BASE_SHA} main=${trusted_main}"
+          # Reobserve the logical target before writing a new intent.  The
+          # target run name deliberately excludes the ephemeral carrier id so
+          # an unconfirmed earlier POST is still discoverable on the next
+          # repository interrupt and can never be amplified into a second
+          # verifier for the same PR/head/base/Main tuple.
+          if ! read_or_hold "$root/exact-head-existing-runs.json" "$target_runs_endpoint" "$target_runs_endpoint"; then
+            exit 0
+          fi
+          if ! existing_target="$(jq -er --arg title "$exact_title" --arg repository "$GITHUB_REPOSITORY" --arg main "$trusted_main" '
+            if type != "object" or (.total_count | type) != "number" or .total_count < 0
+              or (.workflow_runs | type) != "array" or (.workflow_runs | length) > 100
+              or (.workflow_runs | length) > .total_count or any(.workflow_runs[]; type != "object")
+            then error("malformed current exact-head target run page")
+            else [ .workflow_runs[] | select(
+              .display_title == $title and .name == "QIK-VRT autonomous exact-head verification" and
+              (.path == ".github/workflows/qikvrt_autonomous_exact_head_verify.yml" or .path == ".github/workflows/qikvrt_autonomous_exact_head_verify.yml@main") and
+              .event == "repository_dispatch" and .head_branch == "main" and .head_sha == $main and
+              .repository.full_name == $repository and
+              (.status == "requested" or .status == "pending" or .status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "completed") and
+              ((.id | type) == "number") and .id > 0
+            ) ] | if length == 0 then "" else (max_by(.id) | [.id, .status, (.conclusion // "")] | @tsv) end
+            end
+          ' "$root/exact-head-existing-runs.json")"; then
+            write_dispatch_hold "EXACT_HEAD_TARGET_RUN_READBACK_MALFORMED" "$target_runs_endpoint"
+            exit 0
+          fi
+          if [ -n "$existing_target" ]; then
+            IFS=$'\t' read -r existing_target_id existing_target_status existing_target_conclusion <<<"$existing_target"
+            if [ "$existing_target_status" = requested ] || [ "$existing_target_status" = pending ] || [ "$existing_target_status" = queued ] || [ "$existing_target_status" = in_progress ] || [ "$existing_target_status" = waiting ]; then
+              write_dispatch_noop "ACTIVE_OR_QUEUED_EXACT_HEAD_VERIFIER_EXISTS"
+            elif [ "$existing_target_status" = completed ] && [ "$existing_target_conclusion" = success ]; then
+              write_dispatch_noop "TERMINAL_EXACT_HEAD_VERIFIER_SUCCESS_REOBSERVED"
+            else
+              write_dispatch_hold "TERMINAL_EXACT_HEAD_VERIFIER_REOBSERVED" "$target_runs_endpoint"
+            fi
+            exit 0
+          fi
+          if ! python3 -B tools/qikvrt_effect_attempts.py create --ledger "$ledger" >/dev/null; then
+            write_dispatch_hold "EFFECT_ATTEMPT_LEDGER_CREATION_FAILED" "repository-dispatch:ledger"
+            exit 0
+          fi
+          dispatch_endpoint="repos/${GITHUB_REPOSITORY}/dispatches"
+          if ! append_effect_attempt \
+            --kind repository_dispatch_intent \
+            --endpoint-or-subject "$dispatch_endpoint" \
+            --mutation POST \
+            --effect-transport-attempted true \
+            --transport-outcome ATTEMPTED_PENDING_READBACK \
+            --effect-observed false \
+            --evidence-ref "post-intent:exact-head-verifier:carrier-${GITHUB_RUN_ID}" >/dev/null; then
+            write_dispatch_hold "EFFECT_ATTEMPT_LEDGER_APPEND_FAILED" "$dispatch_endpoint"
+            exit 0
+          fi
+          post_error="$root/exact-head-dispatch-post.stderr"
+          if jq -n \
             --arg repository "$GITHUB_REPOSITORY" \
             --arg pr "$PR_NUMBER" \
             --arg ref "$HEAD_REF" \
             --arg head "$HEAD_SHA" \
             --arg base "$BASE_SHA" \
-            '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base,d0:2,causal_state:"REOBSERVE"}}' \
-            | gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input -
-
-          : > "$root/dispatched-workflows.jsonl"
-          for workflow in \
-            qikvrt_batch04_integrity.yml \
-            qikvrt_ci.yml \
-            qikvrt_collective_review.yml \
-            qikvrt_global_completion.yml \
-            qikvrt_requested_review_contract.yml
-          do
-            live_ref="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
-            test "$live_ref" = "$HEAD_SHA"
-            gh api --method POST \
-              "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/dispatches" \
-              -f ref="$HEAD_REF"
-            jq -nc \
-              --arg workflow "$workflow" \
-              --arg ref "$HEAD_REF" \
-              --arg head "$HEAD_SHA" \
-              '{workflow:$workflow,ref:$ref,head:$head,d0:2,state:"REOBSERVE",productive_effect:false}' \
-              >> "$root/dispatched-workflows.jsonl"
+            --arg main "$trusted_main" \
+            --arg carrier "$GITHUB_RUN_ID" \
+            '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base,expected_main_sha:$main,carrier_run_id:($carrier|tonumber),d0:2,causal_state:"REOBSERVE"}}' \
+            | gh api --method POST "$dispatch_endpoint" --input - 2>"$post_error"; then
+            post_outcome=ACKED
+            post_mutation=POST
+            post_ref="post-response:exact-head-verifier:carrier-${GITHUB_RUN_ID}"
+          elif grep -Fq "API rate limit exceeded for installation" "$post_error"; then
+            post_outcome=UNCONFIRMED_RATE_LIMIT
+            post_mutation=POST_UNCONFIRMED_RATE_LIMIT
+            post_ref="post-stderr:installation-rate-limit"
+          else
+            post_outcome=UNCONFIRMED_TRANSPORT_FAILED
+            post_mutation=POST_UNCONFIRMED_TRANSPORT_FAILED
+            post_ref="post-stderr:exact-head-verifier-transport"
+          fi
+          if ! append_effect_attempt \
+            --kind repository_dispatch_post \
+            --endpoint-or-subject "$dispatch_endpoint" \
+            --mutation "$post_mutation" \
+            --effect-transport-attempted true \
+            --transport-outcome "$post_outcome" \
+            --effect-observed false \
+            --evidence-ref "$post_ref" >/dev/null; then
+            write_dispatch_hold "EFFECT_ATTEMPT_LEDGER_APPEND_FAILED" "$dispatch_endpoint" true
+            exit 0
+          fi
+          observed_run_id=""
+          for delay in 0 2 5; do
+            if [ "$delay" -gt 0 ]; then sleep "$delay"; fi
+            if ! read_or_hold "$root/exact-head-target-runs.json" "$target_runs_endpoint" "$target_runs_endpoint"; then
+              exit 0
+            fi
+            if ! observed_run_id="$(jq -er --arg title "$exact_title" --arg repository "$GITHUB_REPOSITORY" --arg main "$trusted_main" '
+              if type != "object" or (.total_count | type) != "number" or .total_count < 0
+                or (.workflow_runs | type) != "array" or (.workflow_runs | length) > 100
+                or (.workflow_runs | length) > .total_count or any(.workflow_runs[]; type != "object")
+              then error("malformed current exact-head target run page")
+              else [ .workflow_runs[] | select(
+                .display_title == $title and .name == "QIK-VRT autonomous exact-head verification" and
+                (.path == ".github/workflows/qikvrt_autonomous_exact_head_verify.yml" or .path == ".github/workflows/qikvrt_autonomous_exact_head_verify.yml@main") and
+                .event == "repository_dispatch" and .head_branch == "main" and .head_sha == $main and
+                .repository.full_name == $repository and
+                (.status == "requested" or .status == "pending" or .status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "completed")
+              ) | if (.id | type) == "number" and .id > 0 then . else error("invalid exact-head target run id") end ]
+              | if length == 0 then "" else (max_by(.id).id | tostring) end
+              end
+            ' "$root/exact-head-target-runs.json")"; then
+              write_dispatch_hold "EXACT_HEAD_TARGET_RUN_READBACK_MALFORMED" "$target_runs_endpoint" true
+              exit 0
+            fi
+            if [ -n "$observed_run_id" ]; then break; fi
           done
-
-          # Requested review has no autonomous dispatch route. The review
-          # executor accepts only an exact native event or a human-supplied
-          # explicit dispatch subject; this global continuation classifier must
-          # not launder its selected PR into that interface.
-
-          jq -n \
-            --arg pr "$PR_NUMBER" \
-            --arg head "$HEAD_SHA" \
-            --arg ref "$HEAD_REF" \
-            '{pull_request:($pr|tonumber),head_sha:$head,head_ref:$ref,d0:2,state:"REOBSERVE",disposition:"DISPATCHED_EXACT_HEAD_CONTINUATION",productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
-            > "$root/dispatch-receipt.json"
-          trap - EXIT
+          if [ -z "$observed_run_id" ]; then
+            append_effect_attempt --kind repository_dispatch_readback --endpoint-or-subject "$target_runs_endpoint" --mutation POST_UNCONFIRMED_READBACK_FAILED --effect-transport-attempted true --transport-outcome UNCONFIRMED_READBACK_FAILED --effect-observed false --evidence-ref "readback:exact-head-verifier:absent:carrier-${GITHUB_RUN_ID}" >/dev/null || true
+            write_dispatch_hold "EXACT_HEAD_VERIFIER_DISPATCH_UNCONFIRMED" "$target_runs_endpoint" true
+            exit 0
+          fi
+          if ! append_effect_attempt --kind repository_dispatch_readback --endpoint-or-subject "$target_runs_endpoint" --mutation NONE --effect-transport-attempted false --transport-outcome OBSERVED_READBACK --effect-observed true --evidence-ref "readback:exact-head-verifier:${observed_run_id}:carrier-${GITHUB_RUN_ID}" >/dev/null; then
+            write_dispatch_hold "EFFECT_ATTEMPT_LEDGER_APPEND_FAILED" "$target_runs_endpoint" true
+            exit 0
+          fi
+          if ! attempts="$(effect_attempts)" || ! summary="$(effect_summary)"; then
+            write_dispatch_hold "EFFECT_ATTEMPT_LEDGER_FINAL_READ_FAILED" "$target_runs_endpoint" true
+            exit 0
+          fi
+          if ! jq -n --arg repository "$GITHUB_REPOSITORY" --arg pr "$PR_NUMBER" --arg head "$HEAD_SHA" --arg ref "$HEAD_REF" --arg base "$BASE_SHA" --arg main "$trusted_main" --arg carrier "$GITHUB_RUN_ID" --arg target_run "$observed_run_id" --argjson effect_attempts "$attempts" --argjson effect_transport_attempted "$(jq -r .effect_transport_attempted <<<"$summary")" --argjson effect_observed "$(jq -r .effect_observed <<<"$summary")" --arg mutation "$(jq -r .mutation <<<"$summary")" '{schema:"qikvrt_autonomous_pr_head_dispatch_receipt_v2",state:"DISPATCH_CONFIRMED",verification_state:"EXACT_TARGET_RUN_OBSERVED",d0:2,pull_request:($pr|tonumber),repository:$repository,head_sha:$head,head_ref:$ref,base_sha:$base,trusted_main_sha:$main,carrier_run_id:($carrier|tonumber),target_run_id:($target_run|tonumber),mutation:$mutation,effect_transport_attempted:$effect_transport_attempted,effect_observed:$effect_observed,effect_attempts:$effect_attempts,productive_effect:false,effect_ack:"NOT_REQUIRED"}' > "$root/dispatch-receipt.json"; then
+            write_dispatch_hold "EXACT_HEAD_DISPATCH_RECEIPT_WRITE_FAILED" "$target_runs_endpoint" true
+            exit 0
+          fi
+          cat "$root/dispatch-receipt.json"
 
       - name: Preserve causal continuation evidence
         if: always()

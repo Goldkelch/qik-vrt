@@ -11,6 +11,7 @@ on:
         type: string
 
 permissions:
+  actions: write
   contents: write
   issues: write
   pull-requests: write
@@ -40,7 +41,7 @@ jobs:
           set -euo pipefail
           number="$EVENT_ISSUE_NUMBER"
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then number="$INPUT_ISSUE_NUMBER"; fi
-          test -n "$number"
+          [[ "$number" =~ ^[1-9][0-9]*$ ]]
           issue_path="$RUNNER_TEMP/qikvrt-issue.json"
           gh api "repos/$REPOSITORY/issues/$number" > "$issue_path"
           jq -e '.pull_request | not' "$issue_path" >/dev/null
@@ -163,6 +164,7 @@ jobs:
           python3 -B tools/qikvrt_integrity.py verify
 
       - name: Create or update issue work branch and pull request
+        id: candidate
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
@@ -210,6 +212,8 @@ jobs:
               --body "Repository-native, history-preserving processing artifacts for #$ISSUE_NUMBER.\n\nExact-head gates, current review evidence, and separately authorized promotion remain mandatory. This carrier does not itself imply merge, Mirror synchronization, publication, PASS, FINAL_PASS, or EFFECT_ACK_DONE."
           fi
 
+          pr_number="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          [[ "$pr_number" =~ ^[1-9][0-9]*$ ]]
           pr_url="$(gh pr list --head "$BRANCH" --state open --json url --jq '.[0].url')"
           status="$(jq -r '.status' "evidence/issues/$ISSUE_NUMBER/STATUS.json")"
           comment_file="$RUNNER_TEMP/qikvrt-issue-agent-comment.md"
@@ -235,3 +239,57 @@ jobs:
                 --raw-field "body=$desired_body" >/dev/null
             fi
           fi
+          printf 'issue_number=%s\n' "$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+          printf 'head=%s\n' "$candidate_head" >> "$GITHUB_OUTPUT"
+          printf 'pr_number=%s\n' "$pr_number" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch and reobserve the exact issue completion authority receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ steps.candidate.outputs.issue_number }}
+          EXPECTED_HEAD: ${{ steps.candidate.outputs.head }}
+          EXPECTED_PR: ${{ steps.candidate.outputs.pr_number }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$ISSUE_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          [[ "$EXPECTED_PR" =~ ^[1-9][0-9]*$ ]]
+          [[ "$EXPECTED_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          branch="issue-agent/$ISSUE_NUMBER"
+          pr="$(gh api "repos/$REPOSITORY/pulls/$EXPECTED_PR")"
+          test "$(jq -r .state <<<"$pr")" = open
+          test "$(jq -r .base.ref <<<"$pr")" = main
+          test "$(jq -r .head.ref <<<"$pr")" = "$branch"
+          test "$(jq -r .head.sha <<<"$pr")" = "$EXPECTED_HEAD"
+          test "$(jq -r '.head.repo.full_name // empty' <<<"$pr")" = "$REPOSITORY"
+
+          title="Issue agent completion authority observer #$ISSUE_NUMBER"
+          before="$(gh api "repos/$REPOSITORY/actions/workflows/issue-agent-autofinish.yml/runs?event=workflow_dispatch&branch=main&per_page=100" \
+            | jq --arg title "$title" '[.workflow_runs[] | select(.display_title == $title) | .id]')"
+          gh workflow run issue-agent-autofinish.yml --repo "$REPOSITORY" --ref main \
+            -f "issue_number=$ISSUE_NUMBER" -f "expected_head=$EXPECTED_HEAD"
+
+          run_id=""
+          for _ in $(seq 1 24); do
+            candidate="$(gh api "repos/$REPOSITORY/actions/workflows/issue-agent-autofinish.yml/runs?event=workflow_dispatch&branch=main&per_page=100" \
+              | jq -r --argjson before "$before" --arg title "$title" \
+                '[.workflow_runs[] | select(.display_title == $title and (.id as $id | $before | index($id) | not))][0].id // empty')"
+            if test -n "$candidate"; then
+              status="$(gh api "repos/$REPOSITORY/actions/runs/$candidate" --jq .status)"
+              if test "$status" = completed; then run_id="$candidate"; break; fi
+            fi
+            sleep 5
+          done
+          test -n "$run_id"
+          test "$(gh api "repos/$REPOSITORY/actions/runs/$run_id" --jq .conclusion)" = success
+          gh api --paginate "repos/$REPOSITORY/issues/$ISSUE_NUMBER/comments?per_page=100" \
+            | jq -e --arg head "$EXPECTED_HEAD" --arg run "$run_id" \
+              '.[] | select(.user.login == "github-actions[bot]") | select(.body | contains("qikvrt-issue-agent-completion-authority:v1:")) | select(.body | contains("- exact head: " + $head)) | select(.body | contains("- observer workflow run: " + $run))' \
+            >/dev/null
+          pr_after="$(gh api "repos/$REPOSITORY/pulls/$EXPECTED_PR")"
+          test "$(jq -r .state <<<"$pr_after")" = open
+          test "$(jq -r .base.ref <<<"$pr_after")" = main
+          test "$(jq -r .head.ref <<<"$pr_after")" = "$branch"
+          test "$(jq -r .head.sha <<<"$pr_after")" = "$EXPECTED_HEAD"
+          test "$(jq -r '.head.repo.full_name // empty' <<<"$pr_after")" = "$REPOSITORY"
