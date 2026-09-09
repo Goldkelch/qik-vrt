@@ -1,159 +1,177 @@
-name: Issue agent auto-finish
+name: Issue agent completion authority observer
+run-name: "Issue agent completion authority observer #${{ inputs.issue_number || github.event.pull_request.number }}"
 
 on:
-  schedule:
-    - cron: '*/15 * * * *'
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
   workflow_dispatch:
     inputs:
       issue_number:
-        description: Optional single issue number
+        description: Exact issue number whose same-repository issue-agent PR is to be reobserved
+        required: true
+        type: string
+      expected_head:
+        description: Optional exact candidate head supplied by an event handoff
         required: false
         type: string
 
 permissions:
-  contents: write
+  contents: read
   issues: write
-  pull-requests: write
+  pull-requests: read
   checks: read
 
-concurrency:
-  group: issue-agent-autofinish
-  cancel-in-progress: false
-
 jobs:
-  finish:
-    runs-on: ubuntu-latest
+  bind_issue:
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      (github.event_name != 'pull_request_target' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    outputs:
+      issue_number: ${{ steps.bind.outputs.issue_number }}
     env:
       AUTHORITY_REPOSITORY: Goldkelch/qik-vrt
-      MIRROR_REPOSITORY: ingolf-lohmann/qik-vrt
-      MESH_TOKEN: ${{ secrets.QIKVRT_MESH_TOKEN }}
       REQUESTED_ISSUE: ${{ inputs.issue_number }}
-      GH_TOKEN: ${{ github.token }}
+      EVENT_NAME: ${{ github.event_name }}
+      EVENT_PR: ${{ github.event.pull_request.number || '' }}
+      EVENT_HEAD_REF: ${{ github.event.pull_request.head.ref || '' }}
+      EVENT_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name || '' }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Resume all eligible issue-agent transactions
+      - name: Bind one safe issue identifier for observer serialization
+        id: bind
         shell: bash
         run: |
           set -euo pipefail
-          issue_numbers=""
-          if [ -n "${REQUESTED_ISSUE:-}" ]; then
-            issue_numbers="$REQUESTED_ISSUE"
-          else
-            issue_numbers="$(gh issue list --repo "$AUTHORITY_REPOSITORY" --state open --limit 200 --json number --jq '.[].number')"
-          fi
+          case "$EVENT_NAME" in
+            pull_request_target)
+              test "$EVENT_HEAD_REPOSITORY" = "$AUTHORITY_REPOSITORY"
+              [[ "$EVENT_PR" =~ ^[1-9][0-9]*$ ]]
+              [[ "$EVENT_HEAD_REF" =~ ^issue-agent/([1-9][0-9]*)$ ]]
+              issue_number="${BASH_REMATCH[1]}"
+              ;;
+            workflow_dispatch)
+              [[ "$REQUESTED_ISSUE" =~ ^[1-9][0-9]*$ ]]
+              issue_number="$REQUESTED_ISSUE"
+              ;;
+            *)
+              echo "HOLD_UNVERIFIED unsupported observer event: $EVENT_NAME" >&2
+              exit 2
+              ;;
+          esac
+          printf 'issue_number=%s\n' "$issue_number" >> "$GITHUB_OUTPUT"
+
+  observe:
+    needs: bind_issue
+    if: needs.bind_issue.result == 'success'
+    concurrency:
+      # The group comes only from the preflight's strict positive-integer
+      # binding, never directly from an unvalidated dispatch input.
+      group: issue-agent-completion-authority-observer-${{ needs.bind_issue.outputs.issue_number }}
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    env:
+      AUTHORITY_REPOSITORY: Goldkelch/qik-vrt
+      REQUESTED_ISSUE: ${{ needs.bind_issue.outputs.issue_number }}
+      EXPECTED_HEAD: ${{ inputs.expected_head || github.event.pull_request.head.sha || '' }}
+      EVENT_NAME: ${{ github.event_name }}
+      EVENT_PR: ${{ github.event.pull_request.number || '' }}
+      EVENT_HEAD_REF: ${{ github.event.pull_request.head.ref || '' }}
+      EVENT_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name || '' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind exact open issue-agent candidates and request merge authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            pull_request_target)
+              test "$EVENT_HEAD_REPOSITORY" = "$AUTHORITY_REPOSITORY"
+              [[ "$EVENT_PR" =~ ^[1-9][0-9]*$ ]]
+              [[ "$EVENT_HEAD_REF" =~ ^issue-agent/([1-9][0-9]*)$ ]]
+              issue_numbers="${BASH_REMATCH[1]}"
+              ;;
+            workflow_dispatch)
+              [[ "$REQUESTED_ISSUE" =~ ^[1-9][0-9]*$ ]]
+              issue_numbers="$REQUESTED_ISSUE"
+              ;;
+            *) exit 0 ;;
+          esac
+          test "$issue_numbers" = "$REQUESTED_ISSUE"
 
           publish_receipt() {
             local issue="$1"
-            local receipt_file
+            local receipt_file existing_comment readback marker
             receipt_file="$(mktemp)"
             cat > "$receipt_file"
-
-            local existing_comment
+            marker="$(sed -n '1p' "$receipt_file")"
             existing_comment="$(gh api --paginate "repos/${AUTHORITY_REPOSITORY}/issues/$issue/comments?per_page=100" \
-              --jq '.[] | select(.user.login == "github-actions[bot]") | select(.body | contains("<!-- qikvrt-issue-agent-autofinish-status:v1 -->")) | .id' \
+              --jq '.[] | select(.user.login == "github-actions[bot]") | select(.body | contains("<!-- qikvrt-issue-agent-completion-authority:v1:")) | .id' \
               | tail -n 1)"
             if [ -z "$existing_comment" ]; then
-              gh issue comment "$issue" --repo "$AUTHORITY_REPOSITORY" --body-file "$receipt_file"
-              return
+              existing_comment="$(jq -n --rawfile body "$receipt_file" '{body:$body}' \
+                | gh api --method POST "repos/${AUTHORITY_REPOSITORY}/issues/$issue/comments" \
+                    --input - --jq .id)"
+            else
+              jq -n --rawfile body "$receipt_file" '{body:$body}' \
+                | gh api --method PATCH "repos/${AUTHORITY_REPOSITORY}/issues/comments/$existing_comment" \
+                    --input - >/dev/null
             fi
-            current_body="$(gh api "repos/${AUTHORITY_REPOSITORY}/issues/comments/$existing_comment" --jq '.body')"
-            desired_body="$(cat "$receipt_file")"
-            if [ "$current_body" != "$desired_body" ]; then
-              gh api --method PATCH "repos/${AUTHORITY_REPOSITORY}/issues/comments/$existing_comment" \
-                --raw-field "body=$desired_body" >/dev/null
-            fi
+            readback="$(gh api "repos/${AUTHORITY_REPOSITORY}/issues/comments/$existing_comment")"
+            test "$(jq -r .id <<<"$readback")" = "$existing_comment"
+            jq -e --arg marker "$marker" '(.body // "") | contains($marker) and contains("REQUEST_AUTHORITY")' \
+              <<<"$readback" >/dev/null
           }
 
           for issue in $issue_numbers; do
+            [[ "$issue" =~ ^[1-9][0-9]*$ ]] || continue
             branch="issue-agent/$issue"
-            authority_pr="$(gh pr list --repo "$AUTHORITY_REPOSITORY" --state all --head "$branch" --limit 1 --json number --jq '.[0].number // empty')"
-            [ -n "$authority_pr" ] || continue
-            authority_state="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json state --jq '.state')"
-            authority_merged="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json mergedAt --jq '.mergedAt // empty')"
-
-            if [ "$authority_state" = "OPEN" ]; then
-              status_json="$(gh api -H 'Accept: application/vnd.github.raw+json' "repos/$AUTHORITY_REPOSITORY/contents/evidence/issues/$issue/STATUS.json?ref=$branch")"
-              status="$(printf '%s' "$status_json" | jq -r '.status')"
-              if [ "$status" != "DONE" ]; then
-                publish_receipt "$issue" <<EOF
-          <!-- qikvrt-issue-agent-autofinish-status:v1 -->
-          Repository auto-finish: **BLOCK**. Evidence status is \`$status\`; no merge, close, sync, or tag was performed.
-          EOF
-                continue
-              fi
-              checks="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json statusCheckRollup)"
-              failed="$(printf '%s' "$checks" | jq '[.statusCheckRollup[]? | select((.conclusion // "") != "" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED"))] | length')"
-              pending="$(printf '%s' "$checks" | jq '[.statusCheckRollup[]? | select((.status // "") != "COMPLETED")] | length')"
-              if [ "$failed" -gt 0 ]; then
-                publish_receipt "$issue" <<'EOF'
-          <!-- qikvrt-issue-agent-autofinish-status:v1 -->
-          Repository auto-finish: **BLOCK**. At least one authority check failed.
-          EOF
-                continue
-              fi
-              [ "$pending" -eq 0 ] || continue
-              gh pr merge "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --squash --delete-branch
-              authority_merged="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json mergedAt --jq '.mergedAt // empty')"
+            pull="$(gh pr list --repo "$AUTHORITY_REPOSITORY" --state open --head "$branch" --limit 1 \
+              --json number,url,baseRefName,headRefName,headRefOid,isDraft,statusCheckRollup)"
+            test "$(jq 'length' <<<"$pull")" -le 1
+            test "$(jq 'length' <<<"$pull")" = 1 || continue
+            pr_number="$(jq -r '.[0].number' <<<"$pull")"
+            pr_url="$(jq -r '.[0].url' <<<"$pull")"
+            base_ref="$(jq -r '.[0].baseRefName' <<<"$pull")"
+            head_ref="$(jq -r '.[0].headRefName' <<<"$pull")"
+            head_sha="$(jq -r '.[0].headRefOid' <<<"$pull")"
+            draft="$(jq -r '.[0].isDraft' <<<"$pull")"
+            test "$base_ref" = main
+            test "$head_ref" = "$branch"
+            [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
+            if test "$EVENT_NAME" = pull_request_target; then
+              test "$pr_number" = "$EVENT_PR"
             fi
-
-            [ -n "$authority_merged" ] || continue
-            if [ -z "${MESH_TOKEN:-}" ]; then
-              publish_receipt "$issue" <<'EOF'
-          <!-- qikvrt-issue-agent-autofinish-status:v1 -->
-          Repository auto-finish: authority merge completed, but mirror synchronization is **BLOCKED** because secret \`QIKVRT_MESH_TOKEN\` is unavailable. Issue remains open; no tag was created.
-          EOF
-              continue
+            if test -n "$EXPECTED_HEAD"; then
+              test "$head_sha" = "$EXPECTED_HEAD"
             fi
-
-            authority_sha="$(gh api "repos/$AUTHORITY_REPOSITORY/commits/main" --jq '.sha')"
-            sync_branch="issue-sync/$issue-$authority_sha"
-            git remote remove mirror 2>/dev/null || true
-            git remote add mirror "https://x-access-token:${MESH_TOKEN}@github.com/${MIRROR_REPOSITORY}.git"
-            git fetch origin main
-            git fetch mirror main
-            git checkout -B "$sync_branch" origin/main
-            git push --force-with-lease mirror "$sync_branch"
-
-            mirror_pr="$(GH_TOKEN="$MESH_TOKEN" gh pr list --repo "$MIRROR_REPOSITORY" --state all --head "$sync_branch" --limit 1 --json number --jq '.[0].number // empty')"
-            if [ -z "$mirror_pr" ]; then
-              GH_TOKEN="$MESH_TOKEN" gh pr create --repo "$MIRROR_REPOSITORY" --base main --head "$sync_branch" --title "Synchronize completed issue #$issue" --body "Byte-content synchronization from authority after autonomous completion of Goldkelch/qik-vrt#$issue."
-              mirror_pr="$(GH_TOKEN="$MESH_TOKEN" gh pr list --repo "$MIRROR_REPOSITORY" --state open --head "$sync_branch" --limit 1 --json number --jq '.[0].number')"
-            fi
-
-            mirror_state="$(GH_TOKEN="$MESH_TOKEN" gh pr view "$mirror_pr" --repo "$MIRROR_REPOSITORY" --json state --jq '.state')"
-            mirror_merged="$(GH_TOKEN="$MESH_TOKEN" gh pr view "$mirror_pr" --repo "$MIRROR_REPOSITORY" --json mergedAt --jq '.mergedAt // empty')"
-            if [ "$mirror_state" = "OPEN" ]; then
-              mirror_checks="$(GH_TOKEN="$MESH_TOKEN" gh pr view "$mirror_pr" --repo "$MIRROR_REPOSITORY" --json statusCheckRollup)"
-              mirror_failed="$(printf '%s' "$mirror_checks" | jq '[.statusCheckRollup[]? | select((.conclusion // "") != "" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED"))] | length')"
-              mirror_pending="$(printf '%s' "$mirror_checks" | jq '[.statusCheckRollup[]? | select((.status // "") != "COMPLETED")] | length')"
-              if [ "$mirror_failed" -gt 0 ]; then
-                publish_receipt "$issue" <<EOF
-          <!-- qikvrt-issue-agent-autofinish-status:v1 -->
-          Repository auto-finish: mirror synchronization PR #$mirror_pr is **BLOCKED** by failed checks.
-          EOF
-                continue
-              fi
-              [ "$mirror_pending" -eq 0 ] || continue
-              GH_TOKEN="$MESH_TOKEN" gh pr merge "$mirror_pr" --repo "$MIRROR_REPOSITORY" --squash --delete-branch
-              mirror_merged="$(GH_TOKEN="$MESH_TOKEN" gh pr view "$mirror_pr" --repo "$MIRROR_REPOSITORY" --json mergedAt --jq '.mergedAt // empty')"
-            fi
-
-            [ -n "$mirror_merged" ] || continue
-            tag="qikvrt-issue-$issue"
-            mirror_sha="$(GH_TOKEN="$MESH_TOKEN" gh api "repos/$MIRROR_REPOSITORY/commits/main" --jq '.sha')"
-            gh api --method POST "repos/$AUTHORITY_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$authority_sha" 2>/dev/null || test "$(gh api "repos/$AUTHORITY_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha')" = "$authority_sha"
-            GH_TOKEN="$MESH_TOKEN" gh api --method POST "repos/$MIRROR_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$mirror_sha" 2>/dev/null || test "$(GH_TOKEN="$MESH_TOKEN" gh api "repos/$MIRROR_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha')" = "$mirror_sha"
+            test "$(gh api "repos/${AUTHORITY_REPOSITORY}/git/ref/heads/$head_ref" --jq .object.sha)" = "$head_sha"
+            test "$(gh api "repos/${AUTHORITY_REPOSITORY}/pulls/$pr_number" --jq '.head.repo.full_name // empty')" = "$AUTHORITY_REPOSITORY"
+            failed="$(jq '[.[0].statusCheckRollup[]? | select((.conclusion // "") != "" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED"))] | length' <<<"$pull")"
+            pending="$(jq '[.[0].statusCheckRollup[]? | select((.status // "") != "COMPLETED")] | length' <<<"$pull")"
+            fingerprint="$(printf '%s\0%s\0%s\0%s\0%s' "$issue" "$pr_number" "$head_sha" "$base_ref" "$draft" | sha256sum | cut -d' ' -f1)"
             publish_receipt "$issue" <<EOF
-          <!-- qikvrt-issue-agent-autofinish-status:v1 -->
-          Repository auto-finish: **EFFECT_ACK_DONE**
+          <!-- qikvrt-issue-agent-completion-authority:v1:${fingerprint} -->
+          REQUEST_AUTHORITY: exact issue-agent candidate requires the protected pull-request route.
 
-          - authority PR #$authority_pr merged
-          - mirror PR #$mirror_pr merged
-          - common tag \`$tag\` created in both repositories
-          - issue closed automatically
+          - issue: #$issue
+          - pull request: #$pr_number ($pr_url)
+          - base: $base_ref
+          - exact head: $head_sha
+          - observer workflow run: $GITHUB_RUN_ID
+          - draft: $draft
+          - failed checks observed: $failed
+          - pending checks observed: $pending
+
+          This observer does not merge, reclassify a draft, push a ref, synchronize a mirror, create a tag, close an issue, publish, or claim PASS, FINAL_PASS, or EFFECT_ACK_DONE. A human-authorized protected-route action must reobserve this exact subject before any mutation.
           EOF
-            gh issue close "$issue" --repo "$AUTHORITY_REPOSITORY" --reason completed
           done

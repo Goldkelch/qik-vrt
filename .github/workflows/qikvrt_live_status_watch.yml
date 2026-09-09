@@ -14,10 +14,10 @@ on:
       - "QIKVRT Collective Proposal Review"
       - "QIKVRT requested review executor"
       - "QIKVRT required code-owner review"
-      - "QIKVRT reciprocal Mesh review"
       - "QIKVRT universal terminal materialization"
-      - "QIKVRT reflexive repository watchdog"
-    types: [requested, in_progress, completed]
+    # The watchdog is an observer, not a PR-carrier event source.  Keeping
+    # observers out of this intake prevents a workflow_run feedback cycle.
+    types: [completed]
   workflow_dispatch:
     inputs:
       pr:

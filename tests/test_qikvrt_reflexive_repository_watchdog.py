@@ -135,6 +135,28 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
             ["QIKVRT CI"],
         )
         self.assertTrue(gatewatch["node_liveness"]["artifact_only_materialization"])
+        ruleset_dispatch = prevention["ruleset_main_reconciliation_dispatch"]
+        self.assertTrue(ruleset_dispatch["enabled"])
+        self.assertEqual(ruleset_dispatch["trigger"], "SCHEDULE_ONLY")
+        self.assertEqual(ruleset_dispatch["subject_mode"], "MAIN")
+        self.assertEqual(ruleset_dispatch["app_authority"], "FORBIDDEN_IN_WATCHDOG")
+        self.assertEqual(ruleset_dispatch["ruleset_api"], "FORBIDDEN_IN_WATCHDOG")
+        self.assertEqual(
+            ruleset_dispatch["effect_transport"], "WORKFLOW_DISPATCH_ONLY"
+        )
+        self.assertEqual(
+            ruleset_dispatch["schedule_concurrency_lane"],
+            "NON_PREEMPTIVE_SEPARATE_FROM_EVENT_OBSERVERS",
+        )
+        self.assertEqual(
+            ruleset_dispatch["maximum_scheduled_runs"],
+            "ONE_RUNNING_PLUS_NEWEST_PENDING",
+        )
+        self.assertEqual(
+            ruleset_dispatch["boundedness"],
+            "SKIP_WHEN_ANY_EFFECT_RUN_IS_REQUESTED_PENDING_QUEUED_WAITING_OR_IN_PROGRESS",
+        )
+        self.assertFalse(ruleset_dispatch["cancel_effect_run"])
         self.assertEqual(
             prevention["observer_run_policy"],
             "CANCEL_SUPERSEDED_OBSERVER_ONLY",
@@ -425,12 +447,15 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
         self.assertFalse(value["baseline"]["same_head_and_tree"])
         self.assertEqual(value["state"], "QUIESCENT_OBSERVATION")
 
-    def test_workflow_is_five_minute_reflexive_and_read_only(self) -> None:
+    def test_workflow_is_five_minute_reflexive_with_narrow_main_dispatch(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn('cron: "*/5 * * * *"', workflow)
         self.assertIn("workflow_run:", workflow)
-        self.assertIn("types: [requested, in_progress, completed]", workflow)
-        self.assertIn("cancel-in-progress: true", workflow)
+        self.assertIn("types: [completed]", workflow)
+        self.assertNotIn("types: [requested, in_progress, completed]", workflow)
+        self.assertNotIn('"QIKVRT live status watch"', workflow)
+        self.assertIn("github.event_name == 'schedule' && 'scheduled-main'", workflow)
+        self.assertIn("cancel-in-progress: ${{ github.event_name != 'schedule' }}", workflow)
         self.assertIn("actions: read", workflow)
         self.assertIn("contents: read", workflow)
         self.assertIn("qikvrt_reflexive_repository_watchdog.py", workflow)
@@ -443,9 +468,40 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
         self.assertIn("select(.id != $current and .conclusion == \"success\")", workflow)
         self.assertNotIn("select(.id != $current)][0]", workflow)
         self.assertNotIn(".workflow_runs[0:20]", workflow)
-        self.assertNotIn("/dispatches", workflow)
+        dispatch = workflow.split("  dispatch-main-ruleset-reconciliation:", 1)[1]
+        self.assertIn("github.event_name == 'schedule'", dispatch)
+        self.assertIn("needs.pre-deadlock-observation.result == 'success'", dispatch)
+        self.assertIn("actions: write", dispatch)
+        self.assertIn("mode: \"MAIN\"", dispatch)
+        self.assertIn("expected_main", dispatch)
+        self.assertIn("expected_policy_sha", dispatch)
+        self.assertIn("ACTIVE_OR_QUEUED_EXACT_MAIN_EFFECT_EXISTS", dispatch)
+        self.assertIn("ACTIVE_OR_QUEUED_EFFECT_EXISTS", dispatch)
+        self.assertNotIn("cancel-in-progress: true", dispatch)
+        self.assertIn("qikvrt_ruleset_main_dispatch_receipt_v1", dispatch)
+        self.assertIn("qikvrt-ruleset-main-dispatch-", dispatch)
+        self.assertIn("/dispatches", dispatch)
+        self.assertNotIn("QIKVRT_RULESET_ADMIN_TOKEN", dispatch)
+        self.assertNotIn("create-github-app-token", dispatch)
+        self.assertNotIn("qikvrt_ruleset_reconcile.py", dispatch)
+        self.assertNotIn("--apply", dispatch)
+        self.assertNotIn("rulesets/19344903", dispatch)
         self.assertNotIn("gh pr merge", workflow)
         self.assertNotIn("issues/comments", workflow)
+
+    def test_main_dispatch_treats_pending_effect_runs_as_active(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        dispatch = workflow.split("  dispatch-main-ruleset-reconciliation:", 1)[1]
+        main_selector = dispatch.split('if ! main_active="$(jq --arg main "$expected_main"', 1)[1].split(
+            'if ! any_effect_active="$(jq', 1
+        )[0]
+        any_effect_selector = dispatch.split('if ! any_effect_active="$(jq', 1)[1].split(
+            'if [ "$main_active" -gt 0 ]; then', 1
+        )[0]
+        self.assertIn('.status == "pending"', main_selector)
+        self.assertIn('.status == "pending"', any_effect_selector)
+        self.assertIn('ACTIVE_OR_QUEUED_EXACT_MAIN_EFFECT_EXISTS', dispatch)
+        self.assertIn('ACTIVE_OR_QUEUED_EFFECT_EXISTS', dispatch)
 
 
 if __name__ == "__main__":
