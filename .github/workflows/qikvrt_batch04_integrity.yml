@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}
@@ -44,6 +44,7 @@ jobs:
         with:
           ref: ${{ env.EXPECTED_HEAD }}
           fetch-depth: 2
+          persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.12"
@@ -302,10 +303,9 @@ jobs:
           make test
           python3 tools/qikvrt_integrity.py verify
       - name: Commit materialized repository evidence
-        if: >-
-          github.event_name != 'pull_request' ||
-          (github.event.pull_request.head.repo.full_name == github.repository &&
-           github.actor != 'github-actions[bot]')
+        id: persist
+        env:
+          WRITER_TOKEN: ${{ secrets.QIKVRT_INGOLF_LOHMANN_REPOSITORY_WRITER_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
@@ -320,8 +320,6 @@ jobs:
             echo "remote_head=$remote_head" >&2
             exit 2
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
             git add \
               REPOSITORY_FILE_MANIFEST.json \
@@ -374,6 +372,48 @@ jobs:
             echo "Repository evidence is already current."
             exit 0
           fi
+
+          authority_root="$RUNNER_TEMP/qikvrt-repository-writer-authority"
+          mkdir -p "$authority_root"
+          if [ -z "${WRITER_TOKEN:-}" ]; then
+            jq -n \
+              --arg repository "$REPOSITORY" \
+              --arg ref "$TARGET_REF" \
+              --arg head "$source_head" \
+              '{schema:"qikvrt_repository_writer_authority_v1",state:"REQUEST_AUTHORITY",first_blocker:"REPOSITORY_WRITER_CREDENTIAL_MISSING",repository:$repository,target_ref:$ref,source_head:$head,required_identity:"ingolf-lohmann",required_capability:"contents:write",mutation:"NONE",completion_claims:{PASS:false,FINAL_PASS:false,EFFECT_ACK_DONE:false}}' \
+              > "$authority_root/receipt.json"
+            echo "REQUEST_AUTHORITY: QIKVRT_INGOLF_LOHMANN_REPOSITORY_WRITER_TOKEN is required for a freshness-producing repository persistence effect." >&2
+            exit 3
+          fi
+
+          GH_TOKEN="$WRITER_TOKEN" gh api user > "$authority_root/user.json"
+          jq -e '.login == "ingolf-lohmann" and .type == "User"' \
+            "$authority_root/user.json" >/dev/null || {
+              echo "BLOCK: repository writer credential does not resolve to ingolf-lohmann User identity" >&2
+              exit 4
+            }
+          permission="$(
+            GH_TOKEN="$WRITER_TOKEN" gh api \
+              "repos/${REPOSITORY}/collaborators/ingolf-lohmann/permission" \
+              --jq .permission
+          )"
+          case "$permission" in
+            write|maintain|admin) ;;
+            *)
+              echo "BLOCK: ingolf-lohmann writer permission is not write/maintain/admin: $permission" >&2
+              exit 4
+              ;;
+          esac
+          jq -n \
+            --arg repository "$REPOSITORY" \
+            --arg ref "$TARGET_REF" \
+            --arg head "$source_head" \
+            --arg permission "$permission" \
+            '{schema:"qikvrt_repository_writer_authority_v1",state:"AUTHORIZED",repository:$repository,target_ref:$ref,source_head:$head,writer:"ingolf-lohmann",permission:$permission,capability:"contents:write",completion_claims:{PASS:false,FINAL_PASS:false,EFFECT_ACK_DONE:false}}' \
+            > "$authority_root/receipt.json"
+
+          git config user.name "ingolf-lohmann"
+          git config user.email "294949349+ingolf-lohmann@users.noreply.github.com"
           git commit -m "ci: materialize repository evidence"
           remote_head_after_commit="$(
             git ls-remote --heads origin "refs/heads/$TARGET_REF" |
@@ -385,4 +425,18 @@ jobs:
             echo "remote_head_after_commit=$remote_head_after_commit" >&2
             exit 2
           fi
+          GH_TOKEN="$WRITER_TOKEN" gh auth setup-git
           git push origin "HEAD:$TARGET_REF"
+
+      - name: Preserve exact projection and writer-authority receipt
+        if: always() && steps.persist.outcome != 'skipped'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-repository-writer-${{ github.run_id }}-${{ env.EXPECTED_HEAD }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            REPOSITORY_FILE_MANIFEST.json
+            REPOSITORY_FILE_MANIFEST.json.sha256
+            SHA256SUMS.txt
+            ${{ runner.temp }}/qikvrt-repository-writer-authority
