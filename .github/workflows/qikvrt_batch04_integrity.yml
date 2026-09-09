@@ -20,6 +20,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}
@@ -293,6 +294,8 @@ jobs:
           python3 tools/qikvrt_integrity.py verify
       - name: Commit materialized repository evidence
         if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -354,15 +357,106 @@ jobs:
             echo "Repository evidence is already current."
             exit 0
           fi
+          expected_tree="$(git write-tree)"
+          if [ "$TARGET_REF" = main ]; then
+            candidate_branch="automation/repository-evidence-${source_head:0:16}"
+            if git ls-remote --exit-code --heads origin "refs/heads/$candidate_branch" >/dev/null 2>&1; then
+              candidate_head="$(git ls-remote --heads origin "refs/heads/$candidate_branch" | awk 'NR == 1 { print $1 }')"
+              test -n "$candidate_head" || {
+                echo "HOLD_UNVERIFIED: existing repository-evidence candidate ref has no exact head" >&2
+                exit 2
+              }
+              git fetch --no-tags origin "refs/heads/$candidate_branch:refs/remotes/origin/$candidate_branch"
+              fetched_candidate_head="$(git rev-parse --verify "refs/remotes/origin/$candidate_branch^{commit}")"
+              test "$fetched_candidate_head" = "$candidate_head" || {
+                echo "HOLD_UNVERIFIED repository-evidence candidate ref advanced during exact reobservation" >&2
+                exit 2
+              }
+              remote_main_before_existing="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 { print $1 }')"
+              test "$remote_main_before_existing" = "$source_head" || {
+                echo "HOLD_UNVERIFIED main advanced before existing repository-evidence candidate reobservation" >&2
+                exit 2
+              }
+              pr_readback="$RUNNER_TEMP/qikvrt-repository-evidence-existing-pr-readback.json"
+              gh pr view "$candidate_branch" \
+                --repo "$GITHUB_REPOSITORY" \
+                --json number,url,isDraft,baseRefName,baseRefOid,headRefName,headRefOid > "$pr_readback"
+              receipt="$RUNNER_TEMP/qikvrt-repository-evidence-existing-pr-receipt.json"
+              python3 -B tools/qikvrt_candidate_pr_receipt.py \
+                --readback "$pr_readback" \
+                --expected-base "$source_head" \
+                --expected-head "$candidate_head" \
+                --expected-branch "$candidate_branch" \
+                --expected-tree "$expected_tree" \
+                --repository . \
+                --receipt "$receipt"
+              remote_main_after_existing="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 { print $1 }')"
+              test "$remote_main_after_existing" = "$source_head" || {
+                echo "HOLD_UNVERIFIED main advanced during existing repository-evidence candidate reobservation" >&2
+                exit 2
+              }
+              {
+                echo '### Reobserved existing repository-evidence draft candidate'
+                echo
+                cat "$receipt"
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            git switch -c "$candidate_branch"
+          fi
           git commit -m "ci: materialize repository evidence"
-          remote_head_after_commit="$(
-            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
-              awk 'NR == 1 { print $1 }'
-          )"
+          remote_head_after_commit="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 { print $1 }')"
           if [ "$remote_head_after_commit" != "$source_head" ]; then
             echo "BLOCK: target ref advanced while repository evidence was materialized" >&2
             echo "source_head=$source_head" >&2
             echo "remote_head_after_commit=$remote_head_after_commit" >&2
             exit 2
           fi
-          git push origin "HEAD:$TARGET_REF"
+          if [ "$TARGET_REF" = main ]; then
+            candidate_head="$(git rev-parse --verify HEAD^{commit})"
+            git push origin "HEAD:refs/heads/$candidate_branch"
+            remote_main_before_pr="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 { print $1 }')"
+            test "$remote_main_before_pr" = "$source_head" || {
+              echo "HOLD_UNVERIFIED main advanced before repository-evidence candidate pull request" >&2
+              exit 2
+            }
+            pr_body="$RUNNER_TEMP/qikvrt-repository-evidence-pr.md"
+            {
+              printf '%s\n' '<!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->' ''
+              printf '%s\n' 'Exact trusted-main repository-evidence candidate.' ''
+              printf '%s`%s`\n' '- observed main base: ' "$source_head"
+              printf '%s`%s`\n' '- candidate head: ' "$candidate_head"
+              printf '%s\n' '' "This workflow did not write protected \`main\`. The candidate requires its own exact-head checks and the protected pull-request route. No review, merge, release, publication, PASS, FINAL_PASS, or EFFECT_ACK_DONE is implied."
+            } > "$pr_body"
+            gh pr create \
+              --draft \
+              --base main \
+              --head "$candidate_branch" \
+              --title "ci: materialize repository evidence ${source_head:0:16}" \
+              --body-file "$pr_body"
+            pr_readback="$RUNNER_TEMP/qikvrt-repository-evidence-pr-readback.json"
+            gh pr view "$candidate_branch" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json number,url,isDraft,baseRefName,baseRefOid,headRefName,headRefOid > "$pr_readback"
+            receipt="$RUNNER_TEMP/qikvrt-repository-evidence-pr-receipt.json"
+            python3 -B tools/qikvrt_candidate_pr_receipt.py \
+              --readback "$pr_readback" \
+              --expected-base "$source_head" \
+              --expected-head "$candidate_head" \
+              --expected-branch "$candidate_branch" \
+              --expected-tree "$expected_tree" \
+              --repository . \
+              --receipt "$receipt"
+            remote_main_after_pr="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 { print $1 }')"
+            test "$remote_main_after_pr" = "$source_head" || {
+              echo "HOLD_UNVERIFIED main advanced during repository-evidence candidate pull-request creation" >&2
+              exit 2
+            }
+            {
+              echo '### Exact repository-evidence draft candidate receipt'
+              echo
+              cat "$receipt"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            git push origin "HEAD:$TARGET_REF"
+          fi

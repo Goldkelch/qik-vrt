@@ -24,7 +24,8 @@ class PrHeadRateLimitExhaustionHoldTests(unittest.TestCase):
         self.assertIn('reason:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED"', self.text)
         self.assertIn('first_causal_blocker:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED"', self.text)
         self.assertIn('next_action:"REOBSERVE_ON_NEXT_REPOSITORY_INTERRUPT"', self.text)
-        self.assertIn('{d0:1,state:"HOLD"', self.text)
+        self.assertIn('{d0:2,state:"HOLD"', self.text)
+        self.assertIn("HOLD/D0=2", self.text)
         self.assertIn('echo "selected=false" >> "$GITHUB_OUTPUT"', self.text)
 
     def test_exhausted_reads_return_only_type_safe_fail_closed_placeholders(self) -> None:

@@ -9,7 +9,6 @@ on:
   workflow_run:
     workflows:
       - "QIKVRT repository evidence materialization"
-      - "QIKVRT adaptive stacked successor integrity materialization"
       - "QIKVRT CI"
       - "QIKVRT Collective Proposal Review"
       - "QIK-VRT global claim completion"
@@ -83,9 +82,9 @@ jobs:
             echo "selected=false" >> "$GITHUB_OUTPUT"
             jq -n \
               --arg event "$GITHUB_EVENT_NAME" \
-              '{d0:1,state:"HOLD",event:$event,productive_effect:false,effect_ack:"NOT_REQUIRED",reason:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",first_causal_blocker:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",next_action:"REOBSERVE_ON_NEXT_REPOSITORY_INTERRUPT"}' \
+              '{d0:2,state:"HOLD",event:$event,productive_effect:false,effect_ack:"NOT_REQUIRED",reason:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",first_causal_blocker:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",next_action:"REOBSERVE_ON_NEXT_REPOSITORY_INTERRUPT"}' \
               > "$root/decision-receipt.json"
-            echo "HOLD/D0=1: bounded GitHub installation rate-limit backoff exhausted"
+            echo "HOLD/D0=2: bounded GitHub installation rate-limit backoff exhausted"
           }
 
           # Retry only the exact GitHub installation quota response after the
@@ -117,7 +116,7 @@ jobs:
             cat "$error" >&2
             jq -n \
               --arg endpoint "$endpoint" \
-              '{state:"HOLD",d0:1,reason:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",endpoint:$endpoint,productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
+              '{state:"HOLD",d0:2,reason:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",endpoint:$endpoint,productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
               > "$rate_limit_marker"
             case "$endpoint" in
               *"/pulls?"*) printf '[]\n' ;;

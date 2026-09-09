@@ -19,10 +19,16 @@ from typing import Any
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 POLICY_PATH = ROOT / "policy/GITHUB_MAIN_RULESET_V1.json"
 SCHEMA = "qikvrt_github_main_ruleset_reconciliation_v1"
+DEFAULT_REPOSITORY = "Goldkelch/qik-vrt"
+DEFAULT_RULESET_ID = 19344903
 
 
 class RulesetBlock(RuntimeError):
     pass
+
+
+class RulesetAuthorityRequired(RulesetBlock):
+    """The sole class that may request credential-provisioning authority."""
 
 
 def canonical_bytes(value: Any) -> bytes:
@@ -40,9 +46,9 @@ def load_policy(path: pathlib.Path = POLICY_PATH) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if value.get("schema") != "qikvrt_github_main_ruleset_v1":
         raise RulesetBlock("ruleset policy schema mismatch")
-    if value.get("repository") != "Goldkelch/qik-vrt":
+    if value.get("repository") != DEFAULT_REPOSITORY:
         raise RulesetBlock("ruleset policy repository mismatch")
-    if value.get("ruleset_id") != 19344903:
+    if value.get("ruleset_id") != DEFAULT_RULESET_ID:
         raise RulesetBlock("ruleset policy id mismatch")
     return value
 
@@ -185,32 +191,62 @@ def reconcile(token: str, policy: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def authority_override() -> None:
+    """Classify workflow-level App provisioning before an API call is attempted."""
+    state = os.environ.get("QIKVRT_RULESET_AUTHORITY_STATE", "")
+    if not state:
+        return
+    blocker = os.environ.get("QIKVRT_RULESET_AUTHORITY_BLOCKER", "")
+    if not blocker:
+        raise RulesetBlock("ruleset authority override omitted its exact blocker")
+    if state == "REQUEST_AUTHORITY":
+        raise RulesetAuthorityRequired(blocker)
+    if state == "HOLD":
+        raise RulesetBlock(blocker)
+    raise RulesetBlock(f"unknown ruleset authority override state: {state}")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--snapshot", type=pathlib.Path)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--receipt", type=pathlib.Path)
     args = parser.parse_args(argv)
-    policy = load_policy()
+    policy: dict[str, Any] | None = None
     try:
+        policy = load_policy()
         if args.apply:
+            authority_override()
             token = os.environ.get("QIKVRT_RULESET_ADMIN_TOKEN", "")
             if not token:
-                raise RulesetBlock("QIKVRT_RULESET_ADMIN_TOKEN is unavailable")
+                raise RulesetAuthorityRequired("QIKVRT_RULESET_ADMIN_TOKEN is unavailable")
             result = reconcile(token, policy)
         else:
             if args.snapshot is None:
                 raise RulesetBlock("--snapshot is required without --apply")
             current = json.loads(args.snapshot.read_text(encoding="utf-8"))
             result = evaluate(_mapping(current, "ruleset snapshot"), policy)
-    except (OSError, ValueError, json.JSONDecodeError, RulesetBlock) as exc:
+    except RulesetAuthorityRequired as exc:
         result = {
             "schema": SCHEMA,
-            "repository": policy["repository"],
-            "ruleset_id": policy["ruleset_id"],
+            "repository": (policy or {}).get("repository", DEFAULT_REPOSITORY),
+            "ruleset_id": (policy or {}).get("ruleset_id", DEFAULT_RULESET_ID),
             "state": "REQUEST_AUTHORITY",
             "first_blocker": str(exc),
             "next_action": "ROUTE_RULESET_ADMIN_AUTHORITY_THROUGH_REPOSITORY_CARRIER",
+            "continuation_required": True,
+            "mutation": "NONE",
+            "effect_observed": False,
+        }
+        exit_code = 2
+    except (OSError, ValueError, json.JSONDecodeError, RulesetBlock) as exc:
+        result = {
+            "schema": SCHEMA,
+            "repository": (policy or {}).get("repository", DEFAULT_REPOSITORY),
+            "ruleset_id": (policy or {}).get("ruleset_id", DEFAULT_RULESET_ID),
+            "state": "HOLD",
+            "first_blocker": str(exc),
+            "next_action": "REOBSERVE_EXACT_RULESET_API_AND_READBACK_EVIDENCE",
             "continuation_required": True,
             "mutation": "NONE",
             "effect_observed": False,

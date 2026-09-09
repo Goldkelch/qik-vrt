@@ -450,6 +450,50 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertIn("repos/$REPOSITORY/issues/$pr/comments", live_watch)
         self.assertNotIn("pull_request_target:", live_watch)
 
+    def test_executor_installation_rate_limit_is_bounded_and_cannot_repeat_dispatch(self) -> None:
+        executor = EXECUTOR_WORKFLOW.read_text(encoding="utf-8")
+        exact_marker = "API rate limit exceeded for installation."
+
+        self.assertIn('rate_limit_marker="$root/rate-limit-exhausted.json"', executor)
+        self.assertIn(exact_marker, executor)
+        self.assertIn("for delay in 0 15 45", executor)
+        self.assertIn('gh api --method GET "$@"', executor)
+        self.assertIn(
+            'if ! grep -Fq "API rate limit exceeded for installation." "$error"; then',
+            executor,
+        )
+        self.assertNotIn("until gh api", executor)
+        for endpoint in (
+            'gh_read "repos/${GITHUB_REPOSITORY}/git/ref/heads/main"',
+            'gh_read "repos/${GITHUB_REPOSITORY}/actions/runs?branch=main&per_page=100"',
+            'gh_read "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_workflow_executor.yml/runs?branch=main&status=completed&per_page=20"',
+            'gh_read "repos/${GITHUB_REPOSITORY}/actions/runs/${previous_run}/artifacts?per_page=100"',
+            'gh_read "repos/${GITHUB_REPOSITORY}/actions/artifacts/${previous_artifact}/zip"',
+            'gh_read "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/runs?event=workflow_dispatch&branch=main&per_page=100"',
+        ):
+            self.assertIn(endpoint, executor)
+
+        self.assertIn('d0:2,state:"REOBSERVE"', executor)
+        self.assertIn('reason_code:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED"', executor)
+        self.assertIn("hold_reason:{reason_code:", executor)
+        self.assertIn('productive_effect:false', executor)
+        self.assertIn('completion_claims:{merge:false,pass:false,final_pass:false,effect_ack_done:false}', executor)
+        self.assertIn("if: steps.observe.outputs.rate_limited != 'true'", executor)
+
+        post = 'gh api --method POST "$dispatch_endpoint" -f ref=main'
+        self.assertEqual(executor.count(post), 1)
+        pre_dispatch_hold = (
+            'emit_rate_limit_reobserve "PRE_DISPATCH_FINAL_REOBSERVATION" false 0'
+        )
+        self.assertIn(pre_dispatch_hold, executor)
+        self.assertLess(executor.index(pre_dispatch_hold), executor.index(post))
+        self.assertIn('emit_rate_limit_reobserve "DISPATCH_POST_RATE_LIMITED" true 1', executor)
+        self.assertIn(
+            'emit_rate_limit_reobserve "POST_DISPATCH_RUN_RECEIPT_REOBSERVATION" true "$dispatch_post_count"',
+            executor,
+        )
+        self.assertNotIn('gh_read "$dispatch_endpoint"', executor)
+
     def test_watchdog_binds_the_literal_pull_request_head(self) -> None:
         watchdog = WATCHDOG_WORKFLOW.read_text(encoding="utf-8")
         exact_event_head = "${{ github.event.pull_request.head.sha || github.sha }}"
