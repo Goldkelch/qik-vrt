@@ -9,6 +9,7 @@ import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+REQUESTED_REVIEW_CONTRACT = ROOT / ".github/workflows/qikvrt_requested_review_contract.yml"
 SPEC = importlib.util.spec_from_file_location(
     "qikvrt_authority_review_report_fanout",
     ROOT / "tools/qikvrt_authority_review_report_fanout.py",
@@ -95,6 +96,16 @@ class AuthorityReviewReportFanoutTests(unittest.TestCase):
         self.assertNotIn("/dispatches", workflow)
         self.assertNotIn("issues: write", workflow)
         self.assertNotIn("--method POST", workflow)
+
+    def test_contract_shell_avoids_github_expression_rewriting(self):
+        contract = REQUESTED_REVIEW_CONTRACT.read_text(encoding="utf-8")
+        start = contract.index("      - name: Verify event, recovery, identity and promotion bindings")
+        shell = contract[start:]
+        self.assertNotIn("${{", shell)
+        self.assertIn(
+            "sealed until a separately authorized, brokered cross-repository delivery",
+            shell,
+        )
 
 
 if __name__ == "__main__":
