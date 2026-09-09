@@ -439,6 +439,17 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
         self.assertIn("QIKVRT repository evidence materialization", workflow)
         self.assertIn("observed-authority-main-head.txt", workflow)
         self.assertIn("gatewatch-receipt.json", workflow)
+        self.assertIn("id: observe", workflow)
+        self.assertIn("for delay in 0 15 45", workflow)
+        self.assertIn("API rate limit exceeded for installation.", workflow)
+        self.assertIn("rate-limit-exhausted.json", workflow)
+        self.assertIn("GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED", workflow)
+        self.assertIn("REOBSERVE_ON_NEXT_NATIVE_REPOSITORY_EVENT", workflow)
+        self.assertIn("observation_complete=false", workflow)
+        self.assertIn(
+            "if: steps.observe.outputs.observation_complete == 'true'",
+            workflow,
+        )
         self.assertIn("jq -r '.workflow_runs[].id'", workflow)
         self.assertIn("select(.id != $current and .conclusion == \"success\")", workflow)
         self.assertNotIn("select(.id != $current)][0]", workflow)

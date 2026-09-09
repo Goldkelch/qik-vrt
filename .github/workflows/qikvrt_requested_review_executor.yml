@@ -197,18 +197,67 @@ jobs:
           set -euo pipefail
           root=.qikvrt/mesh-review
           mkdir -p "$root"
-          python3 -B tools/qikvrt_requested_review_executor.py observe \
-            --repository "$REPOSITORY" \
-            --pr-number "$PR_NUMBER" \
-            --expected-head "$EXPECTED_SELECTOR_HEAD" \
-            --current-run-id "$CURRENT_RUN_ID" \
-            --required-gates-json "$REQUIRED_GATES_JSON" \
-            --required-gate-paths-json "$REQUIRED_GATE_PATHS_JSON" \
-            --writer-workflows-json "$WRITER_WORKFLOWS_JSON" \
-            --event-context-file /tmp/qikvrt-review-event-context.json \
-            --snapshot-out "$root/snapshot.json" \
-            --diff-out "$root/review.diff" \
-            --receipt-out "$root/review.json"
+          rate_limit_marker="$root/rate-limit-exhausted.json"
+          rm -f "$rate_limit_marker"
+          observed=false
+          # The observation is read-only. Retry only the exact GitHub App
+          # installation quota response; every other observation error remains
+          # a hard failure. No retry creates a workflow event or repository
+          # effect.
+          for delay in 0 15 45; do
+            if [ "$delay" -gt 0 ]; then
+              echo "QIKVRT_GITHUB_INSTALLATION_RATE_LIMIT_BACKOFF_SECONDS=$delay" >&2
+              sleep "$delay"
+            fi
+            set +e
+            python3 -B tools/qikvrt_requested_review_executor.py observe \
+              --repository "$REPOSITORY" \
+              --pr-number "$PR_NUMBER" \
+              --expected-head "$EXPECTED_SELECTOR_HEAD" \
+              --current-run-id "$CURRENT_RUN_ID" \
+              --required-gates-json "$REQUIRED_GATES_JSON" \
+              --required-gate-paths-json "$REQUIRED_GATE_PATHS_JSON" \
+              --writer-workflows-json "$WRITER_WORKFLOWS_JSON" \
+              --event-context-file /tmp/qikvrt-review-event-context.json \
+              --snapshot-out "$root/snapshot.json" \
+              --diff-out "$root/review.diff" \
+              --receipt-out "$root/review.json"
+            observed_status=$?
+            set -e
+            if [ "$observed_status" -eq 0 ]; then
+              observed=true
+              break
+            fi
+            if ! test -f "$root/review.json" || ! jq -e \
+              '((.detail? // "") | tostring | contains("API rate limit exceeded for installation."))' \
+              "$root/review.json" >/dev/null; then
+              exit "$observed_status"
+            fi
+          done
+          if [ "$observed" != true ]; then
+            jq -n \
+              --arg repository "$REPOSITORY" \
+              --argjson pr "$PR_NUMBER" \
+              --arg head "$EXPECTED_SELECTOR_HEAD" \
+              --arg run "$CURRENT_RUN_ID" \
+              '{schema:"qikvrt_requested_review_rate_limit_hold_v1",state:"HOLD_UNVERIFIED",verification_state:"HOLD_UNVERIFIED",repository:$repository,pr_number:$pr,head_sha:$head,first_blocker:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",detail:"bounded GitHub installation rate-limit backoff exhausted before exact review observation",derived_action:{d0:2,state:"REOBSERVE",next_action:"REOBSERVE_ON_NEXT_NATIVE_REPOSITORY_EVENT",productive_effect:false,effect_ack:"NOT_REQUIRED"},hold_reason:{reason_code:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",reason:"The GitHub App installation quota prevented an exact read-only review observation.",subject:{repository:$repository,kind:"pull_request",number:$pr,head_sha:$head},evidence_refs:[("actions/run/"+$run),("event/selector-head/"+$head)],owner:{role:"EXACT_SUBJECT_OBSERVER",actor:"github-actions[bot]"},retry_condition:{event:"native_repository_event",predicate:"the GitHub App installation quota no longer prevents exact observation of the same pull-request head"},next_action:"REOBSERVE_ON_NEXT_NATIVE_REPOSITORY_EVENT",d0:2},completion_claims:{PASS:false,FINAL_PASS:false,EFFECT_ACK_DONE:false,MERGE:false}}' \
+              > "$rate_limit_marker"
+            cat "$rate_limit_marker"
+            {
+              echo 'observation_complete=false'
+              echo 'state=HOLD_UNVERIFIED'
+              echo "head=$EXPECTED_SELECTOR_HEAD"
+              echo 'tree='
+              echo 'base='
+              echo 'fingerprint='
+              echo 'ledger_path='
+              echo 'd0=2'
+              echo 'next_action=REOBSERVE_ON_NEXT_NATIVE_REPOSITORY_EVENT'
+              echo 'blocker=GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED'
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo 'observation_complete=true' >> "$GITHUB_OUTPUT"
           cat "$root/review.json"
           python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
           import json
@@ -226,7 +275,7 @@ jobs:
           PY
 
       - name: Persist exact receipt and diff by ledger fast-forward CAS
-        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE'
+        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE' && steps.decision.outputs.observation_complete == 'true'
         id: ledger
         env:
           PR_NUMBER: ${{ steps.select.outputs.pr }}
@@ -544,7 +593,7 @@ jobs:
           PY
 
       - name: Project persisted receipt into PR comment and exact-head status
-        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE' && steps.ledger.outputs.persisted == 'true' && steps.ledger.outputs.projection_current == 'true'
+        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE' && steps.decision.outputs.observation_complete == 'true' && steps.ledger.outputs.persisted == 'true' && steps.ledger.outputs.projection_current == 'true'
         env:
           PR_NUMBER: ${{ steps.select.outputs.pr }}
           CURRENT_RUN_ID: ${{ github.run_id }}
@@ -667,7 +716,7 @@ jobs:
           path: .qikvrt/mesh-review
 
       - name: Enforce fail-closed ledger persistence
-        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE' && steps.ledger.outputs.persisted != 'true'
+        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE' && steps.decision.outputs.observation_complete == 'true' && steps.ledger.outputs.persisted != 'true'
         run: |
           echo 'HOLD_UNVERIFIED: exact Mesh review receipt was not persisted by FF-CAS.'
           exit 1

@@ -2064,6 +2064,16 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         )
         self.assertIn("HOLD_UNVERIFIED", text)
         self.assertIn("independent Code-Owner approval: **not implied**", text)
+        self.assertIn("for delay in 0 15 45", text)
+        self.assertIn("API rate limit exceeded for installation.", text)
+        self.assertIn("rate-limit-exhausted.json", text)
+        self.assertIn("GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED", text)
+        self.assertIn("REOBSERVE_ON_NEXT_NATIVE_REPOSITORY_EVENT", text)
+        self.assertIn("observation_complete", text)
+        self.assertIn(
+            "steps.decision.outputs.observation_complete == 'true'",
+            text,
+        )
         observer = OBSERVER_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("PULL_REQUEST_BASE_NOT_MAIN", observer)
         self.assertIn("INELIGIBLE_EVENT_TARGET", observer)

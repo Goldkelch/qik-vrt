@@ -81,6 +81,16 @@ class ExplicitHoldContractTests(unittest.TestCase):
         value = explicit_hold("CAUSAL_REVIEW_EVIDENCE_DRIFT", 2)
         validate_document(value)
 
+    def test_installation_quota_is_reobserve_not_hold(self):
+        value = explicit_hold("GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED", 1)
+        value["hold_reason"]["next_action"] = (
+            "REOBSERVE_ON_NEXT_NATIVE_REPOSITORY_EVENT"
+        )
+        with self.assertRaisesRegex(HoldContractError, "must be D0=2"):
+            validate_document(value)
+        value["hold_reason"]["d0"] = 2
+        validate_document(value)
+
     def test_missing_authority_is_request_authority(self):
         value = explicit_hold("INDEPENDENT_CODE_OWNER_AUTHORITY_NOT_OBSERVED", 1)
         with self.assertRaisesRegex(HoldContractError, "must be D0=3"):
