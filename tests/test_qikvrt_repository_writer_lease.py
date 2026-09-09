@@ -51,6 +51,37 @@ class RepositoryWriterLeaseTests(unittest.TestCase):
             policy['audit_surface']['writer_workflows'],
         )
 
+    def test_read_only_promotion_observer_never_occupies_review_writer_lease(self):
+        promotion_name = 'QIK-VRT expected-head promotion executor'
+        promotion_path = Path('.github/workflows/qikvrt_expected_head_promotion.yml')
+        promotion = promotion_path.read_text(encoding='utf-8')
+        permissions = promotion.split('permissions:', 1)[1].split('concurrency:', 1)[0]
+        self.assertIn('actions: read', permissions)
+        self.assertIn('contents: read', permissions)
+        self.assertIn('pull-requests: read', permissions)
+        self.assertIn('statuses: read', permissions)
+        self.assertNotIn(': write', permissions)
+
+        inventories = (
+            (Path('.github/workflows/qikvrt_requested_review_executor.yml'), 'WRITER_WORKFLOWS_JSON:'),
+            (Path('.github/workflows/qikvrt_required_review_gate.yml'), 'WRITER_WORKFLOWS_JSON:'),
+            (promotion_path, 'MESH_REVIEW_WRITER_WORKFLOWS_JSON:'),
+        )
+        for path, key in inventories:
+            text = path.read_text(encoding='utf-8')
+            lines = text.splitlines()
+            matched = 0
+            for index, line in enumerate(lines):
+                if line.strip() != key:
+                    continue
+                matched += 1
+                self.assertLess(index + 1, len(lines), str(path))
+                raw = lines[index + 1].strip()
+                values = json.loads(raw)
+                self.assertIsInstance(values, list, str(path))
+                self.assertNotIn(promotion_name, values, str(path))
+            self.assertGreater(matched, 0, f'{key} absent from {path}')
+
 
 if __name__ == '__main__':
     unittest.main()
