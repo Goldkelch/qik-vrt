@@ -23,13 +23,11 @@ FORMALIZATION_PREFIXES = (
 )
 FORMALIZATION_PATHS = {
     "release/formalization-v2-alpha2-zenodo.json",
-    "tests/test_formalization_v2_release_workflow.py",
 }
 CONTENT_PREFIXES = (
     "tools/qikvrt_content_disposition_",
     "tools/qikvrt_batch003_",
     "release/zenodo-corpus-proof-2026-07-28/canonical-union/",
-    "tests/test_content_disposition_batch_003_",
 )
 CONTENT_PATHS = {
     "AI_PROGRESS.json",
@@ -42,7 +40,6 @@ APHORISM_PREFIXES = (
 APHORISM_PATHS = {
     "docs/publications/index.json",
     "docs/publications/index.html",
-    "tests/test_aphorism_corpus_v2.py",
     "work-units/MATERIALIZE_APHORISM_CORPUS_SCIENTIFIC_ASSESSMENT_V2.json",
 }
 
@@ -76,13 +73,14 @@ def classify(paths: Sequence[str], *, force_full: bool = False) -> dict[str, Any
 
     # Control-plane mutations demand the complete repository verification gates,
     # but they do not by themselves causally change every generated evidence
-    # domain.  Conflating those two scopes made each materializer repair execute
-    # unrelated formalization, corpus and aphorism generators before the exact
-    # PR source was restored.  Explicit/ambiguous recovery remains fail-safe by
-    # materializing every optional domain.
+    # domain. Explicit/ambiguous recovery remains fail-safe by materializing
+    # every optional domain.
     materialize_all = force_full or bool(unsafe)
     full = materialize_all or bool(control)
 
+    # Test files are verification inputs, not generator inputs. They remain
+    # covered by the unconditional complete repository gates below; changing a
+    # test alone must never manufacture unrelated repository evidence bytes.
     formalization = materialize_all or any(
         path in FORMALIZATION_PATHS or _starts(path, FORMALIZATION_PREFIXES)
         for path in normalized
