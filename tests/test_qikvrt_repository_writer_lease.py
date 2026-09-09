@@ -27,6 +27,7 @@ class RepositoryWriterLeaseTests(unittest.TestCase):
             'WRITER_TOKEN: ${{ secrets.QIKVRT_INGOLF_LOHMANN_REPOSITORY_WRITER_TOKEN }}',
             text,
         )
+        self.assertIn('REPOSITORY: ${{ github.repository }}', text)
         self.assertIn('REPOSITORY_WRITER_CREDENTIAL_MISSING', text)
         self.assertIn('GH_TOKEN="$WRITER_TOKEN" gh api user', text)
         self.assertIn('.login == "ingolf-lohmann" and .type == "User"', text)
