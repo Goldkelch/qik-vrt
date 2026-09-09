@@ -1,45 +1,151 @@
+# Legacy stable workflow identity retained; behavior is generalized to exact same-repository PR integrity repair.
 name: QIKVRT PR18 integrity repair
 
 on:
-  push:
-    branches:
-      - infra/live-status-default-branch
   pull_request:
     branches:
       - main
-  workflow_dispatch:
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 permissions:
   contents: write
 
 concurrency:
-  group: qikvrt-pr18-integrity-repair
+  group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   repair:
-    if: github.event_name != 'pull_request' || github.head_ref == 'infra/live-status-default-branch'
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
+    env:
+      TARGET_REF: ${{ github.head_ref }}
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Check out exact pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: infra/live-status-default-branch
-          fetch-depth: 0
-      - name: Regenerate and verify repository integrity
+          ref: ${{ env.EXPECTED_HEAD }}
+          fetch-depth: 2
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Bind exact same-repository pull-request writer subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_head="$(git rev-parse --verify HEAD^{commit})"
+          test "$source_head" = "$EXPECTED_HEAD"
+          test -n "$TARGET_REF"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          if [ "$remote_head" != "$source_head" ]; then
+            echo "HOLD_UNVERIFIED: pull-request head differs before integrity repair" >&2
+            echo "source_head=$source_head" >&2
+            echo "remote_head=$remote_head" >&2
+            exit 2
+          fi
+
+      - name: Regenerate and verify exact-subject repository integrity
+        shell: bash
         run: |
           set -euo pipefail
           python3 tools/qikvrt_integrity.py generate
           python3 tools/qikvrt_integrity.py verify
-      - name: Commit regenerated integrity outputs
+
+      - name: Run writer contract and complete repository gates before persistence
+        shell: bash
         run: |
           set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v tests.test_qikvrt_repository_writer_lease
+          make test
+          python3 tools/qikvrt_integrity.py verify
+
+      - name: Commit only the deterministic integrity trio with exact-head CAS
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_head="$(git rev-parse --verify HEAD^{commit})"
+          test "$source_head" = "$EXPECTED_HEAD"
+          remote_head_before_commit="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          if [ "$remote_head_before_commit" != "$source_head" ]; then
+            echo "HOLD_UNVERIFIED: pull-request head advanced before integrity persistence" >&2
+            echo "source_head=$source_head" >&2
+            echo "remote_head_before_commit=$remote_head_before_commit" >&2
+            exit 2
+          fi
+
+          while IFS= read -r path; do
+            case "$path" in
+              REPOSITORY_FILE_MANIFEST.json|REPOSITORY_FILE_MANIFEST.json.sha256|SHA256SUMS.txt) ;;
+              *)
+                echo "BLOCK: non-integrity tracked delta present before pull-request persistence: $path" >&2
+                exit 2
+                ;;
+            esac
+          done < <(git diff --name-only)
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git add \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt
+
           if git diff --cached --quiet; then
-            echo "Integrity outputs already current."
+            echo "Pull-request integrity projection is already current."
             exit 0
           fi
-          git commit -m "fix: regenerate repository integrity for live status watcher"
-          git push origin HEAD:infra/live-status-default-branch
+
+          while IFS= read -r path; do
+            case "$path" in
+              REPOSITORY_FILE_MANIFEST.json|REPOSITORY_FILE_MANIFEST.json.sha256|SHA256SUMS.txt) ;;
+              *)
+                echo "BLOCK: non-integrity path staged for pull-request persistence: $path" >&2
+                exit 2
+                ;;
+            esac
+          done < <(git diff --cached --name-only)
+
+          git commit -m "fix(integrity): persist exact pull-request projection"
+          committed_head="$(git rev-parse --verify HEAD^{commit})"
+          remote_head_after_commit="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          if [ "$remote_head_after_commit" != "$source_head" ]; then
+            echo "HOLD_UNVERIFIED: pull-request head advanced during local integrity commit" >&2
+            echo "source_head=$source_head" >&2
+            echo "remote_head_after_commit=$remote_head_after_commit" >&2
+            exit 2
+          fi
+
+          git push origin "HEAD:refs/heads/$TARGET_REF"
+          persisted_head="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          if [ "$persisted_head" != "$committed_head" ]; then
+            echo "HOLD_UNVERIFIED: pull-request integrity persistence readback mismatch" >&2
+            echo "committed_head=$committed_head" >&2
+            echo "persisted_head=$persisted_head" >&2
+            exit 2
+          fi
+          echo "persisted_head=$persisted_head" >> "$GITHUB_STEP_SUMMARY"

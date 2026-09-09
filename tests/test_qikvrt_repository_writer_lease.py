@@ -11,6 +11,54 @@ class RepositoryWriterLeaseTests(unittest.TestCase):
         self.assertIn(expected, text, str(path))
         self.assertIn('cancel-in-progress: false', text, str(path))
 
+    def test_general_pr_integrity_writer_shares_exact_target_lease_and_is_atomic(self):
+        path = Path('.github/workflows/qikvrt_pr18_integrity_repair.yml')
+        text = path.read_text(encoding='utf-8')
+        self.assertIn(
+            'group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}',
+            text,
+        )
+        self.assertIn('cancel-in-progress: false', text)
+        self.assertIn("github.event_name == 'pull_request'", text)
+        self.assertIn(
+            'github.event.pull_request.head.repo.full_name == github.repository',
+            text,
+        )
+        self.assertIn("github.actor != 'dependabot[bot]'", text)
+        self.assertIn('EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}', text)
+        self.assertIn('TARGET_REF: ${{ github.head_ref }}', text)
+        self.assertNotIn('infra/live-status-default-branch', text)
+        self.assertNotIn('git push --force', text)
+        self.assertIn(
+            'HOLD_UNVERIFIED: pull-request head differs before integrity repair',
+            text,
+        )
+        self.assertIn(
+            'HOLD_UNVERIFIED: pull-request head advanced before integrity persistence',
+            text,
+        )
+        self.assertIn(
+            'HOLD_UNVERIFIED: pull-request head advanced during local integrity commit',
+            text,
+        )
+        self.assertIn(
+            'HOLD_UNVERIFIED: pull-request integrity persistence readback mismatch',
+            text,
+        )
+        commit = text.index(
+            '      - name: Commit only the deterministic integrity trio with exact-head CAS'
+        )
+        commit_block = text[commit:]
+        for integrity_path in (
+            'REPOSITORY_FILE_MANIFEST.json',
+            'REPOSITORY_FILE_MANIFEST.json.sha256',
+            'SHA256SUMS.txt',
+        ):
+            self.assertIn(integrity_path, commit_block)
+        self.assertNotIn('formalization/QIKVRT_Formalization_v2.0', commit_block)
+        self.assertNotIn('docs/publications/', commit_block)
+        self.assertIn('git push origin "HEAD:refs/heads/$TARGET_REF"', commit_block)
+
     def test_batch003_separates_read_only_pr_run_from_non_pr_writer_lease(self):
         path = Path('.github/workflows/qikvrt_batch003_remaining_disposition.yml')
         text = path.read_text(encoding='utf-8')
