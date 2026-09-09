@@ -1,0 +1,1605 @@
++
+ def _sha(value: Any, label: str, *, nullable: bool = False) -> str | None:
+     if value is None and nullable:
+         return None
+@@ -1471,6 +1485,16 @@ def _derived_action(state: str, blocker: str | None) -> dict[str, Any]:
+             "productive_effect": False,
+             "effect_ack": "HOLD_UNVERIFIED",
+         }
++    if blocker == "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED":
++        # This is missing observation evidence, not an active/adverse subject
++        # condition.  The explicit HOLD contract maps it to D0=2.
++        return {
++            "d0": 2,
++            "state": "REOBSERVE",
++            "next_action": "REOBSERVE_EXACT_SUBJECT_ON_NEXT_NONSELF_REPOSITORY_INTERRUPT",
++            "productive_effect": False,
++            "effect_ack": "HOLD_UNVERIFIED",
++        }
+     if blocker in {
+         "BASE_DRIFT",
+         "BASE_TREE_DRIFT",
+@@ -2032,21 +2056,75 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
+     )
+ 
+ 
+-def _run_json(command: Sequence[str], *, input_text: str | None = None) -> Any:
+-    completed = subprocess.run(
+-        list(command),
+-        input=input_text,
+-        text=True,
+-        capture_output=True,
+-        check=False,
+-    )
+-    if completed.returncode:
++def _github_read_endpoint(command: Sequence[str]) -> str | None:
++    """Return one read-only GitHub API endpoint, never inferring a mutation."""
++    if len(command) < 3 or tuple(command[:2]) != ("gh", "api"):
++        return None
++    if "--method" in command:
++        return None
++    if command[2] == "graphql":
++        return "graphql"
++    for token in reversed(command[2:]):
++        if isinstance(token, str) and (
++            token.startswith("repos/") or token.startswith("https://")
++        ):
++            return token
++    return None
++
++
++def _run_json(
++    command: Sequence[str],
++    *,
++    input_text: str | None = None,
++    retry_delays: Sequence[float] = GITHUB_READ_RATE_LIMIT_BACKOFF_SECONDS,
++    sleeper: Callable[[float], None] = time.sleep,
++) -> Any:
++    """Run one JSON command with the repository's bounded GET-only retry rule.
++
++    ``gh api`` defaults to GET, but this function deliberately refuses to
++    retry a command which spells a method.  An exhausted shared installation
++    quota becomes a typed observation HOLD; every other command failure
++    remains a hard fail-closed observation error.
++    """
++    endpoint = _github_read_endpoint(command)
++    delays = tuple(retry_delays) if endpoint is not None else (0,)
++    if not delays or delays[0] != 0 or any(
++        isinstance(delay, bool) or not isinstance(delay, (int, float)) or delay < 0
++        for delay in delays
++    ):
++        raise ValueError(
++            "GitHub read retry delays must begin at zero and be non-negative"
++        )
++    for attempt, delay in enumerate(delays):
++        if delay:
++            sleeper(float(delay))
++        completed = subprocess.run(
++            list(command),
++            input=input_text,
++            text=True,
++            capture_output=True,
++            check=False,
++        )
++        if not completed.returncode:
++            try:
++                return json.loads(completed.stdout)
++            except json.JSONDecodeError as exc:
++                raise ReviewObservationError(
++                    f"command returned invalid JSON ({' '.join(command[:2])})"
++                ) from exc
++
+         detail = completed.stderr.strip().replace("\n", " ")[:400]
+-        raise ReviewObservationError(f"command failed ({command[0]}): {detail}")
+-    try:
+-        return json.loads(completed.stdout)
+-    except json.JSONDecodeError as exc:
+-        raise ReviewObservationError(f"command returned invalid JSON ({command[0]})") from exc
++        rate_limited = GITHUB_INSTALLATION_RATE_LIMIT_MARKER in completed.stderr
++        if endpoint is not None and rate_limited:
++            if attempt + 1 < len(delays):
++                continue
++            raise GitHubInstallationRateLimit(
++                "GitHub installation rate limit exhausted while reading "
++                f"{endpoint} after {len(delays)} bounded attempts: {detail}"
++            )
++        rendered = " ".join(command[:3])
++        raise ReviewObservationError(f"command failed ({rendered}): {detail}")
++    raise AssertionError("bounded GitHub read retry loop did not return")
+ 
+ 
+ def _gh_one(path: str) -> Any:
+@@ -3197,6 +3275,76 @@ def main(argv: Sequence[str] | None = None) -> int:
+             args.mode == "ledger-history" and report["ledger_safe"]
+         )
+         return 0 if accepted else 3
++    except GitHubInstallationRateLimit as exc:
++        # A quota exhaustion is a reobservation condition.  Preserve the
++        # selector-bound subject that is already known, but never manufacture
++        # missing snapshot/diff/ledger evidence or attempt a repository write.
++        rate_limit_snapshot = {
++            "repository": getattr(args, "repository", None),
++            "pr_number": getattr(args, "pr_number", None),
++            "head_sha": getattr(args, "expected_head", None) or None,
++            "base_ref": "main",
++        }
++        result = _result(
++            rate_limit_snapshot,
++            "WAIT",
++            "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",
++            str(exc),
++            findings=[
++                _finding(
++                    "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",
++                    "HOLD",
++                    "bounded exact GitHub API read retries were exhausted; "
++                    "no repository mutation was attempted",
++                )
++            ],
++        )
++        repository = rate_limit_snapshot["repository"]
++        pr_number = rate_limit_snapshot["pr_number"]
++        head_sha = rate_limit_snapshot["head_sha"]
++        if (
++            isinstance(repository, str)
++            and isinstance(pr_number, int)
++            and isinstance(head_sha, str)
++            and _git_sha1(head_sha) is not None
++        ):
++            result["hold_reason"] = {
++                "reason_code": "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",
++                "reason": str(exc),
++                "subject": {
++                    "repository": repository,
++                    "kind": "pull_request",
++                    "number": pr_number,
++                    "head_sha": head_sha,
++                },
++                "evidence_refs": [
++                    f"workflow-run:{getattr(args, 'current_run_id', 'unknown')}",
++                    "github-api-read-rate-limit",
++                ],
++                "owner": {
++                    "role": "EXACT_SUBJECT_OBSERVER",
++                    "actor": "github-actions[bot]",
++                },
++                "retry_condition": {
++                    "event": "repository_interrupt",
++                    "predicate": (
++                        "the GitHub App installation quota has recovered and "
++                        "the same exact pull-request head is freshly reobserved"
++                    ),
++                },
++                "next_action": (
++                    "REOBSERVE_EXACT_SUBJECT_ON_NEXT_NONSELF_REPOSITORY_INTERRUPT"
++                ),
++                "d0": 2,
++            }
++            _seal(result)
++        if getattr(args, "command", None) == "observe" and getattr(args, "receipt_out", None):
++            _write_json(pathlib.Path(args.receipt_out), result)
++        if getattr(args, "command", None) == "verify" and getattr(args, "output_dir", None):
++            output = pathlib.Path(args.output_dir)
++            _write_json(output / "verification.json", result)
++        print(json.dumps(result, sort_keys=True, indent=2))
++        return 3
+     except (
+         OSError,
+         KeyError,
+diff --git a/tools/qikvrt_ruleset_bridge_carrier.py b/tools/qikvrt_ruleset_bridge_carrier.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..869258fceaf972c11dee0ec522078694634f2dd5
+--- /dev/null
++++ b/tools/qikvrt_ruleset_bridge_carrier.py
+@@ -0,0 +1,297 @@
++#!/usr/bin/env python3
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++"""Select one replayable required-review run for the ruleset bridge.
++
++The scheduled watchdog may inspect one complete, bounded 100-run observation
++per workflow.  That observation is evidence only when its declared count is
++complete and its required-review and bridge runs bind the current Main SHA,
++repository and workflow path.  The selector returns the least-recently-carried
++exact upstream run whose bridge is not active.  The bridge subsequently
++rebinds the artifact, PR tuple, head, status and Main before any dispatch.
++"""
++from __future__ import annotations
++
++import argparse
++import json
++import re
++import sys
++from collections.abc import Mapping, Sequence
++from pathlib import Path
++from typing import Any
++
++
++REQUIRED_REVIEW_NAME = "QIKVRT required code-owner review"
++REQUIRED_REVIEW_PATH = ".github/workflows/qikvrt_required_review_gate.yml"
++BRIDGE_NAME = "QIKVRT ruleset effect dispatch bridge"
++BRIDGE_PATH = ".github/workflows/qikvrt_ruleset_effect_dispatch_bridge.yml"
++BRIDGE_TITLE = re.compile(
++    r"^QIKVRT ruleset bridge upstream=(?P<upstream>[1-9][0-9]*) carrier=.+$"
++)
++ACTIVE_STATUSES = frozenset({"requested", "pending", "queued", "in_progress", "waiting"})
++TERMINAL_CONCLUSIONS = frozenset(
++    {
++        "action_required",
++        "cancelled",
++        "failure",
++        "neutral",
++        "skipped",
++        "stale",
++        "success",
++        "timed_out",
++        "startup_failure",
++    }
++)
++MAX_WORKFLOW_RUNS = 100
++SHA1 = re.compile(r"^[0-9a-f]{40}$")
++REPOSITORY = re.compile(r"^[^/\s]+/[^/\s]+$")
++SCHEMA = "qikvrt_ruleset_bridge_scheduled_carrier_selection_v2"
++
++
++class CarrierSelectionError(ValueError):
++    """The paginated external observation cannot support a safe replay."""
++
++
++def _int(value: Any, field: str) -> int:
++    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
++        raise CarrierSelectionError(f"{field} must be a positive integer")
++    return value
++
++
++def _text(value: Any, field: str) -> str:
++    if not isinstance(value, str) or not value:
++        raise CarrierSelectionError(f"{field} must be a non-empty string")
++    return value
++
++
++def _sha(value: Any, field: str) -> str:
++    text = _text(value, field)
++    if SHA1.fullmatch(text) is None:
++        raise CarrierSelectionError(f"{field} must be a lowercase 40-character SHA-1")
++    return text
++
++
++def _repository(value: Any, field: str) -> str:
++    if not isinstance(value, Mapping):
++        raise CarrierSelectionError(f"{field} must be an object")
++    name = _text(value.get("full_name"), f"{field}.full_name")
++    if REPOSITORY.fullmatch(name) is None:
++        raise CarrierSelectionError(f"{field}.full_name must be an owner/name repository")
++    return name
++
++
++def _workflow_path_matches(value: Any, expected_path: str, field: str) -> bool:
++    """Accept the exact workflow path in event or REST `path@main` form."""
++
++    path = _text(value, field)
++    return path in {expected_path, f"{expected_path}@main"}
++
++
++def _one_page(value: Any, field: str) -> list[Mapping[str, Any]]:
++    """Validate one complete GitHub `per_page=100` workflow-runs response."""
++
++    if isinstance(value, Mapping):
++        page = value
++    elif isinstance(value, list) and len(value) == 1 and isinstance(value[0], Mapping):
++        page = value[0]
++    else:
++        raise CarrierSelectionError(f"{field} must contain exactly one object page")
++    total_count = page.get("total_count")
++    if isinstance(total_count, bool) or not isinstance(total_count, int):
++        raise CarrierSelectionError(f"{field}.total_count must be an integer")
++    if total_count < 0 or total_count > MAX_WORKFLOW_RUNS:
++        raise CarrierSelectionError(
++            f"{field}.total_count must be within 0..{MAX_WORKFLOW_RUNS}"
++        )
++    runs = page.get("workflow_runs")
++    if not isinstance(runs, list):
++        raise CarrierSelectionError(f"{field}.workflow_runs must be an array")
++    if len(runs) != total_count:
++        raise CarrierSelectionError(
++            f"{field}.workflow_runs must contain its complete total_count"
++        )
++    if len(runs) > MAX_WORKFLOW_RUNS:
++        raise CarrierSelectionError(f"{field}.workflow_runs exceeds {MAX_WORKFLOW_RUNS}")
++    items: list[Mapping[str, Any]] = []
++    seen_ids: set[int] = set()
++    for run_index, run in enumerate(runs):
++        if not isinstance(run, Mapping):
++            raise CarrierSelectionError(f"{field}.workflow_runs[{run_index}] must be an object")
++        run_id = _int(run.get("id"), f"{field}.workflow_runs[{run_index}].id")
++        if run_id in seen_ids:
++            raise CarrierSelectionError(f"{field}.workflow_runs contains duplicate run id {run_id}")
++        seen_ids.add(run_id)
++        items.append(run)
++    return items
++
++
++def _status_and_conclusion(run: Mapping[str, Any], field: str) -> tuple[str, str | None]:
++    status = _text(run.get("status"), f"{field}.status")
++    if status in ACTIVE_STATUSES:
++        conclusion = run.get("conclusion")
++        if conclusion is not None:
++            raise CarrierSelectionError(
++                f"{field}.conclusion must be null while status is active"
++            )
++        return status, None
++    if status != "completed":
++        raise CarrierSelectionError(f"{field}.status is unknown: {status!r}")
++    conclusion = _text(run.get("conclusion"), f"{field}.conclusion")
++    if conclusion not in TERMINAL_CONCLUSIONS:
++        raise CarrierSelectionError(f"{field}.conclusion is unknown: {conclusion!r}")
++    return status, conclusion
++
++
++def _run_provenance(
++    run: Mapping[str, Any],
++    *,
++    field: str,
++    expected_name: str,
++    expected_path: str,
++    expected_repository: str,
++    expected_main_sha: str,
++) -> bool:
++    """Validate run shape and return whether it is bound to the exact Main."""
++
++    _int(run.get("id"), f"{field}.id")
++    _text(run.get("updated_at") or run.get("created_at"), f"{field}.timestamp")
++    name = _text(run.get("name"), f"{field}.name")
++    path_matches = _workflow_path_matches(
++        run.get("path"), expected_path, f"{field}.path"
++    )
++    repository = _repository(run.get("repository"), f"{field}.repository")
++    branch = _text(run.get("head_branch"), f"{field}.head_branch")
++    head_sha = _sha(run.get("head_sha"), f"{field}.head_sha")
++    return (
++        name == expected_name
++        and path_matches
++        and repository == expected_repository
++        and branch == "main"
++        and head_sha == expected_main_sha
++    )
++
++
++def _run_sort_key(run: Mapping[str, Any]) -> tuple[str, int]:
++    return (str(run.get("updated_at") or run.get("created_at") or ""), _int(run.get("id"), "run.id"))
++
++
++def select_carrier(
++    required_pages: Any,
++    bridge_pages: Any,
++    *,
++    expected_main_sha: str,
++    expected_repository: str,
++) -> dict[str, Any]:
++    """Return the next non-active exact upstream run, or an explicit NOOP."""
++
++    expected_main_sha = _sha(expected_main_sha, "expected_main_sha")
++    if REPOSITORY.fullmatch(_text(expected_repository, "expected_repository")) is None:
++        raise CarrierSelectionError("expected_repository must be an owner/name repository")
++    required_runs = _one_page(required_pages, "required review runs")
++    bridge_runs = _one_page(bridge_pages, "bridge runs")
++
++    latest_bridge_by_upstream: dict[int, Mapping[str, Any]] = {}
++    for index, run in enumerate(bridge_runs):
++        field = f"bridge runs.workflow_runs[{index}]"
++        title = _text(run.get("display_title"), f"{field}.display_title")
++        match = BRIDGE_TITLE.fullmatch(title)
++        if match is None:
++            raise CarrierSelectionError(f"{field}.display_title is not an exact bridge title")
++        upstream = int(match.group("upstream"))
++        _status_and_conclusion(run, field)
++        if not _run_provenance(
++            run,
++            field=field,
++            expected_name=BRIDGE_NAME,
++            expected_path=BRIDGE_PATH,
++            expected_repository=expected_repository,
++            expected_main_sha=expected_main_sha,
++        ):
++            continue
++        previous = latest_bridge_by_upstream.get(upstream)
++        if previous is None or _run_sort_key(run) > _run_sort_key(previous):
++            latest_bridge_by_upstream[upstream] = run
++
++    eligible: list[tuple[tuple[str, int], Mapping[str, Any], Mapping[str, Any] | None]] = []
++    for index, run in enumerate(required_runs):
++        field = f"required review runs.workflow_runs[{index}]"
++        run_id = _int(run.get("id"), f"{field}.id")
++        status, conclusion = _status_and_conclusion(run, field)
++        if not _run_provenance(
++            run,
++            field=field,
++            expected_name=REQUIRED_REVIEW_NAME,
++            expected_path=REQUIRED_REVIEW_PATH,
++            expected_repository=expected_repository,
++            expected_main_sha=expected_main_sha,
++        ):
++            continue
++        if status != "completed" or conclusion != "success":
++            continue
++        latest = latest_bridge_by_upstream.get(run_id)
++        if latest is not None and latest.get("status") in ACTIVE_STATUSES:
++            continue
++        last_carried = _run_sort_key(latest) if latest is not None else _run_sort_key(run)
++        eligible.append((last_carried, run, latest))
++
++    if not eligible:
++        return {
++            "schema": SCHEMA,
++            "state": "NOOP",
++            "first_blocker": "NO_REPLAYABLE_REQUIRED_REVIEW_RUN",
++            "eligible_required_review_runs": 0,
++            "expected_main_sha": expected_main_sha,
++            "expected_repository": expected_repository,
++            "productive_effect": False,
++            "effect_ack": "NOT_REQUIRED",
++        }
++
++    _last_carried, selected, previous_bridge = min(
++        eligible,
++        key=lambda item: (item[0], _int(item[1].get("id"), "required review run.id")),
++    )
++    result: dict[str, Any] = {
++        "schema": SCHEMA,
++        "state": "CANDIDATE",
++        "upstream_run_id": _int(selected.get("id"), "required review run.id"),
++        "eligible_required_review_runs": len(eligible),
++        "expected_main_sha": expected_main_sha,
++        "expected_repository": expected_repository,
++        "previous_bridge_run_id": (
++            _int(previous_bridge.get("id"), "bridge run.id") if previous_bridge is not None else None
++        ),
++        "productive_effect": False,
++        "effect_ack": "NOT_REQUIRED",
++    }
++    return result
++
++
++def _read(path: Path) -> Any:
++    return json.loads(path.read_text(encoding="utf-8"))
++
++
++def main(argv: Sequence[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--required-runs", type=Path, required=True)
++    parser.add_argument("--bridge-runs", type=Path, required=True)
++    parser.add_argument("--expected-main-sha", required=True)
++    parser.add_argument("--expected-repository", required=True)
++    parser.add_argument("--output", type=Path, required=True)
++    args = parser.parse_args(argv)
++    try:
++        value = select_carrier(
++            _read(args.required_runs),
++            _read(args.bridge_runs),
++            expected_main_sha=args.expected_main_sha,
++            expected_repository=args.expected_repository,
++        )
++        args.output.write_text(json.dumps(value, sort_keys=True, indent=2) + "\n", encoding="utf-8")
++    except (CarrierSelectionError, OSError, json.JSONDecodeError) as exc:
++        print(f"qikvrt scheduled bridge carrier error: {exc}", file=sys.stderr)
++        return 2
++    print(json.dumps(value, sort_keys=True))
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/tools/qikvrt_ruleset_effect_recovery.py b/tools/qikvrt_ruleset_effect_recovery.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..84be161afdc930295481d72f494494e472262f4e
+--- /dev/null
++++ b/tools/qikvrt_ruleset_effect_recovery.py
+@@ -0,0 +1,522 @@
++#!/usr/bin/env python3
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++"""Fail-closed classification for replaying an exact ruleset effect subject.
++
++The bridge sees only Actions run metadata until a prior effect terminates.  A
++terminal run is not automatically success or permission to repeat a
++conditional ruleset update: its immutable artifact receipt determines whether
++the bridge must stop, perform a GET-only recovery, or may start a fresh,
++independently-proven conditional reconcile.
++"""
++from __future__ import annotations
++
++import argparse
++import json
++import re
++import sys
++from collections.abc import Mapping, Sequence
++from pathlib import Path
++from typing import Any
++
++
++ACTIVE_STATUSES = frozenset({"requested", "pending", "queued", "in_progress", "waiting"})
++TERMINAL_CONCLUSIONS = frozenset(
++    {"success", "failure", "cancelled", "skipped", "timed_out", "action_required", "neutral", "stale", "startup_failure"}
++)
++RECOVERY_APPLY = "APPLY"
++RECOVERY_REOBSERVE = "REOBSERVE_UNCONFIRMED"
++VALID_RECOVERY_MODES = frozenset({RECOVERY_APPLY, RECOVERY_REOBSERVE})
++SCHEMA = "qikvrt_ruleset_effect_recovery_v1"
++CONTINUATION_RECEIPT_SCHEMA = "qikvrt_ruleset_effect_continuation_receipt_v1"
++AUTHORITY_COMPLETION_SCHEMA = "qikvrt_ruleset_authority_continuation_readback_v1"
++
++
++class EffectRecoveryError(ValueError):
++    """The remote run or receipt cannot support a safe retry decision."""
++
++
++def _positive_int(value: Any, label: str) -> int:
++    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
++        raise EffectRecoveryError(f"{label} must be a positive integer")
++    return value
++
++
++def _sha(value: str, label: str) -> str:
++    if not re.fullmatch(r"[0-9a-f]{40}", value):
++        raise EffectRecoveryError(f"{label} must be a lowercase 40-character SHA")
++    return value
++
++
++def _nonempty_text(value: Any, label: str) -> str:
++    if not isinstance(value, str) or not value.strip():
++        raise EffectRecoveryError(f"{label} must be a non-empty string")
++    return value
++
++
++def _bool(value: Any, label: str) -> bool:
++    if not isinstance(value, bool):
++        raise EffectRecoveryError(f"{label} must be a boolean")
++    return value
++
++
++def _hold_contract(value: Mapping[str, Any]) -> None:
++    """Require the complete D0=2 contract before a carrier may recover it."""
++
++    if value.get("verification_state") != "HOLD_UNVERIFIED":
++        raise EffectRecoveryError("terminal HOLD receipt verification_state is invalid")
++    if value.get("d0") != 2:
++        raise EffectRecoveryError("terminal HOLD receipt top-level d0 must be 2")
++    if value.get("continuation_required") is not True:
++        raise EffectRecoveryError("terminal HOLD receipt must require continuation")
++    _nonempty_text(value.get("first_blocker"), "terminal HOLD receipt.first_blocker")
++    _nonempty_text(value.get("next_action"), "terminal HOLD receipt.next_action")
++    hold_reason = value.get("hold_reason")
++    if not isinstance(hold_reason, Mapping):
++        raise EffectRecoveryError("terminal HOLD receipt.hold_reason must be an object")
++    if hold_reason.get("d0") != 2:
++        raise EffectRecoveryError("terminal HOLD receipt hold_reason.d0 must be 2")
++    for field in ("reason_code", "reason", "next_action"):
++        _nonempty_text(hold_reason.get(field), f"terminal HOLD receipt.hold_reason.{field}")
++    for field in ("subject", "owner", "retry_condition"):
++        if not isinstance(hold_reason.get(field), Mapping):
++            raise EffectRecoveryError(f"terminal HOLD receipt.hold_reason.{field} must be an object")
++    if not isinstance(hold_reason.get("evidence_refs"), list) or not hold_reason["evidence_refs"]:
++        raise EffectRecoveryError("terminal HOLD receipt.hold_reason.evidence_refs must be non-empty")
++
++
++def _authority_completion_contract(
++    completion: Any,
++    *,
++    repository: str,
++    pr_number: int,
++    head_sha: str,
++    main_sha: str,
++    upstream_run_id: int,
++    bridge_run_id: int | None,
++    recovery_mode: str,
++    recovery_of_effect_run_id: int | None,
++) -> bool:
++    if not isinstance(completion, Mapping):
++        return False
++    if (
++        completion.get("schema") != AUTHORITY_COMPLETION_SCHEMA
++        or completion.get("state") != "REQUEST_AUTHORITY"
++        or completion.get("repository") != repository
++        or completion.get("subject_mode") != "PR"
++        or completion.get("pr_number") != pr_number
++        or completion.get("head_sha") != head_sha
++        or completion.get("trusted_main_sha") != main_sha
++        or completion.get("upstream_run_id") != upstream_run_id
++        or completion.get("bridge_run_id") != bridge_run_id
++        or completion.get("recovery_mode") != recovery_mode
++        or completion.get("recovery_of_effect_run_id") != recovery_of_effect_run_id
++        or completion.get("hold_admissible") is not False
++        or completion.get("issue_comment_readback") is not True
++        or completion.get("exact_subject_readback") is not True
++        or completion.get("full_exact_subject_verified") is not True
++    ):
++        return False
++    return isinstance(completion.get("first_blocker"), str) and bool(completion["first_blocker"].strip())
++
++
++def _pages(value: Any) -> list[Mapping[str, Any]]:
++    if isinstance(value, Mapping):
++        pages = [value]
++        bounded_single_page = True
++    elif isinstance(value, list):
++        pages = value
++        bounded_single_page = False
++    else:
++        raise EffectRecoveryError("effect runs must be a paginated array or bounded object page")
++    items: list[Mapping[str, Any]] = []
++    for page_index, page in enumerate(pages):
++        if not isinstance(page, Mapping):
++            raise EffectRecoveryError(f"effect runs page {page_index} must be an object")
++        runs = page.get("workflow_runs")
++        if not isinstance(runs, list):
++            raise EffectRecoveryError(
++                f"effect runs page {page_index}.workflow_runs must be an array"
++            )
++        if bounded_single_page:
++            total_count = page.get("total_count")
++            if (
++                isinstance(total_count, bool)
++                or not isinstance(total_count, int)
++                or total_count < 0
++                or total_count > 100
++                or len(runs) != total_count
++            ):
++                raise EffectRecoveryError(
++                    "bounded effect runs page must be complete and within 100 runs"
++                )
++        for run_index, run in enumerate(runs):
++            if not isinstance(run, Mapping):
++                raise EffectRecoveryError(
++                    f"effect run {page_index}:{run_index} must be an object"
++                )
++            items.append(run)
++    return items
++
++
++def _effect_title_base(pr_number: int, head_sha: str, upstream_run_id: int) -> str:
++    return (
++        "QIKVRT ruleset effect mode=PR "
++        f"pr={pr_number} head={head_sha} upstream={upstream_run_id}"
++    )
++
++
++def _title_mode(title: str, base: str) -> tuple[int | None, str, int | None] | None:
++    """Return immutable bridge provenance for an exact title, if it matches."""
++
++    if title == base:
++        # Existing pre-provenance effect runs remain observable but never gain
++        # a fabricated attempt id.  Their receipt is still classified before
++        # any later carrier can act.
++        return None, RECOVERY_APPLY, None
++    if not title.startswith(base + " "):
++        return None
++    match = re.fullmatch(
++        re.escape(base)
++        + r" bridge=(?P<bridge>[1-9][0-9]*) carrier=(?:unbound|[1-9][0-9]*) recovery=(?P<recovery>APPLY|REOBSERVE_UNCONFIRMED) recovery_of=(?P<recovery_of>none|[1-9][0-9]*)(?: policy=none)?",
++        title,
++    )
++    if match is None:
++        raise EffectRecoveryError("exact effect title has malformed attempt provenance")
++    recovery_of = match.group("recovery_of")
++    if match.group("recovery") == RECOVERY_REOBSERVE and recovery_of == "none":
++        raise EffectRecoveryError("GET-only recovery title omitted its original uncertain effect")
++    return (
++        int(match.group("bridge")),
++        match.group("recovery"),
++        None if recovery_of == "none" else int(recovery_of),
++    )
++
++
++def select_run(
++    pages: Any,
++    *,
++    pr_number: int,
++    head_sha: str,
++    main_sha: str,
++    upstream_run_id: int,
++    expected_bridge_run_id: int | None = None,
++    expected_recovery_mode: str | None = None,
++) -> dict[str, Any]:
++    """Choose the authoritative active or latest terminal exact effect run."""
++
++    pr_number = _positive_int(pr_number, "pr_number")
++    upstream_run_id = _positive_int(upstream_run_id, "upstream_run_id")
++    if expected_bridge_run_id is not None:
++        expected_bridge_run_id = _positive_int(expected_bridge_run_id, "bridge_run_id")
++    if expected_recovery_mode is not None and expected_recovery_mode not in VALID_RECOVERY_MODES:
++        raise EffectRecoveryError("expected recovery mode is invalid")
++    _sha(head_sha, "head_sha")
++    _sha(main_sha, "main_sha")
++    base = _effect_title_base(pr_number, head_sha, upstream_run_id)
++    matches: list[tuple[int, Mapping[str, Any], int | None, str, int | None]] = []
++    for run in _pages(pages):
++        title = run.get("display_title")
++        if not isinstance(title, str):
++            continue
++        provenance = _title_mode(title, base)
++        if provenance is None:
++            continue
++        if run.get("head_branch") != "main" or run.get("head_sha") != main_sha:
++            raise EffectRecoveryError("exact effect title is not bound to trusted Main")
++        run_id = _positive_int(run.get("id"), "effect run.id")
++        status = run.get("status")
++        if not isinstance(status, str):
++            raise EffectRecoveryError("effect run.status must be a string")
++        bridge_run_id, recovery_mode, recovery_of_effect_run_id = provenance
++        if expected_bridge_run_id is not None and bridge_run_id != expected_bridge_run_id:
++            continue
++        if expected_recovery_mode is not None and recovery_mode != expected_recovery_mode:
++            continue
++        matches.append((run_id, run, bridge_run_id, recovery_mode, recovery_of_effect_run_id))
++
++    active = [entry for entry in matches if entry[1].get("status") in ACTIVE_STATUSES]
++    if active:
++        run_id, run, bridge_run_id, recovery_mode, recovery_of_effect_run_id = max(
++            active, key=lambda entry: entry[0]
++        )
++        return {
++            "schema": SCHEMA,
++            "state": "ACTIVE",
++            "effect_run_id": run_id,
++            "status": run["status"],
++            "bridge_run_id": bridge_run_id,
++            "recovery_mode": recovery_mode,
++            "recovery_of_effect_run_id": recovery_of_effect_run_id,
++        }
++
++    terminal = []
++    for entry in matches:
++        status = entry[1].get("status")
++        if status != "completed":
++            raise EffectRecoveryError(f"exact effect run has unsupported terminal status {status!r}")
++        conclusion = entry[1].get("conclusion")
++        if conclusion not in TERMINAL_CONCLUSIONS:
++            raise EffectRecoveryError("exact terminal effect run conclusion is invalid")
++        terminal.append(entry)
++    if not terminal:
++        return {
++            "schema": SCHEMA,
++            "state": "NO_MATCH",
++            "effect_run_id": None,
++            "bridge_run_id": None,
++            "recovery_mode": None,
++        }
++    run_id, run, bridge_run_id, recovery_mode, recovery_of_effect_run_id = max(
++        terminal, key=lambda entry: entry[0]
++    )
++    return {
++        "schema": SCHEMA,
++        "state": "TERMINAL",
++        "effect_run_id": run_id,
++        "status": run["status"],
++        "conclusion": run.get("conclusion"),
++        "bridge_run_id": bridge_run_id,
++        "recovery_mode": recovery_mode,
++        "recovery_of_effect_run_id": recovery_of_effect_run_id,
++    }
++
++
++def classify_terminal_receipt(
++    value: Any,
++    *,
++    recovery_mode: str,
++    bridge_run_id: int | None,
++    recovery_of_effect_run_id: int | None,
++    conclusion: str | None,
++    repository: str,
++    pr_number: int,
++    head_sha: str,
++    main_sha: str,
++    upstream_run_id: int,
++    completion: Any | None = None,
++) -> dict[str, Any]:
++    """Map a terminal artifact receipt to a safe next carrier operation."""
++
++    if recovery_mode not in VALID_RECOVERY_MODES:
++        raise EffectRecoveryError("terminal recovery mode is invalid")
++    if conclusion not in TERMINAL_CONCLUSIONS:
++        raise EffectRecoveryError("terminal effect conclusion is invalid")
++    pr_number = _positive_int(pr_number, "pr_number")
++    upstream_run_id = _positive_int(upstream_run_id, "upstream_run_id")
++    _sha(head_sha, "head_sha")
++    _sha(main_sha, "main_sha")
++    if not repository or "/" not in repository:
++        raise EffectRecoveryError("repository is invalid")
++    if not isinstance(value, Mapping):
++        raise EffectRecoveryError("terminal effect receipt must be an object")
++    if value.get("schema") != CONTINUATION_RECEIPT_SCHEMA:
++        raise EffectRecoveryError("terminal effect receipt schema is invalid")
++    if recovery_of_effect_run_id is not None:
++        _positive_int(recovery_of_effect_run_id, "recovery_of_effect_run_id")
++    if (
++        value.get("repository") != repository
++        or value.get("subject_mode") != "PR"
++        or value.get("pr_number") != pr_number
++        or value.get("head_sha") != head_sha
++        or value.get("trusted_main_sha") != main_sha
++        or value.get("upstream_run_id") != upstream_run_id
++    ):
++        raise EffectRecoveryError("terminal effect receipt exact subject provenance does not match")
++    if bridge_run_id is not None:
++        if _positive_int(bridge_run_id, "bridge_run_id") != bridge_run_id:
++            raise EffectRecoveryError("bridge_run_id is invalid")
++        if value.get("bridge_run_id") != bridge_run_id:
++            raise EffectRecoveryError("terminal effect receipt bridge provenance does not match run title")
++        if value.get("recovery_mode") != recovery_mode:
++            raise EffectRecoveryError("terminal effect receipt recovery provenance does not match run title")
++        if value.get("recovery_of_effect_run_id") != recovery_of_effect_run_id:
++            raise EffectRecoveryError("terminal effect receipt recovery origin does not match run title")
++    state = value.get("state")
++    if not isinstance(state, str):
++        raise EffectRecoveryError("terminal effect receipt.state must be a string")
++    _bool(value.get("effect_transport_attempted"), "terminal effect receipt.effect_transport_attempted")
++    _bool(value.get("effect_observed"), "terminal effect receipt.effect_observed")
++    _nonempty_text(value.get("mutation"), "terminal effect receipt.mutation")
++    exact_subject_verified = value.get("full_exact_subject_verified")
++    if not isinstance(exact_subject_verified, bool):
++        raise EffectRecoveryError("terminal effect receipt.full_exact_subject_verified must be a boolean")
++    recovery_rebind_required = value.get("recovery_rebind_required", False)
++    if not isinstance(recovery_rebind_required, bool):
++        raise EffectRecoveryError("terminal effect receipt.recovery_rebind_required must be a boolean")
++    if not exact_subject_verified and (
++        state != "HOLD" or recovery_rebind_required is not True
++    ):
++        raise EffectRecoveryError(
++            "terminal receipt without exact verification is not a safe terminal state"
++        )
++    if state in {"CURRENT", "APPLIED"} and conclusion == "success":
++        return {
++            "schema": SCHEMA,
++            "state": "NOOP",
++            "first_blocker": f"TERMINAL_EFFECT_RECEIPT_{state}",
++            "next_recovery_mode": None,
++        }
++    if state in {"CURRENT", "APPLIED"}:
++        # The reconciliation completed, but its later deduplicated receipt or
++        # status publication did not.  A new normal carrier starts with an
++        # idempotent GET and can repair that downstream effect.
++        return {
++            "schema": SCHEMA,
++            "state": "RETRY",
++            "first_blocker": "TERMINAL_EFFECT_COMPLETION_INCOMPLETE",
++            "next_recovery_mode": RECOVERY_APPLY,
++            "next_recovery_origin": "NONE",
++        }
++    if state == "REQUEST_AUTHORITY":
++        if (
++            value.get("verification_state") != "REQUEST_AUTHORITY_ACTIVE"
++            or value.get("continuation_required") is not True
++            or value.get("hold_admissible") is not False
++            or not isinstance(value.get("first_blocker"), str)
++            or not value["first_blocker"].strip()
++            or not isinstance(value.get("next_action"), str)
++            or not value["next_action"].strip()
++            or not _authority_completion_contract(
++                completion,
++                repository=repository,
++                pr_number=pr_number,
++                head_sha=head_sha,
++                main_sha=main_sha,
++                upstream_run_id=upstream_run_id,
++                bridge_run_id=bridge_run_id,
++                recovery_mode=recovery_mode,
++                recovery_of_effect_run_id=recovery_of_effect_run_id,
++            )
++        ):
++            return {
++                "schema": SCHEMA,
++                "state": "RETRY",
++                "first_blocker": "AUTHORITY_CONTINUATION_COMPLETION_UNPROVEN",
++                "next_recovery_mode": RECOVERY_APPLY,
++                "next_recovery_origin": "NONE",
++            }
++        return {
++            "schema": SCHEMA,
++            "state": "NOOP",
++            "first_blocker": "TERMINAL_EFFECT_RECEIPT_REQUEST_AUTHORITY",
++            "next_recovery_mode": None,
++        }
++    if state != "HOLD":
++        raise EffectRecoveryError(f"terminal effect receipt.state {state!r} is unsupported")
++
++    attempted = value.get("effect_transport_attempted")
++    observed = value.get("effect_observed")
++    if not isinstance(attempted, bool) or not isinstance(observed, bool):
++        raise EffectRecoveryError(
++            "terminal HOLD receipt must contain boolean transport and observation evidence"
++        )
++    _hold_contract(value)
++    observed_state = value.get("observed_state")
++    if observed_state is not None and not isinstance(observed_state, str):
++        raise EffectRecoveryError("terminal HOLD receipt.observed_state must be a string or null")
++
++    if recovery_mode == RECOVERY_REOBSERVE:
++        if recovery_of_effect_run_id is None:
++            raise EffectRecoveryError("terminal reobserve run omitted its original uncertain effect")
++        if observed_state == "DRIFT" and not attempted:
++            return {
++                "schema": SCHEMA,
++                "state": "RETRY",
++                "first_blocker": "REOBSERVE_PROVED_RULESET_DRIFT",
++                "next_recovery_mode": RECOVERY_APPLY,
++                "next_recovery_origin": "TERMINAL_EFFECT",
++            }
++        return {
++            "schema": SCHEMA,
++            "state": "RETRY",
++            "first_blocker": "REOBSERVE_TERMINAL_HOLD",
++            "next_recovery_mode": RECOVERY_REOBSERVE,
++            "next_recovery_origin": "TERMINAL_ORIGIN",
++        }
++    if attempted and not observed:
++        return {
++            "schema": SCHEMA,
++            "state": "RETRY",
++            "first_blocker": "PRIOR_RULESET_MUTATION_UNCONFIRMED",
++            "next_recovery_mode": RECOVERY_REOBSERVE,
++            "next_recovery_origin": "TERMINAL_EFFECT",
++        }
++    return {
++        "schema": SCHEMA,
++        "state": "RETRY",
++        "first_blocker": "TERMINAL_EFFECT_HOLD_REOBSERVED",
++        "next_recovery_mode": RECOVERY_APPLY,
++        "next_recovery_origin": "NONE",
++    }
++
++
++def _read(path: Path) -> Any:
++    return json.loads(path.read_text(encoding="utf-8"))
++
++
++def _write(path: Path, value: Mapping[str, Any]) -> None:
++    path.write_text(json.dumps(value, sort_keys=True, indent=2) + "\n", encoding="utf-8")
++
++
++def main(argv: Sequence[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    commands = parser.add_subparsers(dest="command", required=True)
++    select = commands.add_parser("select-run")
++    select.add_argument("--runs", type=Path, required=True)
++    select.add_argument("--pr", type=int, required=True)
++    select.add_argument("--head", required=True)
++    select.add_argument("--main", required=True)
++    select.add_argument("--upstream", type=int, required=True)
++    select.add_argument("--bridge-run-id", type=int)
++    select.add_argument("--recovery-mode", choices=sorted(VALID_RECOVERY_MODES))
++    select.add_argument("--output", type=Path, required=True)
++    receipt = commands.add_parser("classify-receipt")
++    receipt.add_argument("--receipt", type=Path, required=True)
++    receipt.add_argument("--recovery-mode", choices=sorted(VALID_RECOVERY_MODES), required=True)
++    receipt.add_argument("--bridge-run-id", type=int)
++    receipt.add_argument("--recovery-of-effect-run-id", type=int)
++    receipt.add_argument("--conclusion")
++    receipt.add_argument("--completion", type=Path)
++    receipt.add_argument("--repository", required=True)
++    receipt.add_argument("--pr", type=int, required=True)
++    receipt.add_argument("--head", required=True)
++    receipt.add_argument("--main", required=True)
++    receipt.add_argument("--upstream", type=int, required=True)
++    receipt.add_argument("--output", type=Path, required=True)
++    args = parser.parse_args(argv)
++    try:
++        if args.command == "select-run":
++            result = select_run(
++                _read(args.runs),
++                pr_number=args.pr,
++                head_sha=args.head,
++                main_sha=args.main,
++                upstream_run_id=args.upstream,
++                expected_bridge_run_id=args.bridge_run_id,
++                expected_recovery_mode=args.recovery_mode,
++            )
++        else:
++            result = classify_terminal_receipt(
++                _read(args.receipt),
++                recovery_mode=args.recovery_mode,
++                bridge_run_id=args.bridge_run_id,
++                recovery_of_effect_run_id=args.recovery_of_effect_run_id,
++                conclusion=args.conclusion,
++                repository=args.repository,
++                pr_number=args.pr,
++                head_sha=args.head,
++                main_sha=args.main,
++                upstream_run_id=args.upstream,
++                completion=_read(args.completion) if args.completion is not None else None,
++            )
++        _write(args.output, result)
++    except (EffectRecoveryError, OSError, json.JSONDecodeError) as exc:
++        print(f"qikvrt ruleset effect recovery error: {exc}", file=sys.stderr)
++        return 2
++    print(json.dumps(result, sort_keys=True))
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/tools/qikvrt_ruleset_reconcile.py b/tools/qikvrt_ruleset_reconcile.py
+index 98947b7c11c31c2d078db1d08b6128c7ef49d237..5662759a3d6a794532b798e873a7360b267b7b49 100644
+--- a/tools/qikvrt_ruleset_reconcile.py
++++ b/tools/qikvrt_ruleset_reconcile.py
+@@ -10,21 +10,67 @@ import json
+ import os
+ import pathlib
+ import sys
++import time
+ import urllib.error
+ import urllib.request
+ from collections.abc import Mapping, Sequence
+ from typing import Any
+ 
++from tools.qikvrt_effect_attempts import EffectAttemptError, append_attempt
++
+ 
+ ROOT = pathlib.Path(__file__).resolve().parents[1]
+ POLICY_PATH = ROOT / "policy/GITHUB_MAIN_RULESET_V1.json"
+ SCHEMA = "qikvrt_github_main_ruleset_reconciliation_v1"
++DEFAULT_REPOSITORY = "Goldkelch/qik-vrt"
++DEFAULT_RULESET_ID = 19344903
++GITHUB_INSTALLATION_RATE_LIMIT_MARKER = "API rate limit exceeded for installation"
++GITHUB_READ_RATE_LIMIT_BACKOFF_SECONDS = (0, 15, 45)
+ 
+ 
+ class RulesetBlock(RuntimeError):
+     pass
+ 
+ 
++class RulesetAuthorityRequired(RulesetBlock):
++    """The sole class that may request credential-provisioning authority."""
++
++
++class GitHubInstallationRateLimit(RulesetBlock):
++    """A bounded GitHub-App read exhausted the shared installation quota.
++
++    A conditional PUT is deliberately never retried.  If its response is the
++    quota marker, the caller performs one bounded readback and either proves
++    the effect or emits a D0=2 HOLD whose transport state is explicit.
++    """
++
++    def __init__(
++        self,
++        *,
++        mutation: str = "NONE",
++        effect_transport_attempted: bool = False,
++    ) -> None:
++        super().__init__("GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED")
++        self.mutation = mutation
++        self.effect_transport_attempted = effect_transport_attempted
++
++
++class RulesetMutationUncertain(RulesetBlock):
++    """One conditional PUT may have reached GitHub but lacks exact proof.
++
++    A successful client return proves only that the request completed, not
++    that a later readback is available.  Likewise, a transport/API failure
++    while sending a PUT is not a licence to send another one.  Preserve that
++    distinction all the way to the D0=2 receipt.
++    """
++
++    def __init__(self, blocker: str, *, detail: str) -> None:
++        super().__init__(blocker)
++        self.mutation = blocker
++        self.effect_transport_attempted = True
++        self.detail = detail
++
++
+ def canonical_bytes(value: Any) -> bytes:
+     return (
+         json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False)
+@@ -40,9 +86,9 @@ def load_policy(path: pathlib.Path = POLICY_PATH) -> dict[str, Any]:
+     value = json.loads(path.read_text(encoding="utf-8"))
+     if value.get("schema") != "qikvrt_github_main_ruleset_v1":
+         raise RulesetBlock("ruleset policy schema mismatch")
+-    if value.get("repository") != "Goldkelch/qik-vrt":
++    if value.get("repository") != DEFAULT_REPOSITORY:
+         raise RulesetBlock("ruleset policy repository mismatch")
+-    if value.get("ruleset_id") != 19344903:
++    if value.get("ruleset_id") != DEFAULT_RULESET_ID:
+         raise RulesetBlock("ruleset policy id mismatch")
+     return value
+ 
+@@ -128,6 +174,9 @@ def _request(
+     payload: Mapping[str, Any] | None = None,
+     etag: str | None = None,
+ ) -> tuple[dict[str, Any], str | None]:
++    normalized_method = method.upper()
++    if normalized_method not in {"GET", "PUT"}:
++        raise RulesetBlock(f"ruleset API method {method!r} is outside the exact allowlist")
+     headers = {
+         "Accept": "application/vnd.github+json",
+         "Authorization": "Bearer " + token,
+@@ -138,20 +187,105 @@ def _request(
+     data = canonical_bytes(payload) if payload is not None else None
+     if data is not None:
+         headers["Content-Type"] = "application/json"
+-    request = urllib.request.Request(url, data=data, method=method, headers=headers)
++    delays = GITHUB_READ_RATE_LIMIT_BACKOFF_SECONDS if normalized_method == "GET" else (0,)
++    for attempt, delay in enumerate(delays):
++        if delay:
++            time.sleep(delay)
++        request = urllib.request.Request(url, data=data, method=normalized_method, headers=headers)
++        try:
++            with urllib.request.urlopen(request, timeout=30) as response:
++                value = json.load(response)
++                response_etag = response.headers.get("ETag")
++        except urllib.error.HTTPError as exc:
++            detail = exc.read().decode("utf-8", errors="replace")
++            if GITHUB_INSTALLATION_RATE_LIMIT_MARKER in detail:
++                if normalized_method == "GET" and attempt + 1 < len(delays):
++                    continue
++                raise GitHubInstallationRateLimit(
++                    mutation=("PUT_UNCONFIRMED_RATE_LIMIT" if normalized_method == "PUT" else "NONE"),
++                    effect_transport_attempted=(normalized_method == "PUT"),
++                ) from exc
++            raise RulesetBlock(f"GitHub ruleset API HTTP {exc.code}: {detail}") from exc
++        except (urllib.error.URLError, OSError, ValueError) as exc:
++            raise RulesetBlock(
++                f"GitHub ruleset API {normalized_method} transport or response failure: {exc}"
++            ) from exc
++        if not isinstance(value, dict):
++            raise RulesetBlock("GitHub ruleset API returned a non-object")
++        return value, response_etag
++    raise AssertionError("bounded ruleset read retry loop exhausted without a result")
++
++
++def _record_put_intent(
++    ledger: pathlib.Path | None,
++    *,
++    repository: str,
++    ruleset_id: int,
++    pre_state_sha256: str,
++) -> None:
++    """Durably record the one conditional PUT before it can leave the process.
++
++    The process may die between starting ``urlopen`` and writing the ordinary
++    reconciliation receipt.  This intent is therefore written first and is
++    never overwritten.  A later exact readback appends observation evidence.
++    """
++
++    if ledger is None:
++        return
++    try:
++        append_attempt(
++            ledger,
++            {
++                "kind": "ruleset_put",
++                "endpoint_or_subject": f"repos/{repository}/rulesets/{ruleset_id}",
++                "mutation": "PUT",
++                "effect_transport_attempted": True,
++                "transport_outcome": "ATTEMPTED_PENDING_READBACK",
++                "effect_observed": False,
++                "evidence_ref": "ruleset-put-intent:" + pre_state_sha256,
++            },
++        )
++    except (EffectAttemptError, OSError, ValueError) as exc:
++        raise RulesetBlock(f"ruleset PUT intent ledger could not be written: {exc}") from exc
++
++
++def _record_put_observation(
++    ledger: pathlib.Path | None,
++    *,
++    repository: str,
++    ruleset_id: int,
++    put_response: str,
++) -> None:
++    """Append durable proof that the already-attempted PUT became CURRENT."""
++
++    if ledger is None:
++        return
+     try:
+-        with urllib.request.urlopen(request, timeout=30) as response:
+-            value = json.load(response)
+-            response_etag = response.headers.get("ETag")
+-    except urllib.error.HTTPError as exc:
+-        detail = exc.read().decode("utf-8", errors="replace")
+-        raise RulesetBlock(f"GitHub ruleset API HTTP {exc.code}: {detail}") from exc
+-    if not isinstance(value, dict):
+-        raise RulesetBlock("GitHub ruleset API returned a non-object")
+-    return value, response_etag
+-
+-
+-def reconcile(token: str, policy: Mapping[str, Any]) -> dict[str, Any]:
++        append_attempt(
++            ledger,
++            {
++                "kind": "ruleset_put_readback",
++                "endpoint_or_subject": f"repos/{repository}/rulesets/{ruleset_id}",
++                "mutation": "NONE",
++                "effect_transport_attempted": False,
++                "transport_outcome": "OBSERVED_READBACK",
++                "effect_observed": True,
++                "evidence_ref": "ruleset-readback:" + put_response,
++            },
++        )
++    except (EffectAttemptError, OSError, ValueError) as exc:
++        raise RulesetMutationUncertain(
++            "PUT_UNCONFIRMED_LEDGER_WRITE_FAILED",
++            detail=str(exc),
++        ) from exc
++
++
++def reconcile(
++    token: str,
++    policy: Mapping[str, Any],
++    *,
++    effect_attempt_ledger: pathlib.Path | None = None,
++) -> dict[str, Any]:
+     repository = policy["repository"]
+     ruleset_id = policy["ruleset_id"]
+     url = f"https://api.github.com/repos/{repository}/rulesets/{ruleset_id}"
+@@ -166,48 +300,201 @@ def reconcile(token: str, policy: Mapping[str, Any]) -> dict[str, Any]:
+     conditional_etag = reobserved_etag or initial_etag
+     if not conditional_etag:
+         raise RulesetBlock("ruleset response omitted ETag; conditional update unavailable")
+-    _request(
+-        "PUT",
+-        url,
+-        token,
+-        payload=desired_payload(policy),
+-        etag=conditional_etag,
++    _record_put_intent(
++        effect_attempt_ledger,
++        repository=repository,
++        ruleset_id=ruleset_id,
++        pre_state_sha256=plan["pre_state_sha256"],
+     )
+-    observed, _etag = _request("GET", url, token)
+-    final = evaluate(observed, policy)
++    try:
++        _request(
++            "PUT",
++            url,
++            token,
++            payload=desired_payload(policy),
++            etag=conditional_etag,
++        )
++    except GitHubInstallationRateLimit as exc:
++        # The request may have reached GitHub despite its quota response.  Do
++        # not repeat the mutation.  One bounded GET is the only admissible way
++        # to distinguish a proven CURRENT effect from an uncertain transport.
++        if not exc.effect_transport_attempted:
++            raise
++        try:
++            observed, _etag = _request("GET", url, token)
++            final = evaluate(observed, policy)
++        except GitHubInstallationRateLimit as readback_exc:
++            # The final GET uses the bounded 0/15/45 schedule itself.  If it
++            # remains quota-limited, retain the already attempted PUT rather
++            # than accidentally reporting a read-only failure.
++            raise GitHubInstallationRateLimit(
++                mutation="PUT_UNCONFIRMED_RATE_LIMIT",
++                effect_transport_attempted=True,
++            ) from readback_exc
++        except RulesetBlock as readback_exc:
++            raise RulesetMutationUncertain(
++                "PUT_UNCONFIRMED_READBACK_FAILED",
++                detail=str(readback_exc),
++            ) from readback_exc
++        if final["state"] != "CURRENT":
++            raise GitHubInstallationRateLimit(
++                mutation="PUT_UNCONFIRMED_RATE_LIMIT",
++                effect_transport_attempted=True,
++            ) from exc
++        _record_put_observation(
++            effect_attempt_ledger,
++            repository=repository,
++            ruleset_id=ruleset_id,
++            put_response="INSTALLATION_RATE_LIMIT_REOBSERVED_CURRENT",
++        )
++        return {
++            **final,
++            "pre_state_sha256": plan["pre_state_sha256"],
++            "mutation": "PUT",
++            "effect_observed": True,
++            "effect_transport_attempted": True,
++            "put_response": "INSTALLATION_RATE_LIMIT_REOBSERVED_CURRENT",
++        }
++    except RulesetBlock as exc:
++        # A failed PUT response can still leave the server-side state
++        # indeterminate.  It is a one-attempt mutation, never a retry loop.
++        raise RulesetMutationUncertain(
++            "PUT_UNCONFIRMED_TRANSPORT_FAILED",
++            detail=str(exc),
++        ) from exc
++    try:
++        observed, _etag = _request("GET", url, token)
++        final = evaluate(observed, policy)
++    except GitHubInstallationRateLimit as exc:
++        raise GitHubInstallationRateLimit(
++            mutation="PUT_UNCONFIRMED_RATE_LIMIT",
++            effect_transport_attempted=True,
++        ) from exc
++    except RulesetBlock as exc:
++        raise RulesetMutationUncertain(
++            "PUT_UNCONFIRMED_READBACK_FAILED",
++            detail=str(exc),
++        ) from exc
+     if final["state"] != "CURRENT":
+-        raise RulesetBlock("ruleset update was not confirmed by exact readback")
++        raise RulesetMutationUncertain(
++            "PUT_UNCONFIRMED_NOT_CURRENT",
++            detail="ruleset update was not confirmed by exact readback",
++        )
++    _record_put_observation(
++        effect_attempt_ledger,
++        repository=repository,
++        ruleset_id=ruleset_id,
++        put_response="CURRENT",
++    )
+     return {
+         **final,
+         "pre_state_sha256": plan["pre_state_sha256"],
+         "mutation": "PUT",
++        "effect_transport_attempted": True,
+         "effect_observed": True,
+     }
+ 
+ 
++def reobserve(token: str, policy: Mapping[str, Any]) -> dict[str, Any]:
++    """Read and evaluate the exact ruleset without admitting a mutation.
++
++    This is the only recovery operation allowed after a previous conditional
++    PUT may have reached GitHub but its readback was unavailable.  A later
++    carrier may choose an ordinary reconcile only after this isolated
++    observation proves the current server state is still DRIFT.
++    """
++
++    repository = policy["repository"]
++    ruleset_id = policy["ruleset_id"]
++    url = f"https://api.github.com/repos/{repository}/rulesets/{ruleset_id}"
++    observed, _etag = _request("GET", url, token)
++    return evaluate(observed, policy)
++
++
++def authority_override() -> None:
++    """Classify workflow-level App provisioning before an API call is attempted."""
++    state = os.environ.get("QIKVRT_RULESET_AUTHORITY_STATE", "")
++    if not state:
++        return
++    blocker = os.environ.get("QIKVRT_RULESET_AUTHORITY_BLOCKER", "")
++    if not blocker:
++        raise RulesetBlock("ruleset authority override omitted its exact blocker")
++    if state == "REQUEST_AUTHORITY":
++        raise RulesetAuthorityRequired(blocker)
++    if state == "HOLD":
++        raise RulesetBlock(blocker)
++    raise RulesetBlock(f"unknown ruleset authority override state: {state}")
++
++
++def _hold_reason(
++    *,
++    repository: str,
++    ruleset_id: int,
++    blocker: str,
++    detail: str,
++    retry_predicate: str,
++    next_action: str = "REOBSERVE_EXACT_RULESET_API_AND_READBACK_EVIDENCE",
++) -> dict[str, Any]:
++    """Produce the repository-wide D0=2 contract for failed rule observation."""
++
++    return {
++        "reason_code": blocker,
++        "reason": detail,
++        "subject": {
++            "repository": repository,
++            "kind": "repository",
++            "identifier": f"ruleset:{ruleset_id}",
++            "head_sha": None,
++        },
++        "evidence_refs": [f"ruleset:{ruleset_id}", "ruleset-reconcile:api-readback"],
++        "owner": {
++            "role": "EXACT_SUBJECT_OBSERVER",
++            "actor": "qikvrt-autonomous-ruleset-effect-loop",
++        },
++        "retry_condition": {
++            "event": "NONSELF_REPOSITORY_INTERRUPT",
++            "predicate": retry_predicate,
++        },
++        "next_action": next_action,
++        "d0": 2,
++    }
++
++
+ def main(argv: Sequence[str] | None = None) -> int:
+     parser = argparse.ArgumentParser(description=__doc__)
+     parser.add_argument("--snapshot", type=pathlib.Path)
+-    parser.add_argument("--apply", action="store_true")
++    operation = parser.add_mutually_exclusive_group()
++    operation.add_argument("--apply", action="store_true")
++    operation.add_argument("--reobserve", action="store_true")
+     parser.add_argument("--receipt", type=pathlib.Path)
++    parser.add_argument("--effect-attempt-ledger", type=pathlib.Path)
+     args = parser.parse_args(argv)
+-    policy = load_policy()
++    policy: dict[str, Any] | None = None
+     try:
+-        if args.apply:
++        policy = load_policy()
++        if args.apply or args.reobserve:
++            authority_override()
+             token = os.environ.get("QIKVRT_RULESET_ADMIN_TOKEN", "")
+             if not token:
+-                raise RulesetBlock("QIKVRT_RULESET_ADMIN_TOKEN is unavailable")
+-            result = reconcile(token, policy)
++                raise RulesetAuthorityRequired("QIKVRT_RULESET_ADMIN_TOKEN is unavailable")
++            if args.apply:
++                result = reconcile(
++                    token,
++                    policy,
++                    effect_attempt_ledger=args.effect_attempt_ledger,
++                )
++            else:
++                result = reobserve(token, policy)
+         else:
+             if args.snapshot is None:
+-                raise RulesetBlock("--snapshot is required without --apply")
++                raise RulesetBlock("--snapshot is required without --apply or --reobserve")
+             current = json.loads(args.snapshot.read_text(encoding="utf-8"))
+             result = evaluate(_mapping(current, "ruleset snapshot"), policy)
+-    except (OSError, ValueError, json.JSONDecodeError, RulesetBlock) as exc:
++    except RulesetAuthorityRequired as exc:
+         result = {
+             "schema": SCHEMA,
+-            "repository": policy["repository"],
+-            "ruleset_id": policy["ruleset_id"],
++            "repository": (policy or {}).get("repository", DEFAULT_REPOSITORY),
++            "ruleset_id": (policy or {}).get("ruleset_id", DEFAULT_RULESET_ID),
+             "state": "REQUEST_AUTHORITY",
+             "first_blocker": str(exc),
+             "next_action": "ROUTE_RULESET_ADMIN_AUTHORITY_THROUGH_REPOSITORY_CARRIER",
+@@ -216,6 +503,98 @@ def main(argv: Sequence[str] | None = None) -> int:
+             "effect_observed": False,
+         }
+         exit_code = 2
++    except GitHubInstallationRateLimit as exc:
++        repository = (policy or {}).get("repository", DEFAULT_REPOSITORY)
++        ruleset_id = (policy or {}).get("ruleset_id", DEFAULT_RULESET_ID)
++        blocker = "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED"
++        result = {
++            "schema": SCHEMA,
++            "repository": repository,
++            "ruleset_id": ruleset_id,
++            "state": "HOLD",
++            "verification_state": "HOLD_UNVERIFIED",
++            "first_blocker": blocker,
++            "hold_reason": _hold_reason(
++                repository=repository,
++                ruleset_id=ruleset_id,
++                blocker=blocker,
++                detail=(
++                    "GitHub App installation quota remained exhausted after "
++                    "the bounded 0/15/45-second read policy"
++                ),
++                retry_predicate=(
++                    "the exact GitHub App installation quota is no longer exhausted"
++                ),
++            ),
++            "d0": 2,
++            "next_action": "REOBSERVE_EXACT_RULESET_API_AND_READBACK_EVIDENCE",
++            "continuation_required": True,
++            "mutation": exc.mutation,
++            "effect_transport_attempted": exc.effect_transport_attempted,
++            "effect_observed": False,
++        }
++        exit_code = 2
++    except RulesetMutationUncertain as exc:
++        repository = (policy or {}).get("repository", DEFAULT_REPOSITORY)
++        ruleset_id = (policy or {}).get("ruleset_id", DEFAULT_RULESET_ID)
++        blocker = str(exc)
++        result = {
++            "schema": SCHEMA,
++            "repository": repository,
++            "ruleset_id": ruleset_id,
++            "state": "HOLD",
++            "verification_state": "HOLD_UNVERIFIED",
++            "first_blocker": blocker,
++            "hold_reason": _hold_reason(
++                repository=repository,
++                ruleset_id=ruleset_id,
++                blocker=blocker,
++                detail=(
++                    "A single conditional ruleset PUT may have reached GitHub, "
++                    "but exact post-mutation state was not proven: " + exc.detail
++                ),
++                retry_predicate=(
++                    "the exact ruleset state can be reobserved without issuing "
++                    "another mutation"
++                ),
++            ),
++            "d0": 2,
++            "next_action": "REOBSERVE_EXACT_RULESET_API_AND_READBACK_EVIDENCE",
++            "continuation_required": True,
++            "mutation": exc.mutation,
++            "effect_transport_attempted": True,
++            "effect_observed": False,
++        }
++        exit_code = 2
++    except (OSError, ValueError, json.JSONDecodeError, RulesetBlock) as exc:
++        repository = (policy or {}).get("repository", DEFAULT_REPOSITORY)
++        ruleset_id = (policy or {}).get("ruleset_id", DEFAULT_RULESET_ID)
++        blocker = str(exc)
++        result = {
++            "schema": SCHEMA,
++            "repository": repository,
++            "ruleset_id": ruleset_id,
++            "state": "HOLD",
++            "verification_state": "HOLD_UNVERIFIED",
++            "first_blocker": blocker,
++            "hold_reason": _hold_reason(
++                repository=repository,
++                ruleset_id=ruleset_id,
++                blocker=blocker,
++                detail="Exact ruleset reconciliation could not complete before any further effect",
++                retry_predicate=(
++                    "the exact ruleset API, policy, or authority blocker is reobserved "
++                    "as resolved for the same repository"
++                ),
++            ),
++            "d0": 2,
++            "next_action": "REOBSERVE_EXACT_RULESET_API_AND_READBACK_EVIDENCE",
++            "continuation_required": True,
++            "mutation": "NONE",
++            "effect_transport_attempted": False,
++            "effect_observed": False,
++        }
++        exit_code = 2
+     else:
+         exit_code = 0 if result["state"] == "CURRENT" else 10
+     raw = canonical_bytes(result)
+diff --git a/tools/qikvrt_workflow_executor.py b/tools/qikvrt_workflow_executor.py
+index d36eea65a23efd67ad6f1d074e9906f6083cc99c..4e9bc4feea6f03782c768802d34871485ebfc2b1 100644
+--- a/tools/qikvrt_workflow_executor.py
++++ b/tools/qikvrt_workflow_executor.py
+@@ -141,8 +141,10 @@ def _validate_contract_shape(contract: Mapping[str, Any], root: Path) -> None:
+             raise ExecutorBlock(f"contract-required file is absent: {relative_path}")
+     if executor.get("observation_mode") != "REPOSITORY_NATIVE_EXACT_HEAD_BOUND":
+         raise ExecutorBlock("executor observation mode is not exact-head bound")
+-    if executor.get("stateful_writes") != "ACTION_ARTIFACTS_ONLY":
+-        raise ExecutorBlock("executor stateful write boundary is not artifact-only")
++    if executor.get("stateful_writes") != "EXECUTOR_ACTION_ARTIFACTS_ONLY":
++        raise ExecutorBlock("executor stateful write boundary is not executor-artifact-only")
++    if executor.get("repository_writer_inventory") != "dispatch_policy.writer_workflow_names":
++        raise ExecutorBlock("executor does not bind the repository writer inventory")
+     if _string_list(executor.get("single_writer_order"), "executor single writer order") != [
+         "AUTHORITY",
+         "MIRROR",
+@@ -184,6 +186,36 @@ def _validate_contract_shape(contract: Mapping[str, Any], root: Path) -> None:
+         if item.get("external_effect") != "NONE" or item.get("is_writer") is not False:
+             raise ExecutorBlock("authorized workflow exceeds the no-effect observer boundary")
+ 
++    operator_only = _mapping(
++        policy.get("operator_dispatch_only_workflows"), "operator dispatch-only workflows"
++    )
++    if operator_only.get("outside_self_heal_and_gatewatch") is not True:
++        raise ExecutorBlock("operator dispatch-only workflows must remain outside self-heal and gatewatch")
++    _string(operator_only.get("reason"), "operator dispatch-only reason")
++    operator_entries = operator_only.get("workflows")
++    if not isinstance(operator_entries, list) or not operator_entries:
++        raise ExecutorBlock("operator dispatch-only workflows must be a non-empty list")
++    authorized_names = {
++        _string(_mapping(entry, "authorized workflow").get("workflow_name"), "authorized workflow name")
++        for entry in allowed
++    }
++    operator_names: set[str] = set()
++    for entry in operator_entries:
++        item = _mapping(entry, "operator dispatch-only workflow")
++        path = _string(item.get("workflow_path"), "operator dispatch-only workflow path")
++        name = _string(item.get("workflow_name"), "operator dispatch-only workflow name")
++        if not path.startswith(".github/workflows/") or not (root / path).is_file():
++            raise ExecutorBlock("operator dispatch-only workflow path is invalid")
++        if name in operator_names or name in authorized_names:
++            raise ExecutorBlock("operator dispatch-only workflow overlaps an automated target")
++        operator_names.add(name)
++
++    reflexive = _mapping(contract.get("reflexive_deadlock_prevention"), "reflexive deadlock prevention")
++    gatewatch = _mapping(reflexive.get("gatewatch"), "gatewatch")
++    observed = set(_string_list(gatewatch.get("observed_workflow_names"), "gatewatch observed workflows"))
++    if operator_names & observed:
++        raise ExecutorBlock("operator dispatch-only workflow is incorrectly in gatewatch")
++
+     boundaries = _mapping(contract.get("boundaries"), "executor boundaries")
+     if boundaries.get("direct_repository_mutation") != "FORBIDDEN":
+         raise ExecutorBlock("executor permits direct repository mutation")
