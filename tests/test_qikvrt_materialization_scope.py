@@ -33,6 +33,7 @@ class MaterializationScopeTests(unittest.TestCase):
             ]
         )
         self.assertFalse(result["full"])
+        self.assertFalse(result["materialize_all_optional_domains"])
         self.assertFalse(result["formalization"])
         self.assertFalse(result["content_disposition"])
         self.assertFalse(result["aphorism"])
@@ -61,21 +62,34 @@ class MaterializationScopeTests(unittest.TestCase):
         self.assertFalse(aphorism["content_disposition"])
         self.assertTrue(aphorism["aphorism"])
 
-    def test_control_or_unsafe_path_fails_safe_to_full_materialization(self) -> None:
+    def test_control_path_requires_full_verification_without_unrelated_materialization(self) -> None:
         for path in (
             ".github/workflows/qikvrt_batch04_integrity.yml",
             ".github/workflows/qikvrt_batch003_remaining_disposition.yml",
-            "../ambiguous",
+            "tools/qikvrt_materialization_scope.py",
+            "tests/test_qikvrt_materialization_scope.py",
         ):
             result = MODULE.classify([path])
             self.assertTrue(result["full"], path)
-            self.assertTrue(result["formalization"], path)
-            self.assertTrue(result["content_disposition"], path)
-            self.assertTrue(result["aphorism"], path)
+            self.assertFalse(result["materialize_all_optional_domains"], path)
+            self.assertFalse(result["formalization"], path)
+            self.assertFalse(result["content_disposition"], path)
+            self.assertFalse(result["aphorism"], path)
+            self.assertTrue(result["integrity"], path)
+            self.assertTrue(result["complete_repository_gates"], path)
+
+    def test_unsafe_path_fails_safe_to_all_optional_materialization(self) -> None:
+        result = MODULE.classify(["../ambiguous"])
+        self.assertTrue(result["full"])
+        self.assertTrue(result["materialize_all_optional_domains"])
+        self.assertTrue(result["formalization"])
+        self.assertTrue(result["content_disposition"])
+        self.assertTrue(result["aphorism"])
 
     def test_explicit_full_mode_preserves_manual_and_ambiguous_recovery(self) -> None:
         result = MODULE.classify([], force_full=True)
         self.assertTrue(result["full"])
+        self.assertTrue(result["materialize_all_optional_domains"])
         self.assertTrue(result["formalization"])
         self.assertTrue(result["content_disposition"])
         self.assertTrue(result["aphorism"])
