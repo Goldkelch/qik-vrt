@@ -78,5 +78,59 @@
     "later_is_better": false,
     "perfect_optimum_policy": "policy/PERFECT_OPTIMUM_V1.json",
     "arbitrary_unregistered_self_modification": "HOLD"
+  },
+  "base_algorithm": {
+    "id": "CORRECT_FAILURE_THEN_CAUSE_RECURSIVELY_V1",
+    "authority": "Ingolf Lohmann, Product Owner: September 8, 2026 debugging directive",
+    "mandatory_scope": "Every detected error and blocker, including repair failures, missing evidence and unavailable capabilities",
+    "steps": [
+      "CORRECT_FAILURE",
+      "IDENTIFY_AND_CORRECT_CAUSE",
+      "VERIFY_REGRESSION",
+      "REOBSERVE_ORIGINAL_FLOW"
+    ],
+    "repeat": "Apply the same work unit contract to each discovered cause, prerequisite blocker and follow-up failure until all known obligations in the bound scope are closed by evidence",
+    "runtime": "FINITE_EVENT_DRIVEN_WORKLIST",
+    "maximum_work_units_per_reducer_call": 4096,
+    "overflow": "HOLD_INVENTORY_UNVERIFIED_WITHOUT_DISCARDING_BACKLOG",
+    "symptom_correction_is_cause_correction": false,
+    "command_success_is_effect_readback": false,
+    "local_green_is_global_repair_completion": false,
+    "reobserve_after_failed_mutation": true,
+    "retry_without_material_state_change": "FORBIDDEN",
+    "independent_work": "Remain eligible; an unavailable dependency blocks only its dependent work units",
+    "causality": "Explicit blocked_by/causes references and receipt after links; never timestamps, PR numbers or input order",
+    "closure": "Complete freshly observed inventory, exact current base/head/tree receipts for symptom and cause correction, identified causal mechanism, same-test red/green regression, original-flow readback and no open descendant",
+    "missing_inventory": "UNKNOWN_NOT_ZERO",
+    "prior_obligations": "Persist and reconcile existing work-unit/ledger/artifact receipts; a later clean probe or NOOP never deletes an unresolved cause",
+    "subject_mutation": "Reset P2+ and require fresh downstream bindings; preserve predecessor records as history only",
+    "capability_boundary": "Investigate and repair using already authorized capabilities; otherwise retain the exact open obligation and REQUEST_AUTHORITY without impersonation, blind retry or invented effects",
+    "effect_authority": "Reuse existing registered writers and exact-scope delegations; this algorithm grants no new write, signing, administrative or external authority",
+    "precedence_policy": "policy/QIKVRT_EXECUTION_PRECEDENCE_V1.json",
+    "event_ingress": {
+      "mode": "EXACT_NATIVE_REPOSITORY_EVENT_ONLY",
+      "workflow_path": ".github/workflows/qikvrt_zero_bug_continuous.yml",
+      "accepted_sources": [
+        "pull_request",
+        "push",
+        "DIRECT_AUTHORIZED_REQUEST"
+      ],
+      "forbidden_sources": [
+        "schedule",
+        "workflow_dispatch",
+        "repository_dispatch",
+        "api_workflow_dispatch",
+        "polling",
+        "retry_without_new_event"
+      ],
+      "no_new_event_state": "HOLD_UNVERIFIED_AWAIT_NEXT_NATIVE_EVENT",
+      "synthetic_reentry": "FORBIDDEN",
+      "periodic_automation": "FORBIDDEN"
+    },
+    "implementation": [
+      "tools/qikvrt_zero_bug.py:recursive_debugging_plan",
+      "tools/qikvrt_autonomous_self_heal.py:repair_handler",
+      "tools/qikvrt_autonomous_self_heal.py:execute"
+    ]
   }
 }
