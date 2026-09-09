@@ -2,32 +2,40 @@
 name: QIKVRT PR integrity persistence bootstrap
 
 on:
-  push:
+  pull_request:
     branches:
-      - fix/autonomy-root-cause-quota-8930ef47
+      - main
+    types:
+      - synchronize
 
 permissions:
   contents: write
 
 concurrency:
-  group: qikvrt-pr-integrity-bootstrap-${{ github.ref }}
+  group: qikvrt-pr-integrity-bootstrap-${{ github.event.pull_request.head.ref || github.ref }}
   cancel-in-progress: false
 
 jobs:
   bootstrap:
-    if: github.repository == 'Goldkelch/qik-vrt' && github.actor == 'ingolf-lohmann'
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'fix/autonomy-root-cause-quota-8930ef47' &&
+      github.actor == 'ingolf-lohmann'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      BOOTSTRAP_HEAD: ${{ github.event.pull_request.head.sha }}
     steps:
       - name: Check out exact bootstrap subject
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ env.BOOTSTRAP_HEAD }}
           fetch-depth: 2
           persist-credentials: true
 
       - name: Set up Python
-        uses: actions/setup-python@a26af69be951213d495a4c3e4e4022e16d87065
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
 
@@ -35,9 +43,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_parent='216b64810502b4b616d62c3dad1227d198fae050'
+          expected_parent='95ed5af58dcfc9ed3f7d8db7e408670483f3699c'
           test "$(git rev-parse --verify HEAD^1)" = "$expected_parent"
-          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
+          test "$(git rev-parse --verify HEAD^{commit})" = "$BOOTSTRAP_HEAD"
 
           python3 -B - <<'PY'
           from pathlib import Path
@@ -223,15 +231,7 @@ jobs:
           unexpected = paths - allowed
           if unexpected:
               raise SystemExit(f'BLOCK: bootstrap produced unexpected paths: {sorted(unexpected)}')
-          required = {
-              '.github/workflows/qikvrt_batch04_integrity.yml',
-              '.github/workflows/qikvrt_pr_integrity_persistence_bootstrap.yml',
-              'tests/test_qikvrt_repository_writer_lease.py',
-              'REPOSITORY_FILE_MANIFEST.json',
-              'REPOSITORY_FILE_MANIFEST.json.sha256',
-              'SHA256SUMS.txt',
-          }
-          missing = required - paths
+          missing = allowed - paths
           if missing:
               raise SystemExit(f'BLOCK: bootstrap missing expected delta paths: {sorted(missing)}')
           PY
@@ -240,9 +240,9 @@ jobs:
             git ls-remote --heads origin refs/heads/fix/autonomy-root-cause-quota-8930ef47 |
               awk 'NR == 1 { print $1 }'
           )"
-          test "$remote_head" = "$GITHUB_SHA" || {
+          test "$remote_head" = "$BOOTSTRAP_HEAD" || {
             echo "BLOCK: repair branch advanced before bootstrap persistence" >&2
-            echo "expected=$GITHUB_SHA" >&2
+            echo "expected=$BOOTSTRAP_HEAD" >&2
             echo "remote=$remote_head" >&2
             exit 2
           }
