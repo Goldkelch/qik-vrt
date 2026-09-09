@@ -255,7 +255,7 @@ jobs:
           PY
 
       - name: Persist exact receipt and diff by ledger fast-forward CAS
-        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE'
+        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE' && steps.decision.outputs.blocker != 'COMPETING_WRITER_ACTIVE'
         id: ledger
         env:
           PR_NUMBER: ${{ steps.select.outputs.pr }}
@@ -759,6 +759,12 @@ jobs:
           print(json.dumps(report,sort_keys=True))
           PY
 
+      - name: Record competing-writer hold without a ledger mutation
+        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE' && steps.decision.outputs.blocker == 'COMPETING_WRITER_ACTIVE'
+        shell: bash
+        run: |
+          echo 'HOLD_UNVERIFIED: competing writer lease is active; await its completed repository event before reobservation.'
+
       - name: Project persisted receipt into PR comment and exact-head status
         if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE' && steps.ledger.outputs.persisted == 'true' && steps.ledger.outputs.projection_current == 'true'
         env:
@@ -873,7 +879,7 @@ jobs:
           PY
 
       - name: Select exactly one durable recursive review work unit
-        if: steps.active.outputs.active == 'true' && steps.ledger.outputs.persisted == 'true'
+        if: steps.active.outputs.active == 'true' && steps.ledger.outputs.persisted == 'true' && steps.ledger.outputs.d0 == '2'
         id: queue
         env:
           SUBJECT_PR_NUMBER: ${{ steps.select.outputs.pr }}
@@ -1183,6 +1189,15 @@ jobs:
                   f"fp={os.environ['SUCCESSOR_FINGERPRINT']}"
               ),
           }
+          root=pathlib.Path('.qikvrt/mesh-review')
+          causal=json.loads(
+              (root/'reobservations/post-successor-dispatch/verification.json')
+              .read_text(encoding='utf-8')
+          )
+          checks['full_causal_binding']=(
+              causal.get('ledger_safe') is True
+              and causal.get('checks',{}).get('causal_binding') is True
+          )
           value={
               'schema':'qikvrt_mesh_review_successor_reobservation_v1',
               'work_unit_id':(
@@ -1198,15 +1213,6 @@ jobs:
                   'EFFECT_ACK_DONE':False,'MERGE':False,
               },
           }
-          root=pathlib.Path('.qikvrt/mesh-review')
-          causal=json.loads(
-              (root/'reobservations/post-successor-dispatch/verification.json')
-              .read_text(encoding='utf-8')
-          )
-          checks['full_causal_binding']=(
-              causal.get('ledger_safe') is True
-              and causal.get('checks',{}).get('causal_binding') is True
-          )
           (root/'successor-dispatch-reobservation.json').write_text(
               json.dumps(value,sort_keys=True,indent=2)+'\n',encoding='utf-8'
           )
@@ -1226,7 +1232,7 @@ jobs:
           path: .qikvrt/mesh-review
 
       - name: Enforce fail-closed ledger persistence
-        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE' && steps.ledger.outputs.persisted != 'true'
+        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE' && steps.ledger.outputs.persisted != 'true' && steps.decision.outputs.blocker != 'COMPETING_WRITER_ACTIVE'
         run: |
           echo 'HOLD_UNVERIFIED: exact Mesh review receipt was not persisted by FF-CAS.'
           exit 1
@@ -1236,6 +1242,10 @@ jobs:
         run: |
           set -euo pipefail
           cat /tmp/qikvrt-review-selection.json
+          if [ "${{ steps.select.outputs.state }}" = 'REOBSERVE_EXACT_EVENT_TARGET' ]; then
+            echo 'HOLD_UNVERIFIED: exact event target could not be reobserved; await a new repository event.'
+            exit 1
+          fi
 
       - name: Bootstrap NOOP before trusted-main promotion
         if: steps.active.outputs.active != 'true'

@@ -48,6 +48,8 @@ TRUSTED_AUTOMATION_DISCUSSION_PREFIXES = (
     f"<!-- {LIVE_STATUS_MARKER} -->",
 )
 ACTIVE_WRITER_STATES = ("queued", "in_progress", "waiting", "requested", "pending")
+ROLE_LOCAL_LEDGER_WORKFLOW_NAME = "QIKVRT requested review executor"
+ROLE_LOCAL_LEDGER_WORKFLOW_PATH = ".github/workflows/qikvrt_requested_review_executor.yml"
 REVIEW_SELECTION_SCHEMA = "qikvrt_requested_review_selection_v1"
 REVIEW_INTAKE_SCHEMA = "qikvrt_review_intake_v1"
 REVIEW_PRIORITY_POLICY_PATH = "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json"
@@ -81,7 +83,6 @@ REOBSERVATION_PROGRESS_FIELDS = frozenset({
     "diff_transport",
     "findings",
     "latest_workflows",
-    "active_writers_observed",
     "derived_action",
     "receipt_payload_sha256",
 })
@@ -2792,6 +2793,11 @@ def _active_writer_observation(
                 isinstance(run_id, int)
                 and run_id != current_run_id
                 and run.get("name") in writer_names
+                and not (
+                    run.get("name") == ROLE_LOCAL_LEDGER_WORKFLOW_NAME
+                    and str(run.get("path", "")).split("@", 1)[0]
+                    == ROLE_LOCAL_LEDGER_WORKFLOW_PATH
+                )
                 and run.get("head_sha") in relevant_heads
             ):
                 observed[run_id] = {

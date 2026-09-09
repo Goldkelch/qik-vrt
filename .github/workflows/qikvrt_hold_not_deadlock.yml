@@ -1,0 +1,105 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+name: QIKVRT HOLD not DEADLOCK
+run-name: QIKVRT HOLD not DEADLOCK event=${{ github.event_name }}
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, review_requested, review_request_removed, ready_for_review]
+  workflow_run:
+    workflows:
+      - "QIKVRT requested review executor"
+      - "QIKVRT CI"
+      - "QIKVRT repository evidence materialization"
+      - "QIKVRT Collective Proposal Review"
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: qikvrt-hold-not-deadlock-${{ github.repository }}-${{ github.event.pull_request.number || github.event.workflow_run.id || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  reap-one-stale-generic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out trusted main liveness code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Snapshot requested-review queue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPOSITORY/actions/workflows/qikvrt_requested_review_executor.yml/runs?status=pending&per_page=100" > /tmp/pending.json
+          gh api "repos/$REPOSITORY/actions/workflows/qikvrt_requested_review_executor.yml/runs?status=queued&per_page=100" > /tmp/queued.json
+          python3 - <<'PY'
+          import json
+          pending=json.load(open('/tmp/pending.json',encoding='utf-8')).get('workflow_runs',[])
+          queued=json.load(open('/tmp/queued.json',encoding='utf-8')).get('workflow_runs',[])
+          json.dump({'workflow_runs': pending+queued},open('/tmp/queue.json','w',encoding='utf-8'),sort_keys=True)
+          PY
+
+      - name: Classify one bounded liveness action
+        id: classify
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_hold_not_deadlock.py /tmp/queue.json > /tmp/decision.json
+          cat /tmp/decision.json
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          value=json.load(open('/tmp/decision.json',encoding='utf-8'))
+          print(f"state={value['state']}")
+          print(f"cancel_run_id={value.get('cancel_run_id') or ''}")
+          PY
+
+      - name: Cancel exactly one stale generic pending work unit
+        if: steps.classify.outputs.state == 'CANCEL_ONE_STALE_GENERIC'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ steps.classify.outputs.cancel_run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --method POST "repos/$REPOSITORY/actions/runs/$RUN_ID/cancel"
+
+      - name: Reobserve cancelled run only
+        if: steps.classify.outputs.state == 'CANCEL_ONE_STALE_GENERIC'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ steps.classify.outputs.cancel_run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPOSITORY/actions/runs/$RUN_ID" > /tmp/readback.json
+          python3 - <<'PY'
+          import json
+          value=json.load(open('/tmp/readback.json',encoding='utf-8'))
+          if value.get('id') != int('${{ steps.classify.outputs.cancel_run_id }}'):
+              raise SystemExit('run identity drift')
+          if value.get('status') not in {'completed','queued','pending'}:
+              raise SystemExit('unexpected cancellation readback state')
+          print(json.dumps({'id':value['id'],'status':value.get('status'),'conclusion':value.get('conclusion')},sort_keys=True))
+          PY
+
+      - name: Preserve finite liveness decision
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-hold-not-deadlock-${{ github.run_id }}
+          retention-days: 30
+          path: |
+            /tmp/queue.json
+            /tmp/decision.json

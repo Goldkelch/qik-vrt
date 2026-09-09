@@ -1,0 +1,37 @@
+{
+  "schema": "qikvrt_hold_not_deadlock_v1",
+  "policy_id": "QIKVRT-HOLD-NOT-DEADLOCK-V1",
+  "principle": "HOLD may block one effect edge but MUST NOT globally block unrelated repository progress.",
+  "invariants": {
+    "single_active_writer_per_exact_subject": true,
+    "hold_is_persisted_work_unit": true,
+    "hold_has_global_lock": false,
+    "retry_requires_material_state_change": true,
+    "external_unavailability_preserves_prior_evidence": true,
+    "independent_subjects_remain_executable": true,
+    "predicate_recovery_emits_at_most_one_successor": true,
+    "terminal_work_units_leave_executable_queue": true,
+    "authority_is_not_substitutable": true,
+    "implicit_infrastructure_deadlock_is_terminal": false
+  },
+  "states": {
+    "0000": "NOOP",
+    "0001": "HOLD",
+    "0010": "REOBSERVE",
+    "0011": "REQUEST_AUTHORITY"
+  },
+  "required_behavior": {
+    "authority_missing": "Persist REQUEST_AUTHORITY for the exact subject; do not block unrelated subjects.",
+    "api_unavailable": "Persist bounded REOBSERVE intent; do not blind-retry; preserve prior exact evidence.",
+    "writer_active": "Exactly one writer owns the exact subject slot; contenders deduplicate to HOLD/NOOP.",
+    "publication_authority_missing": "Block only the publication edge, not repository-wide progress.",
+    "terminal": "Remove or acknowledge the work unit so it cannot retain queue ownership."
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "MERGE": false,
+    "PUBLICATION": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
