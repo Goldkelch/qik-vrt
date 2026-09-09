@@ -14,6 +14,17 @@ class ExactHeadPublishQuotaTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.text = WORKFLOW.read_text(encoding="utf-8")
 
+    def test_exact_branch_workflow_dispatch_bootstraps_repaired_definition(self) -> None:
+        self.assertIn("workflow_dispatch:", self.text)
+        for input_name in ("pr:", "head_ref:", "head_sha:", "base_sha:"):
+            self.assertIn(input_name, self.text)
+        self.assertIn("github.event_name == 'workflow_dispatch'", self.text)
+        self.assertIn("inputs.head_sha", self.text)
+        self.assertIn("inputs.head_ref", self.text)
+        self.assertIn("ref: ${{ env.TARGET_SHA }}", self.text)
+        self.assertIn('test "$GITHUB_SHA" = "$TARGET_SHA"', self.text)
+        self.assertIn('test "$GITHUB_REF_NAME" = "$TARGET_REF"', self.text)
+
     def test_dispatch_envelope_uses_git_refs_not_rest_budget(self) -> None:
         self.assertIn("Validate dispatch envelope without REST quota", self.text)
         self.assertIn('refs/pull/${TARGET_PR}/head', self.text)

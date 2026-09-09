@@ -28,6 +28,9 @@ class RepositoryWriterLeaseTests(unittest.TestCase):
             text,
         )
         self.assertIn('cancel-in-progress: false', text)
+        self.assertIn('actions: write', text)
+        self.assertIn('contents: write', text)
+        self.assertIn('timeout-minutes: 90', text)
         self.assertIn("github.event_name == 'pull_request'", text)
         self.assertIn(
             'github.event.pull_request.head.repo.full_name == github.repository',
@@ -74,7 +77,7 @@ class RepositoryWriterLeaseTests(unittest.TestCase):
         self.assertNotIn('docs/publications/', commit_block)
         self.assertIn('git push origin "HEAD:refs/heads/$TARGET_REF"', commit_block)
 
-    def test_general_pr_integrity_writer_reobserves_bot_successor_via_exact_dispatch(self):
+    def test_general_pr_integrity_writer_reobserves_bot_successor_via_exact_branch_workflow_dispatch(self):
         text = Path('.github/workflows/qikvrt_pr18_integrity_repair.yml').read_text(
             encoding='utf-8'
         )
@@ -85,19 +88,25 @@ class RepositoryWriterLeaseTests(unittest.TestCase):
         push = block.index('git push origin "HEAD:refs/heads/$TARGET_REF"')
         readback = block.index('pull-request integrity persistence readback mismatch')
         reobserve = block.index('pull-request head drifted before exact-head continuation')
-        dispatch = block.index('qikvrt_autonomous_exact_head_verify')
+        dispatch = block.index('qikvrt_autonomous_exact_head_verify.yml/dispatches')
         self.assertLess(push, readback)
         self.assertLess(readback, reobserve)
         self.assertLess(reobserve, dispatch)
         self.assertIn('GH_TOKEN: ${{ github.token }}', block)
-        self.assertIn('"repos/${GITHUB_REPOSITORY}/dispatches"', block)
-        self.assertIn('head_sha:$head', block)
-        self.assertIn('base_sha:$base', block)
-        self.assertIn('pull_request:($pr|tonumber)', block)
-        self.assertIn('d0:2', block)
-        self.assertIn('causal_state:"REOBSERVE"', block)
-        self.assertIn('reason:"INTEGRITY_SUCCESSOR_REOBSERVE"', block)
-        self.assertNotIn('actions/workflows/', block)
+        self.assertIn('qikvrt_dispatch_after_primary_reset', block)
+        self.assertIn('API rate limit exceeded for installation.', block)
+        self.assertIn("gh api rate_limit --jq '.resources.core.reset'", block)
+        self.assertIn('QIKVRT_EXACT_HEAD_DISPATCH_RATE_LIMIT_RESET_WAIT_SECONDS', block)
+        self.assertIn(
+            '"repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_autonomous_exact_head_verify.yml/dispatches"',
+            block,
+        )
+        self.assertIn('-f "ref=$TARGET_REF"', block)
+        self.assertIn('-f "inputs[pr]=$TARGET_PR"', block)
+        self.assertIn('-f "inputs[head_ref]=$TARGET_REF"', block)
+        self.assertIn('-f "inputs[head_sha]=$persisted_head"', block)
+        self.assertIn('-f "inputs[base_sha]=$TARGET_BASE_SHA"', block)
+        self.assertNotIn('"repos/${GITHUB_REPOSITORY}/dispatches"', block)
         self.assertNotIn('gh pr merge', block)
         self.assertNotIn('gh pr review', block)
 

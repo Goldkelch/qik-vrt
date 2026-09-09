@@ -5,6 +5,24 @@ name: QIK-VRT autonomous exact-head verification
 on:
   repository_dispatch:
     types: [qikvrt_autonomous_exact_head_verify]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Exact pull-request number
+        required: true
+        type: string
+      head_ref:
+        description: Exact same-repository pull-request branch
+        required: true
+        type: string
+      head_sha:
+        description: Exact pull-request head SHA to verify
+        required: true
+        type: string
+      base_sha:
+        description: Exact pull-request base SHA
+        required: true
+        type: string
 
 permissions:
   actions: write
@@ -12,7 +30,7 @@ permissions:
   statuses: write
 
 concurrency:
-  group: qikvrt-autonomous-exact-head-${{ github.event.client_payload.pull_request }}-${{ github.event.client_payload.head_sha }}
+  group: qikvrt-autonomous-exact-head-${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.client_payload.pull_request }}-${{ github.event_name == 'workflow_dispatch' && inputs.head_sha || github.event.client_payload.head_sha }}
   cancel-in-progress: false
 
 jobs:
@@ -20,11 +38,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
-      TARGET_REPOSITORY: ${{ github.event.client_payload.repository }}
-      TARGET_PR: ${{ github.event.client_payload.pull_request }}
-      TARGET_REF: ${{ github.event.client_payload.head_ref }}
-      TARGET_SHA: ${{ github.event.client_payload.head_sha }}
-      TARGET_BASE_SHA: ${{ github.event.client_payload.base_sha }}
+      TARGET_REPOSITORY: ${{ github.event_name == 'workflow_dispatch' && github.repository || github.event.client_payload.repository }}
+      TARGET_PR: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.client_payload.pull_request }}
+      TARGET_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.head_ref || github.event.client_payload.head_ref }}
+      TARGET_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.head_sha || github.event.client_payload.head_sha }}
+      TARGET_BASE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.base_sha || github.event.client_payload.base_sha }}
     steps:
       - name: Prepare quota-safe GitHub writer
         shell: bash
@@ -110,12 +128,16 @@ jobs:
           branch_head="$(git ls-remote --heads "$remote" "refs/heads/${TARGET_REF}" | awk 'NR == 1 {print $1}')"
           test "$pr_head" = "$TARGET_SHA"
           test "$branch_head" = "$TARGET_SHA"
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            test "$GITHUB_SHA" = "$TARGET_SHA"
+            test "$GITHUB_REF_NAME" = "$TARGET_REF"
+          fi
           echo "validated=true" >> "$GITHUB_OUTPUT"
 
       - name: Check out exact candidate head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event.client_payload.head_sha }}
+          ref: ${{ env.TARGET_SHA }}
           fetch-depth: 0
           persist-credentials: false
 
