@@ -228,6 +228,24 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
         result = self.evaluate([])
         self.assertEqual((result["gate_state"], result["first_blocker"]), ("pending", "CODE_OWNER_REVIEW_MISSING"))
 
+    def test_bounded_review_observation_holds_on_a_full_page(self):
+        complete = MODULE.bounded_review_observation([self.approval()])
+        self.assertTrue(complete["complete"])
+        self.assertIsNone(complete["first_blocker"])
+        self.assertEqual(complete["observed_count"], 1)
+
+        full = MODULE.bounded_review_observation(
+            [self.approval(id=index) for index in range(MODULE.REVIEW_OBSERVATION_PAGE_LIMIT)]
+        )
+        self.assertFalse(full["complete"])
+        self.assertEqual(
+            full["first_blocker"], MODULE.REVIEW_OBSERVATION_LIMIT_BLOCKER
+        )
+        self.assertEqual(len(full["reviews"]), MODULE.REVIEW_OBSERVATION_PAGE_LIMIT)
+
+        with self.assertRaises(MODULE.ReviewGateInputError):
+            MODULE.bounded_review_observation(["not-a-review"])
+
     def test_exact_head_approval_passes(self):
         result = self.evaluate([self.approval()])
         self.assertEqual(result["gate_state"], "success")
@@ -307,9 +325,21 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
         self.assertNotIn("inputs.", workflow)
         self.assertNotIn("pulls?state=open", workflow)
         self.assertIn("select_required_review_targets", workflow)
+        self.assertIn("select_required_review_event_target", workflow)
+        self.assertIn("pull_request_review:", workflow)
+        self.assertIn("pull_request_review_comment:", workflow)
+        self.assertIn("EVENT_NATIVE_HEAD: ${{ github.event.pull_request.head.sha || '' }}", workflow)
+        self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", workflow)
         self.assertIn("EVENT_WORKFLOW_RUN_HEAD: ${{ github.event.workflow_run.head_sha || '' }}", workflow)
         self.assertNotIn("EVENT_EXPECTED_HEAD: ${{ github.event.workflow_run.head_sha", workflow)
         self.assertIn("qikvrt-required-code-owner-selection-", workflow)
+        self.assertIn("bounded_review_observation", workflow)
+        self.assertNotIn("--paginate", workflow)
+        self.assertIn("validate_diff_transport_budget", workflow)
+        self.assertLess(
+            workflow.index("validate_diff_transport_budget(declared)"),
+            workflow.index("for item in declared.get('packets',[])"),
+        )
         self.assertLess(
             workflow.index("pr=gh_json(f'repos/{repo}/pulls/{number}')"),
             workflow.index("rules=gh_json(f'repos/{repo}/rules/branches/main')"),
@@ -411,6 +441,44 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
             result["first_blocker"], "WORKFLOW_RUN_PULL_REQUEST_HEAD_MISSING"
         )
         self.assertIsNone(result["expected_head"])
+
+    def test_direct_native_review_event_uses_payload_pr_and_head(self):
+        for event_name in ("pull_request_review", "pull_request_review_comment"):
+            with self.subTest(event_name=event_name):
+                result = MODULE.select_required_review_event_target(
+                    repository="example/qik-vrt",
+                    event_name=event_name,
+                    event_pr="641",
+                    event_head=self.head,
+                )
+                self.assertEqual(result["state"], "CANDIDATE")
+                self.assertEqual(result["source"], "NATIVE_REVIEW_EVENT")
+                self.assertEqual(result["pr_numbers"], [641])
+                self.assertEqual(result["expected_head"], self.head)
+                self.assertIsNone(result["workflow_run_head"])
+
+        missing_head = MODULE.select_required_review_event_target(
+            repository="example/qik-vrt",
+            event_name="pull_request_review",
+            event_pr="641",
+            event_head="",
+        )
+        self.assertEqual(missing_head["state"], "REOBSERVE_EXACT_EVENT_TARGET")
+        self.assertEqual(
+            missing_head["first_blocker"], "NATIVE_REVIEW_EVENT_HEAD_MISSING_OR_INVALID"
+        )
+        self.assertEqual(missing_head["status_publication"], "FORBIDDEN")
+
+        unsupported = MODULE.select_required_review_event_target(
+            repository="example/qik-vrt",
+            event_name="workflow_run",
+            event_pr="641",
+            event_head=self.head,
+        )
+        self.assertEqual(unsupported["state"], "INELIGIBLE_EVENT_TARGET")
+        self.assertEqual(
+            unsupported["first_blocker"], "UNSUPPORTED_NATIVE_REVIEW_EVENT"
+        )
 
 
 if __name__ == "__main__":

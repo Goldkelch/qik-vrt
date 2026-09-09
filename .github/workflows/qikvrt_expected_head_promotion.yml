@@ -291,6 +291,7 @@ jobs:
           from tools.qikvrt_requested_review_executor import (
               prepare_diff_transport_ledger_entries,
               reassemble_diff_transport,
+              validate_diff_transport_budget,
           )
           from tools.qikvrt_required_review_gate import evaluate_required_review
 
@@ -386,6 +387,10 @@ jobs:
               raise SystemExit('BLOCK: review receipt does not bind the selected chunk manifest')
           if receipt.get('diff_transport') != manifest:
               raise SystemExit('BLOCK: review receipt and chunk manifest differ')
+          try:
+              validate_diff_transport_budget(manifest)
+          except Exception as exc:
+              raise SystemExit(f'BLOCK: review chunk transport exceeds ledger I/O budget: {exc}') from exc
 
           declared=manifest.get('packets')
           packet_count=manifest.get('packet_count')

@@ -109,7 +109,8 @@ metadata mutation. The next exact repository event may reobserve a bound
 subject; no prior evidence is transferred.
 
 The complete diff is transported as ordered, content-addressed packets of at
-most 1 MiB. Its canonical manifest binds an explicit packet count, every
+most 1 MiB. The versioned ledger-I/O ceiling is four packets / 4 MiB per exact
+receipt. Its canonical manifest binds an explicit packet count, every
 offset, packet byte count and packet SHA-256, the total byte count and total
 SHA-256, the deterministic packet paths and a SHA-256 over the canonical
 manifest projection. The receiver rejects a missing, reordered, altered,
@@ -120,6 +121,12 @@ does not turn a complete 2 MiB-plus diff into `REVIEW_BYTES_UNAVAILABLE`; it
 does not silently lose the handoff, invent a favorable result, or reuse an
 earlier receipt. Head, tree, scope, diff, policy or intake drift still
 invalidates the receipt.
+
+An exact diff above that ceiling remains locally bound review evidence, but it
+is `DIFF_LEDGER_TRANSPORT_LIMIT_EXCEEDED`: a nonpersistent
+`HOLD_UNVERIFIED` with no packet upload or packet readback. It cannot be
+substituted with partial packets, a reused older receipt, a technical approval,
+publication, `PASS`, `FINAL_PASS`, or `EFFECT_ACK_DONE`.
 
 The ledger is initialized as an orphan root commit containing only the first
 exact receipt and diff; it therefore does not copy a predecessor repository

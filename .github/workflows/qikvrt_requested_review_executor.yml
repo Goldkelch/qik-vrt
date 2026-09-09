@@ -214,40 +214,32 @@ jobs:
           rate_limit_marker="$root/rate-limit-exhausted.json"
           rm -f "$rate_limit_marker"
           observed=false
-          # The observation is read-only. Retry only the exact GitHub App
-          # installation quota response; every other observation error remains
-          # a hard failure. No retry creates a workflow event or repository
-          # effect.
-          for delay in 0 15 45; do
-            if [ "$delay" -gt 0 ]; then
-              echo "QIKVRT_GITHUB_INSTALLATION_RATE_LIMIT_BACKOFF_SECONDS=$delay" >&2
-              sleep "$delay"
-            fi
-            set +e
-            python3 -B tools/qikvrt_requested_review_executor.py observe \
-              --repository "$REPOSITORY" \
-              --pr-number "$PR_NUMBER" \
-              --expected-head "$EXPECTED_SELECTOR_HEAD" \
-              --current-run-id "$CURRENT_RUN_ID" \
-              --required-gates-json "$REQUIRED_GATES_JSON" \
-              --required-gate-paths-json "$REQUIRED_GATE_PATHS_JSON" \
-              --writer-workflows-json "$WRITER_WORKFLOWS_JSON" \
-              --event-context-file /tmp/qikvrt-review-event-context.json \
-              --snapshot-out "$root/snapshot.json" \
-              --diff-out "$root/review.diff" \
-              --receipt-out "$root/review.json"
-            observed_status=$?
-            set -e
-            if [ "$observed_status" -eq 0 ]; then
-              observed=true
-              break
-            fi
-            if ! test -f "$root/review.json" || ! jq -e \
-              '((.detail? // "") | tostring | contains("API rate limit exceeded for installation."))' \
-              "$root/review.json" >/dev/null; then
-              exit "$observed_status"
-            fi
-          done
+          # One complete observation is the installation-token budget for one
+          # native delivery.  A quota response is not transient evidence: do
+          # not replay every prior read after 15/45 seconds.  Hold closed and
+          # let the next native repository event perform the next observation.
+          set +e
+          python3 -B tools/qikvrt_requested_review_executor.py observe \
+            --repository "$REPOSITORY" \
+            --pr-number "$PR_NUMBER" \
+            --expected-head "$EXPECTED_SELECTOR_HEAD" \
+            --current-run-id "$CURRENT_RUN_ID" \
+            --required-gates-json "$REQUIRED_GATES_JSON" \
+            --required-gate-paths-json "$REQUIRED_GATE_PATHS_JSON" \
+            --writer-workflows-json "$WRITER_WORKFLOWS_JSON" \
+            --event-context-file /tmp/qikvrt-review-event-context.json \
+            --snapshot-out "$root/snapshot.json" \
+            --diff-out "$root/review.diff" \
+            --receipt-out "$root/review.json"
+          observed_status=$?
+          set -e
+          if [ "$observed_status" -eq 0 ]; then
+            observed=true
+          elif ! test -f "$root/review.json" || ! jq -e \
+            '((.detail? // "") | tostring | contains("API rate limit exceeded for installation."))' \
+            "$root/review.json" >/dev/null; then
+            exit "$observed_status"
+          fi
           if [ "$observed" != true ]; then
             # This is one bounded, non-positive availability marker only.  It
             # intentionally has no evidence fingerprint because the exact
@@ -330,6 +322,7 @@ jobs:
               _pretty_json_bytes, exact_ref_sha, plan_ledger_update,
               prepare_diff_transport_ledger_entries,
               reassemble_diff_transport, reconcile_ref_readback,
+              validate_diff_transport_budget,
           )
 
           root=pathlib.Path('.qikvrt/mesh-review')
@@ -448,6 +441,7 @@ jobs:
                   return None
               try:
                   declared=json.loads(manifest)
+                  validate_diff_transport_budget(declared)
                   packets=[blob_at(item['path'],commit) for item in declared['packets']]
                   return reassemble_diff_transport(declared,packets)
               except Exception:
@@ -733,7 +727,33 @@ jobs:
             exit 0
           fi
 
-          existing_review="$(gh api --paginate "repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews?per_page=100" --jq ".[] | select(.user.login == \"github-actions[bot]\" and .state == \"COMMENTED\" and ((.body // \"\") | contains(\"fingerprint=${FINGERPRINT}\"))) | .id" | head -n 1)"
+          bounded_list_page() {
+            destination="$1"
+            endpoint="$2"
+            if ! gh api "$endpoint" > "$destination"; then
+              return 1
+            fi
+            python3 -B - "$destination" <<'PY'
+          import json, pathlib, sys
+          try:
+              value=json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
+          except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+              raise SystemExit(1)
+          # A full REST page cannot prove that another page is absent.  Keep
+          # the PR projection fail-closed rather than paginating a native
+          # delivery into an unbounded installation-token read sequence.
+          raise SystemExit(0 if isinstance(value,list) and len(value) < 100 and all(isinstance(item,dict) for item in value) else 1)
+          PY
+          }
+
+          review_page="$root/existing-reviews.json"
+          if ! bounded_list_page "$review_page" "repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews?per_page=100"; then
+            record_projection_hold review-comment-page-bound
+            exit 0
+          fi
+          existing_review="$(jq -r --arg fingerprint "$FINGERPRINT" \
+            '.[] | select(.user.login == "github-actions[bot]" and .state == "COMMENTED" and ((.body // "") | contains("fingerprint=" + $fingerprint))) | .id' \
+            "$review_page" | head -n 1)"
           if [ "$DISPOSITION" != WAIT ] && [ -z "$existing_review" ]; then
             if ! require_exact_reobservation pre-review-comment; then
               exit 0
@@ -777,15 +797,20 @@ jobs:
           esac
           export PROJECTED_STATUS="$status"
           description="Mesh ${DISPOSITION}; D0=${D0}; fp=${FINGERPRINT}; run=${GITHUB_RUN_ID}"
+          status_page="$root/existing-statuses.json"
+          if ! bounded_list_page "$status_page" "repos/${REPOSITORY}/commits/${EXPECTED_HEAD}/statuses?per_page=100"; then
+            record_projection_hold status-page-bound
+            exit 0
+          fi
           existing_status="$(python3 -B - <<'PY'
-          import json, os, subprocess
+          import json, os, pathlib
           from tools.qikvrt_requested_review_executor import latest_status_matches_projection
 
-          pages=json.loads(subprocess.check_output([
-              'gh','api','--paginate','--slurp',
-              f"repos/{os.environ['REPOSITORY']}/commits/{os.environ['EXPECTED_HEAD']}/statuses?per_page=100",
-          ],text=True))
-          statuses=[item for page in pages for item in page]
+          statuses=json.loads(
+              pathlib.Path('.qikvrt/mesh-review/existing-statuses.json').read_text(
+                  encoding='utf-8'
+              )
+          )
           if latest_status_matches_projection(
               statuses,os.environ['STATUS_CONTEXT'],os.environ['PROJECTED_STATUS'],
               os.environ['FINGERPRINT'],os.environ['GITHUB_RUN_ID'],

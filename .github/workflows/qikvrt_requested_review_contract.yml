@@ -169,6 +169,13 @@ jobs:
           grep -F 'qikvrt/mesh-review-ledger-v1' .github/workflows/qikvrt_ci.yml
           grep -F 'def _git_scope' tools/qikvrt_requested_review_executor.py
           grep -F '"--no-ext-diff", "--no-textconv", "--no-renames"' tools/qikvrt_requested_review_executor.py
+          grep -F 'REVIEW_DIFF_MAX_PACKETS = 4' tools/qikvrt_requested_review_executor.py
+          grep -F 'REVIEW_DIFF_MAX_BYTES = REVIEW_DIFF_CHUNK_BYTES * REVIEW_DIFF_MAX_PACKETS' tools/qikvrt_requested_review_executor.py
+          grep -F 'DIFF_LEDGER_TRANSPORT_LIMIT_EXCEEDED' tools/qikvrt_requested_review_executor.py
+          grep -F '"complete_diff_transport_packet_max_count": 4' policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json
+          grep -F '"complete_diff_transport_total_max_bytes": 4194304' policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json
+          grep -F '"complete_diff_transport_packet_max_count": 4' state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json
+          grep -F '"complete_diff_transport_total_max_bytes": 4194304' state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json
           grep -F 'REQUIRED_GATE_PATHS_JSON' .github/workflows/qikvrt_requested_review_executor.yml
           grep -F 'post-ledger-projection-readback' .github/workflows/qikvrt_requested_review_executor.yml
           grep -F 'reconcile_after_mutation(' .github/workflows/qikvrt_requested_review_executor.yml

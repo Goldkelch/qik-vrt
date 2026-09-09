@@ -25,6 +25,8 @@ REQUIRED_NATIVE_STATUS_CHECKS = {
     ("test", 15368),
     ("QIKVRT required code-owner review", 15368),
 }
+REVIEW_OBSERVATION_PAGE_LIMIT = 100
+REVIEW_OBSERVATION_LIMIT_BLOCKER = "REVIEW_OBSERVATION_PAGE_LIMIT_REACHED"
 EXECUTOR_PROJECTION_SCHEMA = "qikvrt_mesh_review_repository_projection_v1"
 EXECUTOR_RECEIPT_ELIGIBILITY_SCHEMA = (
     "qikvrt_native_account_review_receipt_eligibility_v1"
@@ -75,6 +77,28 @@ def _selector_sha(value: Any) -> str | None:
     if any(character not in "0123456789abcdef" for character in value):
         return None
     return value
+
+
+def bounded_review_observation(reviews: Any) -> dict[str, Any]:
+    """Classify one bounded native review page without guessing its successor.
+
+    The REST review endpoint is read once with its maximum page size.  An exact
+    full page may have a next page, so it is deliberately incomplete rather
+    than silently turning into an unbounded GitHub App read chain.
+    """
+    if not isinstance(reviews, Sequence) or isinstance(reviews, (str, bytes)):
+        raise ReviewGateInputError("bounded review observation is not a list")
+    if not all(isinstance(review, Mapping) for review in reviews):
+        raise ReviewGateInputError("bounded review observation contains a non-object")
+    complete = len(reviews) < REVIEW_OBSERVATION_PAGE_LIMIT
+    return {
+        "schema": "qikvrt_bounded_review_observation_v1",
+        "limit": REVIEW_OBSERVATION_PAGE_LIMIT,
+        "observed_count": len(reviews),
+        "complete": complete,
+        "first_blocker": None if complete else REVIEW_OBSERVATION_LIMIT_BLOCKER,
+        "reviews": [dict(review) for review in reviews],
+    }
 
 
 def _fingerprint(value: Any) -> str | None:
@@ -193,6 +217,53 @@ def _workflow_run_pr_subject(
     if candidate_head is None:
         return None, None, "WORKFLOW_RUN_PULL_REQUEST_HEAD_INVALID"
     return number, candidate_head, None
+
+
+def select_required_review_event_target(
+    *,
+    repository: str,
+    event_name: str,
+    event_pr: Any,
+    event_head: Any,
+) -> dict[str, Any]:
+    """Bind one direct native review delivery without workflow-run metadata.
+
+    GitHub's workflow-run API does not reliably retain the pull-request
+    association for ``pull_request_review`` deliveries.  The original native
+    payload already carries the exact PR number and candidate head, so use it
+    only for the two direct review ingress classes and leave all later state to
+    the existing live PR/rules/reviews reobservation.
+    """
+    if not isinstance(repository, str) or repository.count("/") != 1:
+        raise ReviewGateInputError("selector repository is invalid")
+    name = event_name.strip() if isinstance(event_name, str) else ""
+    if name not in {"pull_request_review", "pull_request_review_comment"}:
+        return _selection(
+            "INELIGIBLE_EVENT_TARGET",
+            source="NATIVE_REVIEW_EVENT",
+            first_blocker="UNSUPPORTED_NATIVE_REVIEW_EVENT",
+        )
+    number = _positive_pr_number(event_pr)
+    if number is None:
+        return _selection(
+            "REOBSERVE_EXACT_EVENT_TARGET",
+            source="NATIVE_REVIEW_EVENT",
+            first_blocker="NATIVE_REVIEW_EVENT_PR_MISSING",
+        )
+    head = _selector_sha(event_head.strip()) if isinstance(event_head, str) else None
+    if head is None:
+        return _selection(
+            "REOBSERVE_EXACT_EVENT_TARGET",
+            source="NATIVE_REVIEW_EVENT",
+            first_blocker="NATIVE_REVIEW_EVENT_HEAD_MISSING_OR_INVALID",
+            pr_numbers=[number],
+        )
+    return _selection(
+        "CANDIDATE",
+        source="NATIVE_REVIEW_EVENT",
+        pr_numbers=[number],
+        expected_head=head,
+    )
 
 
 def select_required_review_targets(

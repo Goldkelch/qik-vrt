@@ -482,12 +482,17 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
         self.assertIn("ref=urllib.parse.quote(ledger_commit,safe='')", workflow)
         self.assertIn("prepare_diff_transport_ledger_entries", workflow)
         self.assertIn("reassemble_diff_transport", workflow)
+        self.assertIn("validate_diff_transport_budget", workflow)
         self.assertIn("manifest_ledger_path=root+'.chunks.json'", workflow)
         self.assertIn("receipt.get('ledger_diff_path') != manifest_ledger_path", workflow)
         self.assertIn("receipt.get('diff_transport') != manifest", workflow)
         self.assertIn("expected_path=f'{root}.chunks/{index:08d}.bin'", workflow)
         self.assertIn("manifest_bytes != canonical_manifest or packets != canonical_packets", workflow)
         self.assertIn("diff_path.write_bytes(complete_diff)", workflow)
+        self.assertLess(
+            workflow.index("validate_diff_transport_budget(manifest)"),
+            workflow.index("packet_paths=[]"),
+        )
         self.assertNotIn("ledger_bytes(root+'.diff')", workflow)
         self.assertIn("tools/qikvrt_requested_review_executor.py','verify'", workflow)
         self.assertIn("'--expected-diff',str(diff_path)", workflow)

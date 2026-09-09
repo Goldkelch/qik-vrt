@@ -28,8 +28,22 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
 REVIEW_DIFF_CHUNK_BYTES = 1024 * 1024
+REVIEW_DIFF_MAX_PACKETS = 4
+REVIEW_DIFF_MAX_BYTES = REVIEW_DIFF_CHUNK_BYTES * REVIEW_DIFF_MAX_PACKETS
 REVIEW_DIFF_TRANSPORT_SCHEMA = "qikvrt_mesh_review_diff_transport_v1"
 REVIEW_DIFF_TRANSPORT_DELIVERY = "SEQUENTIAL_EXACT_PACKET_ORDER"
+REVIEW_DIFF_TRANSPORT_FIELDS = frozenset({
+    "schema",
+    "packet_bytes",
+    "packet_count",
+    "total_bytes",
+    "sha256",
+    "manifest_path",
+    "packets",
+    "delivery",
+    "manifest_sha256",
+})
+REVIEW_DIFF_PACKET_FIELDS = frozenset({"index", "offset", "bytes", "sha256", "path"})
 SUCCESS = {"success"}
 NON_ADVERSE = {"success", "skipped"}
 NON_GATE_OBSERVER_PATHS = {
@@ -168,6 +182,85 @@ def _pretty_json_bytes(value: Any) -> bytes:
     return (json.dumps(value, sort_keys=True, indent=2) + "\n").encode("utf-8")
 
 
+def validate_diff_transport_budget(transport: Mapping[str, Any]) -> None:
+    """Preflight a complete diff manifest before any ledger packet I/O.
+
+    The exact diff remains local review evidence, but a ledger transport with
+    unbounded packets would turn one native event into unbounded GitHub blob
+    writes and readbacks.  The complete packet declaration and its canonical
+    manifest seal are checked here, rather than after a reader has followed
+    any packet path.  This is shared by every ledger writer and reader.
+    """
+    if not isinstance(transport, Mapping):
+        raise ReviewSnapshotError("diff transport budget envelope is invalid")
+    if transport.get("schema") != REVIEW_DIFF_TRANSPORT_SCHEMA:
+        raise ReviewSnapshotError("diff transport schema is invalid")
+    if set(transport) != REVIEW_DIFF_TRANSPORT_FIELDS:
+        raise ReviewSnapshotError("diff transport manifest fields are invalid")
+    if transport.get("packet_bytes") != REVIEW_DIFF_CHUNK_BYTES:
+        raise ReviewSnapshotError("diff transport packet bound is invalid")
+    if transport.get("delivery") != REVIEW_DIFF_TRANSPORT_DELIVERY:
+        raise ReviewSnapshotError("diff transport delivery contract is invalid")
+    total_bytes = transport.get("total_bytes")
+    packet_count = transport.get("packet_count")
+    packets = transport.get("packets")
+    if (
+        isinstance(total_bytes, bool)
+        or not isinstance(total_bytes, int)
+        or total_bytes < 1
+        or isinstance(packet_count, bool)
+        or not isinstance(packet_count, int)
+        or packet_count < 1
+    ):
+        raise ReviewSnapshotError("diff transport size declaration is invalid")
+    if (
+        total_bytes > REVIEW_DIFF_MAX_BYTES
+        or packet_count > REVIEW_DIFF_MAX_PACKETS
+    ):
+        raise ReviewSnapshotError("diff transport exceeds ledger I/O budget")
+    # This runs before ledger packet I/O.  A bounded ``packet_count`` is not
+    # sufficient if an untrusted manifest can name an arbitrary-length list.
+    if not isinstance(packets, list) or len(packets) != packet_count:
+        raise ReviewSnapshotError("diff transport packet count is invalid")
+    _sha256(transport.get("sha256"), "diff transport digest")
+    manifest_path = transport.get("manifest_path")
+    if not isinstance(manifest_path, str) or not manifest_path.endswith(".chunks.json"):
+        raise ReviewSnapshotError("diff transport manifest path is invalid")
+    manifest_projection = dict(transport)
+    manifest_sha256 = manifest_projection.pop("manifest_sha256")
+    if (
+        not isinstance(manifest_sha256, str)
+        or manifest_sha256 != _canonical_sha256(manifest_projection)
+    ):
+        raise ReviewSnapshotError("diff transport manifest digest mismatch")
+    base_path = manifest_path[: -len(".chunks.json")]
+    declared_bytes = 0
+    for index, packet in enumerate(packets):
+        if not isinstance(packet, Mapping) or set(packet) != REVIEW_DIFF_PACKET_FIELDS:
+            raise ReviewSnapshotError("diff transport packet is invalid")
+        packet_index = packet.get("index")
+        offset = packet.get("offset")
+        size = packet.get("bytes")
+        if (
+            isinstance(packet_index, bool)
+            or not isinstance(packet_index, int)
+            or packet_index != index
+            or isinstance(offset, bool)
+            or not isinstance(offset, int)
+            or offset != declared_bytes
+            or isinstance(size, bool)
+            or not isinstance(size, int)
+            or size < 1
+            or size != min(REVIEW_DIFF_CHUNK_BYTES, total_bytes - declared_bytes)
+            or packet.get("path") != f"{base_path}.chunks/{index:08d}.bin"
+        ):
+            raise ReviewSnapshotError("diff transport packet order is invalid")
+        _sha256(packet.get("sha256"), "diff transport packet digest")
+        declared_bytes += size
+    if declared_bytes != total_bytes:
+        raise ReviewSnapshotError("diff transport total bytes are invalid")
+
+
 def build_diff_transport(diff: bytes, base_path: str) -> dict[str, Any]:
     """Describe an exact diff as ordered, content-addressed 1 MiB packets.
 
@@ -179,6 +272,8 @@ def build_diff_transport(diff: bytes, base_path: str) -> dict[str, Any]:
         raise ReviewSnapshotError("diff transport requires non-empty bytes")
     if not isinstance(base_path, str) or not base_path:
         raise ReviewSnapshotError("diff transport base path is missing")
+    if len(diff) > REVIEW_DIFF_MAX_BYTES:
+        raise ReviewSnapshotError("diff transport exceeds ledger I/O budget")
     chunks = []
     for index, offset in enumerate(range(0, len(diff), REVIEW_DIFF_CHUNK_BYTES)):
         packet = diff[offset : offset + REVIEW_DIFF_CHUNK_BYTES]
@@ -228,17 +323,11 @@ def reassemble_diff_transport(transport: Mapping[str, Any], packets: Sequence[by
         raise ReviewSnapshotError("diff transport packet bound is invalid")
     if transport.get("delivery") != REVIEW_DIFF_TRANSPORT_DELIVERY:
         raise ReviewSnapshotError("diff transport delivery contract is invalid")
+    validate_diff_transport_budget(transport)
     total_bytes = transport.get("total_bytes")
     packet_count = transport.get("packet_count")
-    if (
-        isinstance(total_bytes, bool)
-        or not isinstance(total_bytes, int)
-        or total_bytes < 1
-        or isinstance(packet_count, bool)
-        or not isinstance(packet_count, int)
-        or packet_count < 1
-    ):
-        raise ReviewSnapshotError("diff transport size declaration is invalid")
+    assert isinstance(total_bytes, int)
+    assert isinstance(packet_count, int)
     _sha256(transport.get("sha256"), "diff transport digest")
     manifest_path = transport.get("manifest_path")
     if not isinstance(manifest_path, str) or not manifest_path.endswith(".chunks.json"):
@@ -301,10 +390,13 @@ def prepare_diff_transport_ledger_entries(
     """
     if not isinstance(diff, bytes) or not diff:
         raise ReviewSnapshotError("ledger diff bytes are unavailable")
+    if len(diff) > REVIEW_DIFF_MAX_BYTES:
+        raise ReviewSnapshotError("diff transport exceeds ledger I/O budget")
     if not isinstance(ledger_manifest_path, str) or not ledger_manifest_path:
         raise ReviewSnapshotError("ledger manifest path is invalid")
     if not isinstance(transport, Mapping):
         raise ReviewSnapshotError("ledger diff transport is invalid")
+    validate_diff_transport_budget(transport)
     if transport.get("manifest_path") != ledger_manifest_path:
         raise ReviewSnapshotError("diff transport manifest path does not bind the ledger path")
     declared = transport.get("packets")
@@ -1565,9 +1657,10 @@ def _result(
         # A workflow-progress observation is useful evidence, but not an
         # immutable ledger candidate.  Persist only a terminal technical
         # disposition; native completion events will reobserve a WAIT state.
-        "persistence_eligible": state in {
-            "APPROVE", "REQUEST_CHANGES", "COMMENT_WITH_BLOCKER",
-        },
+        "persistence_eligible": (
+            state in {"APPROVE", "REQUEST_CHANGES", "COMMENT_WITH_BLOCKER"}
+            and isinstance(diff_transport, Mapping)
+        ),
         "derived_action": _derived_action(state, blocker),
         "verification_state": "HOLD_UNVERIFIED",
         "ordinary_release": False,
@@ -1685,16 +1778,21 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
         writers,
         required_gate_paths,
     )
+    diff_transport_over_ledger_budget = len(diff) > REVIEW_DIFF_MAX_BYTES
     common = {
         "scope": scope,
         "scope_sha256": observed_scope_digest,
         "diff_sha256": actual_diff_sha256,
         "diff_bytes": len(diff),
         "fingerprint": fingerprint,
-        "diff_transport": build_diff_transport(
-            diff,
-            f"{LEDGER_ROOT}/pr-{snapshot['pr_number']}/{snapshot['head_sha']}/{fingerprint}",
-        ) if diff else None,
+        "diff_transport": (
+            build_diff_transport(
+                diff,
+                f"{LEDGER_ROOT}/pr-{snapshot['pr_number']}/{snapshot['head_sha']}/{fingerprint}",
+            )
+            if diff and not diff_transport_over_ledger_budget
+            else None
+        ),
         "latest": latest,
     }
     if intake["reason_state"] == "AMBIGUOUS_FAIL_CLOSED":
@@ -1731,6 +1829,26 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
             "REVIEW_BYTES_UNAVAILABLE",
             "exact diff is empty for a declared review scope",
             findings=[_finding("REVIEW_BYTES_UNAVAILABLE", "BLOCK", "exact diff is empty")],
+            **common,
+        )
+    if diff_transport_over_ledger_budget:
+        detail=(
+            f"exact diff contains {len(diff)} bytes, exceeding the versioned "
+            f"ledger transport ceiling of {REVIEW_DIFF_MAX_BYTES} bytes "
+            f"({REVIEW_DIFF_MAX_PACKETS} packet(s))"
+        )
+        return _result(
+            snapshot,
+            "COMMENT_WITH_BLOCKER",
+            "DIFF_LEDGER_TRANSPORT_LIMIT_EXCEEDED",
+            detail,
+            findings=[
+                _finding(
+                    "DIFF_LEDGER_TRANSPORT_LIMIT_EXCEEDED",
+                    "HOLD",
+                    detail,
+                )
+            ],
             **common,
         )
     positive_findings = [
@@ -2004,18 +2122,26 @@ def _gh_one(path: str) -> Any:
     return _run_json(("gh", "api", path))
 
 
-def _gh_pages(path: str) -> list[Mapping[str, Any]]:
-    pages = _run_json(("gh", "api", "--paginate", "--slurp", path))
-    if not isinstance(pages, list):
-        raise ReviewObservationError("paginated GitHub response is not a list")
+def _gh_bounded_page(path: str, kind: str) -> list[Mapping[str, Any]]:
+    """Read one complete-or-fail-closed REST list page.
+
+    The requested-review executor must never turn one native delivery into an
+    unbounded sequence of installation-token reads.  The callers all request
+    ``per_page=100``.  A full page cannot prove that a next page is absent, so
+    it is deliberately a HOLD rather than a best-effort partial review.
+    """
+    page = _run_json(("gh", "api", path))
+    if not isinstance(page, list):
+        raise ReviewObservationError(f"{kind} GitHub response is not a list")
+    if len(page) >= 100:
+        raise ReviewObservationError(
+            f"{kind} observation reaches the one-page safety bound"
+        )
     result: list[Mapping[str, Any]] = []
-    for page in pages:
-        if not isinstance(page, list):
-            raise ReviewObservationError("paginated GitHub page is not a list")
-        for item in page:
-            if not isinstance(item, Mapping):
-                raise ReviewObservationError("paginated GitHub item is not an object")
-            result.append(item)
+    for item in page:
+        if not isinstance(item, Mapping):
+            raise ReviewObservationError(f"{kind} item is not an object")
+        result.append(item)
     return result
 
 
@@ -2696,45 +2822,50 @@ def select_review_subject(
 
 
 def _gh_runs(path: str) -> list[Mapping[str, Any]]:
-    pages = _run_json(("gh", "api", "--paginate", "--slurp", path))
-    if not isinstance(pages, list):
-        raise ReviewObservationError("workflow-run response is not a list")
+    page = _run_json(("gh", "api", path))
+    if not isinstance(page, Mapping):
+        raise ReviewObservationError("workflow-run response is not an object")
+    total = page.get("total_count")
+    raw_runs = page.get("workflow_runs")
+    if (
+        isinstance(total, bool)
+        or not isinstance(total, int)
+        or total < 0
+        or not isinstance(raw_runs, list)
+        or len(raw_runs) > 100
+        or total != len(raw_runs)
+    ):
+        raise ReviewObservationError("workflow-run projection is incomplete")
     result: list[Mapping[str, Any]] = []
-    for page in pages:
-        if not isinstance(page, Mapping) or not isinstance(page.get("workflow_runs"), list):
-            raise ReviewObservationError("workflow-run page is malformed")
-        for item in page["workflow_runs"]:
-            if not isinstance(item, Mapping):
-                raise ReviewObservationError("workflow run is not an object")
-            result.append(item)
+    for item in raw_runs:
+        if not isinstance(item, Mapping):
+            raise ReviewObservationError("workflow run is not an object")
+        result.append(item)
     return result
 
 
 def _gh_jobs(path: str) -> list[Mapping[str, Any]]:
-    """Read and completeness-check every paginated job for one workflow run."""
-    pages = _run_json(("gh", "api", "--paginate", "--slurp", path))
-    if not isinstance(pages, list) or not pages:
-        raise ReviewObservationError("workflow-job response is not a non-empty list")
-    result: list[Mapping[str, Any]] = []
-    declared_total: int | None = None
-    for page in pages:
-        if not isinstance(page, Mapping) or not isinstance(page.get("jobs"), list):
-            raise ReviewObservationError("workflow-job page is malformed")
-        total = page.get("total_count")
-        if isinstance(total, bool) or not isinstance(total, int) or total < 0:
-            raise ReviewObservationError("workflow-job total_count is invalid")
-        if declared_total is None:
-            declared_total = total
-        elif declared_total != total:
-            raise ReviewObservationError("workflow-job total_count changed across pages")
-        for item in page["jobs"]:
-            if not isinstance(item, Mapping):
-                raise ReviewObservationError("workflow job is not an object")
-            result.append(item)
-    if declared_total != len(result):
+    """Read one complete-or-fail-closed job page for one workflow run."""
+    page = _run_json(("gh", "api", path))
+    if not isinstance(page, Mapping) or not isinstance(page.get("jobs"), list):
+        raise ReviewObservationError("workflow-job response is malformed")
+    total = page.get("total_count")
+    jobs = page["jobs"]
+    if (
+        isinstance(total, bool)
+        or not isinstance(total, int)
+        or total < 0
+        or len(jobs) > 100
+        or total != len(jobs)
+    ):
         raise ReviewObservationError(
-            f"workflow-job projection is incomplete: {len(result)} != {declared_total}"
+            f"workflow-job projection is incomplete: {len(jobs)} != {total}"
         )
+    result: list[Mapping[str, Any]] = []
+    for item in jobs:
+        if not isinstance(item, Mapping):
+            raise ReviewObservationError("workflow job is not an object")
+        result.append(item)
     return result
 
 
@@ -2860,35 +2991,30 @@ def _git_scope(base: str, head: str) -> list[dict[str, Any]]:
 def _thread_observation(repository: str, number: int) -> list[dict[str, Any]]:
     owner, name = repository.split("/", 1)
     query = """query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{id isResolved}}}}}"""
-    after: str | None = None
+    command = [
+        "gh", "api", "graphql", "-f", f"query={query}",
+        "-F", f"owner={owner}", "-F", f"name={name}", "-F", f"number={number}",
+    ]
+    graph = _run_json(command)
+    try:
+        connection = graph["data"]["repository"]["pullRequest"]["reviewThreads"]
+        nodes = connection["nodes"]
+        page_info = connection["pageInfo"]
+    except (KeyError, TypeError) as exc:
+        raise ReviewObservationError("review-thread response is malformed") from exc
+    if not isinstance(nodes, list) or page_info.get("hasNextPage") is not False:
+        raise ReviewObservationError("review-thread observation reaches the one-page safety bound")
     threads: list[dict[str, Any]] = []
-    while True:
-        command = [
-            "gh", "api", "graphql", "-f", f"query={query}",
-            "-F", f"owner={owner}", "-F", f"name={name}", "-F", f"number={number}",
-        ]
-        if after is not None:
-            command.extend(("-F", f"after={after}"))
-        graph = _run_json(command)
-        try:
-            connection = graph["data"]["repository"]["pullRequest"]["reviewThreads"]
-            nodes = connection["nodes"]
-            page_info = connection["pageInfo"]
-        except (KeyError, TypeError) as exc:
-            raise ReviewObservationError("review-thread response is malformed") from exc
-        for node in nodes:
-            threads.append(
-                {
-                    "id": str(node["id"]),
-                    "is_resolved": bool(node["isResolved"]),
-                    "body_sha256": None,
-                }
-            )
-        if not page_info.get("hasNextPage"):
-            break
-        after = page_info.get("endCursor")
-        if not isinstance(after, str) or not after:
-            raise ReviewObservationError("review-thread pagination cursor is missing")
+    for node in nodes:
+        if not isinstance(node, Mapping):
+            raise ReviewObservationError("review-thread item is malformed")
+        threads.append(
+            {
+                "id": str(node["id"]),
+                "is_resolved": bool(node["isResolved"]),
+                "body_sha256": None,
+            }
+        )
     return threads
 
 
@@ -2900,7 +3026,7 @@ def _discussion_observation(repository: str, number: int) -> list[dict[str, Any]
     )
     result: list[dict[str, Any]] = []
     for kind, endpoint in endpoints:
-        for item in _gh_pages(endpoint):
+        for item in _gh_bounded_page(endpoint, kind):
             body = item.get("body") or ""
             author = (item.get("user") or {}).get("login")
             if (
@@ -2937,6 +3063,7 @@ def _discussion_observation(repository: str, number: int) -> list[dict[str, Any]
 def _workflow_observation(
     repository: str,
     head: str,
+    required_workflow_ids: set[int] | None = None,
 ) -> list[dict[str, Any]]:
     encoded_head = urllib.parse.quote(head, safe="")
     raw_runs = _gh_runs(
@@ -2960,6 +3087,22 @@ def _workflow_observation(
         for item in raw_runs
     ]
     latest = collapse_latest(runs)
+    if required_workflow_ids is not None:
+        if (
+            not required_workflow_ids
+            or any(
+                isinstance(identifier, bool)
+                or not isinstance(identifier, int)
+                or identifier < 1
+                for identifier in required_workflow_ids
+            )
+        ):
+            raise ReviewObservationError("required workflow identifiers are invalid")
+        latest = {
+            identity: run
+            for identity, run in latest.items()
+            if run.get("workflow_id") in required_workflow_ids
+        }
     for run in latest.values():
         run_id = run.get("id")
         if isinstance(run_id, bool) or not isinstance(run_id, int) or run_id < 1:
@@ -3178,7 +3321,7 @@ def observe_repository(
 
     threads = _thread_observation(repository, pr_number)
     discussion = _discussion_observation(repository, pr_number)
-    runs = _workflow_observation(repository, head)
+    runs = _workflow_observation(repository, head, set(gate_ids.values()))
     writers = _active_writer_observation(
         repository,
         current_run_id,

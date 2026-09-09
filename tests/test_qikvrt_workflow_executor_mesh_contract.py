@@ -143,6 +143,12 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         )
         self.assertEqual(binding["review_fingerprint_algorithm"], "SHA256")
         self.assertEqual(binding["complete_diff_transport_packet_max_bytes"], 1048576)
+        self.assertEqual(binding["complete_diff_transport_packet_max_count"], 4)
+        self.assertEqual(binding["complete_diff_transport_total_max_bytes"], 4194304)
+        self.assertEqual(
+            binding["complete_diff_transport_over_budget"],
+            "HOLD_UNVERIFIED_NONPERSISTENT_NO_LEDGER_PACKET_IO",
+        )
         self.assertEqual(
             binding["complete_diff_transport_acceptance"],
             "SEQUENTIAL_EXACT_PACKET_ORDER_EXPLICIT_COUNT_PER_PACKET_AND_TOTAL_SHA256_CANONICAL_MANIFEST_SHA256_AND_EXACT_LEDGER_MANIFEST_READBACK_REQUIRED",

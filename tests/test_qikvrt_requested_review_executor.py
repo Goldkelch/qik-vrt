@@ -566,6 +566,49 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             )
         self.assertTrue(report["exact"])
 
+    def test_diff_above_ledger_transport_budget_is_nonpersistent_hold(self):
+        diff = b"+" * (MODULE.REVIEW_DIFF_MAX_BYTES + 1)
+        snapshot = self.snapshot(
+            diff_payload=diff,
+            diff_sha256=sha256_bytes(diff),
+            diff_bytes=len(diff),
+            diff_complete=True,
+        )
+
+        result = self.evaluate(snapshot, diff)
+
+        self.assert_receipt_boundaries(result)
+        self.assertEqual(result["mesh_disposition"], "COMMENT_WITH_BLOCKER")
+        self.assertEqual(
+            result["first_blocker"], "DIFF_LEDGER_TRANSPORT_LIMIT_EXCEEDED"
+        )
+        self.assertIn(
+            "DIFF_LEDGER_TRANSPORT_LIMIT_EXCEEDED", self.finding_ids(result)
+        )
+        self.assertIsNone(result["diff_transport"])
+        self.assertFalse(result["persistence_eligible"])
+        with self.assertRaisesRegex(
+            MODULE.ReviewSnapshotError, "ledger I/O budget"
+        ):
+            MODULE.build_diff_transport(diff, "state/mesh/reviews/example")
+
+    def test_diff_transport_preflight_rejects_surplus_packet_paths_before_io(self):
+        transport = MODULE.build_diff_transport(
+            b"+", "state/mesh/reviews/example"
+        )
+        malformed = dict(transport)
+        malformed["packets"] = transport["packets"] * (
+            MODULE.REVIEW_DIFF_MAX_PACKETS + 1
+        )
+        malformed["manifest_sha256"] = MODULE._canonical_sha256(
+            {key: value for key, value in malformed.items() if key != "manifest_sha256"}
+        )
+
+        with self.assertRaisesRegex(
+            MODULE.ReviewSnapshotError, "packet count is invalid"
+        ):
+            MODULE.validate_diff_transport_budget(malformed)
+
     def test_diff_transport_is_one_mebibyte_ordered_and_fail_closed(self):
         diff = b"a" * MODULE.REVIEW_DIFF_CHUNK_BYTES + b"b" * 17
         transport = MODULE.build_diff_transport(diff, "state/mesh/reviews/example")
@@ -959,22 +1002,15 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             first["receipt_payload_sha256"], second["receipt_payload_sha256"]
         )
 
-    def test_paginated_job_observation_is_complete_and_order_stable(self):
-        pages = [
-            {
-                "total_count": 2,
-                "jobs": [
-                    {"id": 22, "status": "completed", "conclusion": "success"}
-                ],
-            },
-            {
-                "total_count": 2,
-                "jobs": [
-                    {"id": 11, "status": "completed", "conclusion": "skipped"}
-                ],
-            },
-        ]
-        with mock.patch.object(MODULE, "_run_json", return_value=pages) as run_json:
+    def test_bounded_job_observation_is_complete_and_order_stable(self):
+        page = {
+            "total_count": 2,
+            "jobs": [
+                {"id": 22, "status": "completed", "conclusion": "success"},
+                {"id": 11, "status": "completed", "conclusion": "skipped"},
+            ],
+        }
+        with mock.patch.object(MODULE, "_run_json", return_value=page) as run_json:
             jobs = MODULE._gh_jobs("repos/example/qik-vrt/actions/runs/7/jobs?per_page=100")
 
         self.assertEqual([job["id"] for job in jobs], [22, 11])
@@ -982,22 +1018,18 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             (
                 "gh",
                 "api",
-                "--paginate",
-                "--slurp",
                 "repos/example/qik-vrt/actions/runs/7/jobs?per_page=100",
             )
         )
 
-    def test_incomplete_paginated_job_observation_fails_closed(self):
-        pages = [
-            {
-                "total_count": 2,
-                "jobs": [
-                    {"id": 11, "status": "completed", "conclusion": "success"}
-                ],
-            }
-        ]
-        with mock.patch.object(MODULE, "_run_json", return_value=pages):
+    def test_incomplete_bounded_job_observation_fails_closed(self):
+        page = {
+            "total_count": 2,
+            "jobs": [
+                {"id": 11, "status": "completed", "conclusion": "success"}
+            ],
+        }
+        with mock.patch.object(MODULE, "_run_json", return_value=page):
             with self.assertRaisesRegex(
                 MODULE.ReviewObservationError,
                 "workflow-job projection is incomplete",
@@ -1006,19 +1038,63 @@ class RequestedReviewExecutorTests(unittest.TestCase):
                     "repos/example/qik-vrt/actions/runs/7/jobs?per_page=100"
                 )
 
-    def test_workflow_observation_projects_every_job(self):
+    def test_full_rest_page_fails_closed_without_a_second_request(self):
+        with mock.patch.object(
+            MODULE, "_run_json", return_value=[{"id": value} for value in range(100)]
+        ) as run_json:
+            with self.assertRaisesRegex(
+                MODULE.ReviewObservationError,
+                "one-page safety bound",
+            ):
+                MODULE._gh_bounded_page(
+                    "repos/example/qik-vrt/issues/349/comments?per_page=100",
+                    "ISSUE_COMMENT",
+                )
+
+        run_json.assert_called_once_with(
+            ("gh", "api", "repos/example/qik-vrt/issues/349/comments?per_page=100")
+        )
+
+    def test_second_review_thread_page_fails_closed_without_pagination(self):
+        graph = {
+            "data": {
+                "repository": {
+                    "pullRequest": {
+                        "reviewThreads": {
+                            "pageInfo": {"hasNextPage": True, "endCursor": "cursor"},
+                            "nodes": [{"id": "thread-1", "isResolved": False}],
+                        }
+                    }
+                }
+            }
+        }
+        with mock.patch.object(MODULE, "_run_json", return_value=graph) as run_json:
+            with self.assertRaisesRegex(
+                MODULE.ReviewObservationError,
+                "one-page safety bound",
+            ):
+                MODULE._thread_observation("example/qik-vrt", 349)
+
+        self.assertEqual(run_json.call_count, 1)
+
+    def test_workflow_observation_reads_jobs_only_for_required_gates(self):
         raw_run = self.workflow_run("QIKVRT CI", identifier=101, run_number=10)
         raw_run.pop("jobs_total")
         raw_run.pop("jobs")
+        irrelevant_run = self.workflow_run("unrelated", identifier=102, run_number=10)
+        irrelevant_run.pop("jobs_total")
+        irrelevant_run.pop("jobs")
         raw_jobs = [
             {"id": 12, "status": "completed", "conclusion": "skipped"},
             {"id": 11, "status": "completed", "conclusion": "success"},
         ]
         with (
-            mock.patch.object(MODULE, "_gh_runs", return_value=[raw_run]),
+            mock.patch.object(MODULE, "_gh_runs", return_value=[raw_run, irrelevant_run]),
             mock.patch.object(MODULE, "_gh_jobs", return_value=raw_jobs) as gh_jobs,
         ):
-            runs = MODULE._workflow_observation("example/qik-vrt", HEAD_SHA)
+            runs = MODULE._workflow_observation(
+                "example/qik-vrt", HEAD_SHA, {raw_run["workflow_id"]}
+            )
 
         self.assertEqual(runs[0]["jobs_total"], 2)
         self.assertEqual(
@@ -1589,7 +1665,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             "created_at": "2026-08-22T20:05:00Z",
         }
 
-        def pages(endpoint):
+        def page(endpoint, kind):
             if endpoint.endswith("/reviews?per_page=100"):
                 return [own]
             if endpoint.endswith("/comments?per_page=100") and "/issues/" in endpoint:
@@ -1599,7 +1675,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
                 ]
             return []
 
-        with mock.patch.object(MODULE, "_gh_pages", side_effect=pages):
+        with mock.patch.object(MODULE, "_gh_bounded_page", side_effect=page):
             observed = MODULE._discussion_observation("example/qik-vrt", 349)
         self.assertEqual(
             [item["id"] for item in observed],
@@ -2209,7 +2285,8 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         )
         self.assertIn("HOLD_UNVERIFIED", text)
         self.assertIn("independent Code-Owner approval: **not implied**", text)
-        self.assertIn("for delay in 0 15 45", text)
+        self.assertIn("One complete observation is the installation-token budget", text)
+        self.assertNotIn("for delay in 0 15 45", text)
         self.assertIn("API rate limit exceeded for installation.", text)
         self.assertIn("rate-limit-exhausted.json", text)
         self.assertIn("rate-limit-hold-status.json", text)
@@ -2222,6 +2299,9 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             "steps.decision.outputs.observation_complete == 'true'",
             text,
         )
+        self.assertIn("bounded_list_page()", text)
+        self.assertNotIn("--paginate", text)
+        self.assertNotIn("--paginate", core)
         observer = OBSERVER_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("PULL_REQUEST_BASE_NOT_MAIN", observer)
         self.assertIn("INELIGIBLE_EVENT_TARGET", observer)
