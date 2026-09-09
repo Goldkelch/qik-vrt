@@ -72,8 +72,11 @@ class RepositoryWriterLeaseTests(unittest.TestCase):
             lines = text.splitlines()
             matched = 0
             for index, line in enumerate(lines):
-                if line.strip() != key:
+                stripped = line.strip()
+                if not stripped.startswith(key):
                     continue
+                suffix = stripped[len(key):].strip()
+                self.assertIn(suffix, {'', '>-', '|-', '>', '|'}, str(path))
                 matched += 1
                 self.assertLess(index + 1, len(lines), str(path))
                 raw = lines[index + 1].strip()
