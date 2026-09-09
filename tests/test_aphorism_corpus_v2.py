@@ -100,14 +100,10 @@ class AphorismCorpusV2Tests(unittest.TestCase):
 
     def test_repository_writer_serializes_and_fails_closed_on_ref_drift(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn(
-            "group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}",
-            workflow,
-        )
-        self.assertNotIn(
-            "qikvrt-repository-evidence-${{ github.event_name }}-",
-            workflow,
-        )
+        self.assertIn("qikvrt-repository-evidence-readonly-{0}", workflow)
+        self.assertIn("qikvrt-repository-evidence-{0}", workflow)
+        self.assertIn("github.event_name == 'pull_request'", workflow)
+        self.assertIn("github.head_ref || github.ref_name", workflow)
         commit_step = workflow.index("- name: Commit materialized repository evidence")
         block = workflow[commit_step:]
         self.assertIn("if: github.event_name != 'pull_request'", block)

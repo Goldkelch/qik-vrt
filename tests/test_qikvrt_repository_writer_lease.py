@@ -4,12 +4,21 @@ import unittest
 
 
 class RepositoryWriterLeaseTests(unittest.TestCase):
-    def test_repository_materializer_keeps_exact_target_writer_lease(self):
+    def test_repository_materializer_separates_read_only_pr_from_writer_lease(self):
         path = Path('.github/workflows/qikvrt_batch04_integrity.yml')
         text = path.read_text(encoding='utf-8')
-        expected = 'group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}'
-        self.assertIn(expected, text, str(path))
+        self.assertIn("github.event_name == 'pull_request'", text, str(path))
+        self.assertIn("qikvrt-repository-evidence-readonly-{0}", text, str(path))
+        self.assertIn("qikvrt-repository-evidence-{0}", text, str(path))
+        self.assertIn("github.head_ref || github.ref_name", text, str(path))
         self.assertIn('cancel-in-progress: false', text, str(path))
+        commit = text.index('- name: Commit materialized repository evidence')
+        self.assertIn("if: github.event_name != 'pull_request'", text[commit:])
+        self.assertNotIn(
+            'group: qikvrt-repository-evidence-' + '$' + '{{ github.head_ref || github.ref_name }}',
+            text,
+            'read-only PR verification must not compete for the branch writer lease',
+        )
 
     def test_general_pr_integrity_writer_shares_exact_target_lease_and_is_atomic(self):
         path = Path('.github/workflows/qikvrt_pr18_integrity_repair.yml')

@@ -23,7 +23,9 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}
+  # Pull-request executions are verification-only and must never occupy the
+  # serialized branch-writer lease. Non-PR executions retain that lease.
+  group: ${{ github.event_name == 'pull_request' && format('qikvrt-repository-evidence-readonly-{0}', github.head_ref || github.ref_name) || format('qikvrt-repository-evidence-{0}', github.head_ref || github.ref_name) }}
   cancel-in-progress: false
 
 jobs:
