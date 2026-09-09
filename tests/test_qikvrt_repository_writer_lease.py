@@ -15,6 +15,44 @@ class RepositoryWriterLeaseTests(unittest.TestCase):
             str(path),
         )
 
+    def test_repository_materializer_uses_separate_native_user_writer_authority(self):
+        path = Path('.github/workflows/qikvrt_batch04_integrity.yml')
+        text = path.read_text(encoding='utf-8')
+        permissions = text.split('permissions:', 1)[1].split('concurrency:', 1)[0]
+        self.assertIn('contents: read', permissions)
+        self.assertNotIn('contents: write', permissions)
+        checkout = text.split('- uses: actions/checkout@', 1)[1].split('- uses: actions/setup-python@', 1)[0]
+        self.assertIn('persist-credentials: false', checkout)
+        self.assertIn(
+            'WRITER_TOKEN: ${{ secrets.QIKVRT_INGOLF_LOHMANN_REPOSITORY_WRITER_TOKEN }}',
+            text,
+        )
+        self.assertIn('REPOSITORY_WRITER_CREDENTIAL_MISSING', text)
+        self.assertIn('GH_TOKEN="$WRITER_TOKEN" gh api user', text)
+        self.assertIn('.login == "ingolf-lohmann" and .type == "User"', text)
+        self.assertIn('collaborators/ingolf-lohmann/permission', text)
+        self.assertIn('write|maintain|admin', text)
+        self.assertIn('GH_TOKEN="$WRITER_TOKEN" gh auth setup-git', text)
+        self.assertIn('git config user.name "ingolf-lohmann"', text)
+        self.assertNotIn('git config user.name "github-actions[bot]"', text)
+        self.assertIn('qikvrt-repository-writer-authority', text)
+
+    def test_requested_review_executor_queue_is_exact_subject_scoped(self):
+        path = Path('.github/workflows/qikvrt_requested_review_executor.yml')
+        text = path.read_text(encoding='utf-8')
+        expected = (
+            'group: qikvrt-requested-review-executor-${{ github.repository }}-${{ '
+            'github.event.pull_request.number || github.event.issue.number || '
+            'github.event.workflow_run.pull_requests[0].number || github.run_id }}'
+        )
+        self.assertIn(expected, text, str(path))
+        self.assertNotIn(
+            'group: qikvrt-requested-review-executor-${{ github.repository }}\n',
+            text,
+        )
+        self.assertNotIn('queue: max', text)
+        self.assertIn('non-force fast-forward CAS', text)
+
     def test_batch003_separates_read_only_pr_run_from_non_pr_writer_lease(self):
         path = Path('.github/workflows/qikvrt_batch003_remaining_disposition.yml')
         text = path.read_text(encoding='utf-8')
