@@ -206,18 +206,20 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
     def test_exact_head_success_routes_one_exact_review_subject(self) -> None:
         self.assertIn("actions: write", self.exact_head_text)
         self.assertIn(
-            "Dispatch exact-head requested-review continuation",
+            "Dispatch exact-head requested-review continuation quota-safely",
             self.exact_head_text,
         )
         self.assertIn(
             "qikvrt_requested_review_executor.yml/dispatches",
             self.exact_head_text,
         )
-        self.assertIn(
-            'current="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TARGET_PR}"',
+        self.assertIn('refs/pull/${TARGET_PR}/head', self.exact_head_text)
+        self.assertIn('refs/heads/${TARGET_REF}', self.exact_head_text)
+        self.assertIn("qikvrt_gh_write_after_primary_reset", self.exact_head_text)
+        self.assertNotIn(
+            'gh api "repos/${GITHUB_REPOSITORY}/pulls/${TARGET_PR}"',
             self.exact_head_text,
         )
-        self.assertIn('test "$current" = "$TARGET_SHA"', self.exact_head_text)
         self.assertIn("-f ref=main", self.exact_head_text)
         self.assertIn('-f "inputs[pr]=$TARGET_PR"', self.exact_head_text)
         self.assertIn('-f "inputs[head]=$TARGET_SHA"', self.exact_head_text)
