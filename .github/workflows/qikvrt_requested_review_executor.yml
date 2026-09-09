@@ -29,9 +29,11 @@ permissions:
   statuses: write
 
 concurrency:
-  group: qikvrt-requested-review-executor-${{ github.repository }}
+  # Serialize native events only for the same PR subject. Cross-PR review
+  # observations must not starve behind a repository-global queue; the shared
+  # ledger itself remains protected by its non-force fast-forward CAS.
+  group: qikvrt-requested-review-executor-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}
   cancel-in-progress: false
-  queue: max
 
 jobs:
   review-one:
