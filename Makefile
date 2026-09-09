@@ -60,11 +60,11 @@ m68000-kernel-contract:
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tools/qikvrt_virtual_mesh_m68000_acceptance.py --iterations 3 --json >/dev/null
 
 workflow-executor-mesh-contract: m68000-kernel-contract
-	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_workflow_executor_mesh_contract tests.test_qikvrt_autonomous_pr_head_continuation tests.test_qikvrt_pr_head_recovery tests.test_qikvrt_native_account_review tests.test_seed_workflows
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_workflow_executor_mesh_contract tests.test_qikvrt_workflow_event_graph tests.test_qikvrt_writer_inventory tests.test_issue_agent_autofinish_workflow_syntax tests.test_qikvrt_autonomous_pr_head_continuation tests.test_qikvrt_pr_head_recovery tests.test_qikvrt_native_account_review tests.test_seed_workflows
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tools/qikvrt_workflow_executor.py snapshot --expect-head "$$(git rev-parse --verify HEAD^{commit})" --json >/dev/null
 
 repository-writer-contract:
-	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_materialization_scope tests.test_qikvrt_repository_writer_lease tests.test_qikvrt_required_review_gate tests.test_qikvrt_ruleset_reconcile tests.issue_agent.test_validate
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_materialization_scope tests.test_qikvrt_repository_writer_lease tests.test_qikvrt_required_review_gate tests.test_qikvrt_ruleset_reconcile tests.test_qikvrt_autonomous_ruleset_effect_loop tests.test_qikvrt_ruleset_effect_dispatch_bridge tests.test_qikvrt_ruleset_topology tests.test_qikvrt_reflexive_repository_watchdog tests.issue_agent.test_validate
 
 repository-terminal-test:
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_repository_terminal

@@ -10,16 +10,21 @@ on:
     workflows:
       - "QIK-VRT autonomous bounded self-heal"
       - "QIK-VRT autonomous draft-PR continuation"
-      - "QIK-VRT expected-head promotion executor"
       - "QIKVRT workflow executor"
-      - "QIKVRT live status watch"
       - "QIKVRT CI"
       - "QIKVRT repository evidence materialization"
       - "QIKVRT Collective Proposal Review"
       - "QIK-VRT global claim completion"
       - "QIKVRT Batch-003 remaining subject disposition"
       - "QIKVRT adaptive runtime"
-    types: [requested, in_progress, completed]
+    # Observer workflows never admit another observer.  The promotion executor
+    # is intentionally excluded: CI -> review executor -> required review ->
+    # promotion already consumes GitHub's three workflow_run edges.  A fourth
+    # observer edge would be silently dropped by the platform.
+    # A completed productive run contains the stable state needed by the
+    # watchdog; requested and in-progress transitions only create cancellation
+    # pressure.
+    types: [completed]
   push:
     branches: [main]
     paths:
@@ -58,8 +63,11 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: qikvrt-reflexive-watchdog-${{ github.repository }}-${{ github.event.pull_request.number || 'main' }}
-  cancel-in-progress: true
+  # Keep the scheduled Main-dispatch lane separate from event observers and
+  # non-preemptive: a five-minute tick must not repeatedly cancel the slow
+  # pre-observation that gates its bounded dispatcher.
+  group: qikvrt-reflexive-watchdog-${{ github.repository }}-${{ github.event_name == 'schedule' && 'scheduled-main' || github.event.pull_request.number || 'main' }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 jobs:
   pre-deadlock-observation:
@@ -188,6 +196,8 @@ jobs:
           PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v \
             tests.test_qikvrt_reflexive_repository_watchdog \
             tests.test_qikvrt_workflow_executor_mesh_contract \
+            tests.test_qikvrt_workflow_event_graph \
+            tests.test_qikvrt_writer_inventory \
             tests.test_seed_workflows
 
       - name: Preserve the exact-head pre-deadlock receipt
@@ -198,3 +208,181 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           path: .qikvrt/reflexive-repository-watchdog
+
+  dispatch-main-ruleset-reconciliation:
+    # This is deliberately a schedule-only, unprivileged routing hop.  The
+    # effect workflow remains the only App-token holder and the only privileged
+    # reconciler caller; workflow_run and manual watchdog invocations cannot
+    # dispatch it.
+    needs: pre-deadlock-observation
+    if: >-
+      always() &&
+      needs.pre-deadlock-observation.result == 'success' &&
+      github.event_name == 'schedule' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Check out exact trusted Main dispatcher implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Rebind Main and policy then dispatch at most one active subject
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          EFFECT_WORKFLOW: qikvrt_autonomous_ruleset_effect_loop.yml
+          EFFECT_NAME: QIKVRT autonomous ruleset effect loop
+          ROOT: .qikvrt/reflexive-repository-watchdog
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$ROOT"
+
+          hold_or_noop() {
+            local state="$1"
+            local blocker="$2"
+            jq -n \
+              --arg state "$state" \
+              --arg blocker "$blocker" \
+              --arg main "${expected_main:-}" \
+              --arg policy_sha "${expected_policy_sha:-}" \
+              '{
+                schema: "qikvrt_ruleset_main_dispatch_receipt_v1",
+                state: $state,
+                first_blocker: $blocker,
+                subject_mode: "MAIN",
+                trusted_main_sha: $main,
+                policy_sha256: $policy_sha,
+                effect_workflow: "qikvrt_autonomous_ruleset_effect_loop.yml",
+                effect_transport_attempted: false,
+                predecessor_evidence_transfer: false
+              }' > "$ROOT/ruleset-main-dispatch.json"
+            cat "$ROOT/ruleset-main-dispatch.json"
+          }
+
+          if ! checkout="$(git rev-parse --verify HEAD^{commit})"; then
+            hold_or_noop HOLD "TRUSTED_MAIN_CHECKOUT_READBACK_FAILED"
+            exit 2
+          fi
+          if ! expected_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"; then
+            hold_or_noop HOLD "TRUSTED_MAIN_GET_FAILED"
+            exit 2
+          fi
+          if ! expected_policy_sha="$(sha256sum policy/GITHUB_MAIN_RULESET_V1.json | awk '{print $1}')"; then
+            hold_or_noop HOLD "RULESET_POLICY_SHA_READ_FAILED"
+            exit 2
+          fi
+          if ! [[ "$expected_main" =~ ^[0-9a-f]{40}$ ]] \
+            || ! [[ "$expected_policy_sha" =~ ^[0-9a-f]{64}$ ]] \
+            || [ "$checkout" != "$expected_main" ]; then
+            hold_or_noop HOLD "TRUSTED_MAIN_OR_POLICY_BINDING_INVALID"
+            exit 2
+          fi
+
+          if ! runs="$(gh api --paginate --slurp \
+            "repos/${REPOSITORY}/actions/workflows/${EFFECT_WORKFLOW}/runs?event=workflow_dispatch&per_page=100")"; then
+            hold_or_noop HOLD "EFFECT_RUN_REOBSERVATION_FAILED"
+            exit 2
+          fi
+          if ! main_active="$(jq --arg main "$expected_main" '
+            [ .[] | .workflow_runs[]?
+              | select(
+                  (.status == "requested" or .status == "pending" or .status == "queued" or .status == "in_progress" or .status == "waiting") and
+                  .head_branch == "main" and
+                  .head_sha == $main and
+                  ((.display_title // "") | contains("mode=MAIN"))
+                )
+            ] | length
+          ' <<<"$runs")"; then
+            hold_or_noop HOLD "EXACT_MAIN_EFFECT_RUN_PARSE_FAILED"
+            exit 2
+          fi
+          if ! any_effect_active="$(jq '
+            [ .[] | .workflow_runs[]?
+              | select(.status == "requested" or .status == "pending" or .status == "queued" or .status == "in_progress" or .status == "waiting")
+            ] | length
+          ' <<<"$runs")"; then
+            hold_or_noop HOLD "EFFECT_RUN_PARSE_FAILED"
+            exit 2
+          fi
+          if [ "$main_active" -gt 0 ]; then
+            hold_or_noop NOOP "ACTIVE_OR_QUEUED_EXACT_MAIN_EFFECT_EXISTS"
+            exit 0
+          fi
+          # The sole effect writer also serializes all PR and MAIN effects.
+          # Conservatively avoid adding a pending MAIN run behind any active
+          # effect run; a five-minute poll will reobserve instead.
+          if [ "$any_effect_active" -gt 0 ]; then
+            hold_or_noop NOOP "ACTIVE_OR_QUEUED_EFFECT_EXISTS"
+            exit 0
+          fi
+
+          if ! live_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"; then
+            hold_or_noop HOLD "TRUSTED_MAIN_GET_FAILED_BEFORE_EFFECT_DISPATCH"
+            exit 2
+          fi
+          if ! current_policy_sha="$(sha256sum policy/GITHUB_MAIN_RULESET_V1.json | awk '{print $1}')"; then
+            hold_or_noop HOLD "RULESET_POLICY_SHA_READ_FAILED_BEFORE_EFFECT_DISPATCH"
+            exit 2
+          fi
+          if ! current_checkout="$(git rev-parse --verify HEAD^{commit})"; then
+            hold_or_noop HOLD "TRUSTED_MAIN_CHECKOUT_READBACK_FAILED_BEFORE_EFFECT_DISPATCH"
+            exit 2
+          fi
+          if [ "$live_main" != "$expected_main" ] \
+            || [ "$current_policy_sha" != "$expected_policy_sha" ] \
+            || [ "$current_checkout" != "$expected_main" ]; then
+            hold_or_noop HOLD "TRUSTED_MAIN_OR_POLICY_DRIFT_BEFORE_EFFECT_DISPATCH"
+            exit 2
+          fi
+
+          if ! jq -n \
+            --arg main "$expected_main" \
+            --arg policy_sha "$expected_policy_sha" \
+            '{
+              ref: "main",
+              inputs: {
+                mode: "MAIN",
+                expected_main: $main,
+                expected_policy_sha: $policy_sha
+              }
+            }' \
+            | gh api --method POST \
+                "repos/${REPOSITORY}/actions/workflows/${EFFECT_WORKFLOW}/dispatches" \
+                --input -; then
+            hold_or_noop HOLD "RULESET_MAIN_EFFECT_DISPATCH_FAILED"
+            exit 2
+          fi
+
+          jq -n \
+            --arg main "$expected_main" \
+            --arg policy_sha "$expected_policy_sha" \
+            '{
+              schema: "qikvrt_ruleset_main_dispatch_receipt_v1",
+              state: "DISPATCH_TRANSPORT_ACCEPTED",
+              first_blocker: null,
+              subject_mode: "MAIN",
+              trusted_main_sha: $main,
+              policy_sha256: $policy_sha,
+              effect_workflow: "qikvrt_autonomous_ruleset_effect_loop.yml",
+              effect_transport_attempted: true,
+              effect_run_confirmed: false,
+              predecessor_evidence_transfer: false
+            }' > "$ROOT/ruleset-main-dispatch.json"
+          cat "$ROOT/ruleset-main-dispatch.json"
+
+      - name: Preserve exact Main ruleset dispatch receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-ruleset-main-dispatch-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 90
+          path: .qikvrt/reflexive-repository-watchdog/ruleset-main-dispatch.json

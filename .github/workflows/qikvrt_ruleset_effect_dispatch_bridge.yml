@@ -6,7 +6,6 @@ on:
   workflow_run:
     workflows:
       - "QIKVRT required code-owner review"
-      - "QIKVRT requested review executor"
     types: [completed]
 
 permissions:
@@ -23,13 +22,14 @@ jobs:
   dispatch-exact-subject:
     if: >-
       github.ref == 'refs/heads/main' &&
-      (github.event.workflow_run.conclusion == 'success' ||
-       (github.event.workflow_run.name == 'QIKVRT requested review executor' &&
-        github.event.workflow_run.conclusion == 'failure'))
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
-      GH_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}
+      # This bridge only reads evidence and dispatches its declared workflow.
+      # It must not consume the Administration token that is reserved for the
+      # reconciler's ruleset API readback and conditional PUT.
+      GH_TOKEN: ${{ github.token }}
       REPOSITORY: ${{ github.repository }}
       UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id }}
       REVIEW_STATUS_CONTEXT: QIKVRT required code-owner review
@@ -46,7 +46,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${GH_TOKEN:-}"
           root="$RUNNER_TEMP/qikvrt-ruleset-effect-dispatch"
           rm -rf "$root"
           mkdir -p "$root/artifact"
@@ -72,14 +71,6 @@ jobs:
               selection_schema=qikvrt_required_code_owner_review_selection_v1
               selection_kind=required-review
               ;;
-            "QIKVRT requested review executor")
-              test "$upstream_path" = ".github/workflows/qikvrt_requested_review_executor.yml"
-              case "$upstream_conclusion" in success|failure) ;; *) exit 1 ;; esac
-              expected="qikvrt-mesh-review-selection-${UPSTREAM_RUN_ID}-CANDIDATE"
-              selection_name=qikvrt-review-selection.json
-              selection_schema=qikvrt_requested_review_selection_v1
-              selection_kind=requested-review
-              ;;
             *)
               exit 1
               ;;
@@ -101,14 +92,8 @@ jobs:
 
           test "$(jq -r .schema "$root/selection.json")" = "$selection_schema"
           test "$(jq -r .state "$root/selection.json")" = CANDIDATE
-          if [ "$selection_kind" = required-review ]; then
-            test "$(jq '.pr_numbers | length' "$root/selection.json")" = 1
-            pr="$(jq -r '.pr_numbers[0]' "$root/selection.json")"
-          else
-            pr="$(jq -r '.candidate_pr_number // .pr_number' "$root/selection.json")"
-            test "$(jq -r .selection_basis "$root/selection.json")" = EXACT_EVENT_OR_DISPATCH
-            test "$(jq -r .review_execution "$root/selection.json")" = true
-          fi
+          test "$(jq '.pr_numbers | length' "$root/selection.json")" = 1
+          pr="$(jq -r '.pr_numbers[0]' "$root/selection.json")"
           head="$(jq -r .expected_head "$root/selection.json")"
           [[ "$pr" =~ ^[1-9][0-9]*$ ]]
           [[ "$head" =~ ^[0-9a-f]{40}$ ]]
@@ -150,7 +135,7 @@ jobs:
           test "$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)" = "$EXPECTED_MAIN"
           test "$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)" = "$EXPECTED_HEAD"
           jq -n --arg pr "$PR_NUMBER" --arg head "$EXPECTED_HEAD" \
-            '{ref:"main",inputs:{pr:$pr,expected_head:$head}}' \
+            '{ref:"main",inputs:{mode:"PR",pr:$pr,expected_head:$head}}' \
             | gh api --method POST \
                 "repos/${REPOSITORY}/actions/workflows/qikvrt_autonomous_ruleset_effect_loop.yml/dispatches" \
                 --input -

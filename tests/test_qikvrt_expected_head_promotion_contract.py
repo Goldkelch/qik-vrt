@@ -27,7 +27,7 @@ class ExpectedHeadPromotionContractTests(unittest.TestCase):
         )
         self.assertEqual(executor["opt_in_marker"], MARKER)
         self.assertEqual(executor["maximum_candidates_per_run"], 1)
-        self.assertEqual(executor["schedule_fallback"], "*/10 * * * *")
+        self.assertEqual(executor["schedule_fallback"], "EVENT_DRIVEN_ONLY")
         self.assertEqual(
             executor["two_phase_promotion"],
             [
@@ -55,7 +55,7 @@ class ExpectedHeadPromotionContractTests(unittest.TestCase):
 
     def test_executor_is_bounded_and_fails_closed_before_merge(self) -> None:
         workflow = PROMOTION_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn('cron: "*/10 * * * *"', workflow)
+        self.assertNotIn("schedule:", workflow)
         self.assertIn("cancel-in-progress: false", workflow)
         self.assertIn("READY_RECLASSIFICATION_CAS_UNAVAILABLE", pathlib.Path(
             ROOT / "tools/qikvrt_expected_head_promotion.py"
