@@ -24,8 +24,8 @@ class ExactHeadPublishQuotaTests(unittest.TestCase):
         self.assertIn("API rate limit exceeded for installation.", self.text)
         self.assertIn("gh api rate_limit --jq '.resources.core.reset'", self.text)
         self.assertIn("QIKVRT_GITHUB_INSTALLATION_RATE_LIMIT_RESET_WAIT_SECONDS", self.text)
-        self.assertIn("sleep \"$delay\"", self.text)
-        self.assertIn("delay -gt 3700", self.text)
+        self.assertIn('sleep "$delay"', self.text)
+        self.assertIn('"$delay" -gt 3700', self.text)
         self.assertNotIn("for delay in 0 15 45", self.text)
 
     def test_verified_head_is_not_reclassified_by_publish_transport_failure(self) -> None:
