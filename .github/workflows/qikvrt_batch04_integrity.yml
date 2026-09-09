@@ -286,7 +286,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
-          git reset --hard "$EXPECTED_HEAD"
+          git restore --source="$EXPECTED_HEAD" --staged --worktree -- .
           git clean -ffdx
           test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
