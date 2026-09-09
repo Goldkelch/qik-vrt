@@ -1,0 +1,150 @@
+name: QIKVRT exact writer lease repair
+
+on:
+  push:
+    branches:
+      - fix/autonomy-root-cause-quota-8930ef47
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: qikvrt-one-shot-writer-lease-repair-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.actor == 'ingolf-lohmann'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TARGET_REF: fix/autonomy-root-cause-quota-8930ef47
+      TARGET_PR: '1066'
+    steps:
+      - name: Check out exact one-shot carrier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Repair read-only versus writer concurrency at root cause
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_head="$(git rev-parse --verify HEAD^{commit})"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')"
+          test "$remote_head" = "$source_head"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/qikvrt_batch04_integrity.yml')
+          text = workflow.read_text(encoding='utf-8')
+          old = """concurrency:\n  group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}\n  cancel-in-progress: false\n"""
+          new = """concurrency:\n  # Pull-request executions are verification-only and must never occupy the\n  # serialized branch-writer lease. Non-PR executions retain that lease.\n  group: ${{ github.event_name == 'pull_request' && format('qikvrt-repository-evidence-readonly-{0}', github.head_ref || github.ref_name) || format('qikvrt-repository-evidence-{0}', github.head_ref || github.ref_name) }}\n  cancel-in-progress: false\n"""
+          if text.count(old) != 1:
+              raise SystemExit('BLOCK: repository materializer concurrency block is not the exact expected predecessor')
+          workflow.write_text(text.replace(old, new), encoding='utf-8', newline='\n')
+
+          lease = Path('tests/test_qikvrt_repository_writer_lease.py')
+          text = lease.read_text(encoding='utf-8')
+          start = text.index('    def test_repository_materializer_keeps_exact_target_writer_lease(self):')
+          end = text.index('    def test_general_pr_integrity_writer_shares_exact_target_lease_and_is_atomic(self):')
+          replacement = '''    def test_repository_materializer_separates_read_only_pr_from_writer_lease(self):\n        path = Path('.github/workflows/qikvrt_batch04_integrity.yml')\n        text = path.read_text(encoding='utf-8')\n        self.assertIn("github.event_name == 'pull_request'", text, str(path))\n        self.assertIn("qikvrt-repository-evidence-readonly-{0}", text, str(path))\n        self.assertIn("qikvrt-repository-evidence-{0}", text, str(path))\n        self.assertIn("github.head_ref || github.ref_name", text, str(path))\n        self.assertIn('cancel-in-progress: false', text, str(path))\n        commit = text.index('- name: Commit materialized repository evidence')\n        self.assertIn("if: github.event_name != 'pull_request'", text[commit:])\n        self.assertNotIn(\n            'group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}',\n            text,\n            'read-only PR verification must not compete for the branch writer lease',\n        )\n\n'''
+          lease.write_text(text[:start] + replacement + text[end:], encoding='utf-8', newline='\n')
+
+          aphorism = Path('tests/test_aphorism_corpus_v2.py')
+          text = aphorism.read_text(encoding='utf-8')
+          old_assert = '''        self.assertIn(\n            "group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}",\n            workflow,\n        )\n        self.assertNotIn(\n            "qikvrt-repository-evidence-${{ github.event_name }}-",\n            workflow,\n        )\n'''
+          new_assert = '''        self.assertIn("qikvrt-repository-evidence-readonly-{0}", workflow)\n        self.assertIn("qikvrt-repository-evidence-{0}", workflow)\n        self.assertIn("github.event_name == 'pull_request'", workflow)\n        self.assertIn("github.head_ref || github.ref_name", workflow)\n'''
+          if text.count(old_assert) != 1:
+              raise SystemExit('BLOCK: aphorism writer-lease assertion is not the exact expected predecessor')
+          aphorism.write_text(text.replace(old_assert, new_assert), encoding='utf-8', newline='\n')
+          PY
+
+          git rm -- .github/workflows/qikvrt_exact_writer_lease_repair.yml
+          python3 tools/qikvrt_integrity.py generate
+          python3 tools/qikvrt_integrity.py verify
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v \
+            tests.test_qikvrt_repository_writer_lease \
+            tests.test_aphorism_corpus_v2 \
+            tests.test_qikvrt_autonomous_pr_head_continuation \
+            tests.test_qikvrt_exact_head_publish_quota
+          make test
+          python3 tools/qikvrt_integrity.py verify
+
+          allowed="$RUNNER_TEMP/allowed.txt"
+          actual="$RUNNER_TEMP/actual.txt"
+          cat > "$allowed" <<'EOF'
+          .github/workflows/qikvrt_batch04_integrity.yml
+          .github/workflows/qikvrt_exact_writer_lease_repair.yml
+          REPOSITORY_FILE_MANIFEST.json
+          REPOSITORY_FILE_MANIFEST.json.sha256
+          SHA256SUMS.txt
+          tests/test_aphorism_corpus_v2.py
+          tests/test_qikvrt_repository_writer_lease.py
+          EOF
+          git status --porcelain=v1 | sed -E 's/^.. //' | sort -u > "$actual"
+          sort -u -o "$allowed" "$allowed"
+          diff -u "$allowed" "$actual"
+
+      - name: Persist only causal lease repair with exact-head CAS
+        id: persist
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_head="$(git rev-parse --verify HEAD^{commit})"
+          remote_before="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')"
+          test "$remote_before" = "$source_head"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A -- \
+            .github/workflows/qikvrt_batch04_integrity.yml \
+            .github/workflows/qikvrt_exact_writer_lease_repair.yml \
+            tests/test_qikvrt_repository_writer_lease.py \
+            tests/test_aphorism_corpus_v2.py \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt
+          git diff --cached --check
+          git commit -m 'fix(autonomy): separate read-only materialization from writer lease'
+          new_head="$(git rev-parse --verify HEAD^{commit})"
+
+          remote_after_commit="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')"
+          test "$remote_after_commit" = "$source_head"
+          git push origin "HEAD:refs/heads/$TARGET_REF"
+          readback="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')"
+          test "$readback" = "$new_head"
+          echo "new_head=$new_head" >> "$GITHUB_OUTPUT"
+
+      - name: Reobserve bot successor through exact-head verifier
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW_HEAD: ${{ steps.persist.outputs.new_head }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$NEW_HEAD"
+          live="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')"
+          test "$live" = "$NEW_HEAD"
+          base="$(git rev-parse HEAD^2 2>/dev/null || git rev-parse "$NEW_HEAD^")"
+          # Base identity for the PR is stable and explicitly known here.
+          base='b4b0038bcaa8788098ffa529bd5d5b651dd0459c'
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg pr "$TARGET_PR" \
+            --arg ref "$TARGET_REF" \
+            --arg head "$NEW_HEAD" \
+            --arg base "$base" \
+            '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base,d0:2,causal_state:"REOBSERVE",reason:"WRITER_LEASE_ROOT_CAUSE_REPAIR"}}' \
+            | gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input -
