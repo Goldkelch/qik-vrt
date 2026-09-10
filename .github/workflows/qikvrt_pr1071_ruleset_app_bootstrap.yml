@@ -1,0 +1,217 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT PR1071 one-shot ruleset App bootstrap
+
+on:
+  push:
+    branches:
+      - agent/autonomy-root-cause-self-clean-v3
+    paths:
+      - .github/workflows/qikvrt_pr1071_ruleset_app_bootstrap.yml
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: qikvrt-pr1071-ruleset-app-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  repair-and-reobserve:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: Goldkelch/qik-vrt
+      BRANCH: agent/autonomy-root-cause-self-clean-v3
+      PR_NUMBER: '1071'
+      EXPECTED_PARENT_HEAD: 1c6a36c2b591680b85db5d6d2bb9a6c510729487
+      EXPECTED_MAIN: b4b0038bcaa8788098ffa529bd5d5b651dd0459c
+      BOOTSTRAP_PATH: .github/workflows/qikvrt_pr1071_ruleset_app_bootstrap.yml
+
+    steps:
+      - name: Check out exact bootstrap subject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: agent/autonomy-root-cause-self-clean-v3
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind bootstrap to one exact predecessor and current PR
+        shell: bash
+        run: |
+          set -euo pipefail
+          current="$(git rev-parse --verify HEAD^{commit})"
+          parent="$(git rev-parse --verify HEAD^1^{commit})"
+          test "$parent" = "$EXPECTED_PARENT_HEAD"
+          test "$(git diff --name-only "$EXPECTED_PARENT_HEAD..$current")" = "$BOOTSTRAP_PATH"
+          test "$(gh api "repos/${REPOSITORY}/git/ref/heads/${BRANCH}" --jq .object.sha)" = "$current"
+          test "$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)" = "$current"
+          test "$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .base.sha)" = "$EXPECTED_MAIN"
+          test "$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)" = "$EXPECTED_MAIN"
+
+      - name: Classify dedicated ruleset App configuration
+        id: app_config
+        env:
+          RULESET_APP_ID: ${{ vars.QIKVRT_RULESET_APP_ID }}
+          RULESET_APP_PRIVATE_KEY: ${{ secrets.QIKVRT_RULESET_APP_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${RULESET_APP_ID:-}" ] && [ -n "${RULESET_APP_PRIVATE_KEY:-}" ]; then
+            echo 'state=CONFIGURED' >> "$GITHUB_OUTPUT"
+            echo 'blocker=' >> "$GITHUB_OUTPUT"
+          else
+            echo 'state=REQUEST_AUTHORITY' >> "$GITHUB_OUTPUT"
+            echo 'blocker=QIKVRT_RULESET_APP_CONFIGURATION_UNAVAILABLE' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mint one repository-scoped Administration token
+        id: bootstrap_admin_token
+        if: steps.app_config.outputs.state == 'CONFIGURED'
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          app-id: ${{ vars.QIKVRT_RULESET_APP_ID }}
+          private-key: ${{ secrets.QIKVRT_RULESET_APP_PRIVATE_KEY }}
+          permission-administration: write
+
+      - name: Repair permanent App-token wiring and contract test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          from pathlib import Path
+
+          workflow_path = Path('.github/workflows/qikvrt_autonomous_ruleset_effect_loop.yml')
+          test_path = Path('tests/test_qikvrt_autonomous_ruleset_effect_loop.py')
+          workflow = workflow_path.read_text(encoding='utf-8')
+          test = test_path.read_text(encoding='utf-8')
+
+          def expr(value: str) -> str:
+              return '$' + '{{ ' + value + ' }}'
+
+          marker = '      - name: Reconcile full normative ruleset and classify continuation\n'
+          if workflow.count(marker) != 1:
+              raise SystemExit('BLOCK: permanent reconcile-step marker is missing or ambiguous')
+
+          app_steps = f'''      - name: Classify dedicated ruleset App authority\n        id: ruleset_app\n        if: steps.select.outputs.state == 'CANDIDATE'\n        env:\n          RULESET_APP_ID: {expr('vars.QIKVRT_RULESET_APP_ID')}\n          RULESET_APP_PRIVATE_KEY: {expr('secrets.QIKVRT_RULESET_APP_PRIVATE_KEY')}\n        shell: bash\n        run: |\n          set -euo pipefail\n          if [ -n "${{RULESET_APP_ID:-}}" ] && [ -n "${{RULESET_APP_PRIVATE_KEY:-}}" ]; then\n            echo 'state=CONFIGURED' >> "$GITHUB_OUTPUT"\n            echo 'blocker=' >> "$GITHUB_OUTPUT"\n          else\n            echo 'state=REQUEST_AUTHORITY' >> "$GITHUB_OUTPUT"\n            echo 'blocker=QIKVRT_RULESET_APP_CONFIGURATION_UNAVAILABLE' >> "$GITHUB_OUTPUT"\n          fi\n\n      - name: Mint scoped ruleset administration token\n        id: ruleset_admin_token\n        if: steps.ruleset_app.outputs.state == 'CONFIGURED'\n        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1\n        with:\n          app-id: {expr('vars.QIKVRT_RULESET_APP_ID')}\n          private-key: {expr('secrets.QIKVRT_RULESET_APP_PRIVATE_KEY')}\n          permission-administration: write\n\n'''
+          workflow = workflow.replace(marker, app_steps + marker, 1)
+
+          old_admin = '          QIKVRT_RULESET_ADMIN_TOKEN: ' + expr('secrets.QIKVRT_RULESET_ADMIN_TOKEN') + '\n'
+          new_admin = (
+              '          QIKVRT_RULESET_ADMIN_TOKEN: ' + expr('steps.ruleset_admin_token.outputs.token') + '\n'
+              '          QIKVRT_RULESET_AUTHORITY_STATE: ' + expr("steps.ruleset_app.outputs.state == 'REQUEST_AUTHORITY' && 'REQUEST_AUTHORITY' || ''") + '\n'
+              '          QIKVRT_RULESET_AUTHORITY_BLOCKER: ' + expr('steps.ruleset_app.outputs.blocker') + '\n'
+          )
+          if workflow.count(old_admin) != 1:
+              raise SystemExit('BLOCK: legacy ruleset admin secret binding is missing or ambiguous')
+          workflow = workflow.replace(old_admin, new_admin, 1)
+
+          old_test = '            "QIKVRT_RULESET_ADMIN_TOKEN: ' + expr('secrets.QIKVRT_RULESET_ADMIN_TOKEN') + '",\n'
+          new_test = '            "QIKVRT_RULESET_ADMIN_TOKEN: ' + expr('steps.ruleset_admin_token.outputs.token') + '",\n'
+          if test.count(old_test) != 1:
+              raise SystemExit('BLOCK: legacy admin-token test assertion is missing or ambiguous')
+          test = test.replace(old_test, new_test, 1)
+
+          test_marker = '    def test_admin_authority_is_nonterminal_and_repository_routed(self):\n'
+          if test.count(test_marker) != 1:
+              raise SystemExit('BLOCK: authority contract test insertion point is missing or ambiguous')
+          added_test = '''    def test_admin_token_is_minted_from_the_dedicated_scoped_app(self):\n        self.assertIn(\n            "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1",\n            self.text,\n        )\n        self.assertIn("QIKVRT_RULESET_APP_ID", self.text)\n        self.assertIn("QIKVRT_RULESET_APP_PRIVATE_KEY", self.text)\n        self.assertIn("permission-administration: write", self.text)\n        self.assertIn("QIKVRT_RULESET_AUTHORITY_STATE", self.text)\n        self.assertIn("QIKVRT_RULESET_AUTHORITY_BLOCKER", self.text)\n        self.assertNotIn(\n            "QIKVRT_RULESET_ADMIN_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}",\n            self.text,\n        )\n\n'''
+          test = test.replace(test_marker, added_test + test_marker, 1)
+
+          workflow_path.write_text(workflow, encoding='utf-8')
+          test_path.write_text(test, encoding='utf-8')
+          PY
+          rm "$BOOTSTRAP_PATH"
+          python3 -B -m unittest tests.test_qikvrt_autonomous_ruleset_effect_loop
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py generate
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Commit only the repaired permanent tree and generated integrity
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'qikvrt-root-cause-repair'
+          git config user.email 'qikvrt-root-cause-repair@users.noreply.github.com'
+          git add -A
+          test -n "$(git status --porcelain)"
+          git commit -m 'fix(autonomy): mint scoped ruleset App token at effect boundary'
+          new_head="$(git rev-parse --verify HEAD^{commit})"
+          echo "head=$new_head" >> "$GITHUB_OUTPUT"
+          git push origin "HEAD:refs/heads/${BRANCH}"
+          test "$(gh api "repos/${REPOSITORY}/git/ref/heads/${BRANCH}" --jq .object.sha)" = "$new_head"
+          test "$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)" = "$new_head"
+          test "$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)" = "$EXPECTED_MAIN"
+
+      - name: Apply exactly one normative ruleset reconciliation and read it back
+        id: ruleset_effect
+        if: steps.app_config.outputs.state == 'CONFIGURED' && steps.bootstrap_admin_token.outcome == 'success'
+        continue-on-error: true
+        env:
+          QIKVRT_RULESET_ADMIN_TOKEN: ${{ steps.bootstrap_admin_token.outputs.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-pr1071-ruleset-bootstrap"
+          mkdir -p "$root"
+          set +e
+          python3 -B tools/qikvrt_ruleset_reconcile.py \
+            --apply \
+            --effect-attempt-ledger "$root/effect-attempts.json" \
+            --receipt "$root/ruleset-receipt.json"
+          rc=$?
+          set -e
+          cat "$root/ruleset-receipt.json"
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          echo "state=$(jq -r .state "$root/ruleset-receipt.json")" >> "$GITHUB_OUTPUT"
+          echo "effect_observed=$(jq -r '.effect_observed // false' "$root/ruleset-receipt.json")" >> "$GITHUB_OUTPUT"
+          test "$rc" -eq 0
+          test "$(jq -r .state "$root/ruleset-receipt.json")" = CURRENT
+
+      - name: Persist exact capability disposition
+        if: always()
+        shell: bash
+        env:
+          NEW_HEAD: ${{ steps.commit.outputs.head }}
+          APP_STATE: ${{ steps.app_config.outputs.state }}
+          APP_BLOCKER: ${{ steps.app_config.outputs.blocker }}
+          TOKEN_OUTCOME: ${{ steps.bootstrap_admin_token.outcome }}
+          EFFECT_OUTCOME: ${{ steps.ruleset_effect.outcome }}
+          EFFECT_STATE: ${{ steps.ruleset_effect.outputs.state }}
+          EFFECT_OBSERVED: ${{ steps.ruleset_effect.outputs.effect_observed }}
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-pr1071-ruleset-bootstrap"
+          mkdir -p "$root"
+          jq -n \
+            --arg head "${NEW_HEAD:-}" \
+            --arg main "$EXPECTED_MAIN" \
+            --arg app_state "${APP_STATE:-UNKNOWN}" \
+            --arg app_blocker "${APP_BLOCKER:-}" \
+            --arg token_outcome "${TOKEN_OUTCOME:-skipped}" \
+            --arg effect_outcome "${EFFECT_OUTCOME:-skipped}" \
+            --arg effect_state "${EFFECT_STATE:-}" \
+            --arg effect_observed "${EFFECT_OBSERVED:-false}" \
+            '{schema:"qikvrt_pr1071_ruleset_app_bootstrap_receipt_v1",candidate_head:$head,trusted_main:$main,app_configuration:$app_state,first_blocker:(if $app_blocker == "" then null else $app_blocker end),token_mint_outcome:$token_outcome,ruleset_effect_outcome:$effect_outcome,ruleset_state:(if $effect_state == "" then null else $effect_state end),effect_observed:($effect_observed == "true"),predecessor_evidence_transfer:false}' \
+            > "$root/bootstrap-receipt.json"
+          cat "$root/bootstrap-receipt.json"
+          if [ -n "${NEW_HEAD:-}" ]; then
+            test "$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)" = "$NEW_HEAD"
+            test "$(gh api "repos/${REPOSITORY}/git/ref/heads/${BRANCH}" --jq .object.sha)" = "$NEW_HEAD"
+          fi
+          test "$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)" = "$EXPECTED_MAIN"
+
+      - name: Preserve bootstrap and effect receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-pr1071-ruleset-app-bootstrap-${{ github.run_id }}
+          path: ${{ runner.temp }}/qikvrt-pr1071-ruleset-bootstrap
+          if-no-files-found: error
+          retention-days: 90
