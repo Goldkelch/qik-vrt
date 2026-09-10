@@ -909,16 +909,21 @@ jobs:
           PY
 
       - name: Select exactly one durable recursive review work unit
-        if: steps.active.outputs.active == 'true' && steps.ledger.outputs.persisted == 'true'
+        # An exact current receipt has no successor work. Do not make its
+        # completion depend on unrelated history in the shared ledger.
+        if: steps.active.outputs.active == 'true' && steps.ledger.outputs.persisted == 'true' && steps.ledger.outputs.successor_needed == 'true' && steps.ledger.outputs.successor_evidence_persisted == 'true'
         id: queue
         env:
           SUBJECT_PR_NUMBER: ${{ steps.select.outputs.pr }}
           SUBJECT_HEAD_SHA: ${{ steps.decision.outputs.head }}
+          SUBJECT_PREDECESSOR_FINGERPRINT: ${{ steps.decision.outputs.fingerprint }}
+          SUCCESSOR_FINGERPRINT: ${{ steps.ledger.outputs.successor_fingerprint }}
+          SUCCESSOR_QUEUE_PATH: ${{ steps.ledger.outputs.successor_queue_path }}
         shell: bash
         run: |
           set -euo pipefail
           python3 -B - <<'PY'
-          import base64, hashlib, json, os, pathlib, subprocess, urllib.parse
+          import base64, hashlib, json, os, pathlib, re, subprocess, urllib.parse
           from tools.qikvrt_requested_review_executor import (
               REVIEW_QUEUE_ACK_ROOT, REVIEW_QUEUE_ROOT,
               _canonical_sha256, _pretty_json_bytes,
@@ -927,34 +932,63 @@ jobs:
           )
 
           repo=os.environ['REPOSITORY']
+          number_text=os.environ['SUBJECT_PR_NUMBER']
+          subject_head=os.environ['SUBJECT_HEAD_SHA']
+          predecessor=os.environ['SUBJECT_PREDECESSOR_FINGERPRINT']
+          successor_fingerprint=os.environ['SUCCESSOR_FINGERPRINT']
+          bound_queue_path=os.environ['SUCCESSOR_QUEUE_PATH']
+          # Bind the one causally produced edge before any API read. Queue
+          # order, another PR, or an older same-head fingerprint is not a
+          # successor selector.
+          if (
+              re.fullmatch(r'[1-9][0-9]*',number_text) is None
+              or re.fullmatch(r'[0-9a-f]{40}',subject_head) is None
+              or re.fullmatch(r'[0-9a-f]{64}',predecessor) is None
+              or re.fullmatch(r'[0-9a-f]{64}',successor_fingerprint) is None
+              or predecessor == successor_fingerprint
+              or bound_queue_path != (
+                  f'{REVIEW_QUEUE_ROOT}/pr-{number_text}/{subject_head}/'
+                  f'{successor_fingerprint}.json'
+              )
+          ):
+              raise SystemExit('RECURSIVE_QUEUE_SUCCESSOR_NOT_BOUND')
 
-          def api(path):
-              return json.loads(subprocess.check_output(['gh','api',path],text=True))
+          def api(path,allow_404=False):
+              completed=subprocess.run(
+                  ['gh','api',path],text=True,capture_output=True,check=False,
+              )
+              if completed.returncode:
+                  if allow_404 and 'HTTP 404' in completed.stderr:
+                      return None
+                  raise SystemExit(
+                      f'RECURSIVE_QUEUE_API_READ_FAILED: {completed.stderr.strip()[:300]}'
+                  )
+              return json.loads(completed.stdout)
 
           ref=api(f'repos/{repo}/git/ref/heads/qikvrt/mesh-review-ledger-v1')
-          ledger_head=ref['object']['sha']
-          commit=api(f'repos/{repo}/git/commits/{ledger_head}')
-          tree=api(
-              f"repos/{repo}/git/trees/{commit['tree']['sha']}?recursive=1"
-          )
-          if tree.get('truncated') is True:
-              raise SystemExit('RECURSIVE_QUEUE_TREE_TRUNCATED')
-          blobs={
-              item['path']:item['sha'] for item in tree.get('tree',[])
-              if item.get('type') == 'blob'
-          }
+          ledger_head=ref.get('object',{}).get('sha')
+          if (
+              ref.get('ref') != 'refs/heads/qikvrt/mesh-review-ledger-v1'
+              or not isinstance(ledger_head,str)
+              or re.fullmatch(r'[0-9a-f]{40}',ledger_head) is None
+          ):
+              raise SystemExit('RECURSIVE_QUEUE_LEDGER_REF_INVALID')
 
-          def blob(path):
-              sha=blobs.get(path)
-              if not isinstance(sha,str):
+          def blob(path,allow_404=False):
+              # Read only the exact edge and its evidence at one immutable
+              # ledger commit. Never recursively enumerate the shared tree.
+              quoted=urllib.parse.quote(path,safe='/')
+              metadata=api(
+                  f'repos/{repo}/contents/{quoted}?ref={ledger_head}',
+                  allow_404=allow_404,
+              )
+              if metadata is None:
                   return None
-              value=api(f'repos/{repo}/git/blobs/{sha}')
+              value=api(f"repos/{repo}/git/blobs/{metadata['sha']}")
               return base64.b64decode(value['content'])
 
           def parsed(path):
               payload=blob(path)
-              if payload is None:
-                  return None
               try:
                   return json.loads(payload)
               except (UnicodeDecodeError,json.JSONDecodeError) as exc:
@@ -963,21 +997,19 @@ jobs:
           selected=None
           selected_receipt_bytes=None
           selected_diff_bytes=None
-          queue_paths=sorted(
-              path for path in blobs
-              if path.startswith(f'{REVIEW_QUEUE_ROOT}/') and path.endswith('.json')
-          )
+          queue_paths=[bound_queue_path]
           for queue_path in queue_paths:
               intent=parsed(queue_path)
               if not isinstance(intent,dict):
                   raise SystemExit(f'RECURSIVE_QUEUE_INTENT_INVALID_{queue_path}')
-              # Queue order is transport order, never causal subject routing.
               if (
                   intent.get('repository') != repo
-                  or str(intent.get('pr_number')) != os.environ['SUBJECT_PR_NUMBER']
-                  or intent.get('head_sha') != os.environ['SUBJECT_HEAD_SHA']
+                  or str(intent.get('pr_number')) != number_text
+                  or intent.get('head_sha') != subject_head
+                  or intent.get('predecessor_fingerprint') != predecessor
+                  or intent.get('successor_fingerprint') != successor_fingerprint
               ):
-                  continue
+                  raise SystemExit(f'RECURSIVE_QUEUE_SUBJECT_MISMATCH_{queue_path}')
               receipt_path=intent.get('receipt_path')
               diff_path=intent.get('diff_path')
               if not isinstance(receipt_path,str) or not isinstance(diff_path,str):
@@ -1014,8 +1046,12 @@ jobs:
               ack_path=(
                   f'{REVIEW_QUEUE_ACK_ROOT}/pr-{number}/{head}/{fingerprint}.json'
               )
-              if ack_path in blobs:
-                  ack=parsed(ack_path)
+              ack_bytes=blob(ack_path,allow_404=True)
+              if ack_bytes is not None:
+                  try:
+                      ack=json.loads(ack_bytes)
+                  except (UnicodeDecodeError,json.JSONDecodeError) as exc:
+                      raise SystemExit(f'RECURSIVE_QUEUE_ACK_INVALID_{ack_path}') from exc
                   if (
                       not isinstance(ack,dict)
                       or ack.get('repository') != repo
@@ -1243,6 +1279,8 @@ jobs:
               causal.get('ledger_safe') is True
               and causal.get('checks',{}).get('causal_binding') is True
           )
+          # Derive the decision only after every required check is present.
+          value['transport_ack_observed']=all(checks.values())
           (root/'successor-dispatch-reobservation.json').write_text(
               json.dumps(value,sort_keys=True,indent=2)+'\n',encoding='utf-8'
           )
