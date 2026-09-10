@@ -36,35 +36,45 @@ class AutonomousRulesetEffectLoopContractTest(unittest.TestCase):
 
     def test_reuses_full_current_ruleset_reconciler(self):
         self.assertIn("tools/qikvrt_ruleset_reconcile.py", self.text)
-        self.assertIn('--snapshot "$root/live-ruleset-before.json"', self.text)
         self.assertIn("--apply", self.text)
         self.assertIn("--receipt", self.text)
-        self.assertIn("rulesets/19344903", self.text)
+        self.assertNotIn('--snapshot "$root/live-ruleset-before.json"', self.text)
+        self.assertNotIn('gh api "repos/${REPOSITORY}/rulesets/19344903"', self.text)
 
     def test_read_token_is_separate_from_admin_mutation_authority(self):
         self.assertIn("GH_TOKEN: ${{ github.token }}", self.text)
         self.assertIn(
-            "QIKVRT_RULESET_ADMIN_TOKEN: ${{ steps.ruleset_admin_token.outputs.token }}",
+            "QIKVRT_RULESET_ADMIN_TOKEN: ${{ steps.app-token.outputs.token }}",
             self.text,
         )
+        self.assertIn("vars.QIKVRT_RULESET_APP_ID", self.text)
+        self.assertIn("secrets.QIKVRT_RULESET_APP_PRIVATE_KEY", self.text)
+        self.assertIn(
+            "actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349",
+            self.text,
+        )
+        self.assertIn("permission-administration: write", self.text)
+        self.assertNotIn("secrets.QIKVRT_RULESET_ADMIN_TOKEN", self.text)
         self.assertNotIn(
             "GH_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}",
             self.text,
         )
 
-    def test_admin_token_is_minted_from_the_dedicated_scoped_app(self):
-        self.assertIn(
-            "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1",
-            self.text,
+    def test_app_provisioning_classifies_missing_authority_and_technical_failures(self):
+        self.assertIn("QIKVRT_RULESET_GITHUB_APP_CONFIGURATION_MISSING", self.text)
+        self.assertIn("QIKVRT_RULESET_GITHUB_APP_TOKEN_MINT_FAILED", self.text)
+        self.assertIn("QIKVRT_RULESET_AUTHORITY_STATE=REQUEST_AUTHORITY", self.text)
+        self.assertIn("QIKVRT_RULESET_AUTHORITY_STATE=HOLD", self.text)
+        self.assertIn('if [ "$observed_state" = HOLD ]; then', self.text)
+
+    def test_app_token_follows_exact_selection(self):
+        self.assertLess(
+            self.text.index("id: select"),
+            self.text.index("id: app-config"),
         )
-        self.assertIn("QIKVRT_RULESET_APP_ID", self.text)
-        self.assertIn("QIKVRT_RULESET_APP_PRIVATE_KEY", self.text)
-        self.assertIn("permission-administration: write", self.text)
-        self.assertIn("QIKVRT_RULESET_AUTHORITY_STATE", self.text)
-        self.assertIn("QIKVRT_RULESET_AUTHORITY_BLOCKER", self.text)
-        self.assertNotIn(
-            "QIKVRT_RULESET_ADMIN_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}",
-            self.text,
+        self.assertLess(
+            self.text.index("id: app-config"),
+            self.text.index("id: app-token"),
         )
 
     def test_admin_authority_is_nonterminal_and_repository_routed(self):

@@ -340,43 +340,48 @@ jobs:
           print(f"blocker={value.get('first_blocker') or ''}")
           PY
 
-      - name: Classify dedicated ruleset App authority
-        id: ruleset_app
+      - name: Assess scoped GitHub-App authority configuration after exact provenance binding
+        id: app-config
         if: steps.select.outputs.state == 'CANDIDATE'
+        continue-on-error: true
         env:
-          RULESET_APP_ID: ${{ vars.QIKVRT_RULESET_APP_ID }}
-          RULESET_APP_PRIVATE_KEY: ${{ secrets.QIKVRT_RULESET_APP_PRIVATE_KEY }}
+          APP_ID: ${{ vars.QIKVRT_RULESET_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.QIKVRT_RULESET_APP_PRIVATE_KEY }}
         shell: bash
         run: |
           set -euo pipefail
-          if [ -n "${RULESET_APP_ID:-}" ] && [ -n "${RULESET_APP_PRIVATE_KEY:-}" ]; then
-            echo 'state=CONFIGURED' >> "$GITHUB_OUTPUT"
-            echo 'blocker=' >> "$GITHUB_OUTPUT"
+          if [ -n "$APP_ID" ] && [ -n "$APP_PRIVATE_KEY" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
           else
-            echo 'state=REQUEST_AUTHORITY' >> "$GITHUB_OUTPUT"
-            echo 'blocker=QIKVRT_RULESET_APP_CONFIGURATION_UNAVAILABLE' >> "$GITHUB_OUTPUT"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Mint scoped ruleset administration token
-        id: ruleset_admin_token
-        if: steps.ruleset_app.outputs.state == 'CONFIGURED'
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+      - name: Mint scoped ruleset-administration installation token after exact provenance binding
+        id: app-token
+        if: >-
+          steps.select.outputs.state == 'CANDIDATE' &&
+          steps.app-config.outputs.configured == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349
         with:
           app-id: ${{ vars.QIKVRT_RULESET_APP_ID }}
           private-key: ${{ secrets.QIKVRT_RULESET_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: qik-vrt
           permission-administration: write
 
       - name: Reconcile full normative ruleset and classify continuation
         id: reconcile
-        if: steps.select.outputs.state == 'CANDIDATE'
+        if: always() && steps.select.outputs.state == 'CANDIDATE'
         env:
           PR_NUMBER: ${{ steps.select.outputs.pr }}
           EXPECTED_HEAD: ${{ steps.select.outputs.head }}
           HEAD_REF: ${{ steps.select.outputs.head_ref }}
           EXPECTED_MAIN: ${{ steps.select.outputs.main }}
-          QIKVRT_RULESET_ADMIN_TOKEN: ${{ steps.ruleset_admin_token.outputs.token }}
-          QIKVRT_RULESET_AUTHORITY_STATE: ${{ steps.ruleset_app.outputs.state == 'REQUEST_AUTHORITY' && 'REQUEST_AUTHORITY' || '' }}
-          QIKVRT_RULESET_AUTHORITY_BLOCKER: ${{ steps.ruleset_app.outputs.blocker }}
+          QIKVRT_RULESET_ADMIN_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_CONFIGURED: ${{ steps.app-config.outputs.configured }}
+          APP_CONFIG_OUTCOME: ${{ steps.app-config.outcome }}
+          APP_TOKEN_OUTCOME: ${{ steps.app-token.outcome }}
         shell: bash
         run: |
           set -euo pipefail
@@ -390,47 +395,49 @@ jobs:
           test "$current_head" = "$EXPECTED_HEAD"
           test "$branch_head" = "$EXPECTED_HEAD"
 
-          gh api "repos/${REPOSITORY}/rulesets/19344903" > "$root/live-ruleset-before.json"
+          if [ "$APP_CONFIG_OUTCOME" != success ]; then
+            export QIKVRT_RULESET_AUTHORITY_STATE=HOLD
+            export QIKVRT_RULESET_AUTHORITY_BLOCKER=QIKVRT_RULESET_GITHUB_APP_CONFIGURATION_CHECK_FAILED
+          elif [ "$APP_CONFIGURED" = false ]; then
+            export QIKVRT_RULESET_AUTHORITY_STATE=REQUEST_AUTHORITY
+            export QIKVRT_RULESET_AUTHORITY_BLOCKER=QIKVRT_RULESET_GITHUB_APP_CONFIGURATION_MISSING
+          elif [ "$APP_CONFIGURED" != true ]; then
+            export QIKVRT_RULESET_AUTHORITY_STATE=HOLD
+            export QIKVRT_RULESET_AUTHORITY_BLOCKER=QIKVRT_RULESET_GITHUB_APP_CONFIGURATION_STATE_INVALID
+          elif [ "$APP_TOKEN_OUTCOME" != success ]; then
+            export QIKVRT_RULESET_AUTHORITY_STATE=HOLD
+            export QIKVRT_RULESET_AUTHORITY_BLOCKER=QIKVRT_RULESET_GITHUB_APP_TOKEN_MINT_FAILED
+          elif [ -z "${QIKVRT_RULESET_ADMIN_TOKEN:-}" ]; then
+            export QIKVRT_RULESET_AUTHORITY_STATE=HOLD
+            export QIKVRT_RULESET_AUTHORITY_BLOCKER=QIKVRT_RULESET_GITHUB_APP_TOKEN_OUTPUT_MISSING
+          fi
+
           set +e
           python3 -B tools/qikvrt_ruleset_reconcile.py \
-            --snapshot "$root/live-ruleset-before.json" \
-            --receipt "$root/preflight-receipt.json"
-          preflight_rc=$?
+            --apply \
+            --receipt "$root/effect-receipt.json"
+          reconcile_rc=$?
           set -e
-          preflight_state="$(jq -r .state "$root/preflight-receipt.json")"
-
-          if [ "$preflight_state" = CURRENT ]; then
-            cp "$root/preflight-receipt.json" "$root/effect-receipt.json"
-          elif [ "$preflight_state" = DRIFT ]; then
-            set +e
-            python3 -B tools/qikvrt_ruleset_reconcile.py \
-              --apply \
-              --receipt "$root/apply-receipt.json"
-            apply_rc=$?
-            set -e
-            cp "$root/apply-receipt.json" "$root/effect-receipt.json"
-            printf '%s\n' "$apply_rc" > "$root/apply-exit-code.txt"
-          else
-            cp "$root/preflight-receipt.json" "$root/effect-receipt.json"
-          fi
-          printf '%s\n' "$preflight_rc" > "$root/preflight-exit-code.txt"
+          printf '%s\n' "$reconcile_rc" > "$root/reconcile-exit-code.txt"
 
           observed_state="$(jq -r .state "$root/effect-receipt.json")"
-          if [ "$observed_state" != CURRENT ] && [ "$observed_state" != REQUEST_AUTHORITY ]; then
+          if [ "$observed_state" != CURRENT ] && [ "$observed_state" != REQUEST_AUTHORITY ] && [ "$observed_state" != HOLD ]; then
             jq \
               --arg observed "$observed_state" \
               '. + {
-                state: "REQUEST_AUTHORITY",
-                first_blocker: (.first_blocker // "RULESET_RECONCILIATION_NOT_CURRENT"),
+                state: "HOLD",
+                verification_state: "HOLD_UNVERIFIED",
+                first_blocker: (.first_blocker // "RULESET_RECONCILIATION_STATE_INVALID"),
                 observed_state: $observed,
-                next_action: "ROUTE_RULESET_ADMIN_AUTHORITY_THROUGH_REPOSITORY_CARRIER",
+                next_action: "REOBSERVE_EXACT_RULESET_API_AND_READBACK_EVIDENCE",
                 continuation_required: true,
-                mutation: "NONE",
-                effect_observed: false
+                mutation: (.mutation // "NONE"),
+                effect_transport_attempted: (.effect_transport_attempted // false),
+                effect_observed: (.effect_observed // false)
               }' \
               "$root/effect-receipt.json" > "$root/effect-receipt.tmp"
             mv "$root/effect-receipt.tmp" "$root/effect-receipt.json"
-            observed_state=REQUEST_AUTHORITY
+            observed_state=HOLD
           fi
 
           live_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"
@@ -478,6 +485,12 @@ jobs:
           print(f"effect_observed={'true' if value.get('effect_observed') else 'false'}")
           print(f"hold_admissible={'true' if value.get('hold_admissible') else 'false'}")
           PY
+
+          if [ "$observed_state" = HOLD ]; then
+            blocker="$(jq -r '.first_blocker // "RULESET_RECONCILIATION_HOLD"' "$root/continuation-receipt.json")"
+            echo "HOLD_UNVERIFIED: $blocker" >&2
+            exit 2
+          fi
 
       - name: Publish and read back exact repository continuation
         if: steps.select.outputs.state == 'CANDIDATE' && steps.reconcile.outputs.state == 'REQUEST_AUTHORITY'
