@@ -140,21 +140,31 @@ jobs:
                       raise
                   return fallback
 
-          selector_kwargs={
-              'repository':repo,
-              'event_pr':event_pr,
-              'event_name':event_name,
-              'expected_head':expected_head,
-              'workflow_event':workflow_event,
-              'workflow_prs':workflow_prs,
-              'fetch_pull_request':one,
-          }
           selector_parameters=inspect.signature(select_review_subject).parameters
-          if 'requested_pr' in selector_parameters:
-              selector_kwargs['requested_pr']=''
           if 'event_payload' in selector_parameters:
-              selector_kwargs['event_payload']=payload
-          value=select_review_subject(**selector_kwargs)
+              value=select_review_subject(
+                  repository=repo,
+                  event_pr=event_pr,
+                  event_name=event_name,
+                  expected_head=expected_head,
+                  workflow_event=workflow_event,
+                  workflow_prs=workflow_prs,
+                  event_payload=payload,
+                  fetch_pull_request=one,
+              )
+          elif 'requested_pr' in selector_parameters:
+              value=select_review_subject(
+                  repository=repo,
+                  requested_pr='',
+                  event_pr=event_pr,
+                  event_name=event_name,
+                  expected_head=expected_head,
+                  workflow_event=workflow_event,
+                  workflow_prs=workflow_prs,
+                  fetch_pull_request=one,
+              )
+          else:
+              raise RuntimeError('SELECT_REVIEW_SUBJECT_INTERFACE_UNSUPPORTED')
           print(json.dumps(value,sort_keys=True))
 
           def nested(mapping, *fields):
@@ -437,7 +447,7 @@ jobs:
                   {'path':receipt_path,'mode':'100644','type':'blob','sha':receipt_blob},
                   {'path':diff_path,'mode':'100644','type':'blob','sha':manifest_blob},
               ] + [
-                  {'path':path,'mode':'100644','type':'blob','sha':sha}
+                  {'path':path,'mode':'100644','type':'blob','sha':sha},
                   for path,sha in packet_blobs
               ]
 
