@@ -68,7 +68,7 @@ requested-review-contract:
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_requested_review_executor tests.test_qikvrt_required_review_gate tests.test_qikvrt_native_account_review tests.test_qikvrt_expected_head_promotion tests.test_qikvrt_expected_head_promotion_contract tests.test_qikvrt_workflow_executor_mesh_contract tests.test_qikvrt_autonomous_pr_head_continuation
 
 repository-writer-contract:
-	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_materialization_scope tests.test_qikvrt_repository_writer_lease tests.test_qikvrt_required_review_gate tests.test_qikvrt_ruleset_reconcile tests.test_qikvrt_github_observe tests.test_qikvrt_effect_attempts tests.test_qikvrt_autonomous_ruleset_effect_loop tests.test_qikvrt_reflexive_repository_watchdog tests.issue_agent.test_validate
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_materialization_scope tests.test_qikvrt_repository_writer_lease tests.test_qikvrt_required_review_gate tests.test_qikvrt_ruleset_reconcile tests.test_qikvrt_github_observe tests.test_qikvrt_effect_attempts tests.test_qikvrt_autonomous_ruleset_effect_loop tests.test_qikvrt_reflexive_repository_watchdog tests.test_qikvrt_protected_main_materialization tests.test_qikvrt_candidate_pr_receipt tests.issue_agent.test_validate
 
 repository-terminal-test:
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_repository_terminal
