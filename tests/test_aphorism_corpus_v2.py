@@ -108,11 +108,16 @@ class AphorismCorpusV2Tests(unittest.TestCase):
             "qikvrt-repository-evidence-${{ github.event_name }}-",
             workflow,
         )
+        writer_job = workflow[workflow.index("  materialize:\n"):]
+        self.assertIn("github.event_name == 'workflow_dispatch' ||", writer_job)
+        self.assertIn(
+            "(github.event_name == 'push' && github.actor != 'github-actions[bot]')",
+            writer_job,
+        )
         commit_step = workflow.index("- name: Commit materialized repository evidence")
         block = workflow[commit_step:]
-        self.assertIn("github.event_name != 'pull_request' ||", block)
-        self.assertIn("github.actor != 'github-actions[bot]'", block)
-        self.assertIn('if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then', block)
+        self.assertIn("if: github.event_name != 'pull_request'", block)
+        self.assertNotIn('if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then', block)
         for integrity_path in (
             "REPOSITORY_FILE_MANIFEST.json",
             "REPOSITORY_FILE_MANIFEST.json.sha256",
@@ -129,7 +134,7 @@ class AphorismCorpusV2Tests(unittest.TestCase):
         ):
             self.assertIn(token, block)
         self.assertLess(
-            block.index("github.event_name != 'pull_request' ||"),
+            block.index("if: github.event_name != 'pull_request'"),
             block.index("git commit -m \"ci: materialize repository evidence\""),
         )
         self.assertLess(
