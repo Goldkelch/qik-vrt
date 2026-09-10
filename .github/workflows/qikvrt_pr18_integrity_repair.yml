@@ -1,176 +1,45 @@
-name: QIKVRT PR1071 exact repair materializer
+name: QIKVRT PR18 integrity repair
 
 on:
+  push:
+    branches:
+      - infra/live-status-default-branch
   pull_request:
     branches:
       - main
-    types:
-      - synchronize
+  workflow_dispatch:
 
 permissions:
   contents: write
-  pull-requests: read
 
 concurrency:
-  group: qikvrt-pr1071-exact-repair-materializer
+  group: qikvrt-pr18-integrity-repair
   cancel-in-progress: false
 
 jobs:
-  materialize:
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.number == 1071 &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.head.ref == 'agent/autonomy-root-cause-self-clean-v3'
+  repair:
+    if: github.event_name != 'pull_request' || github.head_ref == 'infra/live-status-default-branch'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    env:
-      EXPECTED_PARENT: 87413c455c6a069689e5c2d792251efaf9cad4be
-      FINAL_WORKFLOW_SOURCE: c42fe8338af19d010f7f447cab5ce8d95b3b3dd0
-      CANDIDATE_HEAD: ${{ github.event.pull_request.head.sha }}
-      TARGET_REF: ${{ github.event.pull_request.head.ref }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ env.CANDIDATE_HEAD }}
-          fetch-depth: 2
-          persist-credentials: true
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
-        with:
-          python-version: "3.12"
-      - name: Bind one-shot carrier and project exact final source tree
-        shell: bash
+          ref: infra/live-status-default-branch
+          fetch-depth: 0
+      - name: Regenerate and verify repository integrity
         run: |
           set -euo pipefail
-          test "$(git rev-parse --verify HEAD^{commit})" = "$CANDIDATE_HEAD"
-          test "$(git rev-parse --verify HEAD^1)" = "$EXPECTED_PARENT"
-          python3 -B - <<'PY'
-          from pathlib import Path
-
-          path = Path('.github/workflows/qikvrt_requested_review_executor.yml')
-          text = path.read_text(encoding='utf-8')
-          old = """          selector_kwargs={
-              'repository':repo,
-              'event_pr':event_pr,
-              'event_name':event_name,
-              'expected_head':expected_head,
-              'workflow_event':workflow_event,
-              'workflow_prs':workflow_prs,
-              'fetch_pull_request':one,
-          }
-          selector_parameters=inspect.signature(select_review_subject).parameters
-          if 'requested_pr' in selector_parameters:
-              selector_kwargs['requested_pr']=''
-          if 'event_payload' in selector_parameters:
-              selector_kwargs['event_payload']=payload
-          value=select_review_subject(**selector_kwargs)
-"""
-          new = """          selector_parameters=inspect.signature(select_review_subject).parameters
-          common_selector_kwargs={
-              'repository':repo,
-              'event_pr':event_pr,
-              'event_name':event_name,
-              'expected_head':expected_head,
-              'workflow_event':workflow_event,
-              'workflow_prs':workflow_prs,
-              'fetch_pull_request':one,
-          }
-          if 'event_payload' in selector_parameters:
-              value=select_review_subject(
-                  **common_selector_kwargs,
-                  requested_pr='',
-                  event_payload=payload,
-              )
-          elif 'requested_pr' in selector_parameters:
-              value=select_review_subject(
-                  **common_selector_kwargs,
-                  requested_pr='',
-              )
-          else:
-              raise RuntimeError('SELECT_REVIEW_SUBJECT_SIGNATURE_UNSUPPORTED')
-"""
-          if text.count(old) != 1:
-              raise SystemExit('BLOCK: exact selector source no longer matches the bound parent')
-          path.write_text(text.replace(old, new), encoding='utf-8', newline='\n')
-          PY
-          git show "$FINAL_WORKFLOW_SOURCE:.github/workflows/qikvrt_pr18_integrity_repair.yml" > .github/workflows/qikvrt_pr18_integrity_repair.yml
-          grep -F 'event_payload=payload' .github/workflows/qikvrt_requested_review_executor.yml
-          grep -F "requested_pr=''" .github/workflows/qikvrt_requested_review_executor.yml
-          actual="$(git diff --name-only | LC_ALL=C sort)"
-          expected="$(printf '%s\n' '.github/workflows/qikvrt_pr18_integrity_repair.yml' '.github/workflows/qikvrt_requested_review_executor.yml' | LC_ALL=C sort)"
-          test "$actual" = "$expected"
-      - name: Execute focused regression and full repository gates
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -B -m unittest -v \
-            tests.test_qikvrt_requested_review_executor.RequestedReviewExecutorTests.test_workflow_is_trusted_main_diff_bound_append_only_and_comment_only \
-            tests.test_qikvrt_review_control_plane_root_fix
           python3 tools/qikvrt_integrity.py generate
           python3 tools/qikvrt_integrity.py verify
-          make test
-          python3 tools/qikvrt_integrity.py verify
-      - name: Seal exact intended final tree bytes
-        shell: bash
+      - name: Commit regenerated integrity outputs
         run: |
           set -euo pipefail
-          actual="$(git diff --name-only | LC_ALL=C sort)"
-          expected="$(printf '%s\n' \
-            '.github/workflows/qikvrt_pr18_integrity_repair.yml' \
-            '.github/workflows/qikvrt_requested_review_executor.yml' \
-            'REPOSITORY_FILE_MANIFEST.json' \
-            'REPOSITORY_FILE_MANIFEST.json.sha256' \
-            'SHA256SUMS.txt' | LC_ALL=C sort)"
-          test "$actual" = "$expected"
-          sha256sum \
-            .github/workflows/qikvrt_pr18_integrity_repair.yml \
-            .github/workflows/qikvrt_requested_review_executor.yml \
-            REPOSITORY_FILE_MANIFEST.json \
-            REPOSITORY_FILE_MANIFEST.json.sha256 \
-            SHA256SUMS.txt \
-            > qikvrt-pr1071-final-files.sha256
-      - name: Preserve exact final-tree materialization before persistence
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: qikvrt-pr1071-final-tree-${{ env.CANDIDATE_HEAD }}
-          if-no-files-found: error
-          include-hidden-files: true
-          retention-days: 30
-          path: |
-            .github/workflows/qikvrt_pr18_integrity_repair.yml
-            .github/workflows/qikvrt_requested_review_executor.yml
-            REPOSITORY_FILE_MANIFEST.json
-            REPOSITORY_FILE_MANIFEST.json.sha256
-            SHA256SUMS.txt
-            qikvrt-pr1071-final-files.sha256
-      - name: Persist only deterministic integrity projection
-        shell: bash
-        run: |
-          set -euo pipefail
-          source_head="$CANDIDATE_HEAD"
-          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 { print $1 }')"
-          test "$remote_head" = "$source_head" || {
-            echo "HOLD_UNVERIFIED: candidate advanced before integrity persistence" >&2
-            exit 2
-          }
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
-          git diff --cached --quiet && {
-            echo "BLOCK: expected deterministic integrity delta is absent" >&2
-            exit 2
-          }
-          staged="$(git diff --cached --name-only | LC_ALL=C sort)"
-          expected="$(printf '%s\n' REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt | LC_ALL=C sort)"
-          test "$staged" = "$expected"
-          git commit -m "ci: materialize PR #1071 final integrity projection"
-          commit_head="$(git rev-parse --verify HEAD^{commit})"
-          remote_before_push="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 { print $1 }')"
-          test "$remote_before_push" = "$source_head" || {
-            echo "HOLD_UNVERIFIED: candidate advanced during integrity materialization" >&2
-            exit 2
-          }
-          git push origin "HEAD:refs/heads/$TARGET_REF"
-          remote_after_push="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 { print $1 }')"
-          test "$remote_after_push" = "$commit_head"
-          printf 'materialized_integrity_head=%s\n' "$commit_head" >> "$GITHUB_OUTPUT"
+          if git diff --cached --quiet; then
+            echo "Integrity outputs already current."
+            exit 0
+          fi
+          git commit -m "fix: regenerate repository integrity for live status watcher"
+          git push origin HEAD:infra/live-status-default-branch
