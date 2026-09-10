@@ -9,7 +9,7 @@ The processor:
 1. fetches the authoritative GitHub issue payload;
 2. materializes a canonical request and SHA-256 evidence;
 3. gathers deterministic, size-bounded repository context;
-4. requests a repository-grounded answer from GitHub Models;
+4. compiles only a deterministic, schema- and policy-bounded work-unit disposition;
 5. emits truthful status metadata;
 6. validates the evidence bundle and no-false-pass rules;
 7. creates or updates `issue-agent/<number>`;
@@ -25,9 +25,9 @@ The processor:
 - The issue payload and its digest remain part of the committed evidence.
 - Formal derivation, repository evidence, hypothesis, and empirical confirmation must remain distinguishable.
 
-## Authentication and inference
+## Authentication and deterministic compilation
 
-The workflow uses GitHub's ephemeral `GITHUB_TOKEN` and requests `models: read`, `contents: write`, `issues: write`, and `pull-requests: write`. The inference implementation calls the GitHub Models REST endpoint. No repository-stored external model secret is required.
+The workflow uses GitHub's ephemeral `GITHUB_TOKEN` with `contents: write`, `issues: write`, and `pull-requests: write`. It invokes no external model. A request without a tested, allowlisted deterministic handler becomes `BLOCKED_WITH_NEXT_ACTION` with the first causal blocker and next native event.
 
 ## Processing an existing issue
 
