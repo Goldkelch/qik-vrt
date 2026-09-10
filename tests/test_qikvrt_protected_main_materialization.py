@@ -49,6 +49,14 @@ class ProtectedMainMaterializationTests(unittest.TestCase):
         self.assertIn("tools/qikvrt_candidate_pr_receipt.py", workflow)
         self.assertIn("Reobserved existing repository-evidence draft candidate", workflow)
 
+    def test_repository_evidence_push_writer_is_not_cancelled_by_pr_verifier(self) -> None:
+        workflow = EVIDENCE.read_text(encoding="utf-8")
+        self.assertIn(
+            "group: qikvrt-repository-evidence-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}",
+            workflow,
+        )
+        self.assertIn("cancel-in-progress: false", workflow)
+
     def test_repository_evidence_materializer_is_a_declared_writer(self) -> None:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
         writers = contract["dispatch_policy"]["writer_workflow_names"]
