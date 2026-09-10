@@ -54,7 +54,9 @@ At that exact head, root path `/AI` states that repository evidence is canonical
 
 On the same exact head, repository-native workflows were observed terminal-success, including QIKVRT CI, repository evidence materialization, zero-bug invariant, requested-review contract, real Mesh runtime, repository watchdog, code-owner observer and bounded self-heal contract validation.
 
-The bounded self-heal run validated the continuous-opportunity contract on the exact pull-request head; its repair/proposal job was skipped where no mutation was warranted. This distinguishes verified preservation logic from blind mutation.
+On the exact historical subject, [run 34501448618, attempt 1](https://github.com/Goldkelch/qik-vrt/actions/runs/34501448618/attempts/1), triggered by `pull_request`, successfully executed 18 continuous-auto-repair and pre-effect-controller contract tests in [job 102952962391](https://github.com/Goldkelch/qik-vrt/actions/runs/34501448618/job/102952962391), `validate-continuous-opportunity-contract`. Its checkout and test log bind head `55184cc4e4b521a7ddfcd06a9db1b325ab054477`.
+
+The operational [job 102952964057](https://github.com/Goldkelch/qik-vrt/actions/runs/34501448618/job/102952964057), `observe-repair-propose`, was skipped with no executed steps because the [workflow on that exact source head](https://github.com/Goldkelch/qik-vrt/blob/55184cc4e4b521a7ddfcd06a9db1b325ab054477/.github/workflows/qikvrt_autonomous_self_heal.yml) excludes it for `pull_request` events. This event-policy exclusion verifies neither a live repair decision nor a semantic `NOOP`. A claim that no mutation was needed would require a separately bound controller decision and readback. The successful contract tests and the skipped operational job are distinct observations.
 
 ### 5. Owner preservation directive
 
@@ -62,7 +64,7 @@ The Owner directive was appended to PR #1071 as issue comment `5623527537`: the 
 
 ## What is proved
 
-For the exact subject above, self-location is **reconstructible from repository state** and the non-regression mechanism is present and technically verified for its declared scope.
+For the exact subject above, self-location is **reconstructible from repository state**. The non-regression contract is present, and the cited contract tests succeed within the scope described above. The cited bounded self-heal run does not establish that a live preservation decision executed; the self-location conclusion does not depend on interpreting its skipped operational job as a semantic `NOOP`.
 
 The proof is operational rather than metaphysical: a fresh conforming client can recover repository identity, bootstrap path, continuation contract and exact verification state without depending on the previous chat transcript.
 
