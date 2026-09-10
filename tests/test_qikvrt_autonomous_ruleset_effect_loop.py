@@ -44,11 +44,26 @@ class AutonomousRulesetEffectLoopContractTest(unittest.TestCase):
     def test_read_token_is_separate_from_admin_mutation_authority(self):
         self.assertIn("GH_TOKEN: ${{ github.token }}", self.text)
         self.assertIn(
-            "QIKVRT_RULESET_ADMIN_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}",
+            "QIKVRT_RULESET_ADMIN_TOKEN: ${{ steps.ruleset_admin_token.outputs.token }}",
             self.text,
         )
         self.assertNotIn(
             "GH_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}",
+            self.text,
+        )
+
+    def test_admin_token_is_minted_from_the_dedicated_scoped_app(self):
+        self.assertIn(
+            "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1",
+            self.text,
+        )
+        self.assertIn("QIKVRT_RULESET_APP_ID", self.text)
+        self.assertIn("QIKVRT_RULESET_APP_PRIVATE_KEY", self.text)
+        self.assertIn("permission-administration: write", self.text)
+        self.assertIn("QIKVRT_RULESET_AUTHORITY_STATE", self.text)
+        self.assertIn("QIKVRT_RULESET_AUTHORITY_BLOCKER", self.text)
+        self.assertNotIn(
+            "QIKVRT_RULESET_ADMIN_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}",
             self.text,
         )
 
