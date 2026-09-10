@@ -340,6 +340,32 @@ jobs:
           print(f"blocker={value.get('first_blocker') or ''}")
           PY
 
+      - name: Classify dedicated ruleset App authority
+        id: ruleset_app
+        if: steps.select.outputs.state == 'CANDIDATE'
+        env:
+          RULESET_APP_ID: ${{ vars.QIKVRT_RULESET_APP_ID }}
+          RULESET_APP_PRIVATE_KEY: ${{ secrets.QIKVRT_RULESET_APP_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${RULESET_APP_ID:-}" ] && [ -n "${RULESET_APP_PRIVATE_KEY:-}" ]; then
+            echo 'state=CONFIGURED' >> "$GITHUB_OUTPUT"
+            echo 'blocker=' >> "$GITHUB_OUTPUT"
+          else
+            echo 'state=REQUEST_AUTHORITY' >> "$GITHUB_OUTPUT"
+            echo 'blocker=QIKVRT_RULESET_APP_CONFIGURATION_UNAVAILABLE' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mint scoped ruleset administration token
+        id: ruleset_admin_token
+        if: steps.ruleset_app.outputs.state == 'CONFIGURED'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          app-id: ${{ vars.QIKVRT_RULESET_APP_ID }}
+          private-key: ${{ secrets.QIKVRT_RULESET_APP_PRIVATE_KEY }}
+          permission-administration: write
+
       - name: Reconcile full normative ruleset and classify continuation
         id: reconcile
         if: steps.select.outputs.state == 'CANDIDATE'
@@ -348,7 +374,9 @@ jobs:
           EXPECTED_HEAD: ${{ steps.select.outputs.head }}
           HEAD_REF: ${{ steps.select.outputs.head_ref }}
           EXPECTED_MAIN: ${{ steps.select.outputs.main }}
-          QIKVRT_RULESET_ADMIN_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}
+          QIKVRT_RULESET_ADMIN_TOKEN: ${{ steps.ruleset_admin_token.outputs.token }}
+          QIKVRT_RULESET_AUTHORITY_STATE: ${{ steps.ruleset_app.outputs.state == 'REQUEST_AUTHORITY' && 'REQUEST_AUTHORITY' || '' }}
+          QIKVRT_RULESET_AUTHORITY_BLOCKER: ${{ steps.ruleset_app.outputs.blocker }}
         shell: bash
         run: |
           set -euo pipefail
