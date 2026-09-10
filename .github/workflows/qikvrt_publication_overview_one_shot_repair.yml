@@ -1,0 +1,145 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT publication overview one-shot repair
+
+on:
+  push:
+    branches:
+      - publication/cloud-transputer-self-location-proof-v1
+    paths:
+      - .github/workflows/qikvrt_publication_overview_one_shot_repair.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-publication-overview-one-shot-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    if: github.repository == 'Goldkelch/qik-vrt' && github.actor == 'ingolf-lohmann'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Correct F1, self-remove, validate exact successor and read back
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+          EXPECTED_PREDECESSOR: 4fb65850f781df60838d09596e26faa8933dbb27
+          TARGET_REF: publication/cloud-transputer-self-location-proof-v1
+          SELF_PATH: .github/workflows/qikvrt_publication_overview_one_shot_repair.yml
+          PYTHONDONTWRITEBYTECODE: '1'
+          PYTHONNOUSERSITE: '1'
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'Goldkelch/qik-vrt'
+          test "$GITHUB_REF" = "refs/heads/$TARGET_REF"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PREDECESSOR"
+          test "$(git diff --name-only HEAD^ HEAD)" = "$SELF_PATH"
+          remote_head() {
+            git ls-remote --exit-code --heads origin "refs/heads/$TARGET_REF" | awk 'NR==1 {print $1}'
+          }
+          test "$(remote_head)" = "$EXPECTED_HEAD"
+          python3 -B tools/qikvrt_tool_cache.py verify
+
+          python3 -B - <<'PY'
+          import hashlib
+          from pathlib import Path
+          path = Path('docs/publications/2026-09-10-cloud-transputer-self-location-proof/README.md')
+          before = path.read_bytes()
+          if hashlib.sha256(before).hexdigest() != '64c4e2fc9059a7a44dea6925acf812b053db8b3a73d2a5e1ae977391d9711c73':
+              raise SystemExit('HOLD: article bytes differ from the inspected F1 subject')
+          text = before.decode('utf-8')
+          old = 'The bounded self-heal run validated the continuous-opportunity contract on the exact pull-request head; its repair/proposal job was skipped where no mutation was warranted. This distinguishes verified preservation logic from blind mutation.'
+          new = ('On the exact historical subject, [run 34501448618, attempt 1](https://github.com/Goldkelch/qik-vrt/actions/runs/34501448618/attempts/1), triggered by `pull_request`, successfully executed 18 continuous-auto-repair and pre-effect-controller contract tests in [job 102952962391](https://github.com/Goldkelch/qik-vrt/actions/runs/34501448618/job/102952962391), `validate-continuous-opportunity-contract`. Its checkout and test log bind head `55184cc4e4b521a7ddfcd06a9db1b325ab054477`.\n\n'
+                 'The operational [job 102952964057](https://github.com/Goldkelch/qik-vrt/actions/runs/34501448618/job/102952964057), `observe-repair-propose`, was skipped with no executed steps because the [workflow on that exact source head](https://github.com/Goldkelch/qik-vrt/blob/55184cc4e4b521a7ddfcd06a9db1b325ab054477/.github/workflows/qikvrt_autonomous_self_heal.yml) excludes it for `pull_request` events. This event-policy exclusion verifies neither a live repair decision nor a semantic `NOOP`. A claim that no mutation was needed would require a separately bound controller decision and readback. The successful contract tests and the skipped operational job are distinct observations.')
+          old_scope = 'For the exact subject above, self-location is **reconstructible from repository state** and the non-regression mechanism is present and technically verified for its declared scope.'
+          new_scope = 'For the exact subject above, self-location is **reconstructible from repository state**. The non-regression contract is present, and the cited contract tests succeed within the scope described above. The cited bounded self-heal run does not establish that a live preservation decision executed; the self-location conclusion does not depend on interpreting its skipped operational job as a semantic `NOOP`.'
+          for prior, replacement in ((old, new), (old_scope, new_scope)):
+              if text.count(prior) != 1:
+                  raise SystemExit('HOLD: correction anchor is not unique')
+              text = text.replace(prior, replacement, 1)
+          if old in text or 'skipped where no mutation was warranted' in text:
+              raise SystemExit('HOLD: unsupported skipped-job inference remains')
+          required = ('Publication increases public inspectability and provenance; it does not make a proposition true merely by being published.', 'S != S\' => status(S\') := HOLD_UNVERIFIED', '**q.e.d. Ingolf Lohmann**')
+          if not all(value in text for value in required):
+              raise SystemExit('HOLD: publication boundary or attribution was changed')
+          path.write_bytes(text.encode('utf-8'))
+          print('F1 corrected article SHA256=' + hashlib.sha256(path.read_bytes()).hexdigest())
+          PY
+
+          python3 -B tools/qikvrt_publication_overview.py materialize --json
+          python3 -B tools/qikvrt_publication_overview.py check --json
+          git rm -- "$SELF_PATH"
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          git add -- docs/publications/2026-09-10-cloud-transputer-self-location-proof/README.md \
+            docs/publications/index.json docs/publications/index.html \
+            REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          python3 -B - <<'PY'
+          import os, subprocess
+          allowed = {
+              os.environ['SELF_PATH'],
+              'docs/publications/2026-09-10-cloud-transputer-self-location-proof/README.md',
+              'docs/publications/index.json', 'docs/publications/index.html',
+              'REPOSITORY_FILE_MANIFEST.json', 'REPOSITORY_FILE_MANIFEST.json.sha256', 'SHA256SUMS.txt',
+          }
+          changed = set(filter(None, subprocess.check_output(['git', 'diff', '--cached', '--name-only', '-z']).decode().split('\0')))
+          if not changed <= allowed or os.environ['SELF_PATH'] not in changed:
+              raise SystemExit('HOLD: mutation escaped the exact publication correction allowlist')
+          print('Allowlisted delta: ' + ', '.join(sorted(changed)))
+          PY
+          git diff --exit-code
+          git diff --cached --check
+          test "$(remote_head)" = "$EXPECTED_HEAD"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'docs: distinguish event-gated skip from semantic NOOP'
+          successor="$(git rev-parse HEAD)"
+          export successor
+          echo "Validating exact successor $successor / tree $(git rev-parse HEAD^{tree})"
+          python3 -B tools/qikvrt_publication_overview.py check --json
+          python3 -B tools/qikvrt_integrity.py verify
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+          git diff --exit-code
+          git diff --cached --exit-code
+          test "$(git rev-parse HEAD)" = "$successor"
+          test "$(remote_head)" = "$EXPECTED_HEAD"
+          git push origin "HEAD:refs/heads/$TARGET_REF"
+          test "$(remote_head)" = "$successor"
+          python3 -B - <<'PY' | tee "$RUNNER_TEMP/qikvrt-publication-f1-receipt.json"
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+          git = lambda *args: subprocess.check_output(['git', *args], text=True).strip()
+          path = 'docs/publications/2026-09-10-cloud-transputer-self-location-proof/README.md'
+          print(json.dumps({
+              'schema': 'qikvrt_publication_f1_correction_receipt_v1',
+              'repository': os.environ['GITHUB_REPOSITORY'], 'pr': 1076,
+              'source_head': os.environ['EXPECTED_PREDECESSOR'],
+              'transport_head': os.environ['EXPECTED_HEAD'],
+              'head': git('rev-parse', 'HEAD'), 'tree': git('rev-parse', 'HEAD^{tree}'),
+              'article_path': path, 'article_sha256': hashlib.sha256(Path(path).read_bytes()).hexdigest(),
+              'run_id': os.environ['GITHUB_RUN_ID'], 'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'validation': ['publication_overview_check', 'repository_integrity_verify', 'make_test'],
+              'candidate_branch_readback_matches': True, 'self_removed': not Path(os.environ['SELF_PATH']).exists(),
+              'predecessor_evidence_transfer': False, 'native_code_owner_approval': False,
+              'merge': False, 'external_publication': False, 'PASS': False, 'FINAL_PASS': False, 'EFFECT_ACK_DONE': False,
+          }, sort_keys=True, indent=2))
+          PY
+      - name: Preserve correction receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-publication-f1-correction-${{ github.run_id }}
+          path: ${{ runner.temp }}/qikvrt-publication-f1-receipt.json
+          if-no-files-found: error
+          retention-days: 30
