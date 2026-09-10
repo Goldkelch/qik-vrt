@@ -10,8 +10,6 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 
-from tools.qikvrt_hold_contract import validate_hold_object
-
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
@@ -137,32 +135,6 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
             ["QIKVRT CI"],
         )
         self.assertTrue(gatewatch["node_liveness"]["artifact_only_materialization"])
-        ruleset_dispatch = prevention["ruleset_main_reconciliation_dispatch"]
-        self.assertTrue(ruleset_dispatch["enabled"])
-        self.assertEqual(ruleset_dispatch["trigger"], "SCHEDULE_ONLY")
-        self.assertEqual(ruleset_dispatch["subject_mode"], "MAIN")
-        self.assertEqual(ruleset_dispatch["app_authority"], "FORBIDDEN_IN_WATCHDOG")
-        self.assertEqual(ruleset_dispatch["ruleset_api"], "FORBIDDEN_IN_WATCHDOG")
-        self.assertEqual(
-            ruleset_dispatch["effect_transport"], "WORKFLOW_DISPATCH_ONLY"
-        )
-        self.assertEqual(
-            ruleset_dispatch["required_inputs"],
-            ["mode=MAIN", "expected_main", "expected_policy_sha", "main_carrier_run_id"],
-        )
-        self.assertEqual(
-            ruleset_dispatch["schedule_concurrency_lane"],
-            "NON_PREEMPTIVE_SEPARATE_FROM_EVENT_OBSERVERS",
-        )
-        self.assertEqual(
-            ruleset_dispatch["maximum_scheduled_runs"],
-            "ONE_RUNNING_PLUS_NEWEST_PENDING",
-        )
-        self.assertEqual(
-            ruleset_dispatch["boundedness"],
-            "ONE_CURRENT_100_RUN_PAGE_FOR_ACTIVE_WRITERS_AND_NEWEST_EXACT_TERMINAL_RUN_ONLY;_TERMINAL_PROOF_IS_RUN_BOUND_ARTIFACT_NOT_HISTORY_ABSENCE",
-        )
-        self.assertFalse(ruleset_dispatch["cancel_effect_run"])
         self.assertEqual(
             prevention["observer_run_policy"],
             "CANCEL_SUPERSEDED_OBSERVER_ONLY",
@@ -453,16 +425,13 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
         self.assertFalse(value["baseline"]["same_head_and_tree"])
         self.assertEqual(value["state"], "QUIESCENT_OBSERVATION")
 
-    def test_workflow_is_five_minute_reflexive_with_narrow_main_dispatch(self) -> None:
+    def test_workflow_is_five_minute_reflexive_and_read_only(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn('cron: "*/5 * * * *"', workflow)
         self.assertIn("workflow_run:", workflow)
         self.assertIn("types: [completed]", workflow)
         self.assertNotIn("types: [requested, in_progress, completed]", workflow)
-        self.assertNotIn('"QIKVRT live status watch"', workflow)
-        self.assertIn("github.event_name == 'schedule' && 'scheduled-main'", workflow)
-        self.assertIn("cancel-in-progress: false", workflow)
-        self.assertNotIn("cancel-in-progress: ${{", workflow)
+        self.assertIn("cancel-in-progress: true", workflow)
         self.assertIn("actions: read", workflow)
         self.assertIn("contents: read", workflow)
         self.assertIn("qikvrt_reflexive_repository_watchdog.py", workflow)
@@ -471,180 +440,24 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
         self.assertIn("QIKVRT repository evidence materialization", workflow)
         self.assertIn("observed-authority-main-head.txt", workflow)
         self.assertIn("gatewatch-receipt.json", workflow)
-        self.assertIn("mapfile -t selected_run_ids", workflow)
+        self.assertIn("id: observe", workflow)
+        self.assertIn("for delay in 0 15 45", workflow)
+        self.assertIn("API rate limit exceeded for installation.", workflow)
+        self.assertIn("rate-limit-exhausted.json", workflow)
+        self.assertIn("GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED", workflow)
+        self.assertIn("REOBSERVE_ON_NEXT_NATIVE_REPOSITORY_EVENT", workflow)
+        self.assertIn("observation_complete=false", workflow)
+        self.assertIn(
+            "if: steps.observe.outputs.observation_complete == 'true'",
+            workflow,
+        )
+        self.assertIn("jq -r '.workflow_runs[].id'", workflow)
         self.assertIn("select(.id != $current and .conclusion == \"success\")", workflow)
         self.assertNotIn("select(.id != $current)][0]", workflow)
         self.assertNotIn(".workflow_runs[0:20]", workflow)
-        dispatch = workflow.split("  dispatch-main-ruleset-reconciliation:", 1)[1]
-        self.assertIn("github.event_name == 'schedule'", dispatch)
-        self.assertIn("needs.pre-deadlock-observation.result == 'success'", dispatch)
-        self.assertIn("actions: write", dispatch)
-        self.assertIn("mode: \"MAIN\"", dispatch)
-        self.assertIn("expected_main", dispatch)
-        self.assertIn("expected_policy_sha", dispatch)
-        self.assertIn("ACTIVE_OR_QUEUED_EXACT_MAIN_EFFECT_EXISTS", dispatch)
-        self.assertIn("ACTIVE_OR_QUEUED_EFFECT_EXISTS", dispatch)
-        self.assertNotIn("cancel-in-progress: true", dispatch)
-        self.assertIn("qikvrt_ruleset_main_dispatch_receipt_v1", dispatch)
-        self.assertIn("qikvrt-ruleset-main-dispatch-", dispatch)
-        self.assertIn("/dispatches", dispatch)
-        self.assertNotIn("QIKVRT_RULESET_ADMIN_TOKEN", dispatch)
-        self.assertNotIn("create-github-app-token", dispatch)
-        self.assertNotIn("qikvrt_ruleset_reconcile.py", dispatch)
-        self.assertNotIn("--apply", dispatch)
-        self.assertNotIn("rulesets/19344903", dispatch)
+        self.assertNotIn("/dispatches", workflow)
         self.assertNotIn("gh pr merge", workflow)
         self.assertNotIn("issues/comments", workflow)
-
-    def test_main_dispatch_uses_a_current_page_only_for_active_or_newest_exact_terminal_run(self) -> None:
-        workflow = WORKFLOW.read_text(encoding="utf-8")
-        dispatch = workflow.split("  dispatch-main-ruleset-reconciliation:", 1)[1]
-        self.assertIn('def active: . == "requested" or . == "pending" or . == "queued" or . == "in_progress" or . == "waiting";', dispatch)
-        self.assertIn('ACTIVE_OR_QUEUED_EXACT_MAIN_EFFECT_EXISTS', dispatch)
-        self.assertIn('ACTIVE_OR_QUEUED_EFFECT_EXISTS', dispatch)
-        self.assertIn('terminal_main_effect_run_id', dispatch)
-        self.assertIn('actions/runs/${terminal_main_effect_run_id}/artifacts?per_page=100', dispatch)
-        self.assertIn('qikvrt-autonomous-ruleset-effect-${terminal_main_effect_run_id}-', dispatch)
-        self.assertIn('TERMINAL_EXACT_MAIN_RECONCILIATION_CURRENT', dispatch)
-        self.assertIn('MAIN_TERMINAL_RECEIPT_PROVENANCE_INVALID', dispatch)
-        self.assertIn('(.workflow_runs | length) <= .total_count', dispatch)
-        self.assertNotIn('EXACT_MAIN_EFFECT_RUN_OBSERVATION_MALFORMED_OR_OVER_CAPACITY', dispatch)
-
-    def test_installation_rate_limit_hold_is_typed_bounded_and_stops_watchdog_effects(self) -> None:
-        workflow = WORKFLOW.read_text(encoding="utf-8")
-        observation = workflow.split("      - name: Analyze the pre-deadlock state without mutation", 1)[0]
-        dispatch = workflow.split("  dispatch-main-ruleset-reconciliation:", 1)[1]
-
-        self.assertEqual(workflow.count("gh_read()"), 3)
-        self.assertEqual(workflow.count("for delay in 0 15 45"), 2)
-        self.assertGreaterEqual(
-            workflow.count("API rate limit exceeded for installation"),
-            2,
-        )
-        self.assertEqual(
-            workflow.count('reason_code: "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED"'),
-            2,
-        )
-        self.assertGreaterEqual(workflow.count("d0: 2"), 4)
-        self.assertGreaterEqual(workflow.count("hold_reason:"), 4)
-        self.assertEqual(workflow.count("return 75"), 2)
-        self.assertNotIn('printf \'{"workflow_runs":[]}\\n\'', workflow)
-        self.assertNotIn("until gh api", workflow)
-
-        for endpoint in (
-            'repos/$REPOSITORY/pulls/$EVENT_PR',
-            'repos/$REPOSITORY/git/ref/heads/main',
-            'repos/$authority_repository/git/ref/heads/main',
-            'repos/$REPOSITORY/actions/runs?head_sha=$EXPECTED_HEAD&per_page=100',
-            'repos/$REPOSITORY/actions/runs/$run_id/jobs?per_page=100',
-            'repos/$REPOSITORY/actions/workflows/qikvrt_reflexive_repository_watchdog.yml/runs?branch=main&status=completed&per_page=20',
-            'repos/$REPOSITORY/actions/runs/$previous_run/artifacts?per_page=100',
-            'repos/$REPOSITORY/actions/artifacts/$previous_artifact/zip',
-        ):
-            self.assertIn(f'gh_read "{endpoint}"', observation)
-        self.assertNotIn('gh api "repos/', observation)
-        self.assertIn('if: steps.reobserve.outputs.preobserve_hold != \'true\'', workflow)
-        self.assertIn('preobserve_hold: ${{ steps.reobserve.outputs.preobserve_hold }}', workflow)
-        self.assertIn('needs.pre-deadlock-observation.outputs.preobserve_hold == \'false\'', workflow)
-        self.assertIn('partial_observation_is_quiescence: false', observation)
-        self.assertIn('cp "$root/reflexive-watchdog-receipt.json" "$root/gatewatch-receipt.json"', observation)
-
-        self.assertIn('gh_read "repos/${REPOSITORY}/commits/main"', dispatch)
-        self.assertIn(
-            'effect_runs_endpoint="repos/${REPOSITORY}/actions/workflows/${EFFECT_WORKFLOW}/runs?event=workflow_dispatch&head_sha=${expected_main}&per_page=100"',
-            dispatch,
-        )
-        self.assertIn("The POST dispatch below remains one-shot and is never retried.", dispatch)
-        self.assertIn('| gh api --method POST', dispatch)
-        self.assertNotIn('gh_read "repos/${REPOSITORY}/actions/workflows/${EFFECT_WORKFLOW}/dispatches"', dispatch)
-
-    def test_nonpreemptive_concurrency_and_bounded_job_observation_are_fail_closed(self) -> None:
-        workflow = WORKFLOW.read_text(encoding="utf-8")
-        observation = workflow.split("      - name: Analyze the pre-deadlock state without mutation", 1)[0]
-
-        self.assertIn("cancel-in-progress: false", workflow)
-        self.assertIn("one running and the newest pending", workflow)
-        self.assertIn("instead of being cancelled indefinitely", workflow)
-        self.assertIn("max_job_observations=32", observation)
-        self.assertIn("mapfile -t selected_run_ids", observation)
-        self.assertIn("sort_by([.name, .created_at, (.id | tostring)])", observation)
-        self.assertIn("group_by(.name)", observation)
-        self.assertIn("map(.[-1].id)", observation)
-        self.assertNotIn("mapfile -t run_ids", observation)
-        self.assertNotIn('for run_id in "${run_ids[@]}"', observation)
-        self.assertIn('if [ "${#selected_run_ids[@]}" -gt "$max_job_observations" ]; then', observation)
-        self.assertIn(
-            'emit_job_observation_bound_hold "${#selected_run_ids[@]}"\n            exit 0',
-            observation,
-        )
-        self.assertIn('first_blocker: "EXACT_HEAD_JOB_OBSERVATION_BOUND_EXCEEDED"', observation)
-        self.assertIn('reason_code: "EXACT_HEAD_JOB_OBSERVATION_BOUND_EXCEEDED"', observation)
-        self.assertIn('maximum_job_reads: $maximum', observation)
-        self.assertIn('echo "preobserve_hold=true" >> "$GITHUB_OUTPUT"', observation)
-
-    def test_installation_rate_limit_hold_contract_reclassifies_to_d0_two(self) -> None:
-        value = {
-            "state": "HOLD",
-            "hold_reason": {
-                "reason_code": "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",
-                "reason": "GitHub installation rate limit exhausted during exact watchdog observation.",
-                "subject": {
-                    "repository": "example/qik-vrt",
-                    "kind": "workflow_run",
-                    "identifier": "42",
-                    "head_sha": HEAD,
-                },
-                "evidence_refs": ["endpoint:repos/example/qik-vrt/actions/runs"],
-                "owner": {
-                    "role": "EXACT_SUBJECT_OBSERVER",
-                    "actor": "qikvrt-reflexive-repository-watchdog",
-                },
-                "retry_condition": {
-                    "event": "NEXT_REPOSITORY_INTERRUPT",
-                    "predicate": "GitHub installation rate-limit response no longer applies to the exact subject",
-                },
-                "next_action": "REOBSERVE_EXACT_SUBJECT_AFTER_GITHUB_INSTALLATION_RATE_LIMIT_RECOVERS",
-                "d0": 2,
-            },
-        }
-        hold = validate_hold_object(value)
-        assert hold is not None
-        self.assertEqual(hold["reason_code"], "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED")
-        self.assertEqual(hold["d0"], 2)
-
-    def test_job_observation_bound_hold_contract_is_reobservable(self) -> None:
-        value = {
-            "state": "HOLD",
-            "hold_reason": {
-                "reason_code": "EXACT_HEAD_JOB_OBSERVATION_BOUND_EXCEEDED",
-                "reason": "Newest exact-head workflow observations exceed the declared bounded job-read budget.",
-                "subject": {
-                    "repository": "example/qik-vrt",
-                    "kind": "workflow_run",
-                    "identifier": "42",
-                    "head_sha": HEAD,
-                },
-                "evidence_refs": [
-                    "current-runs.json",
-                    "selected-latest-run-count:33",
-                    "maximum-job-reads:32",
-                ],
-                "owner": {
-                    "role": "EXACT_SUBJECT_OBSERVER",
-                    "actor": "qikvrt-reflexive-repository-watchdog",
-                },
-                "retry_condition": {
-                    "event": "NEXT_REPOSITORY_INTERRUPT",
-                    "predicate": "The exact-head newest-run inventory is within the declared bounded job-read budget",
-                },
-                "next_action": "REOBSERVE_EXACT_HEAD_WITHIN_DECLARED_JOB_OBSERVATION_BOUND",
-                "d0": 2,
-            },
-        }
-        hold = validate_hold_object(value)
-        assert hold is not None
-        self.assertEqual(hold["reason_code"], "EXACT_HEAD_JOB_OBSERVATION_BOUND_EXCEEDED")
-        self.assertEqual(hold["d0"], 2)
 
 
 if __name__ == "__main__":

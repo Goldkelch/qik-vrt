@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
 name: QIKVRT reflexive repository watchdog
-run-name: QIKVRT reflexive watchdog carrier=${{ github.run_id }} event=${{ github.event_name }}
 
 on:
   workflow_dispatch:
@@ -18,13 +17,6 @@ on:
       - "QIK-VRT global claim completion"
       - "QIKVRT Batch-003 remaining subject disposition"
       - "QIKVRT adaptive runtime"
-    # Observer workflows never admit another observer.  The promotion executor
-    # is intentionally excluded: CI -> review executor -> required review ->
-    # promotion already consumes GitHub's three workflow_run edges.  A fourth
-    # observer edge would be silently dropped by the platform.
-    # A completed productive run contains the stable state needed by the
-    # watchdog; requested and in-progress transitions only create cancellation
-    # pressure.
     types: [completed]
   push:
     branches: [main]
@@ -64,19 +56,13 @@ permissions:
   pull-requests: read
 
 concurrency:
-  # Keep the scheduled Main-dispatch lane separate from event observers. Every
-  # lane is non-preemptive: GitHub keeps one running and the newest pending
-  # run, so a ten-minute required pre-observation reaches a receipt or HOLD
-  # instead of being cancelled indefinitely by five-minute interrupts.
-  group: qikvrt-reflexive-watchdog-${{ github.repository }}-${{ github.event_name == 'schedule' && 'scheduled-main' || github.event.pull_request.number || 'main' }}
-  cancel-in-progress: false
+  group: qikvrt-reflexive-watchdog-${{ github.repository }}-${{ github.event.pull_request.number || 'main' }}
+  cancel-in-progress: true
 
 jobs:
   pre-deadlock-observation:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    outputs:
-      preobserve_hold: ${{ steps.reobserve.outputs.preobserve_hold }}
     steps:
       - name: Check out the exact observed head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -91,7 +77,7 @@ jobs:
           python-version: "3.12"
 
       - name: Reobserve exact head, tree, runs, jobs, and previous reflexive receipt
-        id: reobserve
+        id: observe
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -106,161 +92,29 @@ jobs:
           mkdir -p "$root/jobs"
           rate_limit_marker="$root/rate-limit-exhausted.json"
           rm -f "$rate_limit_marker"
-          max_job_observations=32
-          echo "preobserve_hold=false" >> "$GITHUB_OUTPUT"
 
           emit_rate_limit_hold() {
-            local endpoint observed_at tree
-            endpoint="$(jq -r '.endpoint' "$rate_limit_marker")"
-            observed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-            tree="$(cat "$root/observed-tree.txt")"
+            local endpoint
+            endpoint="$(jq -r '.endpoint // "unknown"' "$rate_limit_marker")"
             jq -n \
               --arg repository "$REPOSITORY" \
-              --arg event "$EVENT_NAME" \
               --arg head "$EXPECTED_HEAD" \
-              --arg tree "$tree" \
-              --arg observed_at "$observed_at" \
+              --arg run "$CURRENT_RUN_ID" \
               --arg endpoint "$endpoint" \
-              --arg run_id "$CURRENT_RUN_ID" \
-              '{
-                schema: "qikvrt_reflexive_repository_watchdog_receipt_v1",
-                repository: $repository,
-                head_sha: $head,
-                tree_sha: $tree,
-                observed_at: $observed_at,
-                state: "HOLD",
-                disposition: "HOLD",
-                first_blocker: "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",
-                productive_edge: "REOBSERVE_EXACT_SUBJECT_AFTER_GITHUB_INSTALLATION_RATE_LIMIT_RECOVERS",
-                safe_continuation: "Do not classify partial GitHub observation as quiescence or dispatch a new effect.",
-                effect_already_occurred: false,
-                rate_limit: {
-                  endpoint: $endpoint,
-                  attempts: 3,
-                  backoff_seconds: [15, 45]
-                },
-                hold_reason: {
-                  reason_code: "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",
-                  reason: "GitHub installation rate limit exhausted during exact watchdog observation.",
-                  subject: {
-                    repository: $repository,
-                    kind: "workflow_run",
-                    identifier: $run_id,
-                    head_sha: $head
-                  },
-                  evidence_refs: [
-                    ("endpoint:" + $endpoint),
-                    ("workflow-run:" + $run_id)
-                  ],
-                  owner: {
-                    role: "EXACT_SUBJECT_OBSERVER",
-                    actor: "qikvrt-reflexive-repository-watchdog"
-                  },
-                  retry_condition: {
-                    event: "NEXT_REPOSITORY_INTERRUPT",
-                    predicate: "GitHub installation rate-limit response no longer applies to the exact subject"
-                  },
-                  next_action: "REOBSERVE_EXACT_SUBJECT_AFTER_GITHUB_INSTALLATION_RATE_LIMIT_RECOVERS",
-                  d0: 2
-                },
-                boundaries: {
-                  repository_mutation: false,
-                  external_effect: false,
-                  partial_observation_is_quiescence: false
-                },
-                completion_claims: {
-                  PASS: false,
-                  FINAL_PASS: false,
-                  EFFECT_ACK_DONE: false,
-                  AUTHORITY_MIRROR_EQUALITY: false,
-                  DEADLOCK_FREEDOM_PROVED: false
-                }
-              }' > "$root/reflexive-watchdog-receipt.json"
+              '{schema:"qikvrt_reflexive_repository_watchdog_rate_limit_hold_v1",state:"HOLD_UNVERIFIED",verification_state:"HOLD_UNVERIFIED",disposition:"REOBSERVE",repository:$repository,head_sha:$head,first_blocker:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",detail:"bounded GitHub installation rate-limit backoff exhausted before exact reflexive observation",hold_reason:{reason_code:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",reason:"The GitHub App installation quota prevented an exact read-only reflexive observation.",subject:{repository:$repository,kind:"commit",identifier:$head,head_sha:$head},evidence_refs:[("actions/run/"+$run),("github-api/"+$endpoint)],owner:{role:"EXACT_SUBJECT_OBSERVER",actor:"github-actions[bot]"},retry_condition:{event:"native_repository_event",predicate:"the GitHub App installation quota no longer prevents exact observation of the same commit"},next_action:"REOBSERVE_ON_NEXT_NATIVE_REPOSITORY_EVENT",d0:2},derived_action:{d0:2,state:"REOBSERVE",next_action:"REOBSERVE_ON_NEXT_NATIVE_REPOSITORY_EVENT",productive_effect:false,effect_ack:"NOT_REQUIRED"},completion_claims:{PASS:false,FINAL_PASS:false,EFFECT_ACK_DONE:false,MERGE:false}}' \
+              > "$root/reflexive-watchdog-receipt.json"
             cp "$root/reflexive-watchdog-receipt.json" "$root/gatewatch-receipt.json"
-            echo "preobserve_hold=true" >> "$GITHUB_OUTPUT"
-            cat "$root/reflexive-watchdog-receipt.json"
+            echo 'observation_complete=false' >> "$GITHUB_OUTPUT"
+            jq '{state, disposition, first_blocker, derived_action, hold_reason}' \
+              "$root/reflexive-watchdog-receipt.json"
           }
 
-          emit_job_observation_bound_hold() {
-            local selected_count observed_at tree
-            selected_count="$1"
-            observed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-            tree="$(cat "$root/observed-tree.txt")"
-            jq -n \
-              --arg repository "$REPOSITORY" \
-              --arg head "$EXPECTED_HEAD" \
-              --arg tree "$tree" \
-              --arg observed_at "$observed_at" \
-              --arg run_id "$CURRENT_RUN_ID" \
-              --argjson selected_count "$selected_count" \
-              --argjson maximum "$max_job_observations" \
-              '{
-                schema: "qikvrt_reflexive_repository_watchdog_receipt_v1",
-                repository: $repository,
-                head_sha: $head,
-                tree_sha: $tree,
-                observed_at: $observed_at,
-                state: "HOLD",
-                disposition: "HOLD",
-                first_blocker: "EXACT_HEAD_JOB_OBSERVATION_BOUND_EXCEEDED",
-                productive_edge: "REOBSERVE_EXACT_HEAD_WITHIN_DECLARED_JOB_OBSERVATION_BOUND",
-                safe_continuation: "Do not classify a partial job observation as a complete exact-head topology.",
-                effect_already_occurred: false,
-                job_observation_bound: {
-                  selected_latest_run_count: $selected_count,
-                  maximum_job_reads: $maximum
-                },
-                hold_reason: {
-                  reason_code: "EXACT_HEAD_JOB_OBSERVATION_BOUND_EXCEEDED",
-                  reason: "Newest exact-head workflow observations exceed the declared bounded job-read budget.",
-                  subject: {
-                    repository: $repository,
-                    kind: "workflow_run",
-                    identifier: $run_id,
-                    head_sha: $head
-                  },
-                  evidence_refs: [
-                    "current-runs.json",
-                    ("selected-latest-run-count:" + ($selected_count | tostring)),
-                    ("maximum-job-reads:" + ($maximum | tostring))
-                  ],
-                  owner: {
-                    role: "EXACT_SUBJECT_OBSERVER",
-                    actor: "qikvrt-reflexive-repository-watchdog"
-                  },
-                  retry_condition: {
-                    event: "NEXT_REPOSITORY_INTERRUPT",
-                    predicate: "The exact-head newest-run inventory is within the declared bounded job-read budget"
-                  },
-                  next_action: "REOBSERVE_EXACT_HEAD_WITHIN_DECLARED_JOB_OBSERVATION_BOUND",
-                  d0: 2
-                },
-                boundaries: {
-                  repository_mutation: false,
-                  external_effect: false,
-                  partial_observation_is_quiescence: false
-                },
-                completion_claims: {
-                  PASS: false,
-                  FINAL_PASS: false,
-                  EFFECT_ACK_DONE: false,
-                  AUTHORITY_MIRROR_EQUALITY: false,
-                  DEADLOCK_FREEDOM_PROVED: false
-                }
-              }' > "$root/reflexive-watchdog-receipt.json"
-            cp "$root/reflexive-watchdog-receipt.json" "$root/gatewatch-receipt.json"
-            echo "preobserve_hold=true" >> "$GITHUB_OUTPUT"
-            cat "$root/reflexive-watchdog-receipt.json"
-          }
-
-          # Retry only the exact GitHub installation quota response after the
-          # repository's bounded 15 s / 45 s backoff.  A quota HOLD never
-          # fabricates an empty run inventory: callers stop before analysis.
-          # Other API errors retain their existing fail-closed behavior.
+          # The watchdog performs observations only. Retry only the exact
+          # installation quota response; all other GitHub API failures remain
+          # hard failures. This never manufactures a new repository event.
           gh_read() {
-            local endpoint output error delay
+            local output error delay endpoint
             endpoint="$1"
-            shift
             output="$(mktemp)"
             error="$(mktemp)"
             for delay in 0 15 45; do
@@ -268,12 +122,12 @@ jobs:
                 echo "QIKVRT_GITHUB_INSTALLATION_RATE_LIMIT_BACKOFF_SECONDS=$delay" >&2
                 sleep "$delay"
               fi
-              if gh api "$endpoint" "$@" >"$output" 2>"$error"; then
+              if gh api "$@" >"$output" 2>"$error"; then
                 cat "$output"
                 rm -f "$output" "$error"
                 return 0
               fi
-              if ! grep -Fq "API rate limit exceeded for installation" "$error"; then
+              if ! grep -Fq "API rate limit exceeded for installation." "$error"; then
                 cat "$error" >&2
                 rm -f "$output" "$error"
                 return 1
@@ -282,15 +136,15 @@ jobs:
             cat "$error" >&2
             jq -n \
               --arg endpoint "$endpoint" \
-              '{state:"HOLD",d0:2,reason:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",endpoint:$endpoint,productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
+              '{state:"HOLD_UNVERIFIED",d0:2,reason:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",endpoint:$endpoint,productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
               > "$rate_limit_marker"
+            printf '{}\n'
             rm -f "$output" "$error"
-            return 75
+            return 0
           }
 
-          stop_for_rate_limit() {
-            local status="$1"
-            if [ "$status" -eq 75 ] && test -s "$rate_limit_marker"; then
+          rate_limit_hold_if_needed() {
+            if test -f "$rate_limit_marker"; then
               emit_rate_limit_hold
               exit 0
             fi
@@ -298,27 +152,15 @@ jobs:
 
           local_head="$(git rev-parse --verify HEAD^{commit})"
           test "$local_head" = "$EXPECTED_HEAD"
+          if test "$EVENT_NAME" = pull_request; then
+            live_head="$(gh_read "repos/$REPOSITORY/pulls/$EVENT_PR" --jq '.head.sha')"
+          else
+            live_head="$(gh_read "repos/$REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          fi
+          rate_limit_hold_if_needed
+          test "$live_head" = "$EXPECTED_HEAD"
           git rev-parse --verify HEAD^{tree} > "$root/observed-tree.txt"
           printf '%s\n' "$EXPECTED_HEAD" > "$root/observed-head.txt"
-          if test "$EVENT_NAME" = pull_request; then
-            if gh_read "repos/$REPOSITORY/pulls/$EVENT_PR" --jq '.head.sha' > "$root/live-head.txt"; then
-              :
-            else
-              status=$?
-              stop_for_rate_limit "$status"
-              exit "$status"
-            fi
-          else
-            if gh_read "repos/$REPOSITORY/git/ref/heads/main" --jq '.object.sha' > "$root/live-head.txt"; then
-              :
-            else
-              status=$?
-              stop_for_rate_limit "$status"
-              exit "$status"
-            fi
-          fi
-          live_head="$(cat "$root/live-head.txt")"
-          test "$live_head" = "$EXPECTED_HEAD"
           if test "$EVENT_NAME" = pull_request; then
             if test "${{ github.event.pull_request.base.ref }}" = main; then
               printf '%s\n' PULL_REQUEST_MAIN > "$root/observation-scope.txt"
@@ -330,95 +172,51 @@ jobs:
           fi
           authority_repository="$(jq -r '.authority.repository' state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json)"
           test "$authority_repository" != null
-          if gh_read "repos/$authority_repository/git/ref/heads/main" --jq '.object.sha' \
-            > "$root/observed-authority-main-head.txt"; then
-            :
-          else
-            status=$?
-            stop_for_rate_limit "$status"
-            exit "$status"
-          fi
-          if gh_read "repos/$REPOSITORY/actions/runs?head_sha=$EXPECTED_HEAD&per_page=100" \
-            > "$root/current-runs.json"; then
-            :
-          else
-            status=$?
-            stop_for_rate_limit "$status"
-            exit "$status"
-          fi
+          gh_read "repos/$authority_repository/git/ref/heads/main" --jq '.object.sha' \
+            > "$root/observed-authority-main-head.txt"
+          rate_limit_hold_if_needed
+          gh_read "repos/$REPOSITORY/actions/runs?head_sha=$EXPECTED_HEAD&per_page=100" \
+            > "$root/current-runs.json"
+          rate_limit_hold_if_needed
 
-          # Job evidence is used only for the newest exact-head run of each
-          # workflow name.  Bound the serial read budget; an oversized inventory
-          # is a typed D0=2 HOLD, never a partial observation passed to analysis.
-          mapfile -t selected_run_ids < <(
-            jq -r '
-              [
-                .workflow_runs[]
-                | select(
-                    (.id != null) and
-                    ((.name | type) == "string") and
-                    (.name != "")
-                  )
-              ]
-              | sort_by([.name, .created_at, (.id | tostring)])
-              | group_by(.name)
-              | map(.[-1].id)
-              | .[]
-            ' "$root/current-runs.json"
+          # The analyzer considers every returned run. Fetch the matching jobs for
+          # every one of those runs so missing observation data is never confused
+          # with a genuine terminal zero-job execution.
+          mapfile -t run_ids < <(
+            jq -r '.workflow_runs[].id' "$root/current-runs.json"
           )
-          if [ "${#selected_run_ids[@]}" -gt "$max_job_observations" ]; then
-            emit_job_observation_bound_hold "${#selected_run_ids[@]}"
-            exit 0
-          fi
-          for run_id in "${selected_run_ids[@]}"; do
-            if gh_read "repos/$REPOSITORY/actions/runs/$run_id/jobs?per_page=100" \
-              > "$root/jobs/$run_id.json"; then
-              :
-            else
-              status=$?
-              stop_for_rate_limit "$status"
-              exit "$status"
-            fi
+          for run_id in "${run_ids[@]}"; do
+            gh_read "repos/$REPOSITORY/actions/runs/$run_id/jobs?per_page=100" \
+              > "$root/jobs/$run_id.json"
+            rate_limit_hold_if_needed
           done
 
           if test "$EVENT_NAME" != pull_request; then
-            if gh_read "repos/$REPOSITORY/actions/workflows/qikvrt_reflexive_repository_watchdog.yml/runs?branch=main&status=completed&per_page=20" \
-              | jq -r --argjson current "$CURRENT_RUN_ID" \
-                '[.workflow_runs[] | select(.id != $current and .conclusion == "success")][0].id // empty' \
-                > "$root/previous-run.txt"; then
-              :
-            else
-              status=$?
-              stop_for_rate_limit "$status"
-              : > "$root/previous-run.txt"
-            fi
-            previous_run="$(cat "$root/previous-run.txt")"
+            previous_run="$(
+              gh_read "repos/$REPOSITORY/actions/workflows/qikvrt_reflexive_repository_watchdog.yml/runs?branch=main&status=completed&per_page=20" \
+                | jq -r --argjson current "$CURRENT_RUN_ID" \
+                  '[.workflow_runs[]? | select(.id != $current and .conclusion == "success")][0].id // empty'
+            )"
+            rate_limit_hold_if_needed
             if test -n "$previous_run"; then
-              if gh_read "repos/$REPOSITORY/actions/runs/$previous_run/artifacts?per_page=100" \
-                | jq -r '[.artifacts[] | select(.name | startswith("qikvrt-reflexive-repository-watchdog-"))][0].id // empty' \
-                  > "$root/previous-artifact.txt"; then
-                :
-              else
-                status=$?
-                stop_for_rate_limit "$status"
-                : > "$root/previous-artifact.txt"
-              fi
-              previous_artifact="$(cat "$root/previous-artifact.txt")"
+              previous_artifact="$(
+                gh_read "repos/$REPOSITORY/actions/runs/$previous_run/artifacts?per_page=100" \
+                  | jq -r '[.artifacts[]? | select(.name | startswith("qikvrt-reflexive-repository-watchdog-"))][0].id // empty'
+              )"
+              rate_limit_hold_if_needed
               if test -n "$previous_artifact"; then
-                if gh_read "repos/$REPOSITORY/actions/artifacts/$previous_artifact/zip" \
-                  > "$root/previous-receipt.zip"; then
-                  unzip -p "$root/previous-receipt.zip" reflexive-watchdog-receipt.json \
-                    > "$root/previous-receipt.json" 2>/dev/null || true
-                else
-                  status=$?
-                  stop_for_rate_limit "$status"
-                fi
+                gh_read "repos/$REPOSITORY/actions/artifacts/$previous_artifact/zip" \
+                  > "$root/previous-receipt.zip"
+                rate_limit_hold_if_needed
+                unzip -p "$root/previous-receipt.zip" reflexive-watchdog-receipt.json \
+                  > "$root/previous-receipt.json" 2>/dev/null || true
               fi
             fi
           fi
+          echo 'observation_complete=true' >> "$GITHUB_OUTPUT"
 
       - name: Analyze the pre-deadlock state without mutation
-        if: steps.reobserve.outputs.preobserve_hold != 'true'
+        if: steps.observe.outputs.observation_complete == 'true'
         env:
           REPOSITORY: ${{ github.repository }}
         shell: bash
@@ -452,15 +250,12 @@ jobs:
             "$root/reflexive-watchdog-receipt.json"
 
       - name: Verify reflexive prevention and mesh continuity contracts
-        if: steps.reobserve.outputs.preobserve_hold != 'true'
         shell: bash
         run: |
           set -euo pipefail
           PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v \
             tests.test_qikvrt_reflexive_repository_watchdog \
             tests.test_qikvrt_workflow_executor_mesh_contract \
-            tests.test_qikvrt_workflow_event_graph \
-            tests.test_qikvrt_writer_inventory \
             tests.test_seed_workflows
 
       - name: Preserve the exact-head pre-deadlock receipt
@@ -471,985 +266,3 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           path: .qikvrt/reflexive-repository-watchdog
-
-  dispatch-main-ruleset-reconciliation:
-    # This is deliberately a schedule-only, unprivileged routing hop.  The
-    # effect workflow remains the only App-token holder and the only privileged
-    # reconciler caller; workflow_run and manual watchdog invocations cannot
-    # dispatch it.
-    needs: pre-deadlock-observation
-    if: >-
-      always() &&
-      needs.pre-deadlock-observation.result == 'success' &&
-      needs.pre-deadlock-observation.outputs.preobserve_hold == 'false' &&
-      github.event_name == 'schedule' &&
-      github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      actions: write
-      contents: read
-    steps:
-      - name: Check out exact trusted Main dispatcher implementation
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: main
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Rebind Main and policy then dispatch at most one active subject
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          EFFECT_WORKFLOW: qikvrt_autonomous_ruleset_effect_loop.yml
-          EFFECT_NAME: QIKVRT autonomous ruleset effect loop
-          ROOT: .qikvrt/reflexive-repository-watchdog
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$ROOT"
-          rate_limit_marker="$ROOT/rate-limit-exhausted.json"
-          rm -f "$rate_limit_marker"
-          main_effect_ledger="$ROOT/ruleset-main-effect-attempts.json"
-
-          hold_or_noop() {
-            local state="$1" blocker="$2" next_action
-            next_action="REOBSERVE_EXACT_MAIN_AND_POLICY_BEFORE_ANY_RULESET_EFFECT"
-            jq -n \
-              --arg state "$state" \
-              --arg blocker "$blocker" \
-              --arg repository "$REPOSITORY" \
-              --arg main "${expected_main:-}" \
-              --arg policy_sha "${expected_policy_sha:-}" \
-              --arg next_action "$next_action" \
-              --arg run "$GITHUB_RUN_ID" \
-              '{
-                schema: "qikvrt_ruleset_main_dispatch_receipt_v1",
-                state: $state,
-                first_blocker: $blocker,
-                repository: $repository,
-                subject_mode: "MAIN",
-                trusted_main_sha: $main,
-                policy_sha256: $policy_sha,
-                effect_workflow: "qikvrt_autonomous_ruleset_effect_loop.yml",
-                mutation: "NONE",
-                effect_transport_attempted: false,
-                effect_observed: false,
-                effect_run_confirmed: false,
-                predecessor_evidence_transfer: false
-              } + (if $state == "HOLD" then {
-                verification_state:"HOLD_UNVERIFIED",
-                full_exact_subject_verified:false,
-                d0:2,
-                continuation_required:true,
-                next_action:$next_action,
-                hold_reason:{
-                  reason_code:$blocker,
-                  reason:"The scheduled Main carrier could not establish a complete exact subject; no ruleset dispatch was attempted.",
-                  subject:{repository:$repository,kind:"commit",identifier:"main",head_sha:$main},
-                  evidence_refs:["github-actions-run:" + $run,"ruleset-main-dispatch:pre-transport"],
-                  owner:{role:"EXACT_SUBJECT_OBSERVER",actor:"qikvrt-reflexive-repository-watchdog"},
-                  retry_condition:{event:"NEXT_SCHEDULED_MAIN_CARRIER",predicate:"the exact Main ref and policy can be rebound before any dispatch"},
-                  next_action:$next_action,
-                  d0:2
-                }
-              } else {} end)' > "$ROOT/ruleset-main-dispatch.json"
-            cat "$ROOT/ruleset-main-dispatch.json"
-          }
-
-          emit_rate_limit_hold() {
-            local endpoint observed_at
-            endpoint="$(jq -r '.endpoint' "$rate_limit_marker")"
-            observed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-            jq -n \
-              --arg repository "$REPOSITORY" \
-              --arg run_id "$GITHUB_RUN_ID" \
-              --arg checkout "${checkout:-}" \
-              --arg main "${expected_main:-}" \
-              --arg policy_sha "${expected_policy_sha:-}" \
-              --arg endpoint "$endpoint" \
-              --arg observed_at "$observed_at" \
-              '{
-                schema: "qikvrt_ruleset_main_dispatch_receipt_v1",
-                state: "HOLD",
-                first_blocker: "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",
-                subject_mode: "MAIN",
-                trusted_main_sha: $main,
-                policy_sha256: $policy_sha,
-                effect_workflow: "qikvrt_autonomous_ruleset_effect_loop.yml",
-                effect_transport_attempted: false,
-                effect_run_confirmed: false,
-                predecessor_evidence_transfer: false,
-                verification_state: "HOLD_UNVERIFIED",
-                full_exact_subject_verified: false,
-                d0: 2,
-                continuation_required: true,
-                next_action: "REOBSERVE_EXACT_MAIN_BEFORE_RULESET_EFFECT_DISPATCH",
-                observed_at: $observed_at,
-                rate_limit: {
-                  endpoint: $endpoint,
-                  attempts: 3,
-                  backoff_seconds: [15, 45]
-                },
-                hold_reason: {
-                  reason_code: "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",
-                  reason: "GitHub installation rate limit exhausted before ruleset effect dispatch.",
-                  subject: {
-                    repository: $repository,
-                    kind: "workflow_run",
-                    identifier: $run_id,
-                    head_sha: $checkout
-                  },
-                  evidence_refs: [
-                    ("endpoint:" + $endpoint),
-                    ("workflow-run:" + $run_id)
-                  ],
-                  owner: {
-                    role: "EXACT_SUBJECT_OBSERVER",
-                    actor: "qikvrt-reflexive-repository-watchdog"
-                  },
-                  retry_condition: {
-                    event: "NEXT_REPOSITORY_INTERRUPT",
-                    predicate: "GitHub installation rate-limit response no longer applies to the exact Main dispatch subject"
-                  },
-                  next_action: "REOBSERVE_EXACT_MAIN_BEFORE_RULESET_EFFECT_DISPATCH",
-                  d0: 2
-                },
-                completion_claims: {
-                  PASS: false,
-                  FINAL_PASS: false,
-                  EFFECT_ACK_DONE: false,
-                  MERGE: false
-                }
-              }' > "$ROOT/ruleset-main-dispatch.json"
-            cat "$ROOT/ruleset-main-dispatch.json"
-          }
-
-          # GETs may retry only the exact GitHub installation quota response.
-          # The POST dispatch below remains one-shot and is never retried.
-          gh_read() {
-            local endpoint output error delay
-            endpoint="$1"
-            shift
-            output="$(mktemp)"
-            error="$(mktemp)"
-            for delay in 0 15 45; do
-              if [ "$delay" -gt 0 ]; then
-                echo "QIKVRT_GITHUB_INSTALLATION_RATE_LIMIT_BACKOFF_SECONDS=$delay" >&2
-                sleep "$delay"
-              fi
-              if gh api "$endpoint" "$@" >"$output" 2>"$error"; then
-                cat "$output"
-                rm -f "$output" "$error"
-                return 0
-              fi
-              if ! grep -Fq "API rate limit exceeded for installation" "$error"; then
-                cat "$error" >&2
-                rm -f "$output" "$error"
-                return 1
-              fi
-            done
-            cat "$error" >&2
-            jq -n \
-              --arg endpoint "$endpoint" \
-              '{state:"HOLD",d0:2,reason:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",endpoint:$endpoint,productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
-              > "$rate_limit_marker"
-            rm -f "$output" "$error"
-            return 75
-          }
-
-          stop_for_rate_limit() {
-            local status="$1"
-            if [ "$status" -eq 75 ] && test -s "$rate_limit_marker"; then
-              emit_rate_limit_hold
-              exit 0
-            fi
-          }
-
-          effect_attempts() {
-            python3 -B tools/qikvrt_effect_attempts.py show --ledger "$main_effect_ledger"
-          }
-
-          effect_summary() {
-            python3 -B tools/qikvrt_effect_attempts.py summary --ledger "$main_effect_ledger"
-          }
-
-          append_effect_attempt() {
-            python3 -B tools/qikvrt_effect_attempts.py append --ledger "$main_effect_ledger" "$@"
-          }
-
-          emit_main_dispatch_hold() {
-            local blocker="$1" endpoint="$2" attempted="${3:-}" attempts summary transport observed mutation
-            # A POST intent may already be durable when a later ledger read or
-            # summary process fails.  Receipt construction must therefore be
-            # best-effort and self-contained; it may never erase the fact that
-            # transport was attempted by aborting before a HOLD is written.
-            attempts='[]'
-            summary='{"mutation":"NONE","effect_transport_attempted":false,"effect_observed":false}'
-            if effect_attempts > "$ROOT/main-effect-attempts-readback.json" 2>/dev/null; then
-              attempts="$(cat "$ROOT/main-effect-attempts-readback.json")"
-            fi
-            if effect_summary > "$ROOT/main-effect-summary-readback.json" 2>/dev/null; then
-              summary="$(cat "$ROOT/main-effect-summary-readback.json")"
-            fi
-            if [ -n "$attempted" ]; then
-              transport="$attempted"
-            elif ! transport="$(jq -er 'if .effect_transport_attempted | type == "boolean" then .effect_transport_attempted else error("invalid transport") end' <<<"$summary")"; then
-              transport=false
-            fi
-            if ! observed="$(jq -er 'if .effect_observed | type == "boolean" then .effect_observed else error("invalid observation") end' <<<"$summary")"; then
-              observed=false
-            fi
-            if ! mutation="$(jq -er 'if .mutation | type == "string" and length > 0 then .mutation else error("invalid mutation") end' <<<"$summary")"; then
-              mutation=NONE
-            fi
-            jq -n \
-              --arg blocker "$blocker" \
-              --arg endpoint "$endpoint" \
-              --arg repository "$REPOSITORY" \
-              --arg run "$GITHUB_RUN_ID" \
-              --arg main "$expected_main" \
-              --arg policy_sha "$expected_policy_sha" \
-              --argjson effect_attempts "$attempts" \
-              --argjson effect_transport_attempted "$transport" \
-              --argjson effect_observed "$observed" \
-              --arg mutation "$mutation" \
-              '{
-                schema:"qikvrt_ruleset_main_dispatch_receipt_v1",
-                state:"HOLD",
-                verification_state:"HOLD_UNVERIFIED",
-                full_exact_subject_verified:false,
-                d0:2,
-                continuation_required:true,
-                first_blocker:$blocker,
-                next_action:"REOBSERVE_EXACT_MAIN_EFFECT_RUN_BEFORE_ANY_RULESET_EFFECT_DISPATCH",
-                subject_mode:"MAIN",
-                trusted_main_sha:$main,
-                policy_sha256:$policy_sha,
-                main_carrier_run_id:($run|tonumber),
-                effect_workflow:"qikvrt_autonomous_ruleset_effect_loop.yml",
-                endpoint:$endpoint,
-                mutation:$mutation,
-                effect_transport_attempted:$effect_transport_attempted,
-                effect_observed:$effect_observed,
-                effect_run_confirmed:false,
-                effect_attempts:$effect_attempts,
-                predecessor_evidence_transfer:false,
-                hold_reason:{
-                  reason_code:$blocker,
-                  reason:"The one-shot Main ruleset dispatch was not proved by an exact Actions-run readback; no duplicate dispatch is allowed.",
-                  subject:{repository:$repository,kind:"commit",identifier:"main",head_sha:$main},
-                  evidence_refs:["github-actions-run:" + $run,"github-api:" + $endpoint],
-                  owner:{role:"EXACT_SUBJECT_OBSERVER",actor:"qikvrt-reflexive-repository-watchdog"},
-                  retry_condition:{event:"NEXT_SCHEDULED_MAIN_CARRIER",predicate:"the exact Main head, policy and terminal/active effect evidence are rebound before another one-shot dispatch"},
-                  next_action:"REOBSERVE_EXACT_MAIN_EFFECT_RUN_BEFORE_ANY_RULESET_EFFECT_DISPATCH",
-                  d0:2
-                },
-                productive_effect:false,
-                effect_ack:"NOT_REQUIRED"
-              }' > "$ROOT/ruleset-main-dispatch.json"
-            cat "$ROOT/ruleset-main-dispatch.json"
-          }
-
-          if ! checkout="$(git rev-parse --verify HEAD^{commit})"; then
-            hold_or_noop HOLD "TRUSTED_MAIN_CHECKOUT_READBACK_FAILED"
-            exit 2
-          fi
-          if gh_read "repos/${REPOSITORY}/commits/main" --jq .sha > "$ROOT/expected-main.txt"; then
-            expected_main="$(cat "$ROOT/expected-main.txt")"
-          else
-            status=$?
-            stop_for_rate_limit "$status"
-            hold_or_noop HOLD "TRUSTED_MAIN_GET_FAILED"
-            exit 2
-          fi
-          if ! expected_policy_sha="$(sha256sum policy/GITHUB_MAIN_RULESET_V1.json | awk '{print $1}')"; then
-            hold_or_noop HOLD "RULESET_POLICY_SHA_READ_FAILED"
-            exit 2
-          fi
-          if ! [[ "$expected_main" =~ ^[0-9a-f]{40}$ ]] \
-            || ! [[ "$expected_policy_sha" =~ ^[0-9a-f]{64}$ ]] \
-            || [ "$checkout" != "$expected_main" ]; then
-            hold_or_noop HOLD "TRUSTED_MAIN_OR_POLICY_BINDING_INVALID"
-            exit 2
-          fi
-
-          # Historical runs for a static Main SHA can exceed a single Actions
-          # page.  This one bounded *current* page is used only to select its
-          # newest exact terminal run (or an active writer), never to infer
-          # historical absence.  The selected run's own immutable artifact is
-          # the complete terminal proof.
-          effect_runs_endpoint="repos/${REPOSITORY}/actions/workflows/${EFFECT_WORKFLOW}/runs?event=workflow_dispatch&head_sha=${expected_main}&per_page=100"
-          if gh_read "$effect_runs_endpoint" > "$ROOT/effect-runs.json"; then
-            runs="$(cat "$ROOT/effect-runs.json")"
-          else
-            status=$?
-            stop_for_rate_limit "$status"
-            hold_or_noop HOLD "EFFECT_RUN_REOBSERVATION_FAILED"
-            exit 2
-          fi
-          if ! jq -e '
-            type == "object" and
-            (.total_count | type) == "number" and .total_count >= 0 and
-            (.workflow_runs | type) == "array" and (.workflow_runs | length) <= 100 and
-            (.workflow_runs | length) <= .total_count and
-            all(.workflow_runs[]; type == "object")
-          ' <<<"$runs" >/dev/null; then
-            hold_or_noop HOLD "CURRENT_MAIN_EFFECT_RUN_PAGE_MALFORMED"
-            exit 2
-          fi
-          main_title_prefix="QIKVRT ruleset effect mode=MAIN pr=none head=${expected_main} upstream=unbound bridge=unbound carrier="
-          if ! effect_selection="$(jq --arg repository "$REPOSITORY" --arg main "$expected_main" --arg policy "$expected_policy_sha" --arg prefix "$main_title_prefix" '
-            def active: . == "requested" or . == "pending" or . == "queued" or . == "in_progress" or . == "waiting";
-            def effect_run:
-              .name == "QIKVRT autonomous ruleset effect loop" and
-              (.path == ".github/workflows/qikvrt_autonomous_ruleset_effect_loop.yml" or .path == ".github/workflows/qikvrt_autonomous_ruleset_effect_loop.yml@main") and
-              .repository.full_name == $repository and
-              (.event == "workflow_dispatch");
-            [ .workflow_runs[] | select(effect_run) ] as $effect_runs |
-            [ $effect_runs[] | select(
-              .head_branch == "main" and .head_sha == $main and
-              ((.display_title | type) == "string") and
-              (.display_title | startswith($prefix)) and
-              (.display_title | endswith(" policy=" + $policy))
-            ) ] as $exact |
-            if any($exact[]; (.id | type) != "number" or .id <= 0) then error("invalid exact Main effect id")
-            elif any($exact[]; ((.status | active | not) and .status != "completed")) then error("unknown exact Main effect status")
-            elif any($exact[]; .status == "completed" and (.conclusion != "success" and .conclusion != "failure" and .conclusion != "cancelled" and .conclusion != "skipped" and .conclusion != "timed_out" and .conclusion != "action_required" and .conclusion != "neutral" and .conclusion != "stale" and .conclusion != "startup_failure")) then error("invalid exact Main effect conclusion")
-            else [
-              ([$exact[] | select(.status | active)] | length),
-              ([$effect_runs[] | select(.status | active)] | length),
-              ([$exact[] | select(.status == "completed")] | if length == 0 then "" else (max_by(.id).id | tostring) end)
-            ] | @tsv
-            end
-          ' <<<"$runs")"; then
-            hold_or_noop HOLD "CURRENT_MAIN_EFFECT_RUN_PARSE_FAILED"
-            exit 2
-          fi
-          IFS=$'\t' read -r main_active any_effect_active terminal_main_effect_run_id <<<"$effect_selection"
-          if ! [[ "$main_active" =~ ^[0-9]+$ && "$any_effect_active" =~ ^[0-9]+$ ]] \
-            || { [ -n "$terminal_main_effect_run_id" ] && ! [[ "$terminal_main_effect_run_id" =~ ^[1-9][0-9]*$ ]]; }; then
-            hold_or_noop HOLD "CURRENT_MAIN_EFFECT_RUN_PARSE_INVALID"
-            exit 2
-          fi
-          if [ "$main_active" -gt 0 ]; then
-            hold_or_noop NOOP "ACTIVE_OR_QUEUED_EXACT_MAIN_EFFECT_EXISTS"
-            exit 0
-          fi
-          if [ "$any_effect_active" -gt 0 ]; then
-            hold_or_noop NOOP "ACTIVE_OR_QUEUED_EFFECT_EXISTS"
-            exit 0
-          fi
-          if [ -n "$terminal_main_effect_run_id" ]; then
-            terminal_artifact_endpoint="repos/${REPOSITORY}/actions/runs/${terminal_main_effect_run_id}/artifacts?per_page=100"
-            if gh_read "$terminal_artifact_endpoint" > "$ROOT/main-terminal-artifacts.json"; then
-              :
-            else
-              status=$?
-              stop_for_rate_limit "$status"
-              hold_or_noop HOLD "MAIN_TERMINAL_RECEIPT_OBSERVATION_FAILED"
-              exit 2
-            fi
-            if ! jq -e --arg prefix "qikvrt-autonomous-ruleset-effect-${terminal_main_effect_run_id}-" '
-              type == "object" and
-              (.total_count | type) == "number" and .total_count >= 0 and .total_count <= 100 and
-              (.artifacts | type) == "array" and (.artifacts | length) == .total_count and
-              all(.artifacts[]; type == "object") and
-              ([.artifacts[] | select((.name | type) == "string" and (.name | startswith($prefix)) and (.expired != true))] | length) <= 1
-            ' "$ROOT/main-terminal-artifacts.json" >/dev/null; then
-              hold_or_noop HOLD "MAIN_TERMINAL_RECEIPT_OBSERVATION_MALFORMED_OR_AMBIGUOUS"
-              exit 2
-            fi
-            terminal_artifact_id="$(jq -r --arg prefix "qikvrt-autonomous-ruleset-effect-${terminal_main_effect_run_id}-" '
-              [.artifacts[] | select((.name | type) == "string" and (.name | startswith($prefix)) and (.expired != true))]
-              | if length == 0 then "" else .[0].id // "" end
-            ' "$ROOT/main-terminal-artifacts.json")"
-            if [ -n "$terminal_artifact_id" ]; then
-              if ! [[ "$terminal_artifact_id" =~ ^[1-9][0-9]*$ ]]; then
-                hold_or_noop HOLD "MAIN_TERMINAL_RECEIPT_ARTIFACT_ID_INVALID"
-                exit 2
-              fi
-              terminal_archive_endpoint="repos/${REPOSITORY}/actions/artifacts/${terminal_artifact_id}/zip"
-              if python3 -B tools/qikvrt_github_observe.py --write-bytes "$ROOT/main-terminal-effect.zip" -- "$terminal_archive_endpoint"; then
-                :
-              else
-                status=$?
-                if [ "$status" -eq 75 ]; then
-                  hold_or_noop HOLD "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED"
-                else
-                  hold_or_noop HOLD "MAIN_TERMINAL_RECEIPT_ARTIFACT_READ_FAILED"
-                fi
-                exit 2
-              fi
-              terminal_directory="$ROOT/main-terminal-effect-artifact"
-              rm -rf "$terminal_directory"
-              mkdir -p "$terminal_directory"
-              if ! unzip -q "$ROOT/main-terminal-effect.zip" -d "$terminal_directory"; then
-                hold_or_noop HOLD "MAIN_TERMINAL_RECEIPT_ARTIFACT_INVALID"
-                exit 2
-              fi
-              mapfile -t terminal_receipts < <(find "$terminal_directory" -type f -name main-reconciliation-receipt.json -print)
-              if [ "${#terminal_receipts[@]}" -eq 1 ]; then
-                if jq -e --arg repository "$REPOSITORY" --arg main "$expected_main" --arg policy "$expected_policy_sha" '
-                  .schema == "qikvrt_ruleset_main_reconciliation_receipt_v1" and
-                  .state == "CURRENT" and
-                  .repository == $repository and .subject_mode == "MAIN" and
-                  .trusted_main_sha == $main and .policy_sha256 == $policy and
-                  .full_exact_subject_verified == true and
-                  (.effect_transport_attempted | type) == "boolean" and
-                  (.effect_observed | type) == "boolean" and
-                  (.mutation | type) == "string" and (.mutation | length) > 0
-                ' "${terminal_receipts[0]}" >/dev/null; then
-                  hold_or_noop NOOP "TERMINAL_EXACT_MAIN_RECONCILIATION_CURRENT"
-                  exit 0
-                fi
-                if ! jq -e --arg repository "$REPOSITORY" --arg main "$expected_main" --arg policy "$expected_policy_sha" '
-                  .schema == "qikvrt_ruleset_main_reconciliation_receipt_v1" and
-                  .state == "HOLD" and .verification_state == "HOLD_UNVERIFIED" and
-                  .repository == $repository and .subject_mode == "MAIN" and
-                  .trusted_main_sha == $main and .policy_sha256 == $policy and
-                  .full_exact_subject_verified == false and .d0 == 2 and
-                  .continuation_required == true and
-                  (.first_blocker | type) == "string" and (.first_blocker | length) > 0 and
-                  (.next_action | type) == "string" and (.next_action | length) > 0 and
-                  (.hold_reason | type) == "object" and .hold_reason.d0 == 2
-                ' "${terminal_receipts[0]}" >/dev/null; then
-                  hold_or_noop HOLD "MAIN_TERMINAL_RECEIPT_PROVENANCE_INVALID"
-                  exit 2
-                fi
-                # A complete D0=2 receipt permits only a new, fully rebound
-                # read-before-conditional-apply effect below; it authorizes no
-                # mutation by this watchdog.
-              elif [ "${#terminal_receipts[@]}" -gt 1 ]; then
-                hold_or_noop HOLD "MAIN_TERMINAL_RECEIPT_FILE_MISSING_OR_AMBIGUOUS"
-                exit 2
-              fi
-            fi
-            # A completed run may lose its artifact after a runner/upload
-            # failure.  The only recovery is still safe: the effect workflow
-            # first reads the exact ruleset and conditionally applies only if
-            # it remains DRIFT.  Do not let absent terminal storage make an
-            # unchanged Main subject permanently unrecoverable.
-          fi
-
-          if gh_read "repos/${REPOSITORY}/commits/main" --jq .sha > "$ROOT/live-main.txt"; then
-            live_main="$(cat "$ROOT/live-main.txt")"
-          else
-            status=$?
-            stop_for_rate_limit "$status"
-            hold_or_noop HOLD "TRUSTED_MAIN_GET_FAILED_BEFORE_EFFECT_DISPATCH"
-            exit 2
-          fi
-          if ! current_policy_sha="$(sha256sum policy/GITHUB_MAIN_RULESET_V1.json | awk '{print $1}')"; then
-            hold_or_noop HOLD "RULESET_POLICY_SHA_READ_FAILED_BEFORE_EFFECT_DISPATCH"
-            exit 2
-          fi
-          if ! current_checkout="$(git rev-parse --verify HEAD^{commit})"; then
-            hold_or_noop HOLD "TRUSTED_MAIN_CHECKOUT_READBACK_FAILED_BEFORE_EFFECT_DISPATCH"
-            exit 2
-          fi
-          if [ "$live_main" != "$expected_main" ] \
-            || [ "$current_policy_sha" != "$expected_policy_sha" ] \
-            || [ "$current_checkout" != "$expected_main" ]; then
-            hold_or_noop HOLD "TRUSTED_MAIN_OR_POLICY_DRIFT_BEFORE_EFFECT_DISPATCH"
-            exit 2
-          fi
-
-          if ! python3 -B tools/qikvrt_effect_attempts.py create --ledger "$main_effect_ledger" >/dev/null; then
-            hold_or_noop HOLD "EFFECT_ATTEMPT_LEDGER_CREATION_FAILED"
-            exit 2
-          fi
-          effect_endpoint="repos/${REPOSITORY}/actions/workflows/${EFFECT_WORKFLOW}/dispatches"
-          effect_runs_endpoint="repos/${REPOSITORY}/actions/workflows/${EFFECT_WORKFLOW}/runs?event=workflow_dispatch&head_sha=${expected_main}&per_page=100"
-          exact_title="QIKVRT ruleset effect mode=MAIN pr=none head=${expected_main} upstream=unbound bridge=unbound carrier=${GITHUB_RUN_ID} recovery=APPLY recovery_of=none policy=${expected_policy_sha}"
-          if ! append_effect_attempt \
-            --kind workflow_dispatch_intent \
-            --endpoint-or-subject "$effect_endpoint" \
-            --mutation POST \
-            --effect-transport-attempted true \
-            --transport-outcome ATTEMPTED_PENDING_READBACK \
-            --effect-observed false \
-            --evidence-ref "post-intent:main-ruleset-effect:carrier-${GITHUB_RUN_ID}" >/dev/null; then
-            emit_main_dispatch_hold "EFFECT_ATTEMPT_LEDGER_APPEND_FAILED" "$effect_endpoint" true
-            exit 2
-          fi
-
-          post_error="$ROOT/main-effect-dispatch-post.stderr"
-          if jq -n \
-            --arg main "$expected_main" \
-            --arg policy_sha "$expected_policy_sha" \
-            --arg carrier "$GITHUB_RUN_ID" \
-            '{
-              ref: "main",
-              inputs: {
-                mode: "MAIN",
-                expected_main: $main,
-                expected_policy_sha: $policy_sha,
-                main_carrier_run_id: $carrier
-              }
-            }' \
-            | gh api --method POST "$effect_endpoint" --input - 2>"$post_error"; then
-            post_outcome=ACKED
-            post_mutation=POST
-            post_ref="post-response:main-ruleset-effect:carrier-${GITHUB_RUN_ID}"
-          elif grep -Fq "API rate limit exceeded for installation" "$post_error"; then
-            post_outcome=UNCONFIRMED_RATE_LIMIT
-            post_mutation=POST_UNCONFIRMED_RATE_LIMIT
-            post_ref="post-stderr:installation-rate-limit"
-          else
-            post_outcome=UNCONFIRMED_TRANSPORT_FAILED
-            post_mutation=POST_UNCONFIRMED_TRANSPORT_FAILED
-            post_ref="post-stderr:main-ruleset-effect-transport"
-          fi
-          if ! append_effect_attempt \
-            --kind workflow_dispatch_post \
-            --endpoint-or-subject "$effect_endpoint" \
-            --mutation "$post_mutation" \
-            --effect-transport-attempted true \
-            --transport-outcome "$post_outcome" \
-            --effect-observed false \
-            --evidence-ref "$post_ref" >/dev/null; then
-            emit_main_dispatch_hold "EFFECT_ATTEMPT_LEDGER_APPEND_FAILED" "$effect_endpoint" true
-            exit 2
-          fi
-
-          observed_run_id=""
-          for delay in 0 2 5; do
-            if [ "$delay" -gt 0 ]; then
-              sleep "$delay"
-            fi
-            if gh_read "$effect_runs_endpoint" > "$ROOT/main-post-effect-runs.json"; then
-              :
-            else
-              status=$?
-              if [ "$status" -eq 75 ]; then
-                emit_main_dispatch_hold "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED" "$effect_runs_endpoint" true
-              else
-                emit_main_dispatch_hold "MAIN_EFFECT_POST_READBACK_FAILED" "$effect_runs_endpoint" true
-              fi
-              exit 2
-            fi
-            if ! observed_run_id="$(jq -er --arg title "$exact_title" --arg main "$expected_main" '
-              if type != "object"
-                or (.total_count | type) != "number"
-                or .total_count > 100
-                or (.workflow_runs | type) != "array"
-                or any(.workflow_runs[]; type != "object")
-              then error("malformed or over-capacity Main effect-run observation")
-              else [ .workflow_runs[]
-                | select(
-                    .display_title == $title and
-                    .head_branch == "main" and .head_sha == $main and
-                    (.status == "requested" or .status == "pending" or .status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "completed")
-                  )
-                | if (.id | type) != "number" or .id <= 0 then error("malformed exact Main effect run id") else . end
-              ] | if length == 0 then "" else (max_by(.id).id | tostring) end
-              end
-            ' "$ROOT/main-post-effect-runs.json")"; then
-              emit_main_dispatch_hold "MAIN_EFFECT_POST_READBACK_MALFORMED_OR_OVER_CAPACITY" "$effect_runs_endpoint" true
-              exit 2
-            fi
-            if [ -n "$observed_run_id" ]; then
-              break
-            fi
-          done
-          if [ -z "$observed_run_id" ] || ! [[ "$observed_run_id" =~ ^[1-9][0-9]*$ ]]; then
-            if ! append_effect_attempt \
-              --kind workflow_dispatch_readback \
-              --endpoint-or-subject "$effect_runs_endpoint" \
-              --mutation POST_UNCONFIRMED_READBACK_FAILED \
-              --effect-transport-attempted true \
-              --transport-outcome UNCONFIRMED_READBACK_FAILED \
-              --effect-observed false \
-              --evidence-ref "readback:main-ruleset-effect:absent:carrier-${GITHUB_RUN_ID}" >/dev/null; then
-              emit_main_dispatch_hold "EFFECT_ATTEMPT_LEDGER_APPEND_FAILED" "$effect_runs_endpoint" true
-              exit 2
-            fi
-            emit_main_dispatch_hold "RULESET_MAIN_EFFECT_DISPATCH_UNCONFIRMED" "$effect_runs_endpoint" true
-            exit 2
-          fi
-          if ! append_effect_attempt \
-            --kind workflow_dispatch_readback \
-            --endpoint-or-subject "$effect_runs_endpoint" \
-            --mutation NONE \
-            --effect-transport-attempted false \
-            --transport-outcome OBSERVED_READBACK \
-            --effect-observed true \
-            --evidence-ref "readback:main-ruleset-effect:${observed_run_id}:carrier-${GITHUB_RUN_ID}" >/dev/null; then
-            emit_main_dispatch_hold "EFFECT_ATTEMPT_LEDGER_APPEND_FAILED" "$effect_runs_endpoint" true
-            exit 2
-          fi
-          if ! attempts="$(effect_attempts)" || ! summary="$(effect_summary)"; then
-            emit_main_dispatch_hold "EFFECT_ATTEMPT_LEDGER_FINAL_READ_FAILED" "$effect_runs_endpoint" true
-            exit 2
-          fi
-          if ! summary_transport="$(jq -er '.effect_transport_attempted | select(type == "boolean")' <<<"$summary")" \
-            || ! summary_observed="$(jq -er '.effect_observed | select(type == "boolean")' <<<"$summary")" \
-            || ! summary_mutation="$(jq -er '.mutation | select(type == "string" and length > 0)' <<<"$summary")"; then
-            emit_main_dispatch_hold "EFFECT_ATTEMPT_LEDGER_FINAL_SUMMARY_INVALID" "$effect_runs_endpoint" true
-            exit 2
-          fi
-          if ! jq -n \
-            --arg main "$expected_main" \
-            --arg policy_sha "$expected_policy_sha" \
-            --arg carrier "$GITHUB_RUN_ID" \
-            --arg run_id "$observed_run_id" \
-            --argjson effect_attempts "$attempts" \
-            --argjson effect_transport_attempted "$summary_transport" \
-            --argjson effect_observed "$summary_observed" \
-            --arg mutation "$summary_mutation" \
-            '{
-              schema: "qikvrt_ruleset_main_dispatch_receipt_v1",
-              state: "DISPATCH_CONFIRMED",
-              first_blocker: null,
-              subject_mode: "MAIN",
-              trusted_main_sha: $main,
-              policy_sha256: $policy_sha,
-              main_carrier_run_id: ($carrier|tonumber),
-              effect_workflow: "qikvrt_autonomous_ruleset_effect_loop.yml",
-              effect_run_id: ($run_id|tonumber),
-              mutation: $mutation,
-              effect_transport_attempted: $effect_transport_attempted,
-              effect_observed: $effect_observed,
-              effect_run_confirmed: true,
-              effect_attempts: $effect_attempts,
-              predecessor_evidence_transfer: false,
-              productive_effect: false,
-              effect_ack: "NOT_REQUIRED"
-            }' > "$ROOT/ruleset-main-dispatch.json.tmp"; then
-            emit_main_dispatch_hold "MAIN_EFFECT_DISPATCH_RECEIPT_WRITE_FAILED" "$effect_runs_endpoint" true
-            exit 2
-          fi
-          mv "$ROOT/ruleset-main-dispatch.json.tmp" "$ROOT/ruleset-main-dispatch.json"
-          cat "$ROOT/ruleset-main-dispatch.json"
-
-      - name: Preserve exact Main ruleset dispatch receipt
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: qikvrt-ruleset-main-dispatch-${{ github.run_id }}-${{ github.run_attempt }}
-          if-no-files-found: error
-          retention-days: 90
-          path: |
-            .qikvrt/reflexive-repository-watchdog/ruleset-main-dispatch.json
-            .qikvrt/reflexive-repository-watchdog/ruleset-main-effect-attempts.json
-
-  dispatch-ruleset-pr-bridge-carrier:
-    # GitHub retains only one pending bridge run in its non-preemptive lane.
-    # This scheduled carrier therefore selects one bounded, current-Main
-    # required-review run fairly and replays it through the same exact bridge.
-    needs: pre-deadlock-observation
-    if: >-
-      always() &&
-      needs.pre-deadlock-observation.result == 'success' &&
-      needs.pre-deadlock-observation.outputs.preobserve_hold == 'false' &&
-      github.event_name == 'schedule' &&
-      github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 8
-    permissions:
-      actions: write
-      contents: read
-    steps:
-      - name: Check out exact trusted Main scheduled-carrier implementation
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: main
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Rebind and carry one bounded current-Main ruleset bridge subject
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          ROOT: .qikvrt/reflexive-repository-watchdog/ruleset-pr-bridge-carrier-${{ github.run_id }}
-          REQUIRED_REVIEW_WORKFLOW: qikvrt_required_review_gate.yml
-          BRIDGE_WORKFLOW: qikvrt_ruleset_effect_dispatch_bridge.yml
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$ROOT"
-          ledger="$ROOT/effect-attempts.json"
-
-          gh_read() {
-            python3 -B tools/qikvrt_github_observe.py -- "$@"
-          }
-
-          effect_attempts() {
-            python3 -B tools/qikvrt_effect_attempts.py show --ledger "$ledger"
-          }
-
-          effect_summary() {
-            python3 -B tools/qikvrt_effect_attempts.py summary --ledger "$ledger"
-          }
-
-          append_effect_attempt() {
-            python3 -B tools/qikvrt_effect_attempts.py append --ledger "$ledger" "$@"
-          }
-
-          emit_receipt() {
-            local state="$1" blocker="$2" endpoint="${3:-}" observed_bridge="${4:-}" attempts summary
-            # The bridge POST may have reached Actions before a later local
-            # ledger read fails.  Emit a conservative receipt in that case so
-            # the next scheduled carrier rebinds rather than silently replaying.
-            attempts='[]'
-            summary='{"mutation":"NONE","effect_transport_attempted":false,"effect_observed":false}'
-            if effect_attempts > "$ROOT/effect-attempts-readback.json" 2>/dev/null; then
-              attempts="$(cat "$ROOT/effect-attempts-readback.json")"
-            fi
-            if effect_summary > "$ROOT/effect-summary-readback.json" 2>/dev/null; then
-              summary="$(cat "$ROOT/effect-summary-readback.json")"
-            fi
-            jq -n \
-              --arg state "$state" \
-              --arg blocker "$blocker" \
-              --arg endpoint "$endpoint" \
-              --arg repository "$REPOSITORY" \
-              --arg carrier "$GITHUB_RUN_ID" \
-              --arg main "${expected_main:-}" \
-              --arg upstream "${upstream_run_id:-}" \
-              --arg predecessor "${predecessor_bridge_run_id:-}" \
-              --arg observed_bridge "$observed_bridge" \
-              --argjson effect_attempts "$attempts" \
-              --argjson effect_transport_attempted "$(jq -r .effect_transport_attempted <<<"$summary")" \
-              --argjson effect_observed "$(jq -r .effect_observed <<<"$summary")" \
-              --arg mutation "$(jq -r .mutation <<<"$summary")" \
-              '{
-                schema:"qikvrt_ruleset_bridge_carrier_receipt_v1",
-                state:$state,
-                verification_state:(if $state == "HOLD" then "HOLD_UNVERIFIED" else null end),
-                first_blocker:$blocker,
-                repository:$repository,
-                carrier_run_id:($carrier|tonumber),
-                trusted_main_sha:$main,
-                upstream_run_id:(if $upstream == "" then null else ($upstream|tonumber) end),
-                predecessor_bridge_run_id:(if $predecessor == "" then null else ($predecessor|tonumber) end),
-                observed_bridge_run_id:(if $observed_bridge == "" then null else ($observed_bridge|tonumber) end),
-                endpoint:(if $endpoint == "" then null else $endpoint end),
-                mutation:$mutation,
-                effect_transport_attempted:$effect_transport_attempted,
-                effect_observed:$effect_observed,
-                effect_attempts:$effect_attempts,
-                productive_effect:false,
-                effect_ack:"NOT_REQUIRED"
-              } + (if $state == "HOLD" then {
-                d0:2,
-                continuation_required:true,
-                next_action:"REOBSERVE_ONE_BOUNDED_CURRENT_MAIN_BRIDGE_SUBJECT_BEFORE_ANY_REPLAY",
-                hold_reason:{
-                  reason_code:$blocker,
-                  reason:"The scheduled carrier cannot prove one exact downstream bridge run; no duplicate replay is allowed.",
-                  subject:{repository:$repository,kind:"commit",identifier:"main",head_sha:$main},
-                  evidence_refs:["github-actions-run:" + $carrier,"github-api:" + $endpoint],
-                  owner:{role:"EXACT_SUBJECT_OBSERVER",actor:"qikvrt-reflexive-repository-watchdog"},
-                  retry_condition:{event:"NEXT_SCHEDULED_RULESET_PR_CARRIER",predicate:"a complete bounded current-Main review/bridge observation and exact post-readback are available"},
-                  next_action:"REOBSERVE_ONE_BOUNDED_CURRENT_MAIN_BRIDGE_SUBJECT_BEFORE_ANY_REPLAY",
-                  d0:2
-                }
-              } else {} end)' > "$ROOT/bridge-carrier-receipt.json"
-            cat "$ROOT/bridge-carrier-receipt.json"
-          }
-
-          read_or_hold() {
-            local destination="$1" endpoint="$2"
-            shift 2
-            if gh_read "$@" > "$destination"; then
-              return 0
-            else
-              local rc=$?
-              if [ "$rc" -eq 75 ]; then
-                emit_receipt HOLD GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED "$endpoint"
-              else
-                emit_receipt HOLD GITHUB_READ_OBSERVATION_FAILED "$endpoint"
-              fi
-              return 1
-            fi
-          }
-
-          if ! python3 -B tools/qikvrt_effect_attempts.py create --ledger "$ledger" >/dev/null; then
-            # No ledger exists to summarize, so emit the minimal deterministic
-            # receipt directly rather than risking a replay without evidence.
-            jq -n --arg repository "$REPOSITORY" --arg carrier "$GITHUB_RUN_ID" '{schema:"qikvrt_ruleset_bridge_carrier_receipt_v1",state:"HOLD",verification_state:"HOLD_UNVERIFIED",first_blocker:"EFFECT_ATTEMPT_LEDGER_CREATION_FAILED",repository:$repository,carrier_run_id:($carrier|tonumber),d0:2,continuation_required:true,productive_effect:false,effect_ack:"NOT_REQUIRED",hold_reason:{reason_code:"EFFECT_ATTEMPT_LEDGER_CREATION_FAILED",reason:"The scheduled bridge carrier could not create its durable attempt ledger before any downstream dispatch.",subject:{repository:$repository,kind:"repository",identifier:"ruleset-bridge-carrier",head_sha:null},evidence_refs:["github-actions-run:" + $carrier],owner:{role:"EXACT_SUBJECT_OBSERVER",actor:"qikvrt-reflexive-repository-watchdog"},retry_condition:{event:"NEXT_SCHEDULED_RULESET_PR_CARRIER",predicate:"a fresh carrier can create its ledger before observation"},next_action:"REOBSERVE_ONE_BOUNDED_CURRENT_MAIN_BRIDGE_SUBJECT_BEFORE_ANY_REPLAY",d0:2}}' > "$ROOT/bridge-carrier-receipt.json"
-            exit 0
-          fi
-
-          if ! checkout="$(git rev-parse --verify HEAD^{commit})"; then
-            emit_receipt HOLD TRUSTED_MAIN_CHECKOUT_READBACK_FAILED git:HEAD
-            exit 0
-          fi
-          if ! read_or_hold "$ROOT/main.txt" "repos/${REPOSITORY}/commits/main" "repos/${REPOSITORY}/commits/main" --jq .sha; then
-            exit 0
-          fi
-          expected_main="$(cat "$ROOT/main.txt")"
-          if ! [[ "$expected_main" =~ ^[0-9a-f]{40}$ ]] || [ "$checkout" != "$expected_main" ]; then
-            emit_receipt HOLD TRUSTED_MAIN_BINDING_INVALID git:HEAD
-            exit 0
-          fi
-          required_endpoint="repos/${REPOSITORY}/actions/workflows/${REQUIRED_REVIEW_WORKFLOW}/runs?head_sha=${expected_main}&per_page=100"
-          bridge_endpoint="repos/${REPOSITORY}/actions/workflows/${BRIDGE_WORKFLOW}/runs?head_sha=${expected_main}&per_page=100"
-          if ! read_or_hold "$ROOT/required-runs.json" "$required_endpoint" "$required_endpoint" \
-            || ! read_or_hold "$ROOT/bridge-runs.json" "$bridge_endpoint" "$bridge_endpoint"; then
-            exit 0
-          fi
-          if ! python3 -B tools/qikvrt_ruleset_bridge_carrier.py \
-            --required-runs "$ROOT/required-runs.json" \
-            --bridge-runs "$ROOT/bridge-runs.json" \
-            --expected-main-sha "$expected_main" \
-            --expected-repository "$REPOSITORY" \
-            --output "$ROOT/selection.json" >/dev/null; then
-            emit_receipt HOLD BOUNDED_RULESET_BRIDGE_CARRIER_SELECTION_INVALID "$bridge_endpoint"
-            exit 0
-          fi
-          selection_state="$(jq -r .state "$ROOT/selection.json")"
-          if [ "$selection_state" = NOOP ]; then
-            emit_receipt NOOP "$(jq -r .first_blocker "$ROOT/selection.json")"
-            exit 0
-          fi
-          if [ "$selection_state" != CANDIDATE ]; then
-            emit_receipt HOLD BOUNDED_RULESET_BRIDGE_CARRIER_SELECTION_STATE_INVALID "$bridge_endpoint"
-            exit 0
-          fi
-          upstream_run_id="$(jq -r .upstream_run_id "$ROOT/selection.json")"
-          predecessor_bridge_run_id="$(jq -r '.previous_bridge_run_id // empty' "$ROOT/selection.json")"
-          if ! [[ "$upstream_run_id" =~ ^[1-9][0-9]*$ ]] \
-            || { [ -n "$predecessor_bridge_run_id" ] && ! [[ "$predecessor_bridge_run_id" =~ ^[1-9][0-9]*$ ]]; }; then
-            emit_receipt HOLD BOUNDED_RULESET_BRIDGE_CARRIER_SELECTION_PROVENANCE_INVALID "$bridge_endpoint"
-            exit 0
-          fi
-
-          # Re-read every bounded evidence page immediately before the intent;
-          # selecting from a stale page is not authority to replay a subject.
-          if ! read_or_hold "$ROOT/main-final.txt" "repos/${REPOSITORY}/commits/main" "repos/${REPOSITORY}/commits/main" --jq .sha \
-            || [ "$(cat "$ROOT/main-final.txt")" != "$expected_main" ] \
-            || ! read_or_hold "$ROOT/required-runs-final.json" "$required_endpoint" "$required_endpoint" \
-            || ! read_or_hold "$ROOT/bridge-runs-final.json" "$bridge_endpoint" "$bridge_endpoint"; then
-            emit_receipt HOLD EXACT_MAIN_OR_CARRIER_EVIDENCE_DRIFT_BEFORE_BRIDGE_DISPATCH "$bridge_endpoint"
-            exit 0
-          fi
-          if ! python3 -B tools/qikvrt_ruleset_bridge_carrier.py \
-            --required-runs "$ROOT/required-runs-final.json" \
-            --bridge-runs "$ROOT/bridge-runs-final.json" \
-            --expected-main-sha "$expected_main" \
-            --expected-repository "$REPOSITORY" \
-            --output "$ROOT/selection-final.json" >/dev/null; then
-            emit_receipt HOLD BOUNDED_RULESET_BRIDGE_CARRIER_FINAL_SELECTION_INVALID "$bridge_endpoint"
-            exit 0
-          fi
-          if [ "$(jq -r .state "$ROOT/selection-final.json")" != CANDIDATE ] \
-            || [ "$(jq -r .upstream_run_id "$ROOT/selection-final.json")" != "$upstream_run_id" ] \
-            || [ "$(jq -r '.previous_bridge_run_id // empty' "$ROOT/selection-final.json")" != "$predecessor_bridge_run_id" ]; then
-            emit_receipt NOOP EXACT_RULESET_BRIDGE_CARRIER_DRIFT_BEFORE_DISPATCH "$bridge_endpoint"
-            exit 0
-          fi
-
-          dispatch_endpoint="repos/${REPOSITORY}/actions/workflows/${BRIDGE_WORKFLOW}/dispatches"
-          if ! append_effect_attempt \
-            --kind workflow_dispatch_intent \
-            --endpoint-or-subject "$dispatch_endpoint" \
-            --mutation POST \
-            --effect-transport-attempted true \
-            --transport-outcome ATTEMPTED_PENDING_READBACK \
-            --effect-observed false \
-            --evidence-ref "post-intent:ruleset-bridge:upstream-${upstream_run_id}:carrier-${GITHUB_RUN_ID}" >/dev/null; then
-            emit_receipt HOLD EFFECT_ATTEMPT_LEDGER_APPEND_FAILED "$dispatch_endpoint"
-            exit 0
-          fi
-          post_error="$ROOT/bridge-dispatch-post.stderr"
-          if jq -n \
-            --arg upstream "$upstream_run_id" \
-            --arg carrier "$GITHUB_RUN_ID" \
-            --arg predecessor "$predecessor_bridge_run_id" \
-            '{ref:"main",inputs:{upstream_run_id:$upstream,carrier_run_id:$carrier,predecessor_bridge_run_id:$predecessor}}' \
-            | gh api --method POST "$dispatch_endpoint" --input - 2>"$post_error"; then
-            post_outcome=ACKED
-            post_mutation=POST
-            post_ref="post-response:ruleset-bridge:carrier-${GITHUB_RUN_ID}"
-          elif grep -Fq "API rate limit exceeded for installation" "$post_error"; then
-            post_outcome=UNCONFIRMED_RATE_LIMIT
-            post_mutation=POST_UNCONFIRMED_RATE_LIMIT
-            post_ref="post-stderr:installation-rate-limit"
-          else
-            post_outcome=UNCONFIRMED_TRANSPORT_FAILED
-            post_mutation=POST_UNCONFIRMED_TRANSPORT_FAILED
-            post_ref="post-stderr:ruleset-bridge-transport"
-          fi
-          if ! append_effect_attempt \
-            --kind workflow_dispatch_post \
-            --endpoint-or-subject "$dispatch_endpoint" \
-            --mutation "$post_mutation" \
-            --effect-transport-attempted true \
-            --transport-outcome "$post_outcome" \
-            --effect-observed false \
-            --evidence-ref "$post_ref" >/dev/null; then
-            emit_receipt HOLD EFFECT_ATTEMPT_LEDGER_APPEND_FAILED "$dispatch_endpoint"
-            exit 0
-          fi
-
-          exact_bridge_title="QIKVRT ruleset bridge upstream=${upstream_run_id} carrier=${GITHUB_RUN_ID}"
-          observed_bridge_run_id=""
-          for delay in 0 2 5; do
-            if [ "$delay" -gt 0 ]; then
-              sleep "$delay"
-            fi
-            if ! read_or_hold "$ROOT/bridge-runs-post.json" "$bridge_endpoint" "$bridge_endpoint"; then
-              exit 0
-            fi
-            if ! observed_bridge_run_id="$(jq -er --arg title "$exact_bridge_title" --arg main "$expected_main" --arg repository "$REPOSITORY" '
-              if type != "object"
-                or (.total_count | type) != "number" or .total_count > 100
-                or (.workflow_runs | type) != "array" or any(.workflow_runs[]; type != "object")
-              then error("malformed or over-capacity bridge post-readback")
-              else [ .workflow_runs[] | select(
-                .display_title == $title and
-                .name == "QIKVRT ruleset effect dispatch bridge" and
-                (.path == ".github/workflows/qikvrt_ruleset_effect_dispatch_bridge.yml" or .path == ".github/workflows/qikvrt_ruleset_effect_dispatch_bridge.yml@main") and
-                .head_branch == "main" and .head_sha == $main and
-                .repository.full_name == $repository and
-                (.status == "requested" or .status == "pending" or .status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "completed")
-              ) | if (.id|type) != "number" or .id <= 0 then error("invalid exact bridge run id") else . end ]
-              | if length == 0 then "" else (max_by(.id).id|tostring) end
-              end
-            ' "$ROOT/bridge-runs-post.json")"; then
-              emit_receipt HOLD RULESET_BRIDGE_POST_READBACK_MALFORMED_OR_OVER_CAPACITY "$bridge_endpoint"
-              exit 0
-            fi
-            if [ -n "$observed_bridge_run_id" ]; then
-              break
-            fi
-          done
-          if [ -z "$observed_bridge_run_id" ] || ! [[ "$observed_bridge_run_id" =~ ^[1-9][0-9]*$ ]]; then
-            if ! append_effect_attempt \
-              --kind workflow_dispatch_readback \
-              --endpoint-or-subject "$bridge_endpoint" \
-              --mutation POST_UNCONFIRMED_READBACK_FAILED \
-              --effect-transport-attempted true \
-              --transport-outcome UNCONFIRMED_READBACK_FAILED \
-              --effect-observed false \
-              --evidence-ref "readback:ruleset-bridge:absent:carrier-${GITHUB_RUN_ID}" >/dev/null; then
-              emit_receipt HOLD EFFECT_ATTEMPT_LEDGER_APPEND_FAILED "$bridge_endpoint"
-              exit 0
-            fi
-            emit_receipt HOLD RULESET_BRIDGE_DISPATCH_UNCONFIRMED "$bridge_endpoint"
-            exit 0
-          fi
-          if ! append_effect_attempt \
-            --kind workflow_dispatch_readback \
-            --endpoint-or-subject "$bridge_endpoint" \
-            --mutation NONE \
-            --effect-transport-attempted false \
-            --transport-outcome OBSERVED_READBACK \
-            --effect-observed true \
-            --evidence-ref "readback:ruleset-bridge:${observed_bridge_run_id}:carrier-${GITHUB_RUN_ID}" >/dev/null; then
-            emit_receipt HOLD EFFECT_ATTEMPT_LEDGER_APPEND_FAILED "$bridge_endpoint"
-            exit 0
-          fi
-          emit_receipt DISPATCH_CONFIRMED RULESET_BRIDGE_DISPATCH_CONFIRMED "$bridge_endpoint" "$observed_bridge_run_id"
-
-      - name: Preserve bounded scheduled ruleset-bridge carrier receipt
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: qikvrt-ruleset-bridge-carrier-${{ github.run_id }}-${{ github.run_attempt }}
-          if-no-files-found: error
-          retention-days: 90
-          path: .qikvrt/reflexive-repository-watchdog/ruleset-pr-bridge-carrier-${{ github.run_id }}

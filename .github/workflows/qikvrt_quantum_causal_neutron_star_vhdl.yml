@@ -63,6 +63,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$EVIDENCE_ROOT"
+          command -v jq | tee "$EVIDENCE_ROOT/jq-package.txt"
+          jq --version | tee -a "$EVIDENCE_ROOT/jq-package.txt"
           provision_attempts=0
           last_apt_update_exit_code=null
           write_provision_receipt() {
@@ -129,6 +131,8 @@ jobs:
               --no-install-recommends "ghdl=$candidate"
           fi
           command -v ghdl | tee -a "$EVIDENCE_ROOT/ghdl-package.txt"
+          dpkg-query -W -f='INSTALLED_PACKAGE=${Package}=${Version}\n' ghdl \
+            | tee -a "$EVIDENCE_ROOT/ghdl-package.txt"
           ghdl --version | tee "$EVIDENCE_ROOT/ghdl-version.txt"
           write_provision_receipt CURRENT "" 0
           trap - ERR

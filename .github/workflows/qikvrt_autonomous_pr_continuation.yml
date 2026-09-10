@@ -3,7 +3,6 @@
 name: QIK-VRT autonomous draft-PR continuation
 
 on:
-  workflow_dispatch:
   push:
     branches: [main]
     paths:
@@ -101,9 +100,6 @@ jobs:
         run: |
           set -euo pipefail
           test "$BASE_REF" = "main"
-          # A draft PR must never be allowed to turn this continuation into a
-          # protected-main ref writer, even if an unexpected API payload is
-          # returned before the push.
           test "$HEAD_REF" != "main"
           checked_main="$(git rev-parse --verify HEAD^{commit})"
           live_main="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
@@ -214,25 +210,8 @@ jobs:
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${candidate_head}" \
             -f state=pending \
             -f context='QIKVRT autonomous exact-head verification' \
-            -f description='Exact repaired head awaits repository-dispatch re-verification' \
+            -f description='Exact repaired head awaits its native pull-request event' \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-
-          python3 -B - <<PY > /tmp/qikvrt-autonomous-dispatch.json
-          import json
-          print(json.dumps({
-              'event_type': 'qikvrt_autonomous_exact_head_verify',
-              'client_payload': {
-                  'repository': '${GITHUB_REPOSITORY}',
-                  'pull_request': int('${PR_NUMBER}'),
-                  'head_ref': '${HEAD_REF}',
-                  'head_sha': '${candidate_head}',
-                  'source_head_sha': '${EXPECTED_HEAD}',
-                  'base_sha': '${live_main}',
-              },
-          }))
-          PY
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" \
-            --input /tmp/qikvrt-autonomous-dispatch.json
 
           conflict_summary=none
           if test -s /tmp/qikvrt-merge-conflicts.txt; then
@@ -247,7 +226,7 @@ jobs:
           - current main merged: \`${live_main}\`
           - deterministic generated-output conflicts reset before regeneration: \`${conflict_summary}\`
           - external effects: none
-          - next state: exact-head repository-dispatch verification
+          - next state: exact-head verification on the native pull-request event
 
           Human scientific review and any separately authorized publication effect remain independent downstream gates. No repository-wide PASS, FINAL_PASS, or EFFECT_ACK_DONE is claimed.
           EOF

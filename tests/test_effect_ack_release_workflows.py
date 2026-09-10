@@ -23,6 +23,8 @@ RESERVE = ROOT / ".github/workflows/qikvrt_zenodo_reserve.yml"
 FINALIZE = ROOT / ".github/workflows/qikvrt_effect_ack_finalize.yml"
 GENERAL_CI = ROOT / ".github/workflows/qikvrt_ci.yml"
 VHDL_CONTRACT_CI = ROOT / ".github/workflows/qikvrt_quantum_causal_neutron_star_vhdl.yml"
+TOOLCHAIN_LOCK = ROOT / "runtime/toolchains/TOOLCHAIN.lock.tsv"
+CACHE_REGISTRY = ROOT / "runtime/toolchains/CACHE_REGISTRY.json"
 ADAPTIVE_RUNTIME = ROOT / ".github/workflows/qikvrt_adaptive_runtime.yml"
 MARKER = ROOT / "release/effect-ack-universality-request.json"
 SCHEMA = ROOT / "policy/qikvrt-effect-ack-release-request.schema.json"
@@ -122,6 +124,8 @@ class EffectAckReleaseWorkflowTests(unittest.TestCase):
             provision = ci[start:end]
 
             self.assertIn('mkdir -p "$EVIDENCE_ROOT"', provision)
+            self.assertIn("command -v jq", provision)
+            self.assertIn("jq --version", provision)
             self.assertIn("ghdl-provision-receipt.json", provision)
             self.assertIn("for delay in 0 15 45", provision)
             self.assertIn("sudo apt-get update -o Acquire::Retries=3", provision)
@@ -139,8 +143,21 @@ class EffectAckReleaseWorkflowTests(unittest.TestCase):
             self.assertIn("write_provision_receipt PENDING GHDL_PROVISION_PENDING 0", provision)
             self.assertIn("write_provision_receipt HOLD GHDL_APT_UPDATE_UNCONFIRMED 2", provision)
             self.assertIn("write_provision_receipt CURRENT \"\" 0", provision)
+            self.assertIn("dpkg-query -W", provision)
             self.assertIn("provision_error_trap()", provision)
             self.assertIn("if-no-files-found: error", ci)
+
+    def test_vhdl_provision_tools_have_declared_cache_strategies(self) -> None:
+        locked = {
+            row.split("\t", 1)[0]
+            for row in TOOLCHAIN_LOCK.read_text(encoding="utf-8").splitlines()
+            if row and not row.startswith("#")
+        }
+        registry = json.loads(CACHE_REGISTRY.read_text(encoding="utf-8"))["components"]
+        for component in ("ghdl", "jq"):
+            self.assertIn(component, locked)
+            self.assertIn(component, registry)
+            self.assertEqual(registry[component]["cache_class"], "runner-image-layer")
 
     def _run_vhdl_provision_harness(
         self,
@@ -212,6 +229,13 @@ class EffectAckReleaseWorkflowTests(unittest.TestCase):
             r"""
             #!/usr/bin/env bash
             printf '  Candidate: 1.0-mock\n'
+            """,
+        )
+        write_fake(
+            "dpkg-query",
+            r"""
+            #!/usr/bin/env bash
+            printf 'INSTALLED_PACKAGE=ghdl=1.0-mock\n'
             """,
         )
         write_fake(

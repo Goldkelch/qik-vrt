@@ -3,17 +3,19 @@
 name: QIKVRT required code-owner review
 
 on:
+  # Direct native review payloads are the only reliable PR/head carrier for
+  # review events.  ``workflow_run.pull_requests`` is legitimately empty for
+  # some pull_request_review deliveries, so do not make a native approval
+  # depend on that lossy successor projection.
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  pull_request_review_comment:
+    types: [created, edited, deleted]
   workflow_run:
     workflows:
       - "QIKVRT code-owner review observer"
       - "QIKVRT requested review executor"
     types: [completed]
-  workflow_dispatch:
-    inputs:
-      pr:
-        description: "Exact open main-based pull request number"
-        required: true
-        type: string
 
 permissions:
   actions: read
@@ -27,7 +29,12 @@ concurrency:
 
 jobs:
   publish:
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      (github.event_name == 'workflow_run' && github.ref == 'refs/heads/main') ||
+      ((github.event_name == 'pull_request_review' ||
+        github.event_name == 'pull_request_review_comment') &&
+       github.event.pull_request.base.ref == 'main' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     env:
@@ -35,10 +42,12 @@ jobs:
       REPOSITORY: ${{ github.repository }}
       REQUIRED_CODE_OWNERS_JSON: '["Goldkelch","ingolf-lohmann"]'
       STATUS_CONTEXT: QIKVRT required code-owner review
-      REQUESTED_PR: ${{ inputs.pr || '' }}
       EVENT_WORKFLOW_EVENT: ${{ github.event.workflow_run.event || '' }}
       EVENT_WORKFLOW_RUN_HEAD: ${{ github.event.workflow_run.head_sha || '' }}
       EVENT_PRS: ${{ toJSON(github.event.workflow_run.pull_requests || fromJSON('[]')) }}
+      EVENT_NAME: ${{ github.event_name }}
+      EVENT_PR: ${{ github.event.pull_request.number || '' }}
+      EVENT_NATIVE_HEAD: ${{ github.event.pull_request.head.sha || '' }}
     steps:
       - name: Check out trusted main gate implementation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -54,15 +63,27 @@ jobs:
           set -euo pipefail
           python3 -B - <<'PY' > /tmp/qikvrt-required-review-selection.json
           import json, os
-          from tools.qikvrt_required_review_gate import select_required_review_targets
-
-          value=select_required_review_targets(
-              repository=os.environ['REPOSITORY'],
-              requested_pr=os.environ.get('REQUESTED_PR','').strip(),
-              workflow_event=os.environ.get('EVENT_WORKFLOW_EVENT','').strip(),
-              workflow_run_head=os.environ.get('EVENT_WORKFLOW_RUN_HEAD','').strip(),
-              event_prs=json.loads(os.environ.get('EVENT_PRS') or '[]'),
+          from tools.qikvrt_required_review_gate import (
+              select_required_review_event_target,
+              select_required_review_targets,
           )
+
+          if os.environ.get('EVENT_NAME','').strip() in {
+              'pull_request_review','pull_request_review_comment',
+          }:
+              value=select_required_review_event_target(
+                  repository=os.environ['REPOSITORY'],
+                  event_name=os.environ.get('EVENT_NAME',''),
+                  event_pr=os.environ.get('EVENT_PR',''),
+                  event_head=os.environ.get('EVENT_NATIVE_HEAD',''),
+              )
+          else:
+              value=select_required_review_targets(
+                  repository=os.environ['REPOSITORY'],
+                  workflow_event=os.environ.get('EVENT_WORKFLOW_EVENT','').strip(),
+                  workflow_run_head=os.environ.get('EVENT_WORKFLOW_RUN_HEAD','').strip(),
+                  event_prs=json.loads(os.environ.get('EVENT_PRS') or '[]'),
+              )
           print(json.dumps(value,sort_keys=True))
           PY
           cat /tmp/qikvrt-required-review-selection.json
@@ -100,7 +121,9 @@ jobs:
           python3 -B - <<'PY'
           import json, os, subprocess
           from tools.qikvrt_required_review_gate import (
+              PENDING,
               STATUS_PUBLICATION_NOOP,
+              bounded_review_observation,
               decide_status_publication,
               evaluate_required_review,
               status_description,
@@ -113,13 +136,6 @@ jobs:
 
           def gh_json(path):
               return json.loads(subprocess.check_output(['gh','api',path], text=True))
-
-          def gh_pages(path):
-              pages=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path], text=True))
-              out=[]
-              for page in pages:
-                  out.extend(page if isinstance(page,list) else [page])
-              return out
 
           pr=gh_json(f'repos/{repo}/pulls/{number}')
           reasons=[]
@@ -153,8 +169,28 @@ jobs:
               raise SystemExit(0)
 
           rules=gh_json(f'repos/{repo}/rules/branches/main')
-          reviews=gh_pages(f'repos/{repo}/pulls/{number}/reviews?per_page=100')
-          decision=evaluate_required_review(pr, rules, reviews, required_code_owners=owners)
+          review_observation=bounded_review_observation(
+              gh_json(f'repos/{repo}/pulls/{number}/reviews?per_page=100')
+          )
+          if review_observation['complete']:
+              decision=evaluate_required_review(
+                  pr, rules, review_observation['reviews'], required_code_owners=owners,
+              )
+          else:
+              # A full first page can have an unobserved successor.  Do not
+              # infer any review state from a truncated observation.
+              decision={
+                  'schema':'qikvrt_required_code_owner_review_gate_v1',
+                  'gate_state':PENDING,
+                  'first_blocker':review_observation['first_blocker'],
+                  'detail':'the bounded native review observation has an unobserved successor page',
+                  'pr_number':number,
+                  'head_sha':head,
+                  'required_code_owners':owners,
+                  'eligible_code_owners':[],
+                  'external_effect':'NONE',
+                  'review_mutation':'FORBIDDEN',
+              }
           state=decision['gate_state']
           description=status_description(decision)
 
@@ -185,7 +221,7 @@ jobs:
     if: >-
       github.ref == 'refs/heads/main' &&
       github.event_name == 'workflow_run' &&
-      github.event.workflow_run.name == 'QIKVRT requested review executor' &&
+      github.event.workflow_run.path == '.github/workflows/qikvrt_requested_review_executor.yml' &&
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
@@ -208,7 +244,7 @@ jobs:
       REQUIRED_GATE_PATHS_JSON: >-
         {"QIKVRT CI":".github/workflows/qikvrt_ci.yml","QIKVRT repository evidence materialization":".github/workflows/qikvrt_batch04_integrity.yml","QIKVRT Collective Proposal Review":".github/workflows/qikvrt_collective_review.yml"}
       WRITER_WORKFLOWS_JSON: >-
-        ["Autonomous issue processing","QIK-VRT autonomous bounded self-heal","QIK-VRT autonomous draft-PR continuation","QIK-VRT expected-head promotion executor","QIKVRT Batch-003 remaining subject disposition","QIKVRT repository evidence materialization","QIKVRT universal terminal materialization","QIKVRT requested review executor"]
+        ["Autonomous issue processing","QIK-VRT autonomous bounded self-heal","QIK-VRT autonomous draft-PR continuation","QIKVRT Batch-003 remaining subject disposition","QIKVRT repository evidence materialization","QIKVRT universal terminal materialization","QIKVRT requested review executor"]
     steps:
       - name: Check out trusted main planner implementation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -241,10 +277,12 @@ jobs:
           run=gh(f'repos/{repo}/actions/runs/{run_id}')
           trusted_path='.github/workflows/qikvrt_requested_review_executor.yml'
           workflow=gh(f'repos/{repo}/actions/workflows/qikvrt_requested_review_executor.yml')
-          allowed_events={'pull_request_target','issue_comment','workflow_run','workflow_dispatch'}
+          allowed_events={
+              'pull_request_target','pull_request_review',
+              'pull_request_review_comment','issue_comment','workflow_run',
+          }
           if (
-              run.get('name') != 'QIKVRT requested review executor'
-              or run.get('conclusion') != 'success'
+              run.get('conclusion') != 'success'
               or run.get('event') not in allowed_events
               or run.get('workflow_id') != workflow.get('id')
               or workflow.get('path') != trusted_path
@@ -329,6 +367,7 @@ jobs:
 
       - name: Reassemble receipt from its immutable ledger commit
         if: steps.select.outputs.state == 'CANDIDATE'
+        id: receipt
         shell: bash
         env:
           PR_NUMBER: ${{ steps.select.outputs.pr }}
@@ -356,23 +395,82 @@ jobs:
           gh api "$(cat "$root/artifact-url.txt")" > "$root/evidence.zip"
           mkdir "$root/artifact"
           unzip -q "$root/evidence.zip" -d "$root/artifact"
-          # upload-artifact archives the contents of its one directory search
-          # path at ZIP root. Do not search by basename: reobservation evidence
-          # can also contain a review.json, and selecting it would silently
-          # break receipt binding.
           receipt="$root/artifact/review.json"
           diff="$root/artifact/review.diff"
           ledger="$root/artifact/ledger-write.json"
-          test -f "$receipt" && test -f "$diff" && test -f "$ledger"
+          projection="$root/artifact/projection.json"
+          test -f "$receipt" && test -f "$diff"
           cp "$receipt" "$root/review.json"
           cp "$diff" "$root/review.diff"
-          cp "$ledger" "$root/ledger-write.json"
+          if test -f "$ledger"; then
+            cp "$ledger" "$root/ledger-write.json"
+          fi
+          if test -f "$projection"; then
+            cp "$projection" "$root/projection.json"
+          fi
+          eligible="$(python3 -B - <<'PY'
+          import json, pathlib
+          from tools.qikvrt_required_review_gate import (
+              executor_receipt_projection_eligibility,
+          )
+
+          root=pathlib.Path('/tmp/qikvrt-native-account-review')
+          try:
+              receipt=json.loads((root/'review.json').read_text(encoding='utf-8'))
+          except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+              receipt={}
+          if not isinstance(receipt,dict):
+              receipt={}
+          ledger_path=root/'ledger-write.json'
+          ledger={}
+          if ledger_path.is_file():
+              try:
+                  ledger=json.loads(ledger_path.read_text(encoding='utf-8'))
+              except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                  ledger={}
+              if not isinstance(ledger,dict):
+                  ledger={}
+          projection_path=root/'projection.json'
+          if projection_path.is_file():
+              try:
+                  projection=json.loads(projection_path.read_text(encoding='utf-8'))
+              except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                  projection={}
+              if not isinstance(projection,dict):
+                  projection={}
+          else:
+              projection=None
+          try:
+              selection=json.loads((root/'selection.json').read_text(encoding='utf-8'))
+          except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+              selection={}
+          value=executor_receipt_projection_eligibility(
+              receipt,ledger,projection,selection,
+          )
+          value.update(
+              persistence_eligible=receipt.get('persistence_eligible'),
+              ledger_persisted=ledger.get('persisted'),
+              ledger_projection_current=ledger.get('projection_current'),
+          )
+          (root/'receipt-eligibility.json').write_text(
+              json.dumps(value,sort_keys=True)+'\n',encoding='utf-8'
+          )
+          print('true' if value['eligible'] else 'false')
+          PY
+          )"
+          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
+          echo "blocker=$(jq -r '.first_blocker // ""' "$root/receipt-eligibility.json")" >> "$GITHUB_OUTPUT"
+          if [ "$eligible" != true ]; then
+            cat "$root/receipt-eligibility.json"
+            exit 0
+          fi
           python3 -B - <<'PY'
           import base64, json, os, pathlib, subprocess, urllib.parse
           from tools.qikvrt_requested_review_executor import (
               _pretty_json_bytes,
               prepare_diff_transport_ledger_entries,
               reassemble_diff_transport,
+              validate_diff_transport_budget,
           )
 
           root=pathlib.Path('/tmp/qikvrt-native-account-review')
@@ -425,6 +523,12 @@ jobs:
           if persisted_receipt != receipt_bytes:
               raise SystemExit('BLOCK: immutable ledger receipt differs from executor artifact')
           declared=json.loads(manifest.decode('utf-8'))
+          try:
+              validate_diff_transport_budget(declared)
+          except Exception as exc:
+              raise SystemExit(
+                  f'BLOCK: immutable ledger transport exceeds I/O budget: {exc}'
+              ) from exc
           packets=[]
           for item in declared.get('packets',[]):
               if not isinstance(item,dict) or not isinstance(item.get('path'),str):
@@ -445,7 +549,7 @@ jobs:
           PY
 
       - name: Reobserve exact receipt before native account planning
-        if: steps.select.outputs.state == 'CANDIDATE'
+        if: steps.select.outputs.state == 'CANDIDATE' && steps.receipt.outputs.eligible == 'true'
         shell: bash
         env:
           PR_NUMBER: ${{ steps.select.outputs.pr }}
@@ -474,35 +578,65 @@ jobs:
         shell: bash
         env:
           PR_NUMBER: ${{ steps.select.outputs.pr }}
+          RECEIPT_ELIGIBLE: ${{ steps.receipt.outputs.eligible || 'false' }}
+          RECEIPT_BLOCKER: ${{ steps.receipt.outputs.blocker || 'EXECUTOR_RECEIPT_NOT_CURRENT_PERSISTED' }}
         run: |
           set -euo pipefail
           root=/tmp/qikvrt-native-account-review
-          if [ "${{ steps.select.outputs.state }}" != 'CANDIDATE' ]; then
+          if [ "${{ steps.select.outputs.state }}" != 'CANDIDATE' ] || [ "${RECEIPT_ELIGIBLE:-false}" != true ]; then
             python3 -B - <<'PY' > "$root/plan.json"
           from tools.qikvrt_native_account_review import _base_plan, _sealed
           import json, os
           print(json.dumps(_sealed(_base_plan(
               repository=os.environ['REPOSITORY'],pr_number=None,expected_base=None,
               expected_head=None,expected_tree=None,fingerprint=None,
-              first_blocker='NO_EXACT_EXECUTOR_SUBJECT',
-              detail='the completed executor run did not bind one exact candidate',
+              first_blocker=(
+                  'NO_EXACT_EXECUTOR_SUBJECT'
+                  if '${{ steps.select.outputs.state }}' != 'CANDIDATE'
+                  else os.environ['RECEIPT_BLOCKER']
+              ),
+              detail=(
+                  'the completed executor run did not bind one exact candidate'
+                  if '${{ steps.select.outputs.state }}' != 'CANDIDATE'
+                  else 'the executor artifact is not a current permitted projection, not an approval candidate'
+              ),
           )),sort_keys=True,indent=2))
           PY
           else
             gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" > "$root/pr.json"
             expected_head="${{ steps.select.outputs.head }}"
             gh api "repos/${REPOSITORY}/git/commits/${expected_head}" > "$root/commit.json"
-            gh api --paginate --slurp "repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews?per_page=100" > "$root/review-pages.json"
-            python3 -B - <<'PY'
+            gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews?per_page=100" > "$root/review-page.json"
+            reviews_complete="$(python3 -B - <<'PY'
           import json, pathlib
+          from tools.qikvrt_required_review_gate import bounded_review_observation
           root=pathlib.Path('/tmp/qikvrt-native-account-review')
-          pages=json.loads((root/'review-pages.json').read_text(encoding='utf-8'))
-          reviews=[]
-          for page in pages:
-              reviews.extend(page if isinstance(page,list) else [page])
-          (root/'reviews.json').write_text(json.dumps(reviews,sort_keys=True)+'\n',encoding='utf-8')
+          observation=bounded_review_observation(
+              json.loads((root/'review-page.json').read_text(encoding='utf-8'))
+          )
+          (root/'review-observation.json').write_text(
+              json.dumps(observation,sort_keys=True)+'\n',encoding='utf-8'
+          )
+          if observation['complete']:
+              (root/'reviews.json').write_text(
+                  json.dumps(observation['reviews'],sort_keys=True)+'\n',encoding='utf-8'
+              )
+          print('true' if observation['complete'] else 'false')
           PY
-            gh api "repos/${REPOSITORY}/rules/branches/main" > "$root/rules.json"
+            )"
+            if [ "$reviews_complete" != true ]; then
+              python3 -B - <<'PY' > "$root/plan.json"
+          from tools.qikvrt_native_account_review import _base_plan, _sealed
+          import json, os
+          print(json.dumps(_sealed(_base_plan(
+              repository=os.environ['REPOSITORY'],pr_number=None,expected_base=None,
+              expected_head=None,expected_tree=None,fingerprint=None,
+              first_blocker='REVIEW_OBSERVATION_PAGE_LIMIT_REACHED',
+              detail='the bounded native review observation has an unobserved successor page',
+          )),sort_keys=True,indent=2))
+          PY
+            else
+              gh api "repos/${REPOSITORY}/rules/branches/main" > "$root/rules.json"
             rule="$(python3 -B - <<'PY'
           import json
           from tools.qikvrt_required_review_gate import native_code_owner_rule_is_enforced
@@ -520,6 +654,7 @@ jobs:
               --native-rule-enforced "$rule" \
               --ledger-transport-exact true \
               --reobservation-exact true > "$root/plan.json"
+            fi
           fi
           cat "$root/plan.json"
           python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
@@ -564,7 +699,7 @@ jobs:
       REQUIRED_GATE_PATHS_JSON: >-
         {"QIKVRT CI": ".github/workflows/qikvrt_ci.yml", "QIKVRT repository evidence materialization": ".github/workflows/qikvrt_batch04_integrity.yml", "QIKVRT Collective Proposal Review": ".github/workflows/qikvrt_collective_review.yml"}
       WRITER_WORKFLOWS_JSON: >-
-        ["Autonomous issue processing","QIK-VRT autonomous bounded self-heal","QIK-VRT autonomous draft-PR continuation","QIK-VRT expected-head promotion executor","QIKVRT Batch-003 remaining subject disposition","QIKVRT repository evidence materialization","QIKVRT universal terminal materialization","QIKVRT requested review executor"]
+        ["Autonomous issue processing","QIK-VRT autonomous bounded self-heal","QIK-VRT autonomous draft-PR continuation","QIKVRT Batch-003 remaining subject disposition","QIKVRT repository evidence materialization","QIKVRT universal terminal materialization","QIKVRT requested review executor"]
     steps:
       - name: Check out trusted main signer implementation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -593,9 +728,6 @@ jobs:
           fi
           pr="$(python3 -B -c 'import json; print(json.load(open("/tmp/qikvrt-native-account-review/plan.json"))["pr_number"])')"
           head="$(python3 -B -c 'import json; print(json.load(open("/tmp/qikvrt-native-account-review/plan.json"))["head_sha"])')"
-          # Re-evaluate the sealed receipt from trusted main immediately before
-          # reading the signer identity. This catches changed gates, requested
-          # reviewer removal, discussion, fingerprint, base/head/tree or diff.
           GH_TOKEN="$TECHNICAL_TOKEN" python3 -B tools/qikvrt_requested_review_executor.py verify \
             --repository "$REPOSITORY" --pr-number "$pr" --current-run-id "$GITHUB_RUN_ID" \
             --required-gates-json "$REQUIRED_GATES_JSON" \
@@ -605,7 +737,40 @@ jobs:
             --output-dir "$root/pre-effect-reobserved"
           GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/pulls/${pr}" > "$root/current-pr.json"
           GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/git/commits/${head}" > "$root/current-commit.json"
-          GH_TOKEN="$TECHNICAL_TOKEN" gh api --paginate --slurp "repos/${REPOSITORY}/pulls/${pr}/reviews?per_page=100" > "$root/current-review-pages.json"
+          GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/pulls/${pr}/reviews?per_page=100" > "$root/current-review-page.json"
+          reviews_complete="$(python3 -B - <<'PY'
+          import json, pathlib
+          from tools.qikvrt_required_review_gate import bounded_review_observation
+          root=pathlib.Path('/tmp/qikvrt-native-account-review')
+          observation=bounded_review_observation(
+              json.loads((root/'current-review-page.json').read_text(encoding='utf-8'))
+          )
+          (root/'current-review-observation.json').write_text(
+              json.dumps(observation,sort_keys=True)+'\n',encoding='utf-8'
+          )
+          if observation['complete']:
+              (root/'current-reviews.json').write_text(
+                  json.dumps(observation['reviews'],sort_keys=True)+'\n',encoding='utf-8'
+              )
+          print('true' if observation['complete'] else 'false')
+          PY
+          )"
+          if [ "$reviews_complete" != true ]; then
+            python3 -B - <<'PY' > "$root/preflight.json"
+          import json, pathlib
+          root=pathlib.Path('/tmp/qikvrt-native-account-review')
+          plan=json.loads((root/'plan.json').read_text(encoding='utf-8'))
+          observation=json.loads((root/'current-review-observation.json').read_text(encoding='utf-8'))
+          print(json.dumps({
+              'action':'NO_EFFECT',
+              'first_blocker':observation['first_blocker'],
+              'plan_sha256':plan.get('plan_sha256'),
+              'detail':'the bounded native review observation has an unobserved successor page',
+          },sort_keys=True))
+          PY
+            cat "$root/preflight.json"
+            exit 0
+          fi
           GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/rules/branches/main" > "$root/current-rules.json"
           GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/contents/state/authorization/delegations/OWNER_NATIVE_ACCOUNT_REVIEW_AUTOMATION_V1.json?ref=main" > "$root/current-delegation-content.json"
           python3 -B - <<'PY'
@@ -631,14 +796,6 @@ jobs:
           )"
           GH_TOKEN="$ACCOUNT_TOKEN" gh api user > "$root/token-user.json"
           permission="$(GH_TOKEN="$ACCOUNT_TOKEN" gh api "repos/${REPOSITORY}/collaborators/${EXPECTED_SIGNER}/permission" --jq .permission)"
-          python3 -B - <<'PY'
-          import json, pathlib
-          root=pathlib.Path('/tmp/qikvrt-native-account-review')
-          pages=json.loads((root/'current-review-pages.json').read_text(encoding='utf-8'))
-          out=[]
-          for page in pages: out.extend(page if isinstance(page,list) else [page])
-          (root/'current-reviews.json').write_text(json.dumps(out,sort_keys=True)+'\n',encoding='utf-8')
-          PY
           python3 -B tools/qikvrt_native_account_review.py signer-preflight \
             --plan "$plan" --expected-signer "$EXPECTED_SIGNER" \
             --pr "$root/current-pr.json" --commit "$root/current-commit.json" \
@@ -697,7 +854,7 @@ jobs:
       REQUIRED_GATE_PATHS_JSON: >-
         {"QIKVRT CI": ".github/workflows/qikvrt_ci.yml", "QIKVRT repository evidence materialization": ".github/workflows/qikvrt_batch04_integrity.yml", "QIKVRT Collective Proposal Review": ".github/workflows/qikvrt_collective_review.yml"}
       WRITER_WORKFLOWS_JSON: >-
-        ["Autonomous issue processing","QIK-VRT autonomous bounded self-heal","QIK-VRT autonomous draft-PR continuation","QIK-VRT expected-head promotion executor","QIKVRT Batch-003 remaining subject disposition","QIKVRT repository evidence materialization","QIKVRT universal terminal materialization","QIKVRT requested review executor"]
+        ["Autonomous issue processing","QIK-VRT autonomous bounded self-heal","QIK-VRT autonomous draft-PR continuation","QIKVRT Batch-003 remaining subject disposition","QIKVRT repository evidence materialization","QIKVRT universal terminal materialization","QIKVRT requested review executor"]
     steps:
       - name: Check out trusted main signer implementation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -726,9 +883,6 @@ jobs:
           fi
           pr="$(python3 -B -c 'import json; print(json.load(open("/tmp/qikvrt-native-account-review/plan.json"))["pr_number"])')"
           head="$(python3 -B -c 'import json; print(json.load(open("/tmp/qikvrt-native-account-review/plan.json"))["head_sha"])')"
-          # Re-evaluate the sealed receipt from trusted main immediately before
-          # reading the signer identity. This catches changed gates, requested
-          # reviewer removal, discussion, fingerprint, base/head/tree or diff.
           GH_TOKEN="$TECHNICAL_TOKEN" python3 -B tools/qikvrt_requested_review_executor.py verify \
             --repository "$REPOSITORY" --pr-number "$pr" --current-run-id "$GITHUB_RUN_ID" \
             --required-gates-json "$REQUIRED_GATES_JSON" \
@@ -738,7 +892,40 @@ jobs:
             --output-dir "$root/pre-effect-reobserved"
           GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/pulls/${pr}" > "$root/current-pr.json"
           GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/git/commits/${head}" > "$root/current-commit.json"
-          GH_TOKEN="$TECHNICAL_TOKEN" gh api --paginate --slurp "repos/${REPOSITORY}/pulls/${pr}/reviews?per_page=100" > "$root/current-review-pages.json"
+          GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/pulls/${pr}/reviews?per_page=100" > "$root/current-review-page.json"
+          reviews_complete="$(python3 -B - <<'PY'
+          import json, pathlib
+          from tools.qikvrt_required_review_gate import bounded_review_observation
+          root=pathlib.Path('/tmp/qikvrt-native-account-review')
+          observation=bounded_review_observation(
+              json.loads((root/'current-review-page.json').read_text(encoding='utf-8'))
+          )
+          (root/'current-review-observation.json').write_text(
+              json.dumps(observation,sort_keys=True)+'\n',encoding='utf-8'
+          )
+          if observation['complete']:
+              (root/'current-reviews.json').write_text(
+                  json.dumps(observation['reviews'],sort_keys=True)+'\n',encoding='utf-8'
+              )
+          print('true' if observation['complete'] else 'false')
+          PY
+          )"
+          if [ "$reviews_complete" != true ]; then
+            python3 -B - <<'PY' > "$root/preflight.json"
+          import json, pathlib
+          root=pathlib.Path('/tmp/qikvrt-native-account-review')
+          plan=json.loads((root/'plan.json').read_text(encoding='utf-8'))
+          observation=json.loads((root/'current-review-observation.json').read_text(encoding='utf-8'))
+          print(json.dumps({
+              'action':'NO_EFFECT',
+              'first_blocker':observation['first_blocker'],
+              'plan_sha256':plan.get('plan_sha256'),
+              'detail':'the bounded native review observation has an unobserved successor page',
+          },sort_keys=True))
+          PY
+            cat "$root/preflight.json"
+            exit 0
+          fi
           GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/rules/branches/main" > "$root/current-rules.json"
           GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/contents/state/authorization/delegations/OWNER_NATIVE_ACCOUNT_REVIEW_AUTOMATION_V1.json?ref=main" > "$root/current-delegation-content.json"
           python3 -B - <<'PY'
@@ -764,14 +951,6 @@ jobs:
           )"
           GH_TOKEN="$ACCOUNT_TOKEN" gh api user > "$root/token-user.json"
           permission="$(GH_TOKEN="$ACCOUNT_TOKEN" gh api "repos/${REPOSITORY}/collaborators/${EXPECTED_SIGNER}/permission" --jq .permission)"
-          python3 -B - <<'PY'
-          import json, pathlib
-          root=pathlib.Path('/tmp/qikvrt-native-account-review')
-          pages=json.loads((root/'current-review-pages.json').read_text(encoding='utf-8'))
-          out=[]
-          for page in pages: out.extend(page if isinstance(page,list) else [page])
-          (root/'current-reviews.json').write_text(json.dumps(out,sort_keys=True)+'\n',encoding='utf-8')
-          PY
           python3 -B tools/qikvrt_native_account_review.py signer-preflight \
             --plan "$plan" --expected-signer "$EXPECTED_SIGNER" \
             --pr "$root/current-pr.json" --commit "$root/current-commit.json" \

@@ -22,7 +22,6 @@ SERIALIZED_WRITER_PATHS = {
     "Autonomous issue processing": "issue-autonomous-processing.yml",
     "QIK-VRT autonomous bounded self-heal": "qikvrt_autonomous_self_heal.yml",
     "QIK-VRT autonomous draft-PR continuation": "qikvrt_autonomous_pr_continuation.yml",
-    "QIK-VRT expected-head promotion executor": "qikvrt_expected_head_promotion.yml",
     "QIKVRT Batch-003 remaining subject disposition": "qikvrt_batch003_remaining_disposition.yml",
     "QIKVRT repository evidence materialization": "qikvrt_batch04_integrity.yml",
     "QIKVRT universal terminal materialization": "qikvrt_universal_terminal_materialize.yml",

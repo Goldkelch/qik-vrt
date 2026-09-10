@@ -55,6 +55,65 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
         value.update(overrides)
         return value
 
+    def review_status(
+        self,
+        *,
+        status_id: int = 41,
+        run_id: int = 501,
+        state: str = "success",
+        fingerprint: str = "a" * 64,
+        description: str | None = None,
+        created_at: str = "2026-08-22T10:00:00Z",
+    ):
+        if description is None:
+            description = f"Mesh APPROVE; D0=3; fp={fingerprint}; run={run_id}"
+        return {
+            "id": status_id,
+            "context": MODULE.REVIEW_GATE,
+            "state": state,
+            "created_at": created_at,
+            "description": description,
+        }
+
+    def executor_run(
+        self,
+        *,
+        run_id: int = 501,
+        run_number: int = 50,
+        event: str = "pull_request_review",
+        status: str = "completed",
+        conclusion: str | None = "success",
+        pr_number: int = 459,
+        pr_head: str = "b" * 40,
+        synthetic_head: str = "c" * 40,
+        **overrides,
+    ):
+        value = {
+            "id": run_id,
+            "name": MODULE.REVIEW_EXECUTOR_WORKFLOW,
+            "run_number": run_number,
+            "event": event,
+            "status": status,
+            "conclusion": conclusion,
+            # Direct review workflow runs may carry this synthetic merge
+            # SHA.  The fence must ignore it and use pull_requests instead.
+            "head_sha": synthetic_head,
+            "pull_requests": [
+                {"number": pr_number, "head": {"sha": pr_head}},
+            ],
+        }
+        value.update(overrides)
+        return value
+
+    def execution_fence(self, statuses=None, executor_runs=None):
+        return MODULE.mesh_review_execution_fence(
+            statuses if statuses is not None else [self.review_status()],
+            executor_runs if executor_runs is not None else [self.executor_run()],
+            MODULE.REVIEW_GATE,
+            459,
+            "b" * 40,
+        )
+
     def snapshot(self, **overrides):
         value = {
             "pr_number": 459,
@@ -80,6 +139,7 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
                 {"name": "QIKVRT requested review execution", "status": "completed", "conclusion": "success", "run_number": 50},
                 {"name": "QIKVRT conditional probe", "status": "completed", "conclusion": "skipped", "run_number": 1},
             ],
+            "mesh_review_execution_fence": self.execution_fence(),
             "code_owner_review_gate": self.code_owner_gate(),
             "competing_writer_overlaps": [],
         }
@@ -229,14 +289,14 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
             "context": MODULE.REVIEW_GATE,
             "state": "success",
             "created_at": "2026-08-22T10:00:00Z",
-            "description": f"Mesh APPROVE; D0=3; fp={'a' * 64}",
+            "description": f"Mesh APPROVE; D0=3; fp={'a' * 64}; run=501",
         }
         pending = {
             "id": 42,
             "context": MODULE.REVIEW_GATE,
             "state": "pending",
             "created_at": "2026-08-22T10:01:00Z",
-            "description": f"Mesh WAIT; D0=1; fp={'b' * 64}",
+            "description": f"Mesh WAIT; D0=1; fp={'b' * 64}; run=502",
         }
         fence = MODULE.mesh_review_status_projection([success], MODULE.REVIEW_GATE)
 
@@ -258,6 +318,114 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
             ),
             fence,
         )
+
+    def test_newer_rate_limit_hold_without_a_fingerprint_blocks_stale_success(self):
+        success = {
+            "id": 41,
+            "context": MODULE.REVIEW_GATE,
+            "state": "success",
+            "created_at": "2026-08-22T10:00:00Z",
+            "description": f"Mesh APPROVE; D0=3; fp={'a' * 64}; run=501",
+        }
+        rate_hold = {
+            "id": 42,
+            "context": MODULE.REVIEW_GATE,
+            "state": "pending",
+            "created_at": "2026-08-22T10:01:00Z",
+            "description": "HOLD_UNVERIFIED; D0=2; reason=GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED; run=502",
+        }
+        fence = MODULE.mesh_review_status_projection([success], MODULE.REVIEW_GATE)
+        observed = MODULE.mesh_review_status_projection(
+            [success, rate_hold], MODULE.REVIEW_GATE
+        )
+        self.assertEqual(observed["state"], "pending")
+        self.assertIsNone(observed["evidence_fingerprint"])
+        with self.assertRaisesRegex(
+            MODULE.PromotionBlock,
+            "requested-review execution is 'pending' at final fence",
+        ):
+            MODULE.require_unchanged_mesh_review_status(
+                fence, [success, rate_hold], MODULE.REVIEW_GATE
+            )
+
+    def test_newer_exact_rate_run_blocks_when_its_pending_status_could_not_post(self):
+        old_status = self.review_status(run_id=501)
+        old_run = self.executor_run(run_id=501, run_number=50)
+        # The rate-limited execution terminates its bounded hold cleanly, but
+        # its pending commit-status POST was unavailable.  Its source run is
+        # therefore the only live evidence that the old success is stale.
+        rate_run = self.executor_run(
+            run_id=502,
+            run_number=51,
+            event="pull_request_review",
+            synthetic_head="d" * 40,
+        )
+        fence = self.execution_fence([old_status], [old_run, rate_run])
+        self.assertFalse(fence["exact"])
+        self.assertEqual(fence["first_blocker"], "REQUESTED_REVIEW_STATUS_RUN_NOT_CURRENT")
+        self.assertEqual(fence["source_run"]["id"], 502)
+
+        result = MODULE.evaluate_promotion(
+            self.snapshot(mesh_review_execution_fence=fence)
+        )
+        self.assertEqual(result["first_blocker"], "REQUESTED_REVIEW_STATUS_RUN_NOT_CURRENT")
+
+        with self.assertRaisesRegex(
+            MODULE.PromotionBlock,
+            "requested-review execution fence is not exact: REQUESTED_REVIEW_STATUS_RUN_NOT_CURRENT",
+        ):
+            MODULE.require_unchanged_mesh_review_execution_fence(
+                self.execution_fence([old_status], [old_run]),
+                [old_status],
+                [old_run, rate_run],
+                MODULE.REVIEW_GATE,
+                459,
+                "b" * 40,
+            )
+
+    def test_new_exact_success_status_replaces_a_stale_rate_hold_source_run(self):
+        old_status = self.review_status(run_id=501)
+        old_run = self.executor_run(run_id=501, run_number=50)
+        rate_run = self.executor_run(run_id=502, run_number=51)
+        # `head_sha` remains synthetic for the direct-review delivery.  The
+        # exact pull_requests binding is what admits this real successor.
+        fresh_status = self.review_status(
+            status_id=43,
+            run_id=503,
+            created_at="2026-08-22T10:02:00Z",
+        )
+        fresh_run = self.executor_run(
+            run_id=503,
+            run_number=52,
+            event="pull_request_review",
+            synthetic_head="d" * 40,
+        )
+        fence = self.execution_fence(
+            [old_status, fresh_status], [old_run, rate_run, fresh_run]
+        )
+        self.assertTrue(fence["exact"])
+        self.assertEqual(fence["status"]["executor_run_id"], 503)
+        self.assertEqual(fence["source_run"]["id"], 503)
+        self.assertEqual(fence["source_run"]["subject"], {
+            "pr_number": 459,
+            "head_sha": "b" * 40,
+        })
+        self.assertEqual(
+            MODULE.evaluate_promotion(self.snapshot(mesh_review_execution_fence=fence))["first_blocker"],
+            "HEAD1_BASE_CAS_UNAVAILABLE",
+        )
+
+    def test_positive_status_without_run_binding_is_fail_closed(self):
+        status = self.review_status(description=f"Mesh APPROVE; D0=3; fp={'a' * 64}")
+        fence = self.execution_fence([status], [self.executor_run()])
+        self.assertFalse(fence["exact"])
+        self.assertEqual(fence["first_blocker"], "REQUESTED_REVIEW_STATUS_INVALID")
+
+    def test_missing_execution_fence_blocks_ready_candidate(self):
+        snapshot = self.snapshot()
+        del snapshot["mesh_review_execution_fence"]
+        result = MODULE.evaluate_promotion(snapshot)
+        self.assertEqual(result["first_blocker"], "REQUESTED_REVIEW_EXECUTION_FENCE_MISSING")
 
     def test_promotion_marker_is_trusted_body_bound_and_revocable(self):
         pull_request = self.promotion_pr()
@@ -299,7 +467,13 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
         self.assertIn("evaluate_required_review", workflow)
         self.assertIn("code_owner_review_gate", workflow)
         self.assertIn("independent Code Owner gate changed", workflow)
-        self.assertIn("mesh_review_status_projection", workflow)
+        self.assertIn("mesh_review_execution_fence", workflow)
+        self.assertIn("require_unchanged_mesh_review_execution_fence", workflow)
+        self.assertIn(
+            "actions/workflows/qikvrt_requested_review_executor.yml/runs?per_page=100",
+            workflow,
+        )
+        self.assertIn("pull_requests", MODULE._executor_run_subject_from_pull_requests.__doc__)
         self.assertIn(
             "MESH_REVIEW_LEDGER_REF: refs/heads/qikvrt/mesh-review-ledger-v1",
             workflow,
@@ -308,18 +482,22 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
         self.assertIn("ref=urllib.parse.quote(ledger_commit,safe='')", workflow)
         self.assertIn("prepare_diff_transport_ledger_entries", workflow)
         self.assertIn("reassemble_diff_transport", workflow)
+        self.assertIn("validate_diff_transport_budget", workflow)
         self.assertIn("manifest_ledger_path=root+'.chunks.json'", workflow)
         self.assertIn("receipt.get('ledger_diff_path') != manifest_ledger_path", workflow)
         self.assertIn("receipt.get('diff_transport') != manifest", workflow)
         self.assertIn("expected_path=f'{root}.chunks/{index:08d}.bin'", workflow)
         self.assertIn("manifest_bytes != canonical_manifest or packets != canonical_packets", workflow)
         self.assertIn("diff_path.write_bytes(complete_diff)", workflow)
+        self.assertLess(
+            workflow.index("validate_diff_transport_budget(manifest)"),
+            workflow.index("packet_paths=[]"),
+        )
         self.assertNotIn("ledger_bytes(root+'.diff')", workflow)
         self.assertIn("tools/qikvrt_requested_review_executor.py','verify'", workflow)
         self.assertIn("'--expected-diff',str(diff_path)", workflow)
         self.assertIn("status and ledger fingerprints differ", workflow)
         self.assertIn("fresh Mesh receipt is not technically favorable", workflow)
-        self.assertIn("require_unchanged_mesh_review_status", workflow)
         self.assertIn("require_unchanged_promotion_marker", workflow)
         self.assertNotIn("marked = any(marker in", workflow)
         self.assertIn("final promotion fence", workflow)
@@ -327,7 +505,7 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
         self.assertNotIn('pull-requests: write', workflow)
         self.assertGreater(
             workflow.rindex("tools/qikvrt_requested_review_executor.py','verify'"),
-            workflow.index("require_unchanged_mesh_review_status"),
+            workflow.index("require_unchanged_mesh_review_execution_fence"),
         )
         self.assertLess(
             workflow.rindex("tools/qikvrt_requested_review_executor.py','verify'"),

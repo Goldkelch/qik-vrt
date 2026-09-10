@@ -23,8 +23,8 @@ Required repository permissions:
 
 - Contents: read/write — only for the role-local append-only intake/receipt
   evidence ref, with non-force compare-and-swap;
-- Actions: read/write — only to observe workflows and dispatch one exact
-  trusted-main continuation;
+- Actions: read — only to observe workflows; the broker has no workflow
+  dispatch authority;
 - Pull requests: read/write — read exact request/review state; write only a
   technical `COMMENT` projection when the existing Mesh policy permits it;
 - Commit statuses: read/write — exact-head status projection only;
@@ -94,17 +94,17 @@ dispatch body.
 The broker owns one bounded, append-only delivery queue. It orders only
 *pending* valid envelopes by `priority_rank`, then delivery timestamp, then
 `X-GitHub-Delivery`; it never cancels or rewrites an in-progress exact review.
-It may dispatch the next item only after the prior receipt is persisted or has
-an explicit fail-closed terminal handoff. A queue item whose expected base,
+It may record the next item only after the prior receipt is persisted or has
+an explicit fail-closed terminal handoff; execution waits for that item's bound
+native repository event. A queue item whose expected base,
 head, tree, label evidence, policy digest or requester/target fields drifted
 must be reobserved rather than promoted from stale evidence.
 
-The dispatch adapter must be implemented as a separately authenticated,
-trusted-main entrypoint. It must accept only a broker-proven envelope and
-exact PR/head, and must pass it into the existing `QIKVRT requested review
-executor`; an ordinary `repository_dispatch` or manual workflow input alone
-is not sufficient proof of GitHub-App origin. This repository does not yet
-contain that deployed broker or authenticated adapter.
+No dispatch adapter is permitted: the existing `QIKVRT requested review
+executor` accepts only its native GitHub event surfaces. A broker-proven
+envelope may be recorded for ordering evidence, but it cannot manufacture a
+`repository_dispatch` or manual workflow invocation. This repository does not
+yet contain that deployed broker.
 
 ## Delegated native-account projection
 

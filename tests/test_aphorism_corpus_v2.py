@@ -110,7 +110,15 @@ class AphorismCorpusV2Tests(unittest.TestCase):
         )
         commit_step = workflow.index("- name: Commit materialized repository evidence")
         block = workflow[commit_step:]
-        self.assertIn("if: github.event_name != 'pull_request'", block)
+        self.assertIn("github.event_name != 'pull_request' ||", block)
+        self.assertIn("github.actor != 'github-actions[bot]'", block)
+        self.assertIn('if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then', block)
+        for integrity_path in (
+            "REPOSITORY_FILE_MANIFEST.json",
+            "REPOSITORY_FILE_MANIFEST.json.sha256",
+            "SHA256SUMS.txt",
+        ):
+            self.assertIn(integrity_path, block)
         for token in (
             'source_head="$(git rev-parse --verify HEAD^{commit})"',
             'git ls-remote --heads origin "refs/heads/$TARGET_REF"',
@@ -121,7 +129,7 @@ class AphorismCorpusV2Tests(unittest.TestCase):
         ):
             self.assertIn(token, block)
         self.assertLess(
-            block.index("if: github.event_name != 'pull_request'"),
+            block.index("github.event_name != 'pull_request' ||"),
             block.index("git commit -m \"ci: materialize repository evidence\""),
         )
         self.assertLess(
