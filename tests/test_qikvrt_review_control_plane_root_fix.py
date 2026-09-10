@@ -51,5 +51,13 @@ class RequestedReviewControlPlaneRootFixTests(unittest.TestCase):
         self.assertIn('base = _sha(snapshot.get("base_sha"), "base_sha")', core)
         self.assertIn('if base != current_main:', core)
 
+    def test_canonical_writer_contract_executes_protected_main_receipt_regressions(self):
+        makefile = (ROOT / "Makefile").read_text()
+        marker = "repository-writer-contract:"
+        self.assertIn(marker, makefile)
+        contract = makefile.split(marker, 1)[1].split("\n\n", 1)[0]
+        self.assertIn("tests.test_qikvrt_protected_main_materialization", contract)
+        self.assertIn("tests.test_qikvrt_candidate_pr_receipt", contract)
+
 if __name__ == "__main__":
     unittest.main()
