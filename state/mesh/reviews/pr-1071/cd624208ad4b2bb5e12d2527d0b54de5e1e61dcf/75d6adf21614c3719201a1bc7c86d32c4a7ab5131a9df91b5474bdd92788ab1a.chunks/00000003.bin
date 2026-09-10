@@ -1,0 +1,344 @@
+tain transport.
++        if not exc.effect_transport_attempted:
++            raise
++        try:
++            observed, _etag = _request("GET", url, token)
++            final = evaluate(observed, policy)
++        except GitHubInstallationRateLimit as readback_exc:
++            # The final GET uses the bounded 0/15/45 schedule itself.  If it
++            # remains quota-limited, retain the already attempted PUT rather
++            # than accidentally reporting a read-only failure.
++            raise GitHubInstallationRateLimit(
++                mutation="PUT_UNCONFIRMED_RATE_LIMIT",
++                effect_transport_attempted=True,
++            ) from readback_exc
++        except RulesetBlock as readback_exc:
++            raise RulesetMutationUncertain(
++                "PUT_UNCONFIRMED_READBACK_FAILED",
++                detail=str(readback_exc),
++            ) from readback_exc
++        if final["state"] != "CURRENT":
++            raise GitHubInstallationRateLimit(
++                mutation="PUT_UNCONFIRMED_RATE_LIMIT",
++                effect_transport_attempted=True,
++            ) from exc
++        _record_put_observation(
++            effect_attempt_ledger,
++            repository=repository,
++            ruleset_id=ruleset_id,
++            put_response="INSTALLATION_RATE_LIMIT_REOBSERVED_CURRENT",
++        )
++        return {
++            **final,
++            "pre_state_sha256": plan["pre_state_sha256"],
++            "mutation": "PUT",
++            "effect_observed": True,
++            "effect_transport_attempted": True,
++            "put_response": "INSTALLATION_RATE_LIMIT_REOBSERVED_CURRENT",
++        }
++    except RulesetBlock as exc:
++        # A failed PUT response can still leave the server-side state
++        # indeterminate.  It is a one-attempt mutation, never a retry loop.
++        raise RulesetMutationUncertain(
++            "PUT_UNCONFIRMED_TRANSPORT_FAILED",
++            detail=str(exc),
++        ) from exc
++    try:
++        observed, _etag = _request("GET", url, token)
++        final = evaluate(observed, policy)
++    except GitHubInstallationRateLimit as exc:
++        raise GitHubInstallationRateLimit(
++            mutation="PUT_UNCONFIRMED_RATE_LIMIT",
++            effect_transport_attempted=True,
++        ) from exc
++    except RulesetBlock as exc:
++        raise RulesetMutationUncertain(
++            "PUT_UNCONFIRMED_READBACK_FAILED",
++            detail=str(exc),
++        ) from exc
+     if final["state"] != "CURRENT":
+-        raise RulesetBlock("ruleset update was not confirmed by exact readback")
++        raise RulesetMutationUncertain(
++            "PUT_UNCONFIRMED_NOT_CURRENT",
++            detail="ruleset update was not confirmed by exact readback",
++        )
++    _record_put_observation(
++        effect_attempt_ledger,
++        repository=repository,
++        ruleset_id=ruleset_id,
++        put_response="CURRENT",
++    )
+     return {
+         **final,
+         "pre_state_sha256": plan["pre_state_sha256"],
+         "mutation": "PUT",
++        "effect_transport_attempted": True,
+         "effect_observed": True,
+     }
+ 
+ 
++def reobserve(token: str, policy: Mapping[str, Any]) -> dict[str, Any]:
++    """Read and evaluate the exact ruleset without admitting a mutation.
++
++    This is the only recovery operation allowed after a previous conditional
++    PUT may have reached GitHub but its readback was unavailable.  A later
++    carrier may choose an ordinary reconcile only after this isolated
++    observation proves the current server state is still DRIFT.
++    """
++
++    repository = policy["repository"]
++    ruleset_id = policy["ruleset_id"]
++    url = f"https://api.github.com/repos/{repository}/rulesets/{ruleset_id}"
++    observed, _etag = _request("GET", url, token)
++    return evaluate(observed, policy)
++
++
++def authority_override() -> None:
++    """Classify workflow-level App provisioning before an API call is attempted."""
++    state = os.environ.get("QIKVRT_RULESET_AUTHORITY_STATE", "")
++    if not state:
++        return
++    blocker = os.environ.get("QIKVRT_RULESET_AUTHORITY_BLOCKER", "")
++    if not blocker:
++        raise RulesetBlock("ruleset authority override omitted its exact blocker")
++    if state == "REQUEST_AUTHORITY":
++        raise RulesetAuthorityRequired(blocker)
++    if state == "HOLD":
++        raise RulesetBlock(blocker)
++    raise RulesetBlock(f"unknown ruleset authority override state: {state}")
++
++
++def _hold_reason(
++    *,
++    repository: str,
++    ruleset_id: int,
++    blocker: str,
++    detail: str,
++    retry_predicate: str,
++    next_action: str = "REOBSERVE_EXACT_RULESET_API_AND_READBACK_EVIDENCE",
++) -> dict[str, Any]:
++    """Produce the repository-wide D0=2 contract for failed rule observation."""
++
++    return {
++        "reason_code": blocker,
++        "reason": detail,
++        "subject": {
++            "repository": repository,
++            "kind": "repository",
++            "identifier": f"ruleset:{ruleset_id}",
++            "head_sha": None,
++        },
++        "evidence_refs": [f"ruleset:{ruleset_id}", "ruleset-reconcile:api-readback"],
++        "owner": {
++            "role": "EXACT_SUBJECT_OBSERVER",
++            "actor": "qikvrt-autonomous-ruleset-effect-loop",
++        },
++        "retry_condition": {
++            "event": "NONSELF_REPOSITORY_INTERRUPT",
++            "predicate": retry_predicate,
++        },
++        "next_action": next_action,
++        "d0": 2,
++    }
++
++
+ def main(argv: Sequence[str] | None = None) -> int:
+     parser = argparse.ArgumentParser(description=__doc__)
+     parser.add_argument("--snapshot", type=pathlib.Path)
+-    parser.add_argument("--apply", action="store_true")
++    operation = parser.add_mutually_exclusive_group()
++    operation.add_argument("--apply", action="store_true")
++    operation.add_argument("--reobserve", action="store_true")
+     parser.add_argument("--receipt", type=pathlib.Path)
++    parser.add_argument("--effect-attempt-ledger", type=pathlib.Path)
+     args = parser.parse_args(argv)
+-    policy = load_policy()
++    policy: dict[str, Any] | None = None
+     try:
+-        if args.apply:
++        policy = load_policy()
++        if args.apply or args.reobserve:
++            authority_override()
+             token = os.environ.get("QIKVRT_RULESET_ADMIN_TOKEN", "")
+             if not token:
+-                raise RulesetBlock("QIKVRT_RULESET_ADMIN_TOKEN is unavailable")
+-            result = reconcile(token, policy)
++                raise RulesetAuthorityRequired("QIKVRT_RULESET_ADMIN_TOKEN is unavailable")
++            if args.apply:
++                result = reconcile(
++                    token,
++                    policy,
++                    effect_attempt_ledger=args.effect_attempt_ledger,
++                )
++            else:
++                result = reobserve(token, policy)
+         else:
+             if args.snapshot is None:
+-                raise RulesetBlock("--snapshot is required without --apply")
++                raise RulesetBlock("--snapshot is required without --apply or --reobserve")
+             current = json.loads(args.snapshot.read_text(encoding="utf-8"))
+             result = evaluate(_mapping(current, "ruleset snapshot"), policy)
+-    except (OSError, ValueError, json.JSONDecodeError, RulesetBlock) as exc:
++    except RulesetAuthorityRequired as exc:
+         result = {
+             "schema": SCHEMA,
+-            "repository": policy["repository"],
+-            "ruleset_id": policy["ruleset_id"],
++            "repository": (policy or {}).get("repository", DEFAULT_REPOSITORY),
++            "ruleset_id": (policy or {}).get("ruleset_id", DEFAULT_RULESET_ID),
+             "state": "REQUEST_AUTHORITY",
+             "first_blocker": str(exc),
+             "next_action": "ROUTE_RULESET_ADMIN_AUTHORITY_THROUGH_REPOSITORY_CARRIER",
+@@ -216,6 +503,98 @@ def main(argv: Sequence[str] | None = None) -> int:
+             "effect_observed": False,
+         }
+         exit_code = 2
++    except GitHubInstallationRateLimit as exc:
++        repository = (policy or {}).get("repository", DEFAULT_REPOSITORY)
++        ruleset_id = (policy or {}).get("ruleset_id", DEFAULT_RULESET_ID)
++        blocker = "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED"
++        result = {
++            "schema": SCHEMA,
++            "repository": repository,
++            "ruleset_id": ruleset_id,
++            "state": "HOLD",
++            "verification_state": "HOLD_UNVERIFIED",
++            "first_blocker": blocker,
++            "hold_reason": _hold_reason(
++                repository=repository,
++                ruleset_id=ruleset_id,
++                blocker=blocker,
++                detail=(
++                    "GitHub App installation quota remained exhausted after "
++                    "the bounded 0/15/45-second read policy"
++                ),
++                retry_predicate=(
++                    "the exact GitHub App installation quota is no longer exhausted"
++                ),
++            ),
++            "d0": 2,
++            "next_action": "REOBSERVE_EXACT_RULESET_API_AND_READBACK_EVIDENCE",
++            "continuation_required": True,
++            "mutation": exc.mutation,
++            "effect_transport_attempted": exc.effect_transport_attempted,
++            "effect_observed": False,
++        }
++        exit_code = 2
++    except RulesetMutationUncertain as exc:
++        repository = (policy or {}).get("repository", DEFAULT_REPOSITORY)
++        ruleset_id = (policy or {}).get("ruleset_id", DEFAULT_RULESET_ID)
++        blocker = str(exc)
++        result = {
++            "schema": SCHEMA,
++            "repository": repository,
++            "ruleset_id": ruleset_id,
++            "state": "HOLD",
++            "verification_state": "HOLD_UNVERIFIED",
++            "first_blocker": blocker,
++            "hold_reason": _hold_reason(
++                repository=repository,
++                ruleset_id=ruleset_id,
++                blocker=blocker,
++                detail=(
++                    "A single conditional ruleset PUT may have reached GitHub, "
++                    "but exact post-mutation state was not proven: " + exc.detail
++                ),
++                retry_predicate=(
++                    "the exact ruleset state can be reobserved without issuing "
++                    "another mutation"
++                ),
++            ),
++            "d0": 2,
++            "next_action": "REOBSERVE_EXACT_RULESET_API_AND_READBACK_EVIDENCE",
++            "continuation_required": True,
++            "mutation": exc.mutation,
++            "effect_transport_attempted": True,
++            "effect_observed": False,
++        }
++        exit_code = 2
++    except (OSError, ValueError, json.JSONDecodeError, RulesetBlock) as exc:
++        repository = (policy or {}).get("repository", DEFAULT_REPOSITORY)
++        ruleset_id = (policy or {}).get("ruleset_id", DEFAULT_RULESET_ID)
++        blocker = str(exc)
++        result = {
++            "schema": SCHEMA,
++            "repository": repository,
++            "ruleset_id": ruleset_id,
++            "state": "HOLD",
++            "verification_state": "HOLD_UNVERIFIED",
++            "first_blocker": blocker,
++            "hold_reason": _hold_reason(
++                repository=repository,
++                ruleset_id=ruleset_id,
++                blocker=blocker,
++                detail="Exact ruleset reconciliation could not complete before any further effect",
++                retry_predicate=(
++                    "the exact ruleset API, policy, or authority blocker is reobserved "
++                    "as resolved for the same repository"
++                ),
++            ),
++            "d0": 2,
++            "next_action": "REOBSERVE_EXACT_RULESET_API_AND_READBACK_EVIDENCE",
++            "continuation_required": True,
++            "mutation": "NONE",
++            "effect_transport_attempted": False,
++            "effect_observed": False,
++        }
++        exit_code = 2
+     else:
+         exit_code = 0 if result["state"] == "CURRENT" else 10
+     raw = canonical_bytes(result)
+diff --git a/tools/qikvrt_workflow_executor.py b/tools/qikvrt_workflow_executor.py
+index d36eea65a23efd67ad6f1d074e9906f6083cc99c..4e9bc4feea6f03782c768802d34871485ebfc2b1 100644
+--- a/tools/qikvrt_workflow_executor.py
++++ b/tools/qikvrt_workflow_executor.py
+@@ -141,8 +141,10 @@ def _validate_contract_shape(contract: Mapping[str, Any], root: Path) -> None:
+             raise ExecutorBlock(f"contract-required file is absent: {relative_path}")
+     if executor.get("observation_mode") != "REPOSITORY_NATIVE_EXACT_HEAD_BOUND":
+         raise ExecutorBlock("executor observation mode is not exact-head bound")
+-    if executor.get("stateful_writes") != "ACTION_ARTIFACTS_ONLY":
+-        raise ExecutorBlock("executor stateful write boundary is not artifact-only")
++    if executor.get("stateful_writes") != "EXECUTOR_ACTION_ARTIFACTS_ONLY":
++        raise ExecutorBlock("executor stateful write boundary is not executor-artifact-only")
++    if executor.get("repository_writer_inventory") != "dispatch_policy.writer_workflow_names":
++        raise ExecutorBlock("executor does not bind the repository writer inventory")
+     if _string_list(executor.get("single_writer_order"), "executor single writer order") != [
+         "AUTHORITY",
+         "MIRROR",
+@@ -184,6 +186,36 @@ def _validate_contract_shape(contract: Mapping[str, Any], root: Path) -> None:
+         if item.get("external_effect") != "NONE" or item.get("is_writer") is not False:
+             raise ExecutorBlock("authorized workflow exceeds the no-effect observer boundary")
+ 
++    operator_only = _mapping(
++        policy.get("operator_dispatch_only_workflows"), "operator dispatch-only workflows"
++    )
++    if operator_only.get("outside_self_heal_and_gatewatch") is not True:
++        raise ExecutorBlock("operator dispatch-only workflows must remain outside self-heal and gatewatch")
++    _string(operator_only.get("reason"), "operator dispatch-only reason")
++    operator_entries = operator_only.get("workflows")
++    if not isinstance(operator_entries, list) or not operator_entries:
++        raise ExecutorBlock("operator dispatch-only workflows must be a non-empty list")
++    authorized_names = {
++        _string(_mapping(entry, "authorized workflow").get("workflow_name"), "authorized workflow name")
++        for entry in allowed
++    }
++    operator_names: set[str] = set()
++    for entry in operator_entries:
++        item = _mapping(entry, "operator dispatch-only workflow")
++        path = _string(item.get("workflow_path"), "operator dispatch-only workflow path")
++        name = _string(item.get("workflow_name"), "operator dispatch-only workflow name")
++        if not path.startswith(".github/workflows/") or not (root / path).is_file():
++            raise ExecutorBlock("operator dispatch-only workflow path is invalid")
++        if name in operator_names or name in authorized_names:
++            raise ExecutorBlock("operator dispatch-only workflow overlaps an automated target")
++        operator_names.add(name)
++
++    reflexive = _mapping(contract.get("reflexive_deadlock_prevention"), "reflexive deadlock prevention")
++    gatewatch = _mapping(reflexive.get("gatewatch"), "gatewatch")
++    observed = set(_string_list(gatewatch.get("observed_workflow_names"), "gatewatch observed workflows"))
++    if operator_names & observed:
++        raise ExecutorBlock("operator dispatch-only workflow is incorrectly in gatewatch")
++
+     boundaries = _mapping(contract.get("boundaries"), "executor boundaries")
+     if boundaries.get("direct_repository_mutation") != "FORBIDDEN":
+         raise ExecutorBlock("executor permits direct repository mutation")
