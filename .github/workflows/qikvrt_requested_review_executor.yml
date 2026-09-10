@@ -104,7 +104,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -B - <<'PY' > /tmp/qikvrt-review-selection.json
-          import hashlib, json, os, pathlib
+          import hashlib, inspect, json, os, pathlib
           from tools.qikvrt_requested_review_executor import (
               ReviewObservationError,
               _gh_one,
@@ -140,16 +140,21 @@ jobs:
                       raise
                   return fallback
 
-          value=select_review_subject(
-              repository=repo,
-              event_pr=event_pr,
-              event_name=event_name,
-              expected_head=expected_head,
-              workflow_event=workflow_event,
-              workflow_prs=workflow_prs,
-              fetch_pull_request=one,
-              event_payload=payload,
-          )
+          selector_kwargs={
+              'repository':repo,
+              'event_pr':event_pr,
+              'event_name':event_name,
+              'expected_head':expected_head,
+              'workflow_event':workflow_event,
+              'workflow_prs':workflow_prs,
+              'fetch_pull_request':one,
+          }
+          selector_parameters=inspect.signature(select_review_subject).parameters
+          if 'requested_pr' in selector_parameters:
+              selector_kwargs['requested_pr']=''
+          if 'event_payload' in selector_parameters:
+              selector_kwargs['event_payload']=payload
+          value=select_review_subject(**selector_kwargs)
           print(json.dumps(value,sort_keys=True))
 
           def nested(mapping, *fields):
