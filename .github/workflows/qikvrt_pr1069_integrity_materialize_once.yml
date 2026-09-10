@@ -1,0 +1,92 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT PR1069 one-shot integrity materialization
+
+on:
+  push:
+    branches:
+      - publication/planck-tick-zenodo-readback-b4b0038-v1
+    paths:
+      - .github/workflows/qikvrt_pr1069_integrity_materialize_once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-pr1069-integrity-materialize-once
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: github.repository == 'Goldkelch/qik-vrt' && github.ref == 'refs/heads/publication/planck-tick-zenodo-readback-b4b0038-v1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      EXPECTED_PARENT: 27e1ebb3da714de1ba2305f1fc1add144048a07a
+      CARRIER: .github/workflows/qikvrt_pr1069_integrity_materialize_once.yml
+    steps:
+      - name: Check out exact one-shot carrier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Verify exact carrier parent and delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^1)" = "$EXPECTED_PARENT"
+          changed="$(git diff-tree --no-commit-id --name-only -r HEAD^1 HEAD)"
+          test "$changed" = "$CARRIER"
+
+      - name: Remove carrier and materialize final repository integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm -- "$CARRIER"
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py generate
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+          python3 -B - <<'PY'
+          import subprocess
+          expected = {
+              '.github/workflows/qikvrt_pr1069_integrity_materialize_once.yml',
+              'REPOSITORY_FILE_MANIFEST.json',
+              'REPOSITORY_FILE_MANIFEST.json.sha256',
+              'SHA256SUMS.txt',
+          }
+          observed = set(
+              subprocess.check_output(
+                  ['git', 'diff', 'HEAD', '--name-only'], text=True
+              ).splitlines()
+          )
+          if observed != expected:
+              raise SystemExit(
+                  'BLOCK: unexpected one-shot materialization delta: '
+                  + ','.join(sorted(observed))
+              )
+          PY
+
+      - name: Commit only the final generated projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote="$(git ls-remote origin "refs/heads/${GITHUB_REF_NAME}" | awk 'NR == 1 {print $1}')"
+          test "$remote" = "$GITHUB_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A -- \
+            "$CARRIER" \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt
+          git diff --cached --quiet && {
+            echo 'BLOCK: expected generated integrity delta is empty' >&2
+            exit 1
+          }
+          git commit -m 'fix(integrity): persist PR #1069 exact projection'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
