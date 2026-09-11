@@ -4,6 +4,7 @@ services:
       context: ${QIKVRT_REPOSITORY_CONTEXT:-../..}
       dockerfile: deploy/universal-terminal/Dockerfile
     image: ${QIKVRT_UNIVERSAL_TERMINAL_IMAGE:-qikvrt/universal-terminal:local}
+    restart: unless-stopped
     environment:
       QIKVRT_SERVICE_MODE: terminal
       QIKVRT_HTTP_HOST: 127.0.0.1
