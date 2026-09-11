@@ -59,7 +59,9 @@ jobs:
           docker build --pull --progress=plain --file deploy/universal-terminal/Dockerfile --tag "$IMAGE" . \
             2>&1 | tee "$QIKVRT_EVIDENCE_DIR/build.log"
           docker image inspect "$IMAGE" > "$QIKVRT_EVIDENCE_DIR/image-inspect.json"
-          docker image inspect --format '{{.Id}} {{join .RepoDigests " "}}' "$IMAGE" | tee "$QIKVRT_EVIDENCE_DIR/image-id.txt"
+          docker image inspect --format '{{.Id}}' "$IMAGE" | tee "$QIKVRT_EVIDENCE_DIR/image-id.txt"
+          docker image inspect --format '{{json .RepoTags}}' "$IMAGE" > "$QIKVRT_EVIDENCE_DIR/image-tags.json"
+          docker image inspect --format '{{json .RepoDigests}}' "$IMAGE" > "$QIKVRT_EVIDENCE_DIR/image-repodigests.json"
       - name: Execute MC68000 contract in image
         shell: bash
         run: |
