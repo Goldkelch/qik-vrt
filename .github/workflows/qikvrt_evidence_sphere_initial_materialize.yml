@@ -1,0 +1,112 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+# Finite, branch-scoped initial materialization. Removes itself before successor.
+name: QIKVRT evidence sphere first witnessed growth
+on:
+  push:
+    branches: [feature/evidence-sphere-step-v1-b4b0038]
+permissions:
+  contents: write
+concurrency:
+  group: qikvrt-evidence-sphere-initial-v1
+  cancel-in-progress: false
+jobs:
+  materialize-once:
+    if: github.repository == 'Goldkelch/qik-vrt' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      EXPECTED_HEAD: ${{ github.sha }}
+      EXPECTED_BASE: b4b0038bcaa8788098ffa529bd5d5b651dd0459c
+      TARGET_REF: feature/evidence-sphere-step-v1-b4b0038
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Bind, execute first growth, self-remove and validate exact successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/evidence-sphere"
+          mkdir -p "$out"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_BASE"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_BASE"
+          python3 -B tools/qikvrt_tool_cache.py verify
+          python3 -B -m unittest discover -s tests -p test_qikvrt_evidence_sphere_step.py -v 2>&1 | tee "$out/transport-tests.log"
+          git worktree add --detach "$RUNNER_TEMP/sphere-source" "$EXPECTED_BASE"
+          python3 -B tools/qikvrt_evidence_sphere_step.py demo \
+            --root "$RUNNER_TEMP/sphere-source" --ledger "$out/ledger.jsonl" \
+            --repository Goldkelch/qik-vrt --apply > "$out/first-growth.json"
+          target=state/evidence-sphere/first-growth-v1
+          test ! -e "$target"
+          mkdir -p "$target"
+          cp "$out/ledger.jsonl" "$target/ledger.jsonl"
+          cp "$out/first-growth.json" "$target/REPORT.json"
+          git rm .github/workflows/qikvrt_evidence_sphere_initial_materialize.yml
+          git add "$target/ledger.jsonl" "$target/REPORT.json"
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          python3 - <<'PY'
+          import subprocess
+          expected = {
+              '.github/workflows/qikvrt_evidence_sphere_initial_materialize.yml',
+              'state/evidence-sphere/first-growth-v1/ledger.jsonl',
+              'state/evidence-sphere/first-growth-v1/REPORT.json',
+              'REPOSITORY_FILE_MANIFEST.json', 'REPOSITORY_FILE_MANIFEST.json.sha256', 'SHA256SUMS.txt',
+          }
+          actual = set(subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines())
+          if actual != expected:
+              raise SystemExit('HOLD: initial materializer diff is not the exact allowlist: ' + repr(actual))
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(evidence): persist witnessed sphere growth and remove initial transport'
+          tested_head="$(git rev-parse HEAD)"
+          export TESTED_HEAD="$tested_head"
+          python3 -B tools/qikvrt_tool_cache.py verify
+          python3 -B -m unittest discover -s tests -p test_qikvrt_evidence_sphere_step.py -v 2>&1 | tee "$out/successor-tests.log"
+          make test 2>&1 | tee "$out/make-test.log"
+          python3 -B tools/qikvrt_integrity.py verify
+          git diff --exit-code
+          git diff --cached --exit-code
+          test "$(git ls-remote origin "refs/heads/$TARGET_REF" | cut -f1)" = "$EXPECTED_HEAD"
+          git push origin "HEAD:refs/heads/$TARGET_REF"
+          test "$(git ls-remote origin "refs/heads/$TARGET_REF" | cut -f1)" = "$tested_head"
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          from tools.qikvrt_evidence_sphere_step import SphereLedger, graph_root
+          target = pathlib.Path('state/evidence-sphere/first-growth-v1')
+          report = json.loads((target/'REPORT.json').read_text())
+          ledger = SphereLedger(target/'ledger.jsonl')
+          assert graph_root(ledger.graph) == report['after']['root']
+          value = {
+              'schema':'qikvrt_evidence_sphere_initial_execution_v1',
+              'transport_head':os.environ['EXPECTED_HEAD'],
+              'validated_head':os.environ['TESTED_HEAD'],
+              'validated_tree':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip(),
+              'run_id':os.environ['GITHUB_RUN_ID'], 'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],
+              'graph_source_head':report['head'], 'graph_source_tree':report['tree'],
+              'graph_root':graph_root(ledger.graph), 'ledger_records':ledger.sequence,
+              'ledger_sha256':hashlib.sha256((target/'ledger.jsonl').read_bytes()).hexdigest(),
+              'branch_ref_readback':True, 'scoped_tests':24, 'make_test_exit':0,
+              'native_approval':False, 'merge':False, 'deployment':False, 'publication':False,
+          }
+          output=pathlib.Path(os.environ['RUNNER_TEMP'])/'evidence-sphere'/'EXECUTION.json'
+          output.write_text(json.dumps(value,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(value,sort_keys=True))
+          PY
+      - name: Preserve finite growth and validation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-evidence-sphere-first-growth-${{ github.run_id }}
+          path: ${{ runner.temp }}/evidence-sphere
+          if-no-files-found: error
+          retention-days: 30
