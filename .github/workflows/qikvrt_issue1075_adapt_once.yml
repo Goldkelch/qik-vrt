@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      EXPECTED_PARENT: 3449e3c388b4996105fa2fd56141f22eab4c0106
+      EXPECTED_PARENT: 65b1c231438f77859b4f358a0570f13c6d677de3
       EXPECTED_SOURCE: 318c1d9c3f0ba2d5d90a94670963481a571df184
       EXPECTED_SOURCE_TREE: a4db4a40658fb6211afa6d0e828e631a9203b8ec
       EXPECTED_MAIN: a86054139b49c13c5cd344753b248b46b5daf66f
@@ -39,13 +39,13 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD^1)" = "$EXPECTED_PARENT"
-          test "$(git rev-parse HEAD^1^{tree})" = "$EXPECTED_SOURCE_TREE"
           test "$(git diff-tree --no-commit-id --name-only -r HEAD^1 HEAD)" = "$CARRIER"
           test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_MAIN"
           test "$(git ls-remote origin "$SOURCE_REF" | cut -f1)" = "$EXPECTED_SOURCE"
           test "$(git ls-remote origin "$GITHUB_REF" | cut -f1)" = "$GITHUB_SHA"
           git fetch --no-tags --depth=200 origin "$EXPECTED_MAIN" "$EXPECTED_SOURCE"
           test "$(git rev-parse "$EXPECTED_SOURCE^{tree}")" = "$EXPECTED_SOURCE_TREE"
+          test "$(git diff --name-only HEAD "$EXPECTED_SOURCE")" = "$CARRIER"
           test "$(git merge-base HEAD "$EXPECTED_MAIN")" = "$EXPECTED_MERGE_BASE"
           python3 -B tools/qikvrt_tool_cache.py verify
       - name: Merge real Git histories and regenerate only derived conflicts
@@ -76,14 +76,16 @@ jobs:
           python3 -B tools/qikvrt_integrity.py generate
           python3 -B tools/qikvrt_integrity.py verify
           git add -- REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
-          git diff --check
-          git diff --cached --check
+          # Existing Main Markdown uses intentional two-space hard line breaks.
+          # Check changed implementation/projections here; bind imported prose by bytes below.
+          git diff --check -- tools/qikvrt_requested_review_executor.py tests/test_qikvrt_requested_review_executor.py REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git diff --cached --check -- tools/qikvrt_requested_review_executor.py tests/test_qikvrt_requested_review_executor.py REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
           python3 -B - <<'PY'
           import os, subprocess
+          documents={'docs/publications/2026-09-10-cloud-transputer-self-location-proof/README.md',
+                     'docs/publications/index.html', 'docs/publications/index.json'}
           allowed={os.environ['CARRIER'], 'REPOSITORY_FILE_MANIFEST.json',
-                   'REPOSITORY_FILE_MANIFEST.json.sha256', 'SHA256SUMS.txt',
-                   'docs/publications/2026-09-10-cloud-transputer-self-location-proof/README.md',
-                   'docs/publications/index.html', 'docs/publications/index.json'}
+                   'REPOSITORY_FILE_MANIFEST.json.sha256', 'SHA256SUMS.txt'} | documents
           changed=set(subprocess.check_output(['git','diff','HEAD','--name-only'],text=True).splitlines())
           if not changed <= allowed:
               raise SystemExit('HOLD: unexpected integration scope: '+','.join(sorted(changed-allowed)))
@@ -93,6 +95,10 @@ jobs:
               expected=subprocess.check_output(['git','rev-parse',os.environ['EXPECTED_SOURCE']+':'+path],text=True).strip()
               observed=subprocess.check_output(['git','hash-object',path],text=True).strip()
               assert observed==expected, 'issue1075 repair bytes drifted during main integration'
+          for path in sorted(documents):
+              expected=subprocess.check_output(['git','rev-parse',os.environ['EXPECTED_MAIN']+':'+path],text=True).strip()
+              observed=subprocess.check_output(['git','hash-object',path],text=True).strip()
+              assert observed==expected, 'imported Main document bytes drifted'
           PY
       - name: Persist exact integrated tree without promoting main
         shell: bash
