@@ -58,7 +58,10 @@ RUN chmod +x /usr/local/bin/qikvrt-* \
 import json
 p=json.load(open('/opt/qikvrt/policy/QIKVRT_CLOUD_TRANSPUTER_V1.json'))
 assert p['architecture']=='MC68000'
-assert p['protocol_contract']['decision_codes']=={'EFFECT_NACK':0,'EFFECT_ACK_CONTINUE':1,'EFFECT_ACK_ISOLATE':2,'EFFECT_ACK_BLOCK':3,'EFFECT_ACK_DONE':4}
+assert p['boundary_contract']['decision_codes']=={'NOOP':0,'HOLD':1,'REOBSERVE':2,'REQUEST_AUTHORITY':3}
+assert p['boundary_contract']['binary_weights']==[1,2,4]
+assert p['effect_ack_protocol']['state_codes']=={'EFFECT_NACK':0,'EFFECT_ACK_CONTINUE':1,'EFFECT_ACK_ISOLATE':2,'EFFECT_ACK_BLOCK':3,'EFFECT_ACK_DONE':4}
+assert p['effect_ack_protocol']['register']=='D4'
 assert p['overlay_model']['banks']==4
 assert p['ip_bootstrap']['subnet']=='10.73.0.0/24'
 PY
