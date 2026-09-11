@@ -45,6 +45,8 @@ POST_ALPHA2_EXCLUSIONS = {
     "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Hardware/D3FixedPointAxiomAudit.lean",
     "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/QuantumFoundations/AxiomAudit.lean",
     "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/QuantumFoundations/MeasurementIndependence.lean",
+    "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/AxiomAudit.lean",
+    "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/Correctness.lean",
     "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/WorldFormula/AxiomAudit.lean",
     "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/WorldFormula/Relations.lean",
     "formalization/QIKVRT_Formalization_v2.0/QIKVRTUniversalOntology.lean",

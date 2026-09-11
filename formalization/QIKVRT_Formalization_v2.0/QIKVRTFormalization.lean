@@ -23,6 +23,7 @@ import QIKVRTFormalization.Claims.Batch05
 import QIKVRTFormalization.Claims.Completion
 import QIKVRTFormalization.WorldFormula.Relations
 import QIKVRTFormalization.QuantumFoundations.MeasurementIndependence
+import QIKVRTFormalization.TEMDD.Correctness
 import QIKVRTFormalization.Hardware.AuthorityMirrorWitness
 import QIKVRTFormalization.Hardware.D3FixedPoint
 import QIKVRTFormalization.Decision.ObservationSufficiency
@@ -53,6 +54,14 @@ finite common-cause countermodel proves that structurally local two-wing
 responses alone do not establish measurement independence. Physical exclusion
 therefore still requires a separately justified QCE freedom certificate and
 physical reference/evidence binding.
+
+The TEMDD tranche formalizes evidence-bound completion correctness: the
+remaining evidence-compatible state family must be non-empty, every compatible
+state must lie in the declared goal family, and the actual state must itself be
+bound into the compatible family.  A concrete two-bit witness materializes the
+successive evidence refinements used by the observer-relative retrocausality
+example.  The module reuses, but does not replace, the separate QCE freedom
+certificate required for the conditional superdeterminism exclusion.
 
 The hardware-witness tranche formalizes a duplex Authority/Mirror NVM model
 with an independent commit witness, fail-closed witnessless divergence,
