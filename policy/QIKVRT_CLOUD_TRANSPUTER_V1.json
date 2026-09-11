@@ -1,0 +1,93 @@
+{
+  "schema": "qik-vrt-cloud-transputer-v1",
+  "architecture": "MC68000",
+  "boundary_contract": {
+    "d0_width_bits": 2,
+    "d0_mask": 3,
+    "states": ["NOOP", "HOLD", "REOBSERVE", "REQUEST_AUTHORITY"],
+    "decision_codes": {
+      "NOOP": 0,
+      "HOLD": 1,
+      "REOBSERVE": 2,
+      "REQUEST_AUTHORITY": 3
+    },
+    "binary_weights": [1, 2, 4],
+    "composition_rule": "3 = 1 + 2; weight 4 opens the next orthogonal composition dimension without redefining D0[1:0]",
+    "register_binding": {
+      "D0": "low two bits are the invariant QIK-VRT/TEMDD boundary decision",
+      "D1": "channel/session id",
+      "D2": "freshness marker / nonce",
+      "D3": "source-node id / capability context",
+      "D4": "effect-ack protocol state",
+      "A0": "request payload pointer",
+      "A1": "receipt output pointer"
+    }
+  },
+  "effect_ack_protocol": {
+    "states": [
+      "EFFECT_NACK",
+      "EFFECT_ACK_CONTINUE",
+      "EFFECT_ACK_ISOLATE",
+      "EFFECT_ACK_BLOCK",
+      "EFFECT_ACK_DONE"
+    ],
+    "state_codes": {
+      "EFFECT_NACK": 0,
+      "EFFECT_ACK_CONTINUE": 1,
+      "EFFECT_ACK_ISOLATE": 2,
+      "EFFECT_ACK_BLOCK": 3,
+      "EFFECT_ACK_DONE": 4
+    },
+    "register": "D4",
+    "ordinary_release": "EFFECT_ACK_DONE only"
+  },
+  "function_codes": [
+    {"fc": 1, "domain": "user-data"},
+    {"fc": 2, "domain": "user-program"},
+    {"fc": 5, "domain": "supervisor-data"},
+    {"fc": 6, "domain": "supervisor-program"},
+    {"fc": 7, "domain": "interrupt-acknowledge"}
+  ],
+  "interrupt_model": {
+    "levels": [1, 2, 3, 4, 5, 6, 7],
+    "autovector": true,
+    "level_7_non_maskable": true
+  },
+  "exception_model": {
+    "supervisor_state": {"S": 1},
+    "stack_banks": ["USP", "SSP"],
+    "exception_frame_fields": ["SR", "PC"],
+    "return_instruction": "RTE"
+  },
+  "task_frame": {
+    "saved_registers": ["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "A0", "A1", "A2", "A3", "A4", "A5", "A6", "USP", "SR", "PC"]
+  },
+  "overlay_model": {
+    "banks": 4,
+    "switch_register": "QIKVRT_OVERLAY_CTRL",
+    "fence_required": true,
+    "instruction_prefetch_flush": true,
+    "decision_link": "ordinary release is allowed only from stable EFFECT_ACK_DONE"
+  },
+  "ip_bootstrap": {
+    "subnet": "10.73.0.0/24",
+    "discovery_port": 7331,
+    "server_ip": "10.73.0.1",
+    "client_ip": "10.73.0.2",
+    "file_id": 1,
+    "binary": "QIKVRT_BOOT.BIN",
+    "timeout_seconds": 2,
+    "retries": 3,
+    "chunk_bytes": 128,
+    "checksum": "FNV1A32",
+    "route": ["discover", "offer", "request", "data", "done"]
+  },
+  "effect_boundary": {
+    "transport_ack_not_effect_ack": true,
+    "content_ack_signals": ["parse-complete", "checksum-complete", "bounded-range-check-complete"],
+    "semantic_effect_signals": ["requested state transition applied", "contract verification passed", "post-apply state re-observed"],
+    "note": "No protocol label establishes physical correspondence, quantum identity, or empirical model closure."
+  },
+  "logic_0124_source_status": "RECOVERED_FROM_OWNER_MATERIAL",
+  "logic_0124_note": "0 is the unset state; 1,2,4 are orthogonal binary weights. D0[1:0] carries 0..3, with 3 composed as 1+2. Bit weight 4 extends composition context and must not redefine the four D0 boundary meanings."
+}
