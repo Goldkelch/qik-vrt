@@ -15,7 +15,6 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
-  models: read
 
 concurrency:
   group: qikvrt-repository-evidence-issue-agent/${{ github.event.issue.number || inputs.issue_number }}
@@ -118,24 +117,21 @@ jobs:
             --repository "$REPOSITORY" \
             --output-dir "evidence/issues/$ISSUE_NUMBER"
 
-      - name: Generate repository-grounded answer
-        id: inference
-        continue-on-error: true
+      - name: Compile deterministic bounded work unit
+        id: compiler
         env:
-          GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
         run: |
           set -euo pipefail
-          python3 scripts/issue_agent/infer.py \
+          python3 scripts/issue_agent/compile.py \
             --issue "${{ steps.issue.outputs.path }}" \
             --context "evidence/issues/$ISSUE_NUMBER/CONTEXT.md" \
-            --output "evidence/issues/$ISSUE_NUMBER/ANSWER.md" \
-            --model "openai/gpt-4.1"
+            --output "evidence/issues/$ISSUE_NUMBER/ANSWER.md"
 
       - name: Enforce truthful status
         env:
           ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
-          INFERENCE_OUTCOME: ${{ steps.inference.outcome }}
+          INFERENCE_OUTCOME: ${{ steps.compiler.outcome }}
         run: |
           set -euo pipefail
           python3 scripts/issue_agent/finalize.py \
