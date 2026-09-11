@@ -50,6 +50,24 @@ jobs:
         run: |
           set -euo pipefail
           docker compose -f deploy/universal-terminal/compose.yaml config | tee "$QIKVRT_EVIDENCE_DIR/compose-config.yaml" >/dev/null
+          docker compose -f deploy/universal-terminal/compose.yaml config --format json > "$QIKVRT_EVIDENCE_DIR/compose-config.json"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          cfg = json.loads(Path('/tmp/qikvrt-evidence/compose-config.json').read_text())
+          expected = {
+              'qikvrt-universal-terminal', 'qikvrt-gateway', 'qikvrt-smtpd',
+              'qikvrt-dnsd', 'qikvrt-snmpd', 'qikvrt-sshd', 'qikvrt-sqld',
+              'qikvrt-mirror', 'qikvrt-mc68000'
+          }
+          assert expected <= set(cfg['services'])
+          for name in expected:
+              mounts = cfg['services'][name].get('tmpfs', [])
+              assert mounts, f'{name}: tmpfs missing after compose normalization'
+              for mount in mounts:
+                  assert mount.startswith('/'), f'{name}: split tmpfs option token: {mount!r}'
+                  assert ':' in mount and ',mode=' in mount, f'{name}: unbound tmpfs options: {mount!r}'
+          PY
       - name: Build exact Cloud Transputer image
         shell: bash
         run: |
