@@ -64,6 +64,12 @@ class CloudTransputerMaterializationTests(unittest.TestCase):
                       'gcc-m68k-linux-gnu','qemu-user','qikvrt-m68k-selftest'):
             self.assertIn(token, self.dockerfile)
 
+    def test_mc68000_checksum_binds_the_installed_executable(self):
+        self.assertIn('/usr/local/bin/qikvrt-m68k-selftest', self.dockerfile)
+        self.assertIn('qikvrt-m68k-selftest.sha256', self.dockerfile)
+        self.assertIn("awk '{print $1 \"  /usr/local/bin/qikvrt-m68k-selftest\"}'", self.dockerfile)
+        self.assertNotIn('(cd /out && sha256sum qikvrt-m68k-selftest > m68k/qikvrt-m68k-selftest.sha256)', self.dockerfile)
+
     def test_compose_materializes_fixed_mesh(self):
         for token in ('10.73.0.0/24','10.73.0.2','10.73.0.3','10.73.0.4','10.73.0.6',
                       'qikvrt-universal-terminal','qikvrt-sqld','qikvrt-mirror','qikvrt-mc68000',
