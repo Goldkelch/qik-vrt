@@ -25,6 +25,24 @@ FORMALIZATION_PATHS = {
     "release/formalization-v2-alpha2-zenodo.json",
     "tests/test_formalization_v2_release_workflow.py",
 }
+TEMDD_METATHEORY_PREFIXES = (
+    "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/",
+)
+TEMDD_METATHEORY_PATHS = {
+    "docs/TEMDD_LANGUAGE_V1.md",
+    "docs/TEMDD_CONSERVATIVE_UNIVERSALITY.md",
+    "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization.lean",
+    "policy/TEMDD_LANGUAGE_V1.json",
+    "tests/test_temdd_language.py",
+    "tools/temdd_language.py",
+    "tools/qikvrt_materialization_scope.py",
+    "tests/test_qikvrt_materialization_scope.py",
+}
+INTEGRITY_PROJECTION_PATHS = {
+    "REPOSITORY_FILE_MANIFEST.json",
+    "REPOSITORY_FILE_MANIFEST.json.sha256",
+    "SHA256SUMS.txt",
+}
 CONTENT_PREFIXES = (
     "tools/qikvrt_content_disposition_",
     "tools/qikvrt_batch003_",
@@ -69,16 +87,38 @@ def _content_work_unit(path: str) -> bool:
     return "BATCH_003" in upper or "RETROSPECTIVE_PROOF_CORPUS" in upper
 
 
+def _is_temdd_metatheory_path(path: str) -> bool:
+    return path in TEMDD_METATHEORY_PATHS or _starts(path, TEMDD_METATHEORY_PREFIXES)
+
+
+def _temdd_metatheory_only(paths: Sequence[str]) -> bool:
+    if not paths:
+        return False
+    substantive = [path for path in paths if path not in INTEGRITY_PROJECTION_PATHS]
+    if not substantive:
+        return False
+    return all(_is_temdd_metatheory_path(path) for path in substantive) and all(
+        _is_temdd_metatheory_path(path) or path in INTEGRITY_PROJECTION_PATHS
+        for path in paths
+    )
+
+
 def classify(paths: Sequence[str], *, force_full: bool = False) -> dict[str, Any]:
     normalized = sorted(set(path.strip() for path in paths if path.strip()))
     unsafe = sorted(path for path in normalized if _unsafe(path))
     control = sorted(path for path in normalized if path in CONTROL_PATHS)
-    full = force_full or bool(unsafe) or bool(control)
+    temdd_metatheory_only = _temdd_metatheory_only(normalized)
+    full = force_full or bool(unsafe) or (
+        bool(control) and not temdd_metatheory_only
+    )
 
     formalization = full or any(
         path in FORMALIZATION_PATHS or _starts(path, FORMALIZATION_PREFIXES)
         for path in normalized
     )
+    if temdd_metatheory_only and not force_full and not unsafe:
+        formalization = False
+
     content_disposition = full or any(
         path in CONTENT_PATHS
         or _starts(path, CONTENT_PREFIXES)
@@ -94,6 +134,7 @@ def classify(paths: Sequence[str], *, force_full: bool = False) -> dict[str, Any
         "schema": "qikvrt_materialization_scope_v1",
         "full": full,
         "formalization": formalization,
+        "temdd_metatheory_only": temdd_metatheory_only,
         "content_disposition": content_disposition,
         "aphorism": aphorism,
         "integrity": True,
