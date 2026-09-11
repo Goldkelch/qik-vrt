@@ -1,0 +1,77 @@
+{
+  "schema": "qik-vrt-cloud-transputer-v1",
+  "architecture": "MC68000",
+  "protocol_contract": {
+    "states": [
+      "EFFECT_NACK",
+      "EFFECT_ACK_CONTINUE",
+      "EFFECT_ACK_ISOLATE",
+      "EFFECT_ACK_BLOCK",
+      "EFFECT_ACK_DONE"
+    ],
+    "decision_codes": {
+      "EFFECT_NACK": 0,
+      "EFFECT_ACK_CONTINUE": 1,
+      "EFFECT_ACK_ISOLATE": 2,
+      "EFFECT_ACK_BLOCK": 3,
+      "EFFECT_ACK_DONE": 4
+    },
+    "register_binding": {
+      "D0": "decision code",
+      "D1": "channel/session id",
+      "D2": "freshness marker / nonce",
+      "D3": "source-node id / capability context",
+      "A0": "request payload pointer",
+      "A1": "receipt output pointer"
+    }
+  },
+  "function_codes": [
+    {"fc": 1, "domain": "user-data"},
+    {"fc": 2, "domain": "user-program"},
+    {"fc": 5, "domain": "supervisor-data"},
+    {"fc": 6, "domain": "supervisor-program"},
+    {"fc": 7, "domain": "interrupt-acknowledge"}
+  ],
+  "interrupt_model": {
+    "levels": [1, 2, 3, 4, 5, 6, 7],
+    "autovector": true,
+    "level_7_non_maskable": true
+  },
+  "exception_model": {
+    "supervisor_state": {"S": 1},
+    "stack_banks": ["USP", "SSP"],
+    "exception_frame_fields": ["SR", "PC"],
+    "return_instruction": "RTE"
+  },
+  "task_frame": {
+    "saved_registers": ["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "A0", "A1", "A2", "A3", "A4", "A5", "A6", "USP", "SR", "PC"]
+  },
+  "overlay_model": {
+    "banks": 4,
+    "switch_register": "QIKVRT_OVERLAY_CTRL",
+    "fence_required": true,
+    "instruction_prefetch_flush": true,
+    "decision_link": "ordinary release is allowed only from stable EFFECT_ACK_DONE"
+  },
+  "ip_bootstrap": {
+    "subnet": "10.73.0.0/24",
+    "discovery_port": 7331,
+    "server_ip": "10.73.0.1",
+    "client_ip": "10.73.0.2",
+    "file_id": 1,
+    "binary": "QIKVRT_BOOT.BIN",
+    "timeout_seconds": 2,
+    "retries": 3,
+    "chunk_bytes": 128,
+    "checksum": "FNV1A32",
+    "route": ["discover", "offer", "request", "data", "done"]
+  },
+  "effect_boundary": {
+    "transport_ack_not_effect_ack": true,
+    "content_ack_signals": ["parse-complete", "checksum-complete", "bounded-range-check-complete"],
+    "semantic_effect_signals": ["requested state transition applied", "contract verification passed", "post-apply state re-observed"],
+    "note": "No protocol label establishes physical correspondence, quantum identity, or empirical model closure."
+  },
+  "logic_0124_source_status": "NOT_RECOVERED_VERBATIM",
+  "logic_0124_note": "No additional 0-1-2-4 algebra is inferred by this implementation. The recovered, source-backed contract is the D0 five-state mapping 0..4 plus the four-bank overlay model."
+}
