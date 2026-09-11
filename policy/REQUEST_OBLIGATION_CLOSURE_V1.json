@@ -1,0 +1,92 @@
+{
+  "schema": "QIKVRT_REQUEST_OBLIGATION_CLOSURE_V1",
+  "version": 1,
+  "purpose": "Preserve the semantic obligations of the originating request across every intermediate transition until exact effect readback or an irreducible fail-closed hold.",
+  "derivation": {
+    "premises": [
+      "TRANSPORT_ACK != EFFECT_ACK",
+      "EXECUTION != EFFECT",
+      "EFFECT != EFFECT_KNOWLEDGE",
+      "ACTIVITY_REPORT != ACTUAL_END_STATE",
+      "EVIDENCE_IS_SUBJECT_BOUND",
+      "MACHINE_OWNED_WORK_REMAINING_CONTINUE_AUTONOMOUSLY"
+    ],
+    "failure_pattern": "An intermediate transition can satisfy a local subgoal while leaving one or more obligations of the originating request unsatisfied. Treating local success as request completion loses intent across a state boundary.",
+    "repair": "Carry a monotone obligation ledger whose entries can only become SATISFIED after exact readback, or BLOCKED after an irreducibility proof. Intermediate transitions may add derived obligations but may not silently delete originating obligations."
+  },
+  "request_model": {
+    "request_id_required": true,
+    "subject_binding_required": true,
+    "obligations_required": true,
+    "obligation_fields": [
+      "obligation_id",
+      "requested_effect",
+      "exact_subject",
+      "authority_requirement",
+      "completion_predicate",
+      "readback_method",
+      "state"
+    ],
+    "states": ["OPEN", "ACTIVE", "SATISFIED", "BLOCKED"],
+    "initial_state": "OPEN"
+  },
+  "transition_invariant": {
+    "originating_obligation_deletion_allowed": false,
+    "derived_obligations_may_be_added": true,
+    "intermediate_success_implies_completion": false,
+    "head_or_subject_mutation_invalidates_downstream_binding": true,
+    "satisfied_requires_exact_readback": true,
+    "blocked_requires_irreducibility_evidence": true,
+    "retry_without_new_causal_evidence_allowed": false
+  },
+  "return_gate": {
+    "formula": "RETURN_ALLOWED iff ALL(request_obligations.state == SATISFIED) OR EXISTS_IRREDUCIBLE_BLOCK_WITH_NO_AUTHORIZED_SAFE_NEXT_ACTION",
+    "requested_effect_and_readback": "DoD = REQUESTED_EFFECT + EXACT_EFFECT_READBACK",
+    "if_authorized_safe_next_action_exists": "EXECUTE_IN_SAME_RUN",
+    "describe_executable_next_action_instead_of_executing": "FORBIDDEN",
+    "preflight_is_terminal": false,
+    "commit_is_terminal": false,
+    "push_is_terminal": false,
+    "review_is_terminal": false,
+    "merge_is_terminal_unless_merge_is_the_requested_effect": false,
+    "upload_is_terminal_unless_upload_is_the_requested_effect": false,
+    "transport_ack_is_terminal": false
+  },
+  "roundtrip": [
+    "CAPTURE_REQUEST",
+    "DERIVE_OBLIGATIONS",
+    "BIND_EXACT_SUBJECTS",
+    "OBSERVE",
+    "SELECT_AUTHORIZED_SAFE_ACTION",
+    "ACT",
+    "READBACK",
+    "DISCHARGE_OR_REFINE_OBLIGATIONS",
+    "REOBSERVE_REMAINING_OBLIGATIONS",
+    "REPEAT_UNTIL_RETURN_GATE"
+  ],
+  "scale_rule": "The same obligation ledger composes recursively across tool calls, workflows, pull requests, repositories, deployments, publications and physical-effect adapters. A child completion discharges only the parent obligation explicitly bound to that child result.",
+  "hold_proof": {
+    "required": [
+      "exact_unsatisfied_obligation",
+      "last_verified_subject",
+      "failed_boundary",
+      "available_capabilities_examined",
+      "why_each_safe_authorized_action_cannot_advance",
+      "minimal_external_edge_needed"
+    ],
+    "absence_of_attempt": "NOT_A_BLOCK",
+    "missing_assumption_without_capability_search": "NOT_A_BLOCK"
+  },
+  "effect_state_mapping": {
+    "OPEN": "EFFECT_ACK_CONTINUE",
+    "ACTIVE": "EFFECT_ACK_CONTINUE",
+    "SATISFIED": "EFFECT_ACK_DONE_FOR_BOUND_OBLIGATION_ONLY",
+    "BLOCKED": "EFFECT_ACK_BLOCK_FOR_BOUND_OBLIGATION_ONLY"
+  },
+  "non_claims": [
+    "This policy does not grant authority.",
+    "This policy does not bypass safety, review, publication, merge or external-effect gates.",
+    "This policy does not transfer evidence across changed subjects.",
+    "A locally satisfied obligation does not imply repository-wide PASS or global EFFECT_ACK_DONE."
+  ]
+}

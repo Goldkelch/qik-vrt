@@ -81,6 +81,43 @@ verified `DONE` result or a concrete external `BLOCK` that cannot be repaired
 with the already authorized repository capabilities. Commentary, discussion,
 or an unchanged intermediate status MUST NOT replace continued execution.
 
+## Universal executable-task completion boundary
+
+`NO_USER_RETURN_WHILE_AUTHORIZED_NEXT_ACTION_EXISTS` is mandatory for every
+executable task, not only persistence runs.
+
+A successful intermediate observation is never a completion condition by
+itself. Preflight success, artifact creation, materialization, validation,
+commit, push, review routing, request acceptance, transport acknowledgement,
+workflow success, upload preparation, deployment preparation, or a receipt MUST
+NOT be reported as completion while the requested effect remains outstanding
+and an authorized safe next action is available.
+
+After every successful transition the agent MUST immediately determine whether
+the requested end effect has been observed on the exact bound subject. If not,
+and an authorized repository-native or connected-tool action can advance the
+same task without violating a fail-closed boundary, the agent MUST execute that
+next action in the same run and continue the cycle:
+
+`OBSERVE -> BIND -> ACTION -> EFFECT -> READBACK -> NEXT_ACTION_OR_DONE`.
+
+The agent MUST NOT stop merely to describe, recommend, promise, or name a next
+action that it can already execute. A user-facing return before the requested
+end effect is permitted only when the state is a concrete `HOLD`/`BLOCK` and no
+authorized safe action available to the agent can repair or advance that block.
+The block report MUST identify the exact failed boundary and the evidence that
+no presently available authorized action crosses it.
+
+For effect-bearing tasks, Definition of Done requires both the requested effect
+and exact readback of that effect. In compact form:
+
+`DoD = REQUESTED_EFFECT + EXACT_EFFECT_READBACK`.
+
+This rule does not authorize new privileges, bypass approval or safety gates,
+weaken exact-head/exact-byte binding, infer external effects, or convert a
+proposal-only runtime into an effect-bearing runtime. It governs continuation
+whenever authority and capability already exist.
+
 ## Mandatory machine proof before every Zenodo publication
 
 `NO_MACHINE_PROOF_NO_ZENODO_UPLOAD` is mandatory for every future publication

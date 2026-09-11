@@ -100,3 +100,11 @@ The point is interoperability and structural comparison, not equation-by-slogan.
 The repository publication candidate is prepared, but each head mutation resets exact-head validation and review binding. A new Zenodo publication is not asserted until the applicable exact-head gates and review precedence complete, an authenticated publication effect occurs, and the public Zenodo record is read back with matching DOI, metadata, fileset, sizes and checksums.
 
 Author / Product & Code Owner: Ingolf Lohmann.
+
+## Attributed contribution and priority statement — 6 September 2026
+
+**Nicht die Maschine hat den Maßstab gesetzt. Ingolf Lohmann hat ihn im dokumentierten Arbeitsverlauf gegen die Maschine festgehalten.** His contribution is the documented conceptual leadership and synthesis of exact state/evidence binding, authority, effect readback and preservation of originating task obligations. Machine-assisted wording, formal refinement and technical documentation remain separately attributed.
+
+The shared supplement [EIGENLEISTUNG_UND_PRIORITAETSANSPRUCH.md](EIGENLEISTUNG_UND_PRIORITAETSANSPRUCH.md) contains the verbatim personal statement, a public formulation and a scientific formulation. It accompanies the scientific manuscript and both public prose paths without rewriting their historical sources. A claim of worldwide priority remains an attributed claim pending systematic comparative research; no scientific judgment about other people's courage or intelligence is inferred.
+
+The machine-readable contribution and input bindings are in [the work-unit record](../../../state/work_units/20260906-author-positioning-roundtrip.json). The record is evidence of attribution and persistence, not independent confirmation of a universal runtime proof. The Zenodo metadata names this supplement as a companion source; no live Zenodo record, DOI, existing released artifact, or publication proof bundle is changed by this editorial update.
