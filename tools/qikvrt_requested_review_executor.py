@@ -3134,13 +3134,14 @@ def _active_writer_observation(
     writer_names: set[str],
     relevant_heads: set[str],
 ) -> list[dict[str, Any]]:
-    """Observe only writers that can still mutate this exact subject.
+    """Observe active writer projections without enumerating completed history.
 
-    Repository-wide Actions queries can retain queued admission ghosts
-    on immutable predecessor heads. They are not leases on the current
-    review. Main-driven writers remain relevant at the exact observed
-    main head; candidate writers remain relevant at the exact PR head.
-    Malformed relevant-head bindings fail closed.
+    At most two literal heads (candidate and trusted main), five active states,
+    and one complete page per head/state: at most ten serial reads. A partial
+    page, escaped binding, duplicate run, or API/quota error fails closed; no
+    history fallback, pagination, retry, or predecessor evidence is permitted.
+    This observation is not a writer lock. Existing pre-effect exact-subject
+    reobservation and writer admission boundaries remain mandatory.
     """
     if (
         not isinstance(repository, str)
@@ -3162,85 +3163,72 @@ def _active_writer_observation(
         raise ReviewObservationError("active writer workflow binding is invalid")
     if (
         not isinstance(relevant_heads, set)
-        or not relevant_heads
+        or not 1 <= len(relevant_heads) <= 2
         or any(_git_sha1(value) is None for value in relevant_heads)
     ):
-        raise ReviewObservationError(
-            "active writer relevant-head binding is invalid"
-        )
-
-    def bounded_runs_for_head(head: str) -> list[Mapping[str, Any]]:
-        """Read exactly one complete, exact-head workflow-run page.
-
-        The repository-wide status queries previously used here performed one
-        paginated scan for every active status.  Besides multiplying GitHub App
-        reads, those scans were unrelated to the two heads that can mutate the
-        subject under review.  A single status-free query for each exact
-        relevant head lets the caller filter every active state locally.
-
-        ``per_page=100`` is a hard request bound, not permission to truncate:
-        the API's ``total_count`` must prove that the one page contains every
-        run for this exact head.  If it does not, a potentially relevant
-        active writer could be on an omitted page, so fail closed instead of
-        accepting an incomplete lease observation.
-        """
-        encoded_head = urllib.parse.quote(head, safe="")
-        response = _gh_one(
-            f"repos/{repository}/actions/runs?head_sha={encoded_head}&per_page=100"
-        )
-        if not isinstance(response, Mapping):
-            raise ReviewObservationError("active writer workflow-run response is malformed")
-        total = response.get("total_count")
-        raw_runs = response.get("workflow_runs")
-        if (
-            isinstance(total, bool)
-            or not isinstance(total, int)
-            or total < 0
-            or not isinstance(raw_runs, list)
-            or len(raw_runs) > 100
-            or total != len(raw_runs)
-        ):
-            raise ReviewObservationError(
-                "active writer exact-head workflow-run page is incomplete"
-            )
-        result: list[Mapping[str, Any]] = []
-        for run in raw_runs:
-            if not isinstance(run, Mapping):
-                raise ReviewObservationError("active writer workflow run is malformed")
-            # The server-side head filter is part of the exact-subject
-            # binding.  A response that escapes it cannot be used as lease
-            # evidence, even when the escaped row would be irrelevant.
-            if run.get("head_sha") != head:
-                raise ReviewObservationError(
-                    "active writer workflow run escaped exact-head binding"
-                )
-            result.append(run)
-        return result
+        raise ReviewObservationError("active writer relevant-head binding is invalid")
 
     observed: dict[int, dict[str, Any]] = {}
+    seen: set[int] = set()
     for head in sorted(relevant_heads):
-        for run in bounded_runs_for_head(head):
-            run_id = run.get("id")
-            status = run.get("status")
-            name = run.get("name")
+        encoded_head = urllib.parse.quote(head, safe="")
+        for status in ACTIVE_WRITER_STATES:
+            # Filter before applying the cardinality/completeness bound.
+            # Completed historical runs must never consume this page budget.
+            response = _gh_one(
+                f"repos/{repository}/actions/runs?head_sha={encoded_head}"
+                f"&status={status}&per_page=100&page=1"
+            )
+            if not isinstance(response, Mapping):
+                raise ReviewObservationError("active writer workflow-run response is malformed")
+            total = response.get("total_count")
+            raw_runs = response.get("workflow_runs")
             if (
-                status in ACTIVE_WRITER_STATES
-                and name in writer_names
-                and run.get("head_sha") == head
+                isinstance(total, bool)
+                or not isinstance(total, int)
+                or total < 0
+                or not isinstance(raw_runs, list)
+                or len(raw_runs) > 100
+                or total != len(raw_runs)
             ):
+                raise ReviewObservationError(
+                    "active writer exact-head workflow-run page is incomplete"
+                    f" (status={status})"
+                )
+            for run in raw_runs:
+                if not isinstance(run, Mapping):
+                    raise ReviewObservationError("active writer workflow run is malformed")
+                if run.get("head_sha") != head:
+                    raise ReviewObservationError(
+                        "active writer workflow run escaped exact-head binding"
+                    )
+                if run.get("status") != status:
+                    raise ReviewObservationError(
+                        "active writer workflow run escaped active-state binding"
+                    )
+                run_id = run.get("id")
+                name = run.get("name")
                 if (
                     isinstance(run_id, bool)
                     or not isinstance(run_id, int)
                     or run_id < 1
                 ):
                     raise ReviewObservationError("active writer run id is invalid")
-                if run_id == current_run_id:
+                if not isinstance(name, str) or not name:
+                    raise ReviewObservationError("active writer workflow name is invalid")
+                if run_id in seen:
+                    # A duplicate cannot prove page completeness. Across
+                    # states it also exposes observation-time state drift.
+                    raise ReviewObservationError("active writer duplicate run observation")
+                seen.add(run_id)
+                # Validate all rows before excluding self or non-writers.
+                if run_id == current_run_id or name not in writer_names:
                     continue
                 observed[run_id] = {
                     "id": run_id,
                     "name": name,
                     "status": status,
-                    "head_sha": run.get("head_sha"),
+                    "head_sha": head,
                     "workflow_id": run.get("workflow_id"),
                     "path": run.get("path"),
                     "event": run.get("event"),
