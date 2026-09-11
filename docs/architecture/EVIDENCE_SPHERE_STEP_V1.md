@@ -106,5 +106,5 @@ base in `state/evidence-sphere/first-growth-v1`, and removes its own workflow be
 creating and testing the successor. It exists because this connector exposes no
 workflow-dispatch action and the existing integrity workflow has a fixed push
 branch list. No main writer, existing PR or publication path is replaced.
-The retained tests run through ordinary repository test discovery. Historical
+The retained tests run through the existing real-mesh-test target of make test. Historical
 first-growth receipts never validate a successor code head.
