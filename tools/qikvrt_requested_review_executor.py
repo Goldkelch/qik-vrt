@@ -71,6 +71,17 @@ TRUSTED_AUTOMATION_DISCUSSION_PREFIXES = (
     # otherwise identical exact subject into causal evidence drift.
     f"<!-- {UNIVERSAL_LIVE_SURFACE_MARKER} -->",
 )
+# Canonical allowlist identity is the trusted workflow path, never run-name.
+ACTIVE_WRITER_WORKFLOW_PATHS = {
+    "Autonomous issue processing": ".github/workflows/issue-autonomous-processing.yml",
+    "QIK-VRT autonomous bounded self-heal": ".github/workflows/qikvrt_autonomous_self_heal.yml",
+    "QIK-VRT autonomous draft-PR continuation": ".github/workflows/qikvrt_autonomous_pr_continuation.yml",
+    "QIK-VRT expected-head promotion executor": ".github/workflows/qikvrt_expected_head_promotion.yml",
+    "QIKVRT Batch-003 remaining subject disposition": ".github/workflows/qikvrt_batch003_remaining_disposition.yml",
+    "QIKVRT repository evidence materialization": ".github/workflows/qikvrt_batch04_integrity.yml",
+    "QIKVRT universal terminal materialization": ".github/workflows/qikvrt_universal_terminal_materialize.yml",
+    "QIKVRT requested review executor": ".github/workflows/qikvrt_requested_review_executor.yml",
+}
 ACTIVE_WRITER_STATES = ("queued", "in_progress", "waiting", "requested", "pending")
 REVIEW_SELECTION_SCHEMA = "qikvrt_requested_review_selection_v1"
 REVIEW_INTAKE_SCHEMA = "qikvrt_review_intake_v1"
@@ -3168,6 +3179,10 @@ def _active_writer_observation(
     ):
         raise ReviewObservationError("active writer relevant-head binding is invalid")
 
+    if not writer_names <= ACTIVE_WRITER_WORKFLOW_PATHS.keys():
+        raise ReviewObservationError("active writer workflow path binding is unknown")
+    writer_paths = {ACTIVE_WRITER_WORKFLOW_PATHS[name]: name for name in writer_names}
+
     observed: dict[int, dict[str, Any]] = {}
     seen: set[int] = set()
     for head in sorted(relevant_heads):
@@ -3216,17 +3231,27 @@ def _active_writer_observation(
                     raise ReviewObservationError("active writer run id is invalid")
                 if not isinstance(name, str) or not name:
                     raise ReviewObservationError("active writer workflow name is invalid")
+                workflow_id = run.get("workflow_id")
+                path = run.get("path")
+                if (
+                    isinstance(workflow_id, bool)
+                    or not isinstance(workflow_id, int)
+                    or workflow_id < 1
+                    or not isinstance(path, str)
+                    or re.fullmatch(r"\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml", path) is None
+                ):
+                    raise ReviewObservationError("active writer workflow identity is invalid")
                 if run_id in seen:
                     # A duplicate cannot prove page completeness. Across
                     # states it also exposes observation-time state drift.
                     raise ReviewObservationError("active writer duplicate run observation")
                 seen.add(run_id)
                 # Validate all rows before excluding self or non-writers.
-                if run_id == current_run_id or name not in writer_names:
+                if run_id == current_run_id or path not in writer_paths:
                     continue
                 observed[run_id] = {
                     "id": run_id,
-                    "name": name,
+                    "name": writer_paths[path],
                     "status": status,
                     "head_sha": head,
                     "workflow_id": run.get("workflow_id"),
