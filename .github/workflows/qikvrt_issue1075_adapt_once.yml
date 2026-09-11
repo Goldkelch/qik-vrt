@@ -1,0 +1,112 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+# Single-use continuation of the issue1075 adaptation carrier; never writes main.
+name: QIKVRT issue1075 exact-main integration
+on:
+  push:
+    branches: [repair/issue1075-writer-path-binding-452ed197-v1]
+    paths: [.github/workflows/qikvrt_issue1075_adapt_once.yml]
+permissions:
+  contents: read
+concurrency:
+  group: qikvrt-issue1075-writer-path-binding-452ed197-v1
+  cancel-in-progress: false
+jobs:
+  integrate-and-reobserve:
+    if: github.repository == 'Goldkelch/qik-vrt' && github.ref == 'refs/heads/repair/issue1075-writer-path-binding-452ed197-v1'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      EXPECTED_PARENT: 3449e3c388b4996105fa2fd56141f22eab4c0106
+      EXPECTED_SOURCE: 318c1d9c3f0ba2d5d90a94670963481a571df184
+      EXPECTED_SOURCE_TREE: a4db4a40658fb6211afa6d0e828e631a9203b8ec
+      EXPECTED_MAIN: a86054139b49c13c5cd344753b248b46b5daf66f
+      EXPECTED_MERGE_BASE: b4b0038bcaa8788098ffa529bd5d5b651dd0459c
+      SOURCE_REF: refs/heads/agent/autonomy-root-cause-self-clean-v3
+      CARRIER: .github/workflows/qikvrt_issue1075_adapt_once.yml
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: Check out literal integration carrier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 200
+      - name: Bind exact integration inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^1)" = "$EXPECTED_PARENT"
+          test "$(git rev-parse HEAD^1^{tree})" = "$EXPECTED_SOURCE_TREE"
+          test "$(git diff-tree --no-commit-id --name-only -r HEAD^1 HEAD)" = "$CARRIER"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_MAIN"
+          test "$(git ls-remote origin "$SOURCE_REF" | cut -f1)" = "$EXPECTED_SOURCE"
+          test "$(git ls-remote origin "$GITHUB_REF" | cut -f1)" = "$GITHUB_SHA"
+          git fetch --no-tags --depth=200 origin "$EXPECTED_MAIN" "$EXPECTED_SOURCE"
+          test "$(git rev-parse "$EXPECTED_SOURCE^{tree}")" = "$EXPECTED_SOURCE_TREE"
+          test "$(git merge-base HEAD "$EXPECTED_MAIN")" = "$EXPECTED_MERGE_BASE"
+          python3 -B tools/qikvrt_tool_cache.py verify
+      - name: Merge real Git histories and regenerate only derived conflicts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          set +e
+          git merge --no-commit --no-ff "$EXPECTED_MAIN"
+          merge_exit=$?
+          set -e
+          test "$merge_exit" -le 1
+          test "$(git rev-parse MERGE_HEAD)" = "$EXPECTED_MAIN"
+          python3 -B - <<'PY'
+          import subprocess
+          allowed={'REPOSITORY_FILE_MANIFEST.json', 'REPOSITORY_FILE_MANIFEST.json.sha256', 'SHA256SUMS.txt'}
+          conflicts=set(subprocess.check_output(['git','diff','--name-only','--diff-filter=U'],text=True).splitlines())
+          print('EXACT_CONFLICT_PATHS=' + ','.join(sorted(conflicts)))
+          if not conflicts <= allowed:
+              raise SystemExit('HOLD: semantic conflict outside canonical integrity projections')
+          for path in sorted(conflicts):
+              subprocess.run(['git','checkout','--ours','--',path],check=True)
+              subprocess.run(['git','add','--',path],check=True)
+          PY
+          git rm -- "$CARRIER"
+          python3 -B tests/test_qikvrt_requested_review_executor.py
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          git add -- REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git diff --check
+          git diff --cached --check
+          python3 -B - <<'PY'
+          import os, subprocess
+          allowed={os.environ['CARRIER'], 'REPOSITORY_FILE_MANIFEST.json',
+                   'REPOSITORY_FILE_MANIFEST.json.sha256', 'SHA256SUMS.txt',
+                   'docs/publications/2026-09-10-cloud-transputer-self-location-proof/README.md',
+                   'docs/publications/index.html', 'docs/publications/index.json'}
+          changed=set(subprocess.check_output(['git','diff','HEAD','--name-only'],text=True).splitlines())
+          if not changed <= allowed:
+              raise SystemExit('HOLD: unexpected integration scope: '+','.join(sorted(changed-allowed)))
+          assert not subprocess.check_output(['git','ls-files','--unmerged'],text=True).strip()
+          assert not subprocess.check_output(['git','ls-files','--others','--exclude-standard'],text=True).strip()
+          for path in ('tools/qikvrt_requested_review_executor.py','tests/test_qikvrt_requested_review_executor.py'):
+              expected=subprocess.check_output(['git','rev-parse',os.environ['EXPECTED_SOURCE']+':'+path],text=True).strip()
+              observed=subprocess.check_output(['git','hash-object',path],text=True).strip()
+              assert observed==expected, 'issue1075 repair bytes drifted during main integration'
+          PY
+      - name: Persist exact integrated tree without promoting main
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_MAIN"
+          test "$(git ls-remote origin "$SOURCE_REF" | cut -f1)" = "$EXPECTED_SOURCE"
+          test "$(git ls-remote origin "$GITHUB_REF" | cut -f1)" = "$GITHUB_SHA"
+          git commit -m 'fix(integration): regenerate derived conflicts against exact current main' -m "Issue #1075. Exact candidate $EXPECTED_SOURCE / $EXPECTED_SOURCE_TREE; exact main $EXPECTED_MAIN. No predecessor evidence transfer; fresh P2 and native review required. No promotion, publication or completion claim."
+          result="$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD^1)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^2)" = "$EXPECTED_MAIN"
+          git push origin "HEAD:$GITHUB_REF"
+          test "$(git ls-remote origin "$GITHUB_REF" | cut -f1)" = "$result"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_MAIN"
+          printf 'INTEGRATION_HEAD=%s\nINTEGRATION_TREE=%s\n' "$result" "$(git rev-parse HEAD^{tree})"
+          git show --stat --oneline HEAD
