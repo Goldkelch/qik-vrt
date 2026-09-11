@@ -26,6 +26,7 @@ jobs:
       IMAGE: qikvrt/universal-terminal:${{ github.event.pull_request.head.sha || github.sha }}
       QIKVRT_UNIVERSAL_TERMINAL_IMAGE: qikvrt/universal-terminal:${{ github.event.pull_request.head.sha || github.sha }}
       QIKVRT_DB_PASSWORD: ci-only-${{ github.run_id }}-${{ github.run_attempt }}
+      QIKVRT_EVIDENCE_DIR: /tmp/qikvrt-evidence
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -38,17 +39,27 @@ jobs:
           set -euo pipefail
           expected='${{ github.event.pull_request.head.sha || github.sha }}'
           test "$(git rev-parse HEAD)" = "$expected"
-          printf 'HEAD=%s\nTREE=%s\n' "$expected" "$(git rev-parse 'HEAD^{tree}')"
+          mkdir -p "$QIKVRT_EVIDENCE_DIR"
+          printf 'HEAD=%s\nTREE=%s\n' "$expected" "$(git rev-parse 'HEAD^{tree}')" | tee "$QIKVRT_EVIDENCE_DIR/subject.txt"
+          git rev-parse HEAD > "$QIKVRT_EVIDENCE_DIR/head.txt"
+          git rev-parse 'HEAD^{tree}' > "$QIKVRT_EVIDENCE_DIR/tree.txt"
       - name: Validate recovered contract
         run: python3 -B -m unittest -v tests.test_qikvrt_cloud_transputer_materialization
       - name: Validate Infrastructure as Code
-        run: docker compose -f deploy/universal-terminal/compose.yaml config >/tmp/qikvrt-compose.yaml
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f deploy/universal-terminal/compose.yaml config | tee "$QIKVRT_EVIDENCE_DIR/compose-config.yaml" >/dev/null
       - name: Build exact Cloud Transputer image
         shell: bash
         run: |
           set -euo pipefail
-          docker build --pull --file deploy/universal-terminal/Dockerfile --tag "$IMAGE" .
-          docker image inspect --format '{{.Id}} {{join .RepoDigests " "}}' "$IMAGE"
+          docker version > "$QIKVRT_EVIDENCE_DIR/docker-version.txt" 2>&1
+          docker info > "$QIKVRT_EVIDENCE_DIR/docker-info.txt" 2>&1
+          docker build --pull --progress=plain --file deploy/universal-terminal/Dockerfile --tag "$IMAGE" . \
+            2>&1 | tee "$QIKVRT_EVIDENCE_DIR/build.log"
+          docker image inspect "$IMAGE" > "$QIKVRT_EVIDENCE_DIR/image-inspect.json"
+          docker image inspect --format '{{.Id}} {{join .RepoDigests " "}}' "$IMAGE" | tee "$QIKVRT_EVIDENCE_DIR/image-id.txt"
       - name: Execute MC68000 contract in image
         shell: bash
         run: |
@@ -61,15 +72,15 @@ jobs:
             test -s /usr/share/novnc/vnc.html
             grep -Eq "Machine:[[:space:]]+MC68000" /opt/qikvrt/runtime/m68k/qikvrt-m68k-selftest.readelf.txt
             (cd /opt/qikvrt/runtime/m68k && sha256sum -c qikvrt-m68k-selftest.sha256 qikvrt_ip_bootstrap.sha256)
-            qemu-m68k /usr/local/bin/qikvrt-m68k-selftest | tee /tmp/m68k.out
-            grep -F "ARCH=MC68000_FAMILY" /tmp/m68k.out
-            grep -F "D0_BOUNDARY_CODES=0,1,2,3" /tmp/m68k.out
-            grep -F "D0_COMPOSITION_3=1+2" /tmp/m68k.out
-            grep -F "NEXT_ORTHOGONAL_WEIGHT=4" /tmp/m68k.out
-            grep -F "EFFECT_ACK_CODES=0,1,2,3,4" /tmp/m68k.out
-            grep -F "EFFECT_ACK_REGISTER=D4" /tmp/m68k.out
-            grep -F "ORDINARY_RELEASE=EFFECT_ACK_DONE_ONLY" /tmp/m68k.out
-          '
+            qemu-m68k /usr/local/bin/qikvrt-m68k-selftest
+          ' | tee "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
+          grep -F "ARCH=MC68000_FAMILY" "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
+          grep -F "D0_BOUNDARY_CODES=0,1,2,3" "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
+          grep -F "D0_COMPOSITION_3=1+2" "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
+          grep -F "NEXT_ORTHOGONAL_WEIGHT=4" "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
+          grep -F "EFFECT_ACK_CODES=0,1,2,3,4" "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
+          grep -F "EFFECT_ACK_REGISTER=D4" "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
+          grep -F "ORDINARY_RELEASE=EFFECT_ACK_DONE_ONLY" "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
       - name: Start IaC service plane
         shell: bash
         run: |
@@ -89,15 +100,19 @@ jobs:
             sleep 2
           done
           test "$ready" = 1
-          curl -fsS http://127.0.0.1:8080/qik-vrt/mesh/v1/healthz
+          curl -fsS http://127.0.0.1:8080/qik-vrt/mesh/v1/healthz | tee "$QIKVRT_EVIDENCE_DIR/healthz.txt"
+          curl -fsS http://127.0.0.1:8080/qik-vrt/mesh/v1/ > "$QIKVRT_EVIDENCE_DIR/mesh-root.html"
           python3 - <<'PY'
           import socket
           with socket.create_connection(('127.0.0.1',2222),timeout=5) as s:
-              assert s.recv(64).startswith(b'SSH-2.0-')
+              banner=s.recv(64)
+              assert banner.startswith(b'SSH-2.0-')
+              open('/tmp/qikvrt-evidence/ssh-banner.txt','wb').write(banner)
           PY
           test "$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$(docker compose -f deploy/universal-terminal/compose.yaml ps -q qikvrt-universal-terminal)")" = 10.73.0.2
           test "$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$(docker compose -f deploy/universal-terminal/compose.yaml ps -q qikvrt-sqld)")" = 10.73.0.3
           test "$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$(docker compose -f deploy/universal-terminal/compose.yaml ps -q qikvrt-mc68000)")" = 10.73.0.6
+          docker compose -f deploy/universal-terminal/compose.yaml ps -a > "$QIKVRT_EVIDENCE_DIR/compose-ps-success.txt"
       - name: Verify SQL-92 core path
         shell: bash
         env:
@@ -110,7 +125,7 @@ jobs:
             sleep 2
           done
           test "$ready" = 1
-          docker compose -f deploy/universal-terminal/compose.yaml exec -T -e PGPASSWORD="$PGPASSWORD" qikvrt-sqld psql -w -h 127.0.0.1 -U qikvrt -d qikvrt -v ON_ERROR_STOP=1 <<'SQL'
+          docker compose -f deploy/universal-terminal/compose.yaml exec -T -e PGPASSWORD="$PGPASSWORD" qikvrt-sqld psql -w -h 127.0.0.1 -U qikvrt -d qikvrt -v ON_ERROR_STOP=1 <<'SQL' | tee "$QIKVRT_EVIDENCE_DIR/sql92-core.txt"
           BEGIN;
           CREATE TABLE qikvrt_probe (id INTEGER NOT NULL PRIMARY KEY, value VARCHAR(32));
           INSERT INTO qikvrt_probe VALUES (1, 'mesh');
@@ -121,11 +136,12 @@ jobs:
         if: always()
         shell: bash
         run: |
-          mkdir -p /tmp/qikvrt-evidence
-          docker compose -f deploy/universal-terminal/compose.yaml ps -a > /tmp/qikvrt-evidence/compose-ps.txt 2>&1 || true
-          docker compose -f deploy/universal-terminal/compose.yaml logs --no-color --tail 200 > /tmp/qikvrt-evidence/service.log 2>&1 || true
-          git rev-parse HEAD > /tmp/qikvrt-evidence/head.txt
-          git rev-parse 'HEAD^{tree}' > /tmp/qikvrt-evidence/tree.txt
+          mkdir -p "$QIKVRT_EVIDENCE_DIR"
+          docker compose -f deploy/universal-terminal/compose.yaml ps -a > "$QIKVRT_EVIDENCE_DIR/compose-ps.txt" 2>&1 || true
+          docker compose -f deploy/universal-terminal/compose.yaml logs --no-color --tail 400 > "$QIKVRT_EVIDENCE_DIR/service.log" 2>&1 || true
+          git rev-parse HEAD > "$QIKVRT_EVIDENCE_DIR/head.txt"
+          git rev-parse 'HEAD^{tree}' > "$QIKVRT_EVIDENCE_DIR/tree.txt"
+          (cd "$QIKVRT_EVIDENCE_DIR" && sha256sum * > SHA256SUMS.txt) || true
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
