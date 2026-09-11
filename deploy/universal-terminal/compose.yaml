@@ -38,7 +38,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    tmpfs: [/tmp:size=32m,mode=1777, /run:size=16m,mode=755]
+    tmpfs: ["/tmp:size=32m,mode=1777", "/run:size=16m,mode=755"]
     healthcheck: {disable: true}
 
   qikvrt-smtpd:
@@ -49,7 +49,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    tmpfs: [/tmp:size=16m,mode=1777, /run:size=8m,mode=755]
+    tmpfs: ["/tmp:size=16m,mode=1777", "/run:size=8m,mode=755"]
     volumes: [qikvrt_smtp:/var/lib/qikvrt/smtp]
     healthcheck: {disable: true}
 
@@ -61,7 +61,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    tmpfs: [/tmp:size=16m,mode=1777, /run:size=8m,mode=755]
+    tmpfs: ["/tmp:size=16m,mode=1777", "/run:size=8m,mode=755"]
     healthcheck: {disable: true}
 
   qikvrt-dnsd:
@@ -74,7 +74,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    tmpfs: [/tmp:size=16m,mode=1777, /run:size=8m,mode=755]
+    tmpfs: ["/tmp:size=16m,mode=1777", "/run:size=8m,mode=755"]
     healthcheck: {disable: true}
 
   qikvrt-sshd:
@@ -88,7 +88,7 @@ services:
     cap_drop: [ALL]
     cap_add: [CHOWN, DAC_OVERRIDE, SETGID, SETUID]
     security_opt: [no-new-privileges:true]
-    tmpfs: [/tmp:size=16m,mode=1777, /run:size=16m,mode=755]
+    tmpfs: ["/tmp:size=16m,mode=1777", "/run:size=16m,mode=755"]
     volumes: [qikvrt_ssh:/var/lib/qikvrt/ssh]
     healthcheck: {disable: true}
 
@@ -103,7 +103,7 @@ services:
     cap_drop: [ALL]
     cap_add: [CHOWN, DAC_OVERRIDE, SETGID, SETUID]
     security_opt: [no-new-privileges:true]
-    tmpfs: [/tmp:size=32m,mode=1777, /run:size=16m,mode=755]
+    tmpfs: ["/tmp:size=32m,mode=1777", "/run:size=16m,mode=755"]
     volumes: [qikvrt_postgres:/var/lib/qikvrt/postgres]
     healthcheck: {disable: true}
 
@@ -118,7 +118,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    tmpfs: [/tmp:size=64m,mode=1777, /run:size=8m,mode=755]
+    tmpfs: ["/tmp:size=64m,mode=1777", "/run:size=8m,mode=755"]
     volumes: [qikvrt_mirror:/var/lib/qikvrt/mirror]
     healthcheck: {disable: true}
 
@@ -133,7 +133,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    tmpfs: [/tmp:size=32m,mode=1777, /run:size=8m,mode=755]
+    tmpfs: ["/tmp:size=32m,mode=1777", "/run:size=8m,mode=755"]
     volumes: [qikvrt_personal_posix:/var/lib/qikvrt/personal-posix]
     healthcheck: {disable: true}
 
