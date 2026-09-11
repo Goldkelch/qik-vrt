@@ -1,0 +1,1281 @@
+"pull_request_review"}:
++        if event_name in {
++            "pull_request_target",
++            "pull_request_review",
++            "pull_request_review_comment",
++        }:
+             return exact_number(
+                 event_pr,
+                 "PULL_REQUEST_EVENT",
+@@ -2381,7 +2732,7 @@ def select_review_subject(
+             )
+         return _selection_result(
+             "INELIGIBLE_EVENT_TARGET",
+-            "EXACT_EVENT_OR_DISPATCH",
++            "EXACT_EVENT",
+             first_blocker="UNSUPPORTED_EXACT_EVENT_SOURCE",
+             event_source=event_name or "UNKNOWN",
+             eligibility_reasons=["UNSUPPORTED_EXACT_EVENT_SOURCE"],
+@@ -2391,7 +2742,7 @@ def select_review_subject(
+         return _selection_result(
+             "NO_EVENT_SUBJECT",
+             "NO_EVENT_SUBJECT",
+-            first_blocker="NO_EXACT_EVENT_OR_DISPATCH_SUBJECT",
++            first_blocker="NO_EXACT_EVENT_SUBJECT",
+             event_source="NONE",
+             expected_head=bound_head or None,
+         )
+@@ -2400,7 +2751,7 @@ def select_review_subject(
+         if workflow_event in {"schedule", "workflow_dispatch"}:
+             return _selection_result(
+                 "INELIGIBLE_EVENT_TARGET",
+-                "EXACT_EVENT_OR_DISPATCH",
++                "EXACT_EVENT",
+                 first_blocker="SCHEDULED_OR_MANUAL_WORKFLOW_RUN_FORBIDDEN",
+                 event_source="WORKFLOW_RUN",
+                 expected_head=bound_head or None,
+@@ -2409,7 +2760,7 @@ def select_review_subject(
+         if not workflow_prs:
+             return _selection_result(
+                 "NO_EVENT_SUBJECT",
+-                "EXACT_EVENT_OR_DISPATCH",
++                "EXACT_EVENT",
+                 first_blocker="NO_EXACT_WORKFLOW_RUN_PULL_REQUEST",
+                 event_source="WORKFLOW_RUN",
+                 expected_head=bound_head or None,
+@@ -2417,7 +2768,7 @@ def select_review_subject(
+         if not isinstance(workflow_prs, Sequence) or isinstance(workflow_prs, (str, bytes)):
+             return _selection_result(
+                 "INELIGIBLE_EVENT_TARGET",
+-                "EXACT_EVENT_OR_DISPATCH",
++                "EXACT_EVENT",
+                 first_blocker="MALFORMED_WORKFLOW_RUN_PULL_REQUESTS",
+                 event_source="WORKFLOW_RUN_PULL_REQUESTS",
+                 expected_head=bound_head or None,
+@@ -2428,7 +2779,7 @@ def select_review_subject(
+             if not isinstance(item, Mapping):
+                 return _selection_result(
+                     "INELIGIBLE_EVENT_TARGET",
+-                    "EXACT_EVENT_OR_DISPATCH",
++                    "EXACT_EVENT",
+                     first_blocker="MALFORMED_WORKFLOW_RUN_PULL_REQUESTS",
+                     event_source="WORKFLOW_RUN_PULL_REQUESTS",
+                     expected_head=bound_head or None,
+@@ -2438,7 +2789,7 @@ def select_review_subject(
+             if blocker is not None:
+                 return _selection_result(
+                     "INELIGIBLE_EVENT_TARGET",
+-                    "EXACT_EVENT_OR_DISPATCH",
++                    "EXACT_EVENT",
+                     first_blocker=blocker,
+                     event_source="WORKFLOW_RUN_PULL_REQUESTS",
+                     expected_head=bound_head or None,
+@@ -2449,7 +2800,7 @@ def select_review_subject(
+         if len(numbers) != 1:
+             return _selection_result(
+                 "AMBIGUOUS_EVENT_SUBJECT",
+-                "EXACT_EVENT_OR_DISPATCH",
++                "EXACT_EVENT",
+                 first_blocker="WORKFLOW_RUN_MULTIPLE_PULL_REQUESTS",
+                 event_source="WORKFLOW_RUN_PULL_REQUESTS",
+                 expected_head=bound_head or None,
+@@ -2465,51 +2816,56 @@ def select_review_subject(
+     return _selection_result(
+         "NO_EVENT_SUBJECT",
+         "NO_EVENT_SUBJECT",
+-        first_blocker="NO_EXACT_EVENT_OR_DISPATCH_SUBJECT",
++        first_blocker="NO_EXACT_EVENT_SUBJECT",
+         event_source="NONE",
+     )
+ 
+ 
+ def _gh_runs(path: str) -> list[Mapping[str, Any]]:
+-    pages = _run_json(("gh", "api", "--paginate", "--slurp", path))
+-    if not isinstance(pages, list):
+-        raise ReviewObservationError("workflow-run response is not a list")
++    page = _run_json(("gh", "api", path))
++    if not isinstance(page, Mapping):
++        raise ReviewObservationError("workflow-run response is not an object")
++    total = page.get("total_count")
++    raw_runs = page.get("workflow_runs")
++    if (
++        isinstance(total, bool)
++        or not isinstance(total, int)
++        or total < 0
++        or not isinstance(raw_runs, list)
++        or len(raw_runs) > 100
++        or total != len(raw_runs)
++    ):
++        raise ReviewObservationError("workflow-run projection is incomplete")
+     result: list[Mapping[str, Any]] = []
+-    for page in pages:
+-        if not isinstance(page, Mapping) or not isinstance(page.get("workflow_runs"), list):
+-            raise ReviewObservationError("workflow-run page is malformed")
+-        for item in page["workflow_runs"]:
+-            if not isinstance(item, Mapping):
+-                raise ReviewObservationError("workflow run is not an object")
+-            result.append(item)
++    for item in raw_runs:
++        if not isinstance(item, Mapping):
++            raise ReviewObservationError("workflow run is not an object")
++        result.append(item)
+     return result
+ 
+ 
+ def _gh_jobs(path: str) -> list[Mapping[str, Any]]:
+-    """Read and completeness-check every paginated job for one workflow run."""
+-    pages = _run_json(("gh", "api", "--paginate", "--slurp", path))
+-    if not isinstance(pages, list) or not pages:
+-        raise ReviewObservationError("workflow-job response is not a non-empty list")
+-    result: list[Mapping[str, Any]] = []
+-    declared_total: int | None = None
+-    for page in pages:
+-        if not isinstance(page, Mapping) or not isinstance(page.get("jobs"), list):
+-            raise ReviewObservationError("workflow-job page is malformed")
+-        total = page.get("total_count")
+-        if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+-            raise ReviewObservationError("workflow-job total_count is invalid")
+-        if declared_total is None:
+-            declared_total = total
+-        elif declared_total != total:
+-            raise ReviewObservationError("workflow-job total_count changed across pages")
+-        for item in page["jobs"]:
+-            if not isinstance(item, Mapping):
+-                raise ReviewObservationError("workflow job is not an object")
+-            result.append(item)
+-    if declared_total != len(result):
++    """Read one complete-or-fail-closed job page for one workflow run."""
++    page = _run_json(("gh", "api", path))
++    if not isinstance(page, Mapping) or not isinstance(page.get("jobs"), list):
++        raise ReviewObservationError("workflow-job response is malformed")
++    total = page.get("total_count")
++    jobs = page["jobs"]
++    if (
++        isinstance(total, bool)
++        or not isinstance(total, int)
++        or total < 0
++        or len(jobs) > 100
++        or total != len(jobs)
++    ):
+         raise ReviewObservationError(
+-            f"workflow-job projection is incomplete: {len(result)} != {declared_total}"
++            f"workflow-job projection is incomplete: {len(jobs)} != {total}"
+         )
++    result: list[Mapping[str, Any]] = []
++    for item in jobs:
++        if not isinstance(item, Mapping):
++            raise ReviewObservationError("workflow job is not an object")
++        result.append(item)
+     return result
+ 
+ 
+@@ -2635,35 +2991,30 @@ def _git_scope(base: str, head: str) -> list[dict[str, Any]]:
+ def _thread_observation(repository: str, number: int) -> list[dict[str, Any]]:
+     owner, name = repository.split("/", 1)
+     query = """query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{id isResolved}}}}}"""
+-    after: str | None = None
++    command = [
++        "gh", "api", "graphql", "-f", f"query={query}",
++        "-F", f"owner={owner}", "-F", f"name={name}", "-F", f"number={number}",
++    ]
++    graph = _run_json(command)
++    try:
++        connection = graph["data"]["repository"]["pullRequest"]["reviewThreads"]
++        nodes = connection["nodes"]
++        page_info = connection["pageInfo"]
++    except (KeyError, TypeError) as exc:
++        raise ReviewObservationError("review-thread response is malformed") from exc
++    if not isinstance(nodes, list) or page_info.get("hasNextPage") is not False:
++        raise ReviewObservationError("review-thread observation reaches the one-page safety bound")
+     threads: list[dict[str, Any]] = []
+-    while True:
+-        command = [
+-            "gh", "api", "graphql", "-f", f"query={query}",
+-            "-F", f"owner={owner}", "-F", f"name={name}", "-F", f"number={number}",
+-        ]
+-        if after is not None:
+-            command.extend(("-F", f"after={after}"))
+-        graph = _run_json(command)
+-        try:
+-            connection = graph["data"]["repository"]["pullRequest"]["reviewThreads"]
+-            nodes = connection["nodes"]
+-            page_info = connection["pageInfo"]
+-        except (KeyError, TypeError) as exc:
+-            raise ReviewObservationError("review-thread response is malformed") from exc
+-        for node in nodes:
+-            threads.append(
+-                {
+-                    "id": str(node["id"]),
+-                    "is_resolved": bool(node["isResolved"]),
+-                    "body_sha256": None,
+-                }
+-            )
+-        if not page_info.get("hasNextPage"):
+-            break
+-        after = page_info.get("endCursor")
+-        if not isinstance(after, str) or not after:
+-            raise ReviewObservationError("review-thread pagination cursor is missing")
++    for node in nodes:
++        if not isinstance(node, Mapping):
++            raise ReviewObservationError("review-thread item is malformed")
++        threads.append(
++            {
++                "id": str(node["id"]),
++                "is_resolved": bool(node["isResolved"]),
++                "body_sha256": None,
++            }
++        )
+     return threads
+ 
+ 
+@@ -2675,7 +3026,7 @@ def _discussion_observation(repository: str, number: int) -> list[dict[str, Any]
+     )
+     result: list[dict[str, Any]] = []
+     for kind, endpoint in endpoints:
+-        for item in _gh_pages(endpoint):
++        for item in _gh_bounded_page(endpoint, kind):
+             body = item.get("body") or ""
+             author = (item.get("user") or {}).get("login")
+             if (
+@@ -2712,6 +3063,7 @@ def _discussion_observation(repository: str, number: int) -> list[dict[str, Any]
+ def _workflow_observation(
+     repository: str,
+     head: str,
++    required_workflow_ids: set[int] | None = None,
+ ) -> list[dict[str, Any]]:
+     encoded_head = urllib.parse.quote(head, safe="")
+     raw_runs = _gh_runs(
+@@ -2735,6 +3087,22 @@ def _workflow_observation(
+         for item in raw_runs
+     ]
+     latest = collapse_latest(runs)
++    if required_workflow_ids is not None:
++        if (
++            not required_workflow_ids
++            or any(
++                isinstance(identifier, bool)
++                or not isinstance(identifier, int)
++                or identifier < 1
++                for identifier in required_workflow_ids
++            )
++        ):
++            raise ReviewObservationError("required workflow identifiers are invalid")
++        latest = {
++            identity: run
++            for identity, run in latest.items()
++            if run.get("workflow_id") in required_workflow_ids
++        }
+     for run in latest.values():
+         run_id = run.get("id")
+         if isinstance(run_id, bool) or not isinstance(run_id, int) or run_id < 1:
+@@ -2766,39 +3134,101 @@ def _active_writer_observation(
+     writer_names: set[str],
+     relevant_heads: set[str],
+ ) -> list[dict[str, Any]]:
+-    """Observe only writers that can still mutate this exact subject.
+-
+-    Repository-wide Actions queries can retain queued admission ghosts
+-    on immutable predecessor heads. They are not leases on the current
+-    review. Main-driven writers remain relevant at the exact observed
+-    main head; candidate writers remain relevant at the exact PR head.
+-    Malformed relevant-head bindings fail closed.
++    """Observe active writer projections without enumerating completed history.
++
++    At most two literal heads (candidate and trusted main), five active states,
++    and one complete page per head/state: at most ten serial reads. A partial
++    page, escaped binding, duplicate run, or API/quota error fails closed; no
++    history fallback, pagination, retry, or predecessor evidence is permitted.
++    This observation is not a writer lock. Existing pre-effect exact-subject
++    reobservation and writer admission boundaries remain mandatory.
+     """
+     if (
++        not isinstance(repository, str)
++        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*", repository)
++        is None
++    ):
++        raise ReviewObservationError("active writer repository binding is invalid")
++    if (
++        isinstance(current_run_id, bool)
++        or not isinstance(current_run_id, int)
++        or current_run_id < 1
++    ):
++        raise ReviewObservationError("active writer current run binding is invalid")
++    if (
++        not isinstance(writer_names, set)
++        or not writer_names
++        or any(not isinstance(name, str) or not name for name in writer_names)
++    ):
++        raise ReviewObservationError("active writer workflow binding is invalid")
++    if (
+         not isinstance(relevant_heads, set)
+-        or not relevant_heads
++        or not 1 <= len(relevant_heads) <= 2
+         or any(_git_sha1(value) is None for value in relevant_heads)
+     ):
+-        raise ReviewObservationError(
+-            "active writer relevant-head binding is invalid"
+-        )
++        raise ReviewObservationError("active writer relevant-head binding is invalid")
++
+     observed: dict[int, dict[str, Any]] = {}
+-    for status in ACTIVE_WRITER_STATES:
+-        for run in _gh_runs(
+-            f"repos/{repository}/actions/runs?status={status}&per_page=100"
+-        ):
+-            run_id = run.get("id")
++    seen: set[int] = set()
++    for head in sorted(relevant_heads):
++        encoded_head = urllib.parse.quote(head, safe="")
++        for status in ACTIVE_WRITER_STATES:
++            # Filter before applying the cardinality/completeness bound.
++            # Completed historical runs must never consume this page budget.
++            response = _gh_one(
++                f"repos/{repository}/actions/runs?head_sha={encoded_head}"
++                f"&status={status}&per_page=100&page=1"
++            )
++            if not isinstance(response, Mapping):
++                raise ReviewObservationError("active writer workflow-run response is malformed")
++            total = response.get("total_count")
++            raw_runs = response.get("workflow_runs")
+             if (
+-                isinstance(run_id, int)
+-                and run_id != current_run_id
+-                and run.get("name") in writer_names
+-                and run.get("head_sha") in relevant_heads
++                isinstance(total, bool)
++                or not isinstance(total, int)
++                or total < 0
++                or not isinstance(raw_runs, list)
++                or len(raw_runs) > 100
++                or total != len(raw_runs)
+             ):
++                raise ReviewObservationError(
++                    "active writer exact-head workflow-run page is incomplete"
++                    f" (status={status})"
++                )
++            for run in raw_runs:
++                if not isinstance(run, Mapping):
++                    raise ReviewObservationError("active writer workflow run is malformed")
++                if run.get("head_sha") != head:
++                    raise ReviewObservationError(
++                        "active writer workflow run escaped exact-head binding"
++                    )
++                if run.get("status") != status:
++                    raise ReviewObservationError(
++                        "active writer workflow run escaped active-state binding"
++                    )
++                run_id = run.get("id")
++                name = run.get("name")
++                if (
++                    isinstance(run_id, bool)
++                    or not isinstance(run_id, int)
++                    or run_id < 1
++                ):
++                    raise ReviewObservationError("active writer run id is invalid")
++                if not isinstance(name, str) or not name:
++                    raise ReviewObservationError("active writer workflow name is invalid")
++                if run_id in seen:
++                    # A duplicate cannot prove page completeness. Across
++                    # states it also exposes observation-time state drift.
++                    raise ReviewObservationError("active writer duplicate run observation")
++                seen.add(run_id)
++                # Validate all rows before excluding self or non-writers.
++                if run_id == current_run_id or name not in writer_names:
++                    continue
+                 observed[run_id] = {
+                     "id": run_id,
+-                    "name": run.get("name"),
+-                    "status": run.get("status"),
+-                    "head_sha": run.get("head_sha"),
++                    "name": name,
++                    "status": status,
++                    "head_sha": head,
+                     "workflow_id": run.get("workflow_id"),
+                     "path": run.get("path"),
+                     "event": run.get("event"),
+@@ -2879,7 +3309,7 @@ def observe_repository(
+ 
+     threads = _thread_observation(repository, pr_number)
+     discussion = _discussion_observation(repository, pr_number)
+-    runs = _workflow_observation(repository, head)
++    runs = _workflow_observation(repository, head, set(gate_ids.values()))
+     writers = _active_writer_observation(
+         repository,
+         current_run_id,
+diff --git a/tools/qikvrt_requested_review_stale_work_unit_reaper.py b/tools/qikvrt_requested_review_stale_work_unit_reaper.py
+deleted file mode 100644
+index d23046081cf1d130d15e30a9fe06334419953a49..0000000000000000000000000000000000000000
+--- a/tools/qikvrt_requested_review_stale_work_unit_reaper.py
++++ /dev/null
+@@ -1,71 +0,0 @@
+-# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+-# Copyright 2026 Ingolf Lohmann.
+-"""Fail-closed classifier for stale recursive requested-review workflow runs.
+-
+-Only workflow_dispatch children emitted by the requested-review executor are
+-eligible for cancellation. Native pull_request_target observations are never
+-cancelled here: they remain responsible for observing and projecting BASE_DRIFT.
+-"""
+-from __future__ import annotations
+-
+-import re
+-from typing import Any
+-
+-_TITLE = re.compile(
+-    r"^QIKVRT requested review pr=(?P<pr>[1-9][0-9]*) "
+-    r"head=(?P<head>[0-9a-f]{40}) fp=(?P<fingerprint>[0-9a-f]{64})$"
+-)
+-_ACTIVE = {"pending", "queued", "requested", "waiting"}
+-
+-
+-def classify_run(run: dict[str, Any], pr: dict[str, Any], current_main_sha: str) -> dict[str, Any]:
+-    """Return a deterministic cancellation disposition for one queued child."""
+-    result: dict[str, Any] = {
+-        "state": "KEEP",
+-        "cancel": False,
+-        "first_blocker": None,
+-        "next_action": "NOOP",
+-    }
+-    if run.get("event") != "workflow_dispatch" or run.get("status") not in _ACTIVE:
+-        return result
+-
+-    match = _TITLE.fullmatch(str(run.get("display_title") or ""))
+-    if match is None:
+-        return {
+-            **result,
+-            "state": "HOLD_UNVERIFIED",
+-            "first_blocker": "RECURSIVE_WORK_UNIT_TITLE_UNBOUND",
+-            "next_action": "PRESERVE_FAIL_CLOSED_WITHOUT_CANCELLATION",
+-        }
+-
+-    queued_pr = int(match.group("pr"))
+-    queued_head = match.group("head")
+-    live_number = pr.get("number")
+-    live_state = pr.get("state")
+-    live_head = (pr.get("head") or {}).get("sha")
+-    live_base = (pr.get("base") or {}).get("sha")
+-
+-    if live_number != queued_pr:
+-        return {
+-            **result,
+-            "state": "HOLD_UNVERIFIED",
+-            "first_blocker": "RECURSIVE_WORK_UNIT_PR_IDENTITY_MISMATCH",
+-            "next_action": "PRESERVE_FAIL_CLOSED_WITHOUT_CANCELLATION",
+-        }
+-    if live_state != "open" or live_head != queued_head:
+-        return {
+-            **result,
+-            "state": "STALE_WORK_UNIT",
+-            "cancel": True,
+-            "first_blocker": "STALE_HEAD",
+-            "next_action": "CANCEL_STALE_RECURSIVE_TRANSPORT_ONLY",
+-        }
+-    if live_base != current_main_sha:
+-        return {
+-            **result,
+-            "state": "STALE_WORK_UNIT",
+-            "cancel": True,
+-            "first_blocker": "BASE_DRIFT",
+-            "next_action": "HISTORY_PRESERVING_REBIND_TO_CURRENT_MAIN",
+-        }
+-    return result
+diff --git a/tools/qikvrt_required_review_gate.py b/tools/qikvrt_required_review_gate.py
+index d1777ba8b1c1b8d78bbb41d3c2ee99669b37e8dd..613906b7a108ed15c12190b5a6c9a0f5dd59d62f 100644
+--- a/tools/qikvrt_required_review_gate.py
++++ b/tools/qikvrt_required_review_gate.py
+@@ -25,6 +25,12 @@ REQUIRED_NATIVE_STATUS_CHECKS = {
+     ("test", 15368),
+     ("QIKVRT required code-owner review", 15368),
+ }
++REVIEW_OBSERVATION_PAGE_LIMIT = 100
++REVIEW_OBSERVATION_LIMIT_BLOCKER = "REVIEW_OBSERVATION_PAGE_LIMIT_REACHED"
++EXECUTOR_PROJECTION_SCHEMA = "qikvrt_mesh_review_repository_projection_v1"
++EXECUTOR_RECEIPT_ELIGIBILITY_SCHEMA = (
++    "qikvrt_native_account_review_receipt_eligibility_v1"
++)
+ 
+ 
+ class ReviewGateInputError(ValueError):
+@@ -73,6 +79,115 @@ def _selector_sha(value: Any) -> str | None:
+     return value
+ 
+ 
++def bounded_review_observation(reviews: Any) -> dict[str, Any]:
++    """Classify one bounded native review page without guessing its successor.
++
++    The REST review endpoint is read once with its maximum page size.  An exact
++    full page may have a next page, so it is deliberately incomplete rather
++    than silently turning into an unbounded GitHub App read chain.
++    """
++    if not isinstance(reviews, Sequence) or isinstance(reviews, (str, bytes)):
++        raise ReviewGateInputError("bounded review observation is not a list")
++    if not all(isinstance(review, Mapping) for review in reviews):
++        raise ReviewGateInputError("bounded review observation contains a non-object")
++    complete = len(reviews) < REVIEW_OBSERVATION_PAGE_LIMIT
++    return {
++        "schema": "qikvrt_bounded_review_observation_v1",
++        "limit": REVIEW_OBSERVATION_PAGE_LIMIT,
++        "observed_count": len(reviews),
++        "complete": complete,
++        "first_blocker": None if complete else REVIEW_OBSERVATION_LIMIT_BLOCKER,
++        "reviews": [dict(review) for review in reviews],
++    }
++
++
++def _fingerprint(value: Any) -> str | None:
++    if not isinstance(value, str) or len(value) != 64:
++        return None
++    if any(character not in "0123456789abcdef" for character in value):
++        return None
++    return value
++
++
++def executor_receipt_projection_eligibility(
++    receipt: Any,
++    ledger: Any,
++    projection: Any,
++    selection: Any,
++) -> dict[str, Any]:
++    """Bind a planner candidate to its current trusted projection artifact.
++
++    A ledger append alone is insufficient after a strict post-mutation
++    reobservation has produced an explicit projection HOLD.  This helper is
++    intentionally diagnostic and non-throwing: malformed or missing evidence
++    seals the native-account route rather than making it infer an effect.
++    """
++    receipt_value = receipt if isinstance(receipt, Mapping) else {}
++    ledger_value = ledger if isinstance(ledger, Mapping) else {}
++    projection_value = projection if isinstance(projection, Mapping) else {}
++    selection_value = selection if isinstance(selection, Mapping) else {}
++
++    receipt_current = (
++        receipt_value.get("persistence_eligible") is True
++        and ledger_value.get("persisted") is True
++        and ledger_value.get("projection_current") is True
++    )
++    artifact_pr = _positive_pr_number(selection_value.get("artifact_pr_number"))
++    artifact_head = _selector_sha(selection_value.get("artifact_head"))
++    artifact_fingerprint = _fingerprint(
++        selection_value.get("artifact_fingerprint")
++    )
++    receipt_pr = _positive_pr_number(receipt_value.get("pr_number"))
++    receipt_head = _selector_sha(receipt_value.get("head_sha"))
++    receipt_tree = _selector_sha(receipt_value.get("tree_sha"))
++    receipt_fingerprint = _fingerprint(
++        receipt_value.get("evidence_fingerprint")
++    )
++    ledger_commit = _selector_sha(ledger_value.get("ledger_commit"))
++
++    projection_current = (
++        isinstance(projection, Mapping)
++        and projection_value.get("schema") == EXECUTOR_PROJECTION_SCHEMA
++        and projection_value.get("projection_permitted") is True
++        and projection_value.get("mesh_disposition") == receipt_value.get("state")
++        and projection_value.get("first_blocker") is None
++        and artifact_pr is not None
++        and receipt_pr == artifact_pr
++        and artifact_head is not None
++        and receipt_head == artifact_head
++        and receipt_tree is not None
++        and projection_value.get("head_sha") == receipt_head
++        and projection_value.get("tree_sha") == receipt_tree
++        and artifact_fingerprint is not None
++        and receipt_fingerprint == artifact_fingerprint
++        and projection_value.get("evidence_fingerprint") == receipt_fingerprint
++        and ledger_commit is not None
++        and projection_value.get("ledger_commit") == ledger_commit
++    )
++    eligible = receipt_current and projection_current
++    return {
++        "schema": EXECUTOR_RECEIPT_ELIGIBILITY_SCHEMA,
++        "eligible": eligible,
++        "first_blocker": (
++            None
++            if eligible
++            else (
++                "EXECUTOR_RECEIPT_NOT_CURRENT_PERSISTED"
++                if not receipt_current
++                else "EXECUTOR_PROJECTION_NOT_CURRENT"
++            )
++        ),
++        "receipt_current": receipt_current,
++        "projection_present": projection is not None,
++        "projection_permitted": (
++            projection_value.get("projection_permitted")
++            if isinstance(projection, Mapping)
++            else None
++        ),
++        "projection_current": projection_current,
++    }
++
++
+ def _workflow_run_pr_subject(
+     item: Mapping[str, Any], repository: str
+ ) -> tuple[int | None, str | None, str | None]:
+@@ -104,13 +219,60 @@ def _workflow_run_pr_subject(
+     return number, candidate_head, None
+ 
+ 
++def select_required_review_event_target(
++    *,
++    repository: str,
++    event_name: str,
++    event_pr: Any,
++    event_head: Any,
++) -> dict[str, Any]:
++    """Bind one direct native review delivery without workflow-run metadata.
++
++    GitHub's workflow-run API does not reliably retain the pull-request
++    association for ``pull_request_review`` deliveries.  The original native
++    payload already carries the exact PR number and candidate head, so use it
++    only for the two direct review ingress classes and leave all later state to
++    the existing live PR/rules/reviews reobservation.
++    """
++    if not isinstance(repository, str) or repository.count("/") != 1:
++        raise ReviewGateInputError("selector repository is invalid")
++    name = event_name.strip() if isinstance(event_name, str) else ""
++    if name not in {"pull_request_review", "pull_request_review_comment"}:
++        return _selection(
++            "INELIGIBLE_EVENT_TARGET",
++            source="NATIVE_REVIEW_EVENT",
++            first_blocker="UNSUPPORTED_NATIVE_REVIEW_EVENT",
++        )
++    number = _positive_pr_number(event_pr)
++    if number is None:
++        return _selection(
++            "REOBSERVE_EXACT_EVENT_TARGET",
++            source="NATIVE_REVIEW_EVENT",
++            first_blocker="NATIVE_REVIEW_EVENT_PR_MISSING",
++        )
++    head = _selector_sha(event_head.strip()) if isinstance(event_head, str) else None
++    if head is None:
++        return _selection(
++            "REOBSERVE_EXACT_EVENT_TARGET",
++            source="NATIVE_REVIEW_EVENT",
++            first_blocker="NATIVE_REVIEW_EVENT_HEAD_MISSING_OR_INVALID",
++            pr_numbers=[number],
++        )
++    return _selection(
++        "CANDIDATE",
++        source="NATIVE_REVIEW_EVENT",
++        pr_numbers=[number],
++        expected_head=head,
++    )
++
++
+ def select_required_review_targets(
+     *,
+     repository: str,
+-    requested_pr: str,
+     workflow_event: str,
+     workflow_run_head: str,
+     event_prs: Any,
++    requested_pr: str = "",
+ ) -> dict[str, Any]:
+     """Resolve exactly one status subject without a scheduled repository scan."""
+     if not isinstance(repository, str) or repository.count("/") != 1:
+@@ -124,15 +286,10 @@ def select_required_review_targets(
+             workflow_run_head=run_head,
+         )
+     if requested_pr.strip():
+-        number = _positive_pr_number(requested_pr)
+-        if number is None:
+-            return _selection(
+-                "INELIGIBLE_EVENT_TARGET",
+-                source="WORKFLOW_DISPATCH_PR",
+-                first_blocker="INVALID_EXACT_PULL_REQUEST_NUMBER",
+-            )
+         return _selection(
+-            "CANDIDATE", source="WORKFLOW_DISPATCH_PR", pr_numbers=[number]
++            "INELIGIBLE_EVENT_TARGET",
++            source="MANUAL_INPUT_FORBIDDEN",
++            first_blocker="MANUAL_REQUIRED_REVIEW_DISPATCH_FORBIDDEN",
+         )
+ 
+     if workflow_event in {"schedule", "workflow_dispatch"}:
+diff --git a/tools/qikvrt_ruleset_reconcile.py b/tools/qikvrt_ruleset_reconcile.py
+index 98947b7c11c31c2d078db1d08b6128c7ef49d237..5662759a3d6a794532b798e873a7360b267b7b49 100644
+--- a/tools/qikvrt_ruleset_reconcile.py
++++ b/tools/qikvrt_ruleset_reconcile.py
+@@ -10,21 +10,67 @@ import json
+ import os
+ import pathlib
+ import sys
++import time
+ import urllib.error
+ import urllib.request
+ from collections.abc import Mapping, Sequence
+ from typing import Any
+ 
++from tools.qikvrt_effect_attempts import EffectAttemptError, append_attempt
++
+ 
+ ROOT = pathlib.Path(__file__).resolve().parents[1]
+ POLICY_PATH = ROOT / "policy/GITHUB_MAIN_RULESET_V1.json"
+ SCHEMA = "qikvrt_github_main_ruleset_reconciliation_v1"
++DEFAULT_REPOSITORY = "Goldkelch/qik-vrt"
++DEFAULT_RULESET_ID = 19344903
++GITHUB_INSTALLATION_RATE_LIMIT_MARKER = "API rate limit exceeded for installation"
++GITHUB_READ_RATE_LIMIT_BACKOFF_SECONDS = (0, 15, 45)
+ 
+ 
+ class RulesetBlock(RuntimeError):
+     pass
+ 
+ 
++class RulesetAuthorityRequired(RulesetBlock):
++    """The sole class that may request credential-provisioning authority."""
++
++
++class GitHubInstallationRateLimit(RulesetBlock):
++    """A bounded GitHub-App read exhausted the shared installation quota.
++
++    A conditional PUT is deliberately never retried.  If its response is the
++    quota marker, the caller performs one bounded readback and either proves
++    the effect or emits a D0=2 HOLD whose transport state is explicit.
++    """
++
++    def __init__(
++        self,
++        *,
++        mutation: str = "NONE",
++        effect_transport_attempted: bool = False,
++    ) -> None:
++        super().__init__("GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED")
++        self.mutation = mutation
++        self.effect_transport_attempted = effect_transport_attempted
++
++
++class RulesetMutationUncertain(RulesetBlock):
++    """One conditional PUT may have reached GitHub but lacks exact proof.
++
++    A successful client return proves only that the request completed, not
++    that a later readback is available.  Likewise, a transport/API failure
++    while sending a PUT is not a licence to send another one.  Preserve that
++    distinction all the way to the D0=2 receipt.
++    """
++
++    def __init__(self, blocker: str, *, detail: str) -> None:
++        super().__init__(blocker)
++        self.mutation = blocker
++        self.effect_transport_attempted = True
++        self.detail = detail
++
++
+ def canonical_bytes(value: Any) -> bytes:
+     return (
+         json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False)
+@@ -40,9 +86,9 @@ def load_policy(path: pathlib.Path = POLICY_PATH) -> dict[str, Any]:
+     value = json.loads(path.read_text(encoding="utf-8"))
+     if value.get("schema") != "qikvrt_github_main_ruleset_v1":
+         raise RulesetBlock("ruleset policy schema mismatch")
+-    if value.get("repository") != "Goldkelch/qik-vrt":
++    if value.get("repository") != DEFAULT_REPOSITORY:
+         raise RulesetBlock("ruleset policy repository mismatch")
+-    if value.get("ruleset_id") != 19344903:
++    if value.get("ruleset_id") != DEFAULT_RULESET_ID:
+         raise RulesetBlock("ruleset policy id mismatch")
+     return value
+ 
+@@ -128,6 +174,9 @@ def _request(
+     payload: Mapping[str, Any] | None = None,
+     etag: str | None = None,
+ ) -> tuple[dict[str, Any], str | None]:
++    normalized_method = method.upper()
++    if normalized_method not in {"GET", "PUT"}:
++        raise RulesetBlock(f"ruleset API method {method!r} is outside the exact allowlist")
+     headers = {
+         "Accept": "application/vnd.github+json",
+         "Authorization": "Bearer " + token,
+@@ -138,20 +187,105 @@ def _request(
+     data = canonical_bytes(payload) if payload is not None else None
+     if data is not None:
+         headers["Content-Type"] = "application/json"
+-    request = urllib.request.Request(url, data=data, method=method, headers=headers)
++    delays = GITHUB_READ_RATE_LIMIT_BACKOFF_SECONDS if normalized_method == "GET" else (0,)
++    for attempt, delay in enumerate(delays):
++        if delay:
++            time.sleep(delay)
++        request = urllib.request.Request(url, data=data, method=normalized_method, headers=headers)
++        try:
++            with urllib.request.urlopen(request, timeout=30) as response:
++                value = json.load(response)
++                response_etag = response.headers.get("ETag")
++        except urllib.error.HTTPError as exc:
++            detail = exc.read().decode("utf-8", errors="replace")
++            if GITHUB_INSTALLATION_RATE_LIMIT_MARKER in detail:
++                if normalized_method == "GET" and attempt + 1 < len(delays):
++                    continue
++                raise GitHubInstallationRateLimit(
++                    mutation=("PUT_UNCONFIRMED_RATE_LIMIT" if normalized_method == "PUT" else "NONE"),
++                    effect_transport_attempted=(normalized_method == "PUT"),
++                ) from exc
++            raise RulesetBlock(f"GitHub ruleset API HTTP {exc.code}: {detail}") from exc
++        except (urllib.error.URLError, OSError, ValueError) as exc:
++            raise RulesetBlock(
++                f"GitHub ruleset API {normalized_method} transport or response failure: {exc}"
++            ) from exc
++        if not isinstance(value, dict):
++            raise RulesetBlock("GitHub ruleset API returned a non-object")
++        return value, response_etag
++    raise AssertionError("bounded ruleset read retry loop exhausted without a result")
++
++
++def _record_put_intent(
++    ledger: pathlib.Path | None,
++    *,
++    repository: str,
++    ruleset_id: int,
++    pre_state_sha256: str,
++) -> None:
++    """Durably record the one conditional PUT before it can leave the process.
++
++    The process may die between starting ``urlopen`` and writing the ordinary
++    reconciliation receipt.  This intent is therefore written first and is
++    never overwritten.  A later exact readback appends observation evidence.
++    """
++
++    if ledger is None:
++        return
++    try:
++        append_attempt(
++            ledger,
++            {
++                "kind": "ruleset_put",
++                "endpoint_or_subject": f"repos/{repository}/rulesets/{ruleset_id}",
++                "mutation": "PUT",
++                "effect_transport_attempted": True,
++                "transport_outcome": "ATTEMPTED_PENDING_READBACK",
++                "effect_observed": False,
++                "evidence_ref": "ruleset-put-intent:" + pre_state_sha256,
++            },
++        )
++    except (EffectAttemptError, OSError, ValueError) as exc:
++        raise RulesetBlock(f"ruleset PUT intent ledger could not be written: {exc}") from exc
++
++
++def _record_put_observation(
++    ledger: pathlib.Path | None,
++    *,
++    repository: str,
++    ruleset_id: int,
++    put_response: str,
++) -> None:
++    """Append durable proof that the already-attempted PUT became CURRENT."""
++
++    if ledger is None:
++        return
+     try:
+-        with urllib.request.urlopen(request, timeout=30) as response:
+-            value = json.load(response)
+-            response_etag = response.headers.get("ETag")
+-    except urllib.error.HTTPError as exc:
+-        detail = exc.read().decode("utf-8", errors="replace")
+-        raise RulesetBlock(f"GitHub ruleset API HTTP {exc.code}: {detail}") from exc
+-    if not isinstance(value, dict):
+-        raise RulesetBlock("GitHub ruleset API returned a non-object")
+-    return value, response_etag
+-
+-
+-def reconcile(token: str, policy: Mapping[str, Any]) -> dict[str, Any]:
++        append_attempt(
++            ledger,
++            {
++                "kind": "ruleset_put_readback",
++                "endpoint_or_subject": f"repos/{repository}/rulesets/{ruleset_id}",
++                "mutation": "NONE",
++                "effect_transport_attempted": False,
++                "transport_outcome": "OBSERVED_READBACK",
++                "effect_observed": True,
++                "evidence_ref": "ruleset-readback:" + put_response,
++            },
++        )
++    except (EffectAttemptError, OSError, ValueError) as exc:
++        raise RulesetMutationUncertain(
++            "PUT_UNCONFIRMED_LEDGER_WRITE_FAILED",
++            detail=str(exc),
++        ) from exc
++
++
++def reconcile(
++    token: str,
++    policy: Mapping[str, Any],
++    *,
++    effect_attempt_ledger: pathlib.Path | None = None,
++) -> dict[str, Any]:
+     repository = policy["repository"]
+     ruleset_id = policy["ruleset_id"]
+     url = f"https://api.github.com/repos/{repository}/rulesets/{ruleset_id}"
+@@ -166,48 +300,201 @@ def reconcile(token: str, policy: Mapping[str, Any]) -> dict[str, Any]:
+     conditional_etag = reobserved_etag or initial_etag
+     if not conditional_etag:
+         raise RulesetBlock("ruleset response omitted ETag; conditional update unavailable")
+-    _request(
+-        "PUT",
+-        url,
+-        token,
+-        payload=desired_payload(policy),
+-        etag=conditional_etag,
++    _record_put_intent(
++        effect_attempt_ledger,
++        repository=repository,
++        ruleset_id=ruleset_id,
++        pre_state_sha256=plan["pre_state_sha256"],
+     )
+-    observed, _etag = _request("GET", url, token)
+-    final = evaluate(observed, policy)
++    try:
++        _request(
++            "PUT",
++            url,
++            token,
++            payload=desired_payload(policy),
++            etag=conditional_etag,
++        )
++    except GitHubInstallationRateLimit as exc:
++        # The request may have reached GitHub despite its quota response.  Do
++        # not repeat the mutation.  One bounded GET is the only admissible way
++        # to distinguish a proven CURRENT effect from an uncertain transport.
++        if not exc.effect_transport_attempted:
++            raise
++        try:
++            observed, _etag = _request("GET", url, token)
++            final = evaluate(observed, policy)
++        except GitHubInstallationRateLimit as readback_exc:
++            # The final GET uses the bounded 0/15/45 schedule itself.  If it
++            # remains quota-limited, retain the already attempted PUT rather
++            # than accidentally reporting a read-only failure.
++            raise GitHubInstallationRateLimit(
++                mutation="PUT_UNCONFIRMED_RATE_LIMIT",
++                effect_transport_attempted=True,
++            ) from readback_exc
++        except RulesetBlock as readback_exc:
++            raise RulesetMutationUncertain(
++                "PUT_UNCONFIRMED_READBACK_FAILED",
++                detail=str(readback_exc),
++            ) from readback_exc
++        if final["state"] != "CURRENT":
++            raise GitHubInstallationRateLimit(
++                mutation="PUT_UNCONFIRMED_RATE_LIMIT",
++                effect_transport_attempted=True,
++            ) from exc
++        _record_put_observation(
++            effect_attempt_ledger,
++            repository=repository,
++            ruleset_id=ruleset_id,
++            put_response="INSTALLATION_RATE_LIMIT_REOBSERVED_CURRENT",
++        )
++        return {
++            **final,
++            "pre_state_sha256": plan["pre_state_sha256"],
++            "mutation": "PUT",
++            "effect_observed": True,
++            "effect_transport_attempted": True,
++            "put_response": "INSTALLATION_RATE_LIMIT_REOBSERVED_CURRENT",
++        }
++    except RulesetBlock as exc:
++        # A failed PUT response can still leave the server-side state
++        # indeterminate.  It is a one-attempt mutation, never a retry loop.
++        raise RulesetMutationUncertain(
++            "PUT_UNCONFIRMED_TRANSPORT_FAILED",
++            detail=str(exc),
++        ) from exc
++    try:
++        observed, _etag = _request("GET", url, token)
++        final = evaluate(observed, policy)
++    except GitHubInstallationRateLimit as exc:
++        raise GitHubInstallationRateLimit(
++            mutation="PUT_UNCONFIRMED_RATE_LIMIT",
++            effect_transport_attempted=True,
++        ) from exc
++    except RulesetBlock as exc:
++        raise RulesetMutationUncertain(
++            "PUT_UNCONFIRMED_READBACK_FAILED",
++            detail=str(exc),
++        ) from exc
+     if final["state"] != "CURRENT":
+-        raise RulesetBlock("ruleset update was not confirmed by exact readback")
++        raise RulesetMutationUncertain(
++            "PUT_UNCONFIRMED_NOT_CURRENT",
++            detail="ruleset update was not confirmed by exact readback",
++        )
++    _record_put_observation(
++        effect_attempt_ledger,
++        repository=repository,
++        ruleset_id=ruleset_id,
++        put_response="CURRENT",
++    )
+     return {
+         **final,
+         "pre_state_sha256": plan["pre_state_sha256"],
+         "mutation": "PUT",
++        "effect_transport_attempted": True,
+         "effect_observed": True,
+     }
+ 
+ 
++def reobserve(token: str, policy: Mapping[str, Any]) -> dict[str, Any]:
++    """Read and evaluate the exact ruleset without admitting a mutation.
++
++    This is the only recovery operation allowed after a previous conditional
++    PUT may have reached GitHub but its readback was unavailable.  A later
++    carrier may choose an ordinary reconcile only after this isolated
++    observation proves the current server state is still DRIFT.
++    """
++
++    repository = policy["repository"]
++    ruleset_id = policy["ruleset_id"]
++    url = f"https://api.github.com/repos/{repository}/rulesets/{ruleset_id}"
++    observed, _etag = _request("GET", url, token)
++    return evaluate(observed, policy)
++
++
++def authority_override() -> None:
++    """Classify workflow-level App provisioning before an API call is attempted."""
++    state = os.environ.get("QIKVRT_RULESET_AUTHORITY_STATE", "")
++    if not state:
++        return
++    blocker = os.environ.get("QIKVRT_RULESET_AUTHORITY_BLOCKER", "")
++    if not blocker:
++        raise RulesetBlock("ruleset authority override omitted its exact blocker")
++    if state == "REQUEST_AUTHORITY":
++        raise RulesetAuthorityRequired(blocker)
++    if state == "HOLD":
++        raise RulesetBlock(blocker)
++    raise RulesetBlock(f"unknown ruleset authority override state: {state}")
++
++
++def _hold_reason(
++    *,
++    repository: str,
++    ruleset_id: int,
++    blocker: str,
++    detail: str,
++    retry_predicate: str,
++    next_action: str = "REOBSERVE_EXACT_RULESET_API_AND_READBACK_EVIDENCE",
++) -> dict[str, Any]:
++    """Produce the repository-wide D0=2 contract for failed rule observation."""
++
++    return {
++        "reason_code": blocker,
++        "reason": detail,
++        "subject": {
++            "repository": repository,
++            "kind": "repository",
++            "identifier": f"ruleset:{ruleset_id}",
++            "head_sha": None,
++        },
++        "evidence_refs": [f"ruleset:{ruleset_id}", "ruleset-reconcile:api-readback"],
++        "owner": {
++            "role": "EXACT_SUBJECT_OBSERVER",
++            "actor": "qikvrt-autonomous-ruleset-effect-loop",
++        },
++        "retry_condition": {
++            "event": "NONSELF_REPOSITORY_INTERRUPT",
++            "predicate": retry_predicate,
++        },
++        "next_action": next_action,
++        "d0": 2,
++    }
++
++
+ def main(argv: Sequence[str] | None = None) -> int:
+     parser = argparse.ArgumentParser(description=__doc__)
+     parser.add_argument("--snapshot", type=pathlib.Path)
+-    parser.add_argument("--apply", action="store_true")
++    operation = parser.add_mutually_exclusive_group()
++    operation.add_argument("--apply", action="store_true")
++    operation.add_argument("--reobserve", action="store_true")
+     parser.add_argument("--receipt", type=pathlib.Path)
++    parser.add_argument("--effect-attempt-ledger", type=pathlib.Path)
+     args = parser.parse_args(argv)
+-    policy = load_policy()
++    policy: dict[str, Any] | None = None
+     try:
+-        if args.apply:
++        policy = load_policy()
++        if args.apply or args.reobserve:
++            authority_override()
+             token = os.environ.get("QIKVRT_RULESET_ADMIN_TOKEN", "")
+             if not token:
+-                raise RulesetBlock("QIKVRT_RULESET_ADMIN_TOKEN is unavailable")
+-            result = reconcile(token, policy)
++                raise RulesetAuthorityRequired("QIKVRT_RULESET_ADMIN_TOKEN is unavailable")
++            if args.apply:
++                result = reconcile(
++                    token,
++                    policy,
++                    effect_attempt_ledger=args.effect_attempt_ledger,
++                )
++            else:
++                result = reobserve(token, policy)
+         else:
+             if args.snapshot is None:
+-                raise RulesetBlock("--snapshot is required without --apply")
++                raise RulesetBlock("--snapshot is required without --apply or --reobserve")
+             current = json.loads(args.snapshot.read_text(encoding="utf-8"))
+             result = evaluate(_mapping(current, "ruleset snapshot"), policy)
+-    except (OSError, ValueError, json.JSONDecodeError, RulesetBlock) as exc:
++    except RulesetAuthorityRequired as exc:
+         result = {
+             "schema": SCHEMA,
+-            "repository": policy["repository"],
+-            "ruleset_id": policy["ruleset_id"],
++            "repository": (policy or {}).get("repository", DEFAULT_REPOSITORY),
++            "ruleset_id": (policy or {}).get("ruleset_id", DEFAULT_RULESET_ID),
+             "state": "REQUEST_AUTHORITY",
+             "first_blocker": str(exc),
+             "next_action": "ROUTE_RULESET_ADMIN_AUTHORITY_THROUGH_REPOSITORY_CARRIER",
+@@ -216,6 +503,98 @@ def main(argv: Sequence[str] | None = None) -> int:
+             "effect_observed": False,
+         }
+         exit_code = 2
++    except GitHubInstallationRateLimit as exc:
++        repository = (policy or {}).get("repository", DEFAULT_REPOSITORY)
++        ruleset_id = (policy or {}).get("ruleset_id", DEFAULT_RULESET_ID)
++        blocker = "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED"
++        result = {
++            "schema": SCHEMA,
++            "repository": repository,
++            "ruleset_id": ruleset_id,
++            "state": "HOLD",
++            "verification_state": "HOLD_UNVERIFIED",
++            "first_blocker": blocker,
++            "hold_reason": _hold_reason(
++                repository=repository,
++                ruleset_id=ruleset_id,
++                blocker=blocker,
++                detail=(
++                    "GitHub App installation quota remained exhausted after "
++                    "the bounded 0/15/45-second read policy"
++                ),
++                retry_predicate=(
++                    "the exact GitHub App installation quota is no longer exhausted"
++                ),
++            ),
++            "d0": 2,
++            "next_action": "REOBSERVE_EXACT_RULESET_API_AND_READBACK_EVIDENCE",
++            "continuation_required": True,
++            "mutation": exc.mutation,
++            "effect_transport_attempted": exc.effect_transport_attempted,
++            "effect_observed": False,
++        }
++        exit_code = 2
++    except RulesetMutationUncertain as exc:
++        repository = (policy or {}).get("repository", DEFAULT_REPOSITORY)
++        ruleset_id = (policy or {}).get("ruleset_id", DEFAULT_RULESET_ID)
++        blocker = str(exc)
++        result = {
++            "schema": SCHEMA,
++            "repository": repository,
++            "ruleset_id": ruleset_id,
++            "state": "HOLD",
++            "verification_state": "HOLD_UNVERIFIED",
++            "first_blocker": blocker,
++            "hold_reason": _hold_reason(
++                repository=repository,
++                ruleset_id=ruleset_id,
++                blocker=blocker,
++                detail=(
++                    "A single conditional ruleset PUT may have reached GitHub, "
++                    "but exact post-mutation state was not proven: " + exc.detail
++                ),
++                retry_predicate=(
++                    "the exact ruleset state can be reobserved without issuing "
++                    "another mutation"
++                ),
++            ),
++            "d0": 2,
++            "next_action": "REOBSERVE_EXACT_RULESET_API_AND_READBACK_EVIDENCE",
++            "continuation_required": True,
++            "mutation": exc.mutation,
++            "effect_transport_attempted": True,
++            "effect_observed": False,
++        }
++        exit_code = 2
++    except (OSError, ValueError, json.JSONDecodeError, RulesetBlock) as exc:
++        repository = (policy or {}).get("repository", DEFAULT_REPOSITORY)
++        ruleset_id = (policy or {}).get("ruleset_id", DEFAULT_RULESET_ID)
++        blocker = str(exc)
++        result = {
++            "schema": SCHEMA,
++            "repository": repository,
++            "ruleset_id": ruleset_id,
++            "state": "HOLD",
++            "verification_state": "HOLD_UNVERIFIED",
++            "first_blocker": blocker,
++            "hold_reason": _hold_reason(
++                repository=repository,
++                ruleset_id=ruleset_id,
++                blocker=blocker,
++                detail="Exact ruleset reconciliation could not complete before any further effect",
++                retry_predicate=(
++                    "the exact ruleset API, policy, or authority blocker is reobserved "
++                    "as resolved for the same repository"
++                ),
++            ),
++            "d0": 2,
++            "next_action": "REOBSERVE_EXACT_RULESET_API_AND_READBACK_EVIDENCE",
++            "continuation_required": True,
++            "mutation": "NONE",
++            "effect_transport_attempted": False,
++            "effect_observed": False,
++        }
++        exit_code = 2
+     else:
+         exit_code = 0 if result["state"] == "CURRENT" else 10
+     raw = canonical_bytes(result)
+diff --git a/tools/qikvrt_workflow_executor.py b/tools/qikvrt_workflow_executor.py
+index d36eea65a23efd67ad6f1d074e9906f6083cc99c..4e9bc4feea6f03782c768802d34871485ebfc2b1 100644
+--- a/tools/qikvrt_workflow_executor.py
++++ b/tools/qikvrt_workflow_executor.py
+@@ -141,8 +141,10 @@ def _validate_contract_shape(contract: Mapping[str, Any], root: Path) -> None:
+             raise ExecutorBlock(f"contract-required file is absent: {relative_path}")
+     if executor.get("observation_mode") != "REPOSITORY_NATIVE_EXACT_HEAD_BOUND":
+         raise ExecutorBlock("executor observation mode is not exact-head bound")
+-    if executor.get("stateful_writes") != "ACTION_ARTIFACTS_ONLY":
+-        raise ExecutorBlock("executor stateful write boundary is not artifact-only")
++    if executor.get("stateful_writes") != "EXECUTOR_ACTION_ARTIFACTS_ONLY":
++        raise ExecutorBlock("executor stateful write boundary is not executor-artifact-only")
++    if executor.get("repository_writer_inventory") != "dispatch_policy.writer_workflow_names":
++        raise ExecutorBlock("executor does not bind the repository writer inventory")
+     if _string_list(executor.get("single_writer_order"), "executor single writer order") != [
+         "AUTHORITY",
+         "MIRROR",
+@@ -184,6 +186,36 @@ def _validate_contract_shape(contract: Mapping[str, Any], root: Path) -> None:
+         if item.get("external_effect") != "NONE" or item.get("is_writer") is not False:
+             raise ExecutorBlock("authorized workflow exceeds the no-effect observer boundary")
+ 
++    operator_only = _mapping(
++        policy.get("operator_dispatch_only_workflows"), "operator dispatch-only workflows"
++    )
++    if operator_only.get("outside_self_heal_and_gatewatch") is not True:
++        raise ExecutorBlock("operator dispatch-only workflows must remain outside self-heal and gatewatch")
++    _string(operator_only.get("reason"), "operator dispatch-only reason")
++    operator_entries = operator_only.get("workflows")
++    if not isinstance(operator_entries, list) or not operator_entries:
++        raise ExecutorBlock("operator dispatch-only workflows must be a non-empty list")
++    authorized_names = {
++        _string(_mapping(entry, "authorized workflow").get("workflow_name"), "authorized workflow name")
++        for entry in allowed
++    }
++    operator_names: set[str] = set()
++    for entry in operator_entries:
++        item = _mapping(entry, "operator dispatch-only workflow")
++        path = _string(item.get("workflow_path"), "operator dispatch-only workflow path")
++        name = _string(item.get("workflow_name"), "operator dispatch-only workflow name")
++        if not path.startswith(".github/workflows/") or not (root / path).is_file():
++            raise ExecutorBlock("operator dispatch-only workflow path is invalid")
++        if name in operator_names or name in authorized_names:
++            raise ExecutorBlock("operator dispatch-only workflow overlaps an automated target")
++        operator_names.add(name)
++
++    reflexive = _mapping(contract.get("reflexive_deadlock_prevention"), "reflexive deadlock prevention")
++    gatewatch = _mapping(reflexive.get("gatewatch"), "gatewatch")
++    observed = set(_string_list(gatewatch.get("observed_workflow_names"), "gatewatch observed workflows"))
++    if operator_names & observed:
++        raise ExecutorBlock("operator dispatch-only workflow is incorrectly in gatewatch")
++
+     boundaries = _mapping(contract.get("boundaries"), "executor boundaries")
+     if boundaries.get("direct_repository_mutation") != "FORBIDDEN":
+         raise ExecutorBlock("executor permits direct repository mutation")
