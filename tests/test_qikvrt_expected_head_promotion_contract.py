@@ -72,6 +72,19 @@ class ExpectedHeadPromotionContractTests(unittest.TestCase):
         self.assertIn("other.get('base',{}).get('sha')!=current_main", compact)
         self.assertIn("other.get('head',{}).get('sha')==head", compact)
 
+    def test_bootstrap_liveness_gap_is_explicit_and_cannot_hide_behind_green_p2(self) -> None:
+        workflow = PROMOTION_WORKFLOW.read_text(encoding="utf-8")
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))["promotion_executor"]
+        self.assertIn("HEAD1_BASE_CAS_UNAVAILABLE", workflow)
+        self.assertIn("no repository mutation follows", workflow)
+        self.assertIn("REQUEST_HISTORY_PRESERVING_EXACT_BASE_CAS_AUTHORITY", workflow)
+        self.assertFalse(contract["automatic_merge_mutation"])
+        self.assertEqual(
+            contract["merge_binding"],
+            "DISABLED_BECAUSE_GITHUB_PULL_MERGE_SHA_DOES_NOT_BIND_REOBSERVED_BASE_AS_HEAD1",
+        )
+        self.assertNotIn("EFFECT_ACK_DONE=true", workflow)
+
     def test_requested_review_contract_checks_the_actual_verify_invocation(self) -> None:
         invocation = "'tools/qikvrt_requested_review_executor.py','verify'"
         self.assertIn(invocation, PROMOTION_WORKFLOW.read_text(encoding="utf-8"))
