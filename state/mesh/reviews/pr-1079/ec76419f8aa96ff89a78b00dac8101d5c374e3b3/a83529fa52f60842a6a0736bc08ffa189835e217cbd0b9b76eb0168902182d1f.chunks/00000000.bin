@@ -1,0 +1,1700 @@
+diff --git a/.github/workflows/qikvrt_cloud_transputer_materialization_v1.yml b/.github/workflows/qikvrt_cloud_transputer_materialization_v1.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..0f523ea84cf2f1428861f0d92c9b675f1505213b
+--- /dev/null
++++ b/.github/workflows/qikvrt_cloud_transputer_materialization_v1.yml
+@@ -0,0 +1,173 @@
++name: QIKVRT Cloud Transputer materialization v1
++
++on:
++  pull_request:
++    paths:
++      - 'deploy/universal-terminal/**'
++      - 'src/cloud_transputer/**'
++      - 'policy/QIKVRT_CLOUD_TRANSPUTER_V1.json'
++      - 'docs/terminal/QIKVRT_CLOUD_TRANSPUTER_MATERIALIZATION_V1.md'
++      - 'tests/test_qikvrt_cloud_transputer_materialization.py'
++      - '.github/workflows/qikvrt_cloud_transputer_materialization_v1.yml'
++  workflow_dispatch:
++
++permissions:
++  contents: read
++
++concurrency:
++  group: qikvrt-cloud-transputer-materialization-${{ github.event.pull_request.number || github.ref }}
++  cancel-in-progress: false
++
++jobs:
++  build-and-reobserve:
++    runs-on: ubuntu-24.04
++    timeout-minutes: 45
++    env:
++      IMAGE: qikvrt/universal-terminal:${{ github.event.pull_request.head.sha || github.sha }}
++      QIKVRT_UNIVERSAL_TERMINAL_IMAGE: qikvrt/universal-terminal:${{ github.event.pull_request.head.sha || github.sha }}
++      QIKVRT_DB_PASSWORD: ci-only-${{ github.run_id }}-${{ github.run_attempt }}
++      QIKVRT_EVIDENCE_DIR: /tmp/qikvrt-evidence
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
++        with:
++          ref: ${{ github.event.pull_request.head.sha || github.sha }}
++          fetch-depth: 1
++          persist-credentials: false
++      - name: Bind exact checkout
++        shell: bash
++        run: |
++          set -euo pipefail
++          expected='${{ github.event.pull_request.head.sha || github.sha }}'
++          test "$(git rev-parse HEAD)" = "$expected"
++          mkdir -p "$QIKVRT_EVIDENCE_DIR"
++          printf 'HEAD=%s\nTREE=%s\n' "$expected" "$(git rev-parse 'HEAD^{tree}')" | tee "$QIKVRT_EVIDENCE_DIR/subject.txt"
++          git rev-parse HEAD > "$QIKVRT_EVIDENCE_DIR/head.txt"
++          git rev-parse 'HEAD^{tree}' > "$QIKVRT_EVIDENCE_DIR/tree.txt"
++      - name: Validate recovered contract
++        run: python3 -B -m unittest -v tests.test_qikvrt_cloud_transputer_materialization
++      - name: Validate Infrastructure as Code
++        shell: bash
++        run: |
++          set -euo pipefail
++          docker compose -f deploy/universal-terminal/compose.yaml config | tee "$QIKVRT_EVIDENCE_DIR/compose-config.yaml" >/dev/null
++          docker compose -f deploy/universal-terminal/compose.yaml config --format json > "$QIKVRT_EVIDENCE_DIR/compose-config.json"
++          python3 - <<'PY'
++          import json
++          from pathlib import Path
++          cfg = json.loads(Path('/tmp/qikvrt-evidence/compose-config.json').read_text())
++          expected = {
++              'qikvrt-universal-terminal', 'qikvrt-gateway', 'qikvrt-smtpd',
++              'qikvrt-dnsd', 'qikvrt-snmpd', 'qikvrt-sshd', 'qikvrt-sqld',
++              'qikvrt-mirror', 'qikvrt-mc68000'
++          }
++          assert expected <= set(cfg['services'])
++          for name in expected:
++              mounts = cfg['services'][name].get('tmpfs', [])
++              assert mounts, f'{name}: tmpfs missing after compose normalization'
++              for mount in mounts:
++                  assert mount.startswith('/'), f'{name}: split tmpfs option token: {mount!r}'
++                  assert ':' in mount and ',mode=' in mount, f'{name}: unbound tmpfs options: {mount!r}'
++          PY
++      - name: Build exact Cloud Transputer image
++        shell: bash
++        run: |
++          set -euo pipefail
++          docker version > "$QIKVRT_EVIDENCE_DIR/docker-version.txt" 2>&1
++          docker info > "$QIKVRT_EVIDENCE_DIR/docker-info.txt" 2>&1
++          docker build --pull --progress=plain --file deploy/universal-terminal/Dockerfile --tag "$IMAGE" . \
++            2>&1 | tee "$QIKVRT_EVIDENCE_DIR/build.log"
++          docker image inspect "$IMAGE" > "$QIKVRT_EVIDENCE_DIR/image-inspect.json"
++          docker image inspect --format '{{.Id}}' "$IMAGE" | tee "$QIKVRT_EVIDENCE_DIR/image-id.txt"
++          docker image inspect --format '{{json .RepoTags}}' "$IMAGE" > "$QIKVRT_EVIDENCE_DIR/image-tags.json"
++          docker image inspect --format '{{json .RepoDigests}}' "$IMAGE" > "$QIKVRT_EVIDENCE_DIR/image-repodigests.json"
++      - name: Execute MC68000 contract in image
++        shell: bash
++        run: |
++          set -euo pipefail
++          docker run --rm --entrypoint /bin/sh "$IMAGE" -c '
++            set -eu
++            command -v firefox-esr
++            command -v m68k-linux-gnu-gcc
++            command -v qemu-m68k
++            test -s /usr/share/novnc/vnc.html
++            grep -Eq "Machine:[[:space:]]+MC68000" /opt/qikvrt/runtime/m68k/qikvrt-m68k-selftest.readelf.txt
++            (cd /opt/qikvrt/runtime/m68k && sha256sum -c qikvrt-m68k-selftest.sha256 qikvrt_ip_bootstrap.sha256)
++            qemu-m68k /usr/local/bin/qikvrt-m68k-selftest
++          ' | tee "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
++          grep -F "ARCH=MC68000_FAMILY" "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
++          grep -F "D0_BOUNDARY_CODES=0,1,2,3" "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
++          grep -F "D0_COMPOSITION_3=1+2" "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
++          grep -F "NEXT_ORTHOGONAL_WEIGHT=4" "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
++          grep -F "EFFECT_ACK_CODES=0,1,2,3,4" "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
++          grep -F "EFFECT_ACK_REGISTER=D4" "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
++          grep -F "ORDINARY_RELEASE=EFFECT_ACK_DONE_ONLY" "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
++      - name: Start IaC service plane
++        shell: bash
++        run: |
++          set -euo pipefail
++          docker compose -f deploy/universal-terminal/compose.yaml up -d --no-build qikvrt-universal-terminal qikvrt-gateway qikvrt-smtpd qikvrt-dnsd qikvrt-snmpd qikvrt-sshd qikvrt-sqld qikvrt-mc68000
++      - name: Reobserve runtime planes
++        shell: bash
++        run: |
++          set -euo pipefail
++          ready=0
++          for i in $(seq 1 60); do
++            if curl -fsS http://127.0.0.1:8080/qik-vrt/mesh/v1/healthz >/dev/null 2>&1 \
++              && curl -fsS http://127.0.0.1:6080/vnc.html >/dev/null 2>&1 \
++              && nc -z 127.0.0.1 2222 \
++              && nc -z 127.0.0.1 2525 \
++              && nc -z 127.0.0.1 15432; then ready=1; break; fi
++            sleep 2
++          done
++          test "$ready" = 1
++          curl -fsS http://127.0.0.1:8080/qik-vrt/mesh/v1/healthz | tee "$QIKVRT_EVIDENCE_DIR/healthz.txt"
++          curl -fsS http://127.0.0.1:8080/qik-vrt/mesh/v1/ > "$QIKVRT_EVIDENCE_DIR/mesh-root.html"
++          python3 - <<'PY'
++          import socket
++          with socket.create_connection(('127.0.0.1',2222),timeout=5) as s:
++              banner=s.recv(64)
++              assert banner.startswith(b'SSH-2.0-')
++              open('/tmp/qikvrt-evidence/ssh-banner.txt','wb').write(banner)
++          PY
++          test "$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$(docker compose -f deploy/universal-terminal/compose.yaml ps -q qikvrt-universal-terminal)")" = 10.73.0.2
++          test "$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$(docker compose -f deploy/universal-terminal/compose.yaml ps -q qikvrt-sqld)")" = 10.73.0.3
++          test "$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$(docker compose -f deploy/universal-terminal/compose.yaml ps -q qikvrt-mc68000)")" = 10.73.0.6
++          docker compose -f deploy/universal-terminal/compose.yaml ps -a > "$QIKVRT_EVIDENCE_DIR/compose-ps-success.txt"
++      - name: Verify SQL-92 core path
++        shell: bash
++        env:
++          PGPASSWORD: ci-only-${{ github.run_id }}-${{ github.run_attempt }}
++        run: |
++          set -euo pipefail
++          ready=0
++          for i in $(seq 1 45); do
++            if docker compose -f deploy/universal-terminal/compose.yaml exec -T -e PGPASSWORD="$PGPASSWORD" qikvrt-sqld psql -w -h 127.0.0.1 -U qikvrt -d qikvrt -At -c 'SELECT 1' 2>/dev/null | grep -qx 1; then ready=1; break; fi
++            sleep 2
++          done
++          test "$ready" = 1
++          docker compose -f deploy/universal-terminal/compose.yaml exec -T -e PGPASSWORD="$PGPASSWORD" qikvrt-sqld psql -w -h 127.0.0.1 -U qikvrt -d qikvrt -v ON_ERROR_STOP=1 <<'SQL' | tee "$QIKVRT_EVIDENCE_DIR/sql92-core.txt"
++          BEGIN;
++          CREATE TABLE qikvrt_probe (id INTEGER NOT NULL PRIMARY KEY, value VARCHAR(32));
++          INSERT INTO qikvrt_probe VALUES (1, 'mesh');
++          SELECT value FROM qikvrt_probe WHERE id = 1;
++          ROLLBACK;
++          SQL
++      - name: Preserve diagnostics
++        if: always()
++        shell: bash
++        run: |
++          mkdir -p "$QIKVRT_EVIDENCE_DIR"
++          docker compose -f deploy/universal-terminal/compose.yaml ps -a > "$QIKVRT_EVIDENCE_DIR/compose-ps.txt" 2>&1 || true
++          docker compose -f deploy/universal-terminal/compose.yaml logs --no-color --tail 400 > "$QIKVRT_EVIDENCE_DIR/service.log" 2>&1 || true
++          git rev-parse HEAD > "$QIKVRT_EVIDENCE_DIR/head.txt"
++          git rev-parse 'HEAD^{tree}' > "$QIKVRT_EVIDENCE_DIR/tree.txt"
++          (cd "$QIKVRT_EVIDENCE_DIR" && sha256sum * > SHA256SUMS.txt) || true
++      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
++        if: always()
++        with:
++          name: qikvrt-cloud-transputer-${{ github.run_id }}
++          path: /tmp/qikvrt-evidence
++          retention-days: 30
++      - name: Teardown
++        if: always()
++        run: docker compose -f deploy/universal-terminal/compose.yaml down -v --remove-orphans || true
+diff --git a/.github/workflows/qikvrt_pr_integrity_projection.yml b/.github/workflows/qikvrt_pr_integrity_projection.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..ec55fc1d3b8c2404b5460297f3610584038671cc
+--- /dev/null
++++ b/.github/workflows/qikvrt_pr_integrity_projection.yml
+@@ -0,0 +1,56 @@
++name: QIKVRT PR integrity projection
++
++on:
++  push:
++    branches:
++      - feature/cloud-transputer-materialization-v1-b4b0038
++  pull_request:
++    branches:
++      - main
++    types:
++      - opened
++      - synchronize
++      - reopened
++
++permissions:
++  contents: read
++
++concurrency:
++  group: qikvrt-pr-integrity-projection-${{ github.event.pull_request.number || github.ref_name }}
++  cancel-in-progress: false
++
++jobs:
++  project:
++    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
++    runs-on: ubuntu-24.04
++    timeout-minutes: 20
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
++        with:
++          ref: ${{ github.event.pull_request.head.sha || github.sha }}
++          fetch-depth: 2
++          persist-credentials: false
++      - name: Bind exact subject
++        shell: bash
++        env:
++          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
++        run: |
++          set -euo pipefail
++          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
++          printf 'HEAD=%s\nTREE=%s\n' "$EXPECTED_HEAD" "$(git rev-parse 'HEAD^{tree}')"
++      - name: Generate and verify deterministic integrity projection
++        shell: bash
++        run: |
++          set -euo pipefail
++          python3 tools/qikvrt_integrity.py generate
++          python3 tools/qikvrt_integrity.py verify
++      - name: Preserve exact projection
++        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
++        with:
++          name: qikvrt-integrity-projection-${{ github.event.pull_request.head.sha || github.sha }}
++          path: |
++            REPOSITORY_FILE_MANIFEST.json
++            REPOSITORY_FILE_MANIFEST.json.sha256
++            SHA256SUMS.txt
++          if-no-files-found: error
++          retention-days: 7
+diff --git a/deploy/universal-terminal/Dockerfile b/deploy/universal-terminal/Dockerfile
+index 589c96ccd01447641fc478606fc18d4a41ff71bb..2e7249c2e3516b7cfcf7007682bc9ca19c6c38c9 100644
+--- a/deploy/universal-terminal/Dockerfile
++++ b/deploy/universal-terminal/Dockerfile
+@@ -1,41 +1,70 @@
+-FROM debian:bookworm-slim
+-
+-ENV DEBIAN_FRONTEND=noninteractive \
+-    DISPLAY=:99 \
+-    QIKVRT_HTTP_PORT=8771 \
+-    QIKVRT_NOVNC_PORT=6080 \
+-    QIKVRT_START_URL=https://arxiv.org/ \
+-    QIKVRT_PROFILE_DIR=/var/lib/qikvrt/profile \
+-    QIKVRT_STATE_DIR=/var/lib/qikvrt/state \
+-    QIKVRT_RUNTIME_ID=qikvrt-firefox-terminal
+-
++FROM debian:bookworm-slim AS qikvrt-m68k-builder
++ENV DEBIAN_FRONTEND=noninteractive
+ RUN apt-get update && apt-get install -y --no-install-recommends \
+-      ca-certificates firefox-esr python3 python3-minimal git zip \
+-      xvfb x11vnc novnc websockify dbus-x11 procps curl \
++      binutils-m68k-linux-gnu gcc libc6-dev gcc-m68k-linux-gnu libc6-dev-m68k-cross \
+     && rm -rf /var/lib/apt/lists/*
++WORKDIR /src
++COPY deploy/universal-terminal/qikvrt_ip_bootstrap.c /src/qikvrt_ip_bootstrap.c
++COPY src/cloud_transputer/m68k_contract_probe.c /src/m68k_contract_probe.c
++RUN set -eux; \
++    mkdir -p /out/m68k; \
++    gcc -std=c90 -pedantic-errors -Wall -Wextra -Werror -O2 /src/qikvrt_ip_bootstrap.c -o /out/qikvrt-ip-bootstrap; \
++    m68k-linux-gnu-gcc -m68000 -std=c90 -pedantic-errors -Wall -Wextra -Werror -O2 -c /src/qikvrt_ip_bootstrap.c -o /out/m68k/qikvrt_ip_bootstrap.o; \
++    m68k-linux-gnu-gcc -m68000 -static -std=c90 -pedantic-errors -Wall -Wextra -Werror -O2 /src/m68k_contract_probe.c -o /out/qikvrt-m68k-selftest; \
++    m68k-linux-gnu-readelf -h /out/qikvrt-m68k-selftest > /out/m68k/qikvrt-m68k-selftest.readelf.txt; \
++    m68k-linux-gnu-objdump -dr /out/qikvrt-m68k-selftest > /out/m68k/qikvrt-m68k-selftest.objdump.txt; \
++    m68k-linux-gnu-readelf -h /out/m68k/qikvrt_ip_bootstrap.o > /out/m68k/qikvrt_ip_bootstrap.readelf.txt; \
++    sha256sum /out/qikvrt-m68k-selftest | awk '{print $1 "  /usr/local/bin/qikvrt-m68k-selftest"}' > /out/m68k/qikvrt-m68k-selftest.sha256; \
++    (cd /out/m68k && sha256sum qikvrt_ip_bootstrap.o > qikvrt_ip_bootstrap.sha256)
+ 
++FROM debian:bookworm-slim
++ENV DEBIAN_FRONTEND=noninteractive DISPLAY=:99 \
++    QIKVRT_HTTP_HOST=127.0.0.1 QIKVRT_HTTP_PORT=8771 QIKVRT_NOVNC_PORT=6080 \
++    QIKVRT_START_URL=http://qikvrt-gateway:8080/qik-vrt/mesh/v1/ \
++    QIKVRT_PROFILE_DIR=/var/lib/qikvrt/profile QIKVRT_STATE_DIR=/var/lib/qikvrt/state \
++    QIKVRT_RUNTIME_ID=qikvrt-firefox-terminal QIKVRT_SERVICE_MODE=terminal \
++    QIKVRT_MC68000_CC=m68k-linux-gnu-gcc QIKVRT_MC68000_RUNNER=qemu-m68k
++RUN apt-get update && apt-get install -y --no-install-recommends \
++      bind9 binutils-m68k-linux-gnu ca-certificates curl dbus-x11 dnsutils firefox-esr git \
++      gcc-m68k-linux-gnu libc6-dev-m68k-cross make nginx-light novnc openssh-server \
++      postgresql postgresql-client procps python3 python3-minimal qemu-user snmp snmpd \
++      util-linux websockify x11-utils x11vnc xvfb zip \
++    && test -s /usr/share/novnc/vnc.html && test -s /usr/share/novnc/core/rfb.js \
++    && command -v m68k-linux-gnu-gcc && command -v qemu-m68k \
++    && rm -rf /var/lib/apt/lists/*
+ WORKDIR /opt/qikvrt
+ COPY . /opt/qikvrt
+-
++COPY --from=qikvrt-m68k-builder /out/qikvrt-ip-bootstrap /usr/local/bin/qikvrt-ip-bootstrap
++COPY --from=qikvrt-m68k-builder /out/qikvrt-m68k-selftest /usr/local/bin/qikvrt-m68k-selftest
++COPY --from=qikvrt-m68k-builder /out/m68k /opt/qikvrt/runtime/m68k
+ RUN mkdir -p /opt/qikvrt/runtime/bootstrap-profile/extensions /opt/qikvrt/runtime/logs \
+-    /var/lib/qikvrt/profile /var/lib/qikvrt/state \
+-    && cd browser/firefox/qikvrt-terminal \
+-    && zip -qr /opt/qikvrt/runtime/bootstrap-profile/extensions/qikvrt-ai-terminal@goldkelch.local.xpi . \
+-    && printf '%s\n' \
+-      'user_pref("browser.shell.checkDefaultBrowser", false);' \
+-      'user_pref("browser.startup.homepage", "https://arxiv.org/");' \
++    /var/lib/qikvrt/profile /var/lib/qikvrt/state /var/lib/qikvrt/smtp /var/lib/qikvrt/ssh \
++    /var/lib/qikvrt/postgres /var/lib/qikvrt/mirror /var/lib/qikvrt/personal-posix \
++    && (cd browser/firefox/qikvrt-terminal && zip -qr /opt/qikvrt/runtime/bootstrap-profile/extensions/qikvrt-ai-terminal@goldkelch.local.xpi .) \
++    && printf '%s\n' 'user_pref("browser.shell.checkDefaultBrowser", false);' \
++      'user_pref("browser.startup.homepage", "http://qikvrt-gateway:8080/qik-vrt/mesh/v1/");' \
+       'user_pref("toolkit.telemetry.reportingpolicy.firstRun", false);' \
+       'user_pref("datareporting.policy.dataSubmissionEnabled", false);' \
+       'user_pref("browser.sessionstore.resume_from_crash", true);' \
+       > /opt/qikvrt/runtime/bootstrap-profile/user.js
+-
+ COPY deploy/universal-terminal/entrypoint.sh /usr/local/bin/qikvrt-universal-terminal
++COPY deploy/universal-terminal/cloud-entrypoint.sh /usr/local/bin/qikvrt-cloud-terminal
+ COPY deploy/universal-terminal/runtime-health.sh /usr/local/bin/qikvrt-runtime-health
+-RUN chmod +x /usr/local/bin/qikvrt-universal-terminal /usr/local/bin/qikvrt-runtime-health
+-
+-VOLUME ["/var/lib/qikvrt/profile", "/var/lib/qikvrt/state"]
+-EXPOSE 6080
+-HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=6 \
+-  CMD ["/usr/local/bin/qikvrt-runtime-health"]
+-
+-ENTRYPOINT ["/usr/local/bin/qikvrt-universal-terminal"]
++COPY deploy/universal-terminal/service-entrypoint.sh /usr/local/bin/qikvrt-service-entrypoint
++COPY deploy/universal-terminal/mirror-bootstrap.sh /usr/local/bin/qikvrt-mirror-bootstrap
++COPY deploy/universal-terminal/qikvrt_smtpd.py /usr/local/bin/qikvrt-smtpd
++RUN chmod +x /usr/local/bin/qikvrt-* \
++    && python3 - <<'PY'
++import json
++p=json.load(open('/opt/qikvrt/policy/QIKVRT_CLOUD_TRANSPUTER_V1.json'))
++assert p['architecture']=='MC68000'
++assert p['boundary_contract']['decision_codes']=={'NOOP':0,'HOLD':1,'REOBSERVE':2,'REQUEST_AUTHORITY':3}
++assert p['boundary_contract']['binary_weights']==[1,2,4]
++assert p['effect_ack_protocol']['state_codes']=={'EFFECT_NACK':0,'EFFECT_ACK_CONTINUE':1,'EFFECT_ACK_ISOLATE':2,'EFFECT_ACK_BLOCK':3,'EFFECT_ACK_DONE':4}
++assert p['effect_ack_protocol']['register']=='D4'
++assert p['overlay_model']['banks']==4
++assert p['ip_bootstrap']['subnet']=='10.73.0.0/24'
++PY
++EXPOSE 6080 8080 8771 2222 2525 5353 9418 1161 5432 7331/udp
++HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=6 CMD ["/usr/local/bin/qikvrt-runtime-health"]
++ENTRYPOINT ["/usr/local/bin/qikvrt-service-entrypoint"]
+diff --git a/deploy/universal-terminal/cloud-entrypoint.sh b/deploy/universal-terminal/cloud-entrypoint.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..3221caff1312c4a800f1f8b3332722c2500b8ba5
+--- /dev/null
++++ b/deploy/universal-terminal/cloud-entrypoint.sh
+@@ -0,0 +1,78 @@
++#!/bin/sh
++set -eu
++
++PIDS=""
++cleanup() {
++  for pid in $PIDS; do
++    kill "$pid" 2>/dev/null || true
++  done
++  for pid in $PIDS; do
++    wait "$pid" 2>/dev/null || true
++  done
++}
++trap cleanup EXIT
++trap 'exit 143' TERM
++trap 'exit 130' INT
++
++# A public cloud carrier is one container: keep the Effect-Ack reference
++# backend and noVNC on loopback-facing process ports and expose only nginx
++# on :8080. Firefox opens the canonical Mesh origin in this same namespace.
++export QIKVRT_HTTP_HOST=127.0.0.1
++export QIKVRT_START_URL="${QIKVRT_CLOUD_START_URL:-http://127.0.0.1:8080/qik-vrt/mesh/v1/}"
++
++/usr/local/bin/qikvrt-universal-terminal &
++TERMINAL_PID=$!
++PIDS="$PIDS $TERMINAL_PID"
++
++# nginx runs as Debian's unprivileged nobody account. Materialize every
++# writable path as that account; do not add CAP_CHOWN or other capabilities.
++runuser -u nobody -- mkdir -p \
++  /tmp/nginx-client-body \
++  /tmp/nginx-proxy \
++  /tmp/nginx-fastcgi \
++  /tmp/nginx-uwsgi \
++  /tmp/nginx-scgi
++runuser -u nobody -- nginx \
++  -c /opt/qikvrt/deploy/universal-terminal/nginx.conf \
++  -g 'daemon off;' &
++GATEWAY_PID=$!
++PIDS="$PIDS $GATEWAY_PID"
++
++# Bounded startup contract: both children must stay alive and the canonical
++# HTTP surface plus terminal health must become readable before READY.
++attempt=0
++while :; do
++  kill -0 "$TERMINAL_PID" 2>/dev/null || {
++    echo "BLOCK: cloud terminal child exited during startup" >&2
++    exit 1
++  }
++  kill -0 "$GATEWAY_PID" 2>/dev/null || {
++    echo "BLOCK: cloud gateway child exited during startup" >&2
++    exit 1
++  }
++  if /usr/local/bin/qikvrt-runtime-health >/dev/null 2>&1 \
++    && curl -fsS http://127.0.0.1:8080/qik-vrt/mesh/v1/healthz >/dev/null \
++    && curl -fsS http://127.0.0.1:8080/qik-vrt/mesh/v1/ >/dev/null; then
++    break
++  fi
++  attempt=$((attempt + 1))
++  if [ "$attempt" -ge 60 ]; then
++    echo "BLOCK: cloud Mesh surface did not become ready" >&2
++    exit 1
++  fi
++  sleep 1
++done
++
++printf '%s\n' "QIKVRT cloud universal terminal ready: mesh=0.0.0.0:8080/qik-vrt/mesh/v1/"
++
++while :; do
++  kill -0 "$TERMINAL_PID" 2>/dev/null || {
++    echo "BLOCK: cloud terminal child exited" >&2
++    exit 1
++  }
++  kill -0 "$GATEWAY_PID" 2>/dev/null || {
++    echo "BLOCK: cloud gateway child exited" >&2
++    exit 1
++  }
++  sleep 1
++done
+diff --git a/deploy/universal-terminal/compose.yaml b/deploy/universal-terminal/compose.yaml
+index 94e1630d758b577a3e945b40f263babf59470f8b..f807391adabc9046fa37ba847f572acbd1709e46 100644
+--- a/deploy/universal-terminal/compose.yaml
++++ b/deploy/universal-terminal/compose.yaml
+@@ -1,40 +1,154 @@
+ services:
+   qikvrt-universal-terminal:
+     build:
+-      context: ../..
++      context: ${QIKVRT_REPOSITORY_CONTEXT:-../..}
+       dockerfile: deploy/universal-terminal/Dockerfile
+-    image: qikvrt/universal-terminal:${QIKVRT_IMAGE_TAG:-trusted-main}
++    image: ${QIKVRT_UNIVERSAL_TERMINAL_IMAGE:-qikvrt/universal-terminal:local}
+     restart: unless-stopped
++    environment:
++      QIKVRT_SERVICE_MODE: terminal
++      QIKVRT_HTTP_HOST: 127.0.0.1
++      QIKVRT_START_URL: ${QIKVRT_START_URL:-http://qikvrt-gateway:8080/qik-vrt/mesh/v1/}
+     ports:
+       - "127.0.0.1:${QIKVRT_NOVNC_HOST_PORT:-6080}:6080"
+-    environment:
+-      QIKVRT_START_URL: "${QIKVRT_START_URL:-https://arxiv.org/}"
+-      QIKVRT_NOVNC_PORT: "6080"
+-      QIKVRT_HTTP_PORT: "8771"
+-      QIKVRT_RUNTIME_ID: "${QIKVRT_RUNTIME_ID:-qikvrt-firefox-terminal}"
+-      QIKVRT_PROFILE_DIR: /var/lib/qikvrt/profile
+-      QIKVRT_STATE_DIR: /var/lib/qikvrt/state
+-      QIKVRT_VNC_PASSWORD_FILE: "${QIKVRT_VNC_PASSWORD_FILE:-}"
+-    volumes:
+-      - qikvrt_firefox_profile:/var/lib/qikvrt/profile
+-      - qikvrt_runtime_state:/var/lib/qikvrt/state
+-    security_opt:
+-      - no-new-privileges:true
+-    cap_drop:
+-      - ALL
++      - "127.0.0.1:${QIKVRT_MESH_HOST_PORT:-8080}:8080"
++    networks:
++      qikvrt_mesh:
++        ipv4_address: 10.73.0.2
++        aliases: [qikvrt-gateway]
+     read_only: true
++    cap_drop: [ALL]
++    security_opt: [no-new-privileges:true]
+     tmpfs:
+-      - /tmp
+-      - /run
+-      - /opt/qikvrt/runtime:size=256m,mode=1777
+-    shm_size: 512m
+-    healthcheck:
+-      test: ["CMD", "/usr/local/bin/qikvrt-runtime-health"]
+-      interval: 10s
+-      timeout: 5s
+-      start_period: 20s
+-      retries: 6
++      - /tmp:size=128m,mode=1777
++      - /run:size=32m,mode=755
++      - /opt/qikvrt/runtime/logs:size=64m,mode=755
++    volumes:
++      - qikvrt_profile:/var/lib/qikvrt/profile
++      - qikvrt_state:/var/lib/qikvrt/state
++      - qikvrt_personal_posix:/var/lib/qikvrt/personal-posix
++    shm_size: 256m
++
++  qikvrt-gateway:
++    image: ${QIKVRT_UNIVERSAL_TERMINAL_IMAGE:-qikvrt/universal-terminal:local}
++    environment: {QIKVRT_SERVICE_MODE: gateway}
++    network_mode: service:qikvrt-universal-terminal
++    user: "65534:65534"
++    depends_on: [qikvrt-universal-terminal]
++    read_only: true
++    cap_drop: [ALL]
++    security_opt: [no-new-privileges:true]
++    tmpfs: ["/tmp:size=32m,mode=1777", "/run:size=16m,mode=755"]
++    healthcheck: {disable: true}
++
++  qikvrt-smtpd:
++    image: ${QIKVRT_UNIVERSAL_TERMINAL_IMAGE:-qikvrt/universal-terminal:local}
++    environment: {QIKVRT_SERVICE_MODE: smtpd}
++    ports: ["127.0.0.1:${QIKVRT_SMTP_HOST_PORT:-2525}:2525"]
++    networks: {qikvrt_mesh: {ipv4_address: 10.73.0.7}}
++    read_only: true
++    cap_drop: [ALL]
++    security_opt: [no-new-privileges:true]
++    tmpfs: ["/tmp:size=16m,mode=1777", "/run:size=8m,mode=755"]
++    volumes: [qikvrt_smtp:/var/lib/qikvrt/smtp]
++    healthcheck: {disable: true}
++
++  qikvrt-snmpd:
++    image: ${QIKVRT_UNIVERSAL_TERMINAL_IMAGE:-qikvrt/universal-terminal:local}
++    environment: {QIKVRT_SERVICE_MODE: snmpd}
++    ports: ["127.0.0.1:${QIKVRT_SNMP_HOST_PORT:-1161}:1161/udp"]
++    networks: {qikvrt_mesh: {ipv4_address: 10.73.0.9}}
++    read_only: true
++    cap_drop: [ALL]
++    security_opt: [no-new-privileges:true]
++    tmpfs: ["/tmp:size=16m,mode=1777", "/run:size=8m,mode=755"]
++    healthcheck: {disable: true}
++
++  qikvrt-dnsd:
++    image: ${QIKVRT_UNIVERSAL_TERMINAL_IMAGE:-qikvrt/universal-terminal:local}
++    environment: {QIKVRT_SERVICE_MODE: dnsd, QIKVRT_DNS_PORT: "5353"}
++    ports:
++      - "127.0.0.1:${QIKVRT_DNS_HOST_PORT:-5353}:5353/udp"
++      - "127.0.0.1:${QIKVRT_DNS_HOST_PORT:-5353}:5353/tcp"
++    networks: {qikvrt_mesh: {ipv4_address: 10.73.0.8}}
++    read_only: true
++    cap_drop: [ALL]
++    security_opt: [no-new-privileges:true]
++    tmpfs: ["/tmp:size=16m,mode=1777", "/run:size=8m,mode=755"]
++    healthcheck: {disable: true}
++
++  qikvrt-sshd:
++    image: ${QIKVRT_UNIVERSAL_TERMINAL_IMAGE:-qikvrt/universal-terminal:local}
++    environment:
++      QIKVRT_SERVICE_MODE: sshd
++      QIKVRT_SSH_AUTHORIZED_KEYS: ${QIKVRT_SSH_AUTHORIZED_KEYS:-}
++    ports: ["127.0.0.1:${QIKVRT_SSH_HOST_PORT:-2222}:2222"]
++    networks: {qikvrt_mesh: {ipv4_address: 10.73.0.10}}
++    read_only: true
++    cap_drop: [ALL]
++    cap_add: [CHOWN, DAC_OVERRIDE, SETGID, SETUID]
++    security_opt: [no-new-privileges:true]
++    tmpfs: ["/tmp:size=16m,mode=1777", "/run:size=16m,mode=755"]
++    volumes: [qikvrt_ssh:/var/lib/qikvrt/ssh]
++    healthcheck: {disable: true}
++
++  qikvrt-sqld:
++    image: ${QIKVRT_UNIVERSAL_TERMINAL_IMAGE:-qikvrt/universal-terminal:local}
++    environment:
++      QIKVRT_SERVICE_MODE: sqld
++      QIKVRT_DB_PASSWORD: ${QIKVRT_DB_PASSWORD:-}
++    ports: ["127.0.0.1:${QIKVRT_SQL_HOST_PORT:-15432}:5432"]
++    networks: {qikvrt_mesh: {ipv4_address: 10.73.0.3}}
++    read_only: true
++    cap_drop: [ALL]
++    cap_add: [CHOWN, DAC_OVERRIDE, SETGID, SETUID]
++    security_opt: [no-new-privileges:true]
++    tmpfs: ["/tmp:size=32m,mode=1777", "/run:size=16m,mode=755"]
++    volumes: [qikvrt_postgres:/var/lib/qikvrt/postgres]
++    healthcheck: {disable: true}
++
++  qikvrt-mirror:
++    image: ${QIKVRT_UNIVERSAL_TERMINAL_IMAGE:-qikvrt/universal-terminal:local}
++    environment:
++      QIKVRT_SERVICE_MODE: mirror
++      QIKVRT_AUTHORITY_URL: ${QIKVRT_AUTHORITY_URL:-https://github.com/Goldkelch/qik-vrt.git}
++      QIKVRT_MIRROR_URL: ${QIKVRT_MIRROR_URL:-https://github.com/ingolf-lohmann/qik-vrt.git}
++    ports: ["127.0.0.1:${QIKVRT_GIT_HOST_PORT:-19418}:9418"]
++    networks: {qikvrt_mesh: {ipv4_address: 10.73.0.4}}
++    read_only: true
++    cap_drop: [ALL]
++    security_opt: [no-new-privileges:true]
++    tmpfs: ["/tmp:size=64m,mode=1777", "/run:size=8m,mode=755"]
++    volumes: [qikvrt_mirror:/var/lib/qikvrt/mirror]
++    healthcheck: {disable: true}
++
++  qikvrt-mc68000:
++    image: ${QIKVRT_UNIVERSAL_TERMINAL_IMAGE:-qikvrt/universal-terminal:local}
++    environment:
++      QIKVRT_SERVICE_MODE: m68k
++      QIKVRT_BOOTSTRAP_SERVER_IP: 10.73.0.1
++      QIKVRT_BOOTSTRAP_CLIENT_IP: 10.73.0.6
++      QIKVRT_BOOTSTRAP_PORT: "7331"
++    networks: {qikvrt_mesh: {ipv4_address: 10.73.0.6}}
++    read_only: true
++    cap_drop: [ALL]
++    security_opt: [no-new-privileges:true]
++    tmpfs: ["/tmp:size=32m,mode=1777", "/run:size=8m,mode=755"]
++    volumes: [qikvrt_personal_posix:/var/lib/qikvrt/personal-posix]
++    healthcheck: {disable: true}
++
++networks:
++  qikvrt_mesh:
++    ipam:
++      config:
++        - subnet: 10.73.0.0/24
++          gateway: 10.73.0.1
+ 
+ volumes:
+-  qikvrt_firefox_profile:
+-  qikvrt_runtime_state:
++  qikvrt_profile:
++  qikvrt_state:
++  qikvrt_personal_posix:
++  qikvrt_smtp:
++  qikvrt_ssh:
++  qikvrt_postgres:
++  qikvrt_mirror:
+diff --git a/deploy/universal-terminal/db.qik-vrt.mesh b/deploy/universal-terminal/db.qik-vrt.mesh
+new file mode 100644
+index 0000000000000000000000000000000000000000..1411d7f9ab41a18fd28b1209683ac9a1e232066f
+--- /dev/null
++++ b/deploy/universal-terminal/db.qik-vrt.mesh
+@@ -0,0 +1,13 @@
++$TTL 60
++@ IN SOA ns.qik-vrt.mesh. hostmaster.qik-vrt.mesh. (
++  2026090701 60 60 300 60
++)
++  IN NS ns.qik-vrt.mesh.
++ns        IN A 127.0.0.1
++mesh      IN A 127.0.0.1
++terminal  IN A 127.0.0.1
++sql       IN A 127.0.0.1
++smtp      IN A 127.0.0.1
++snmp      IN A 127.0.0.1
++ssh       IN A 127.0.0.1
++mirror    IN A 127.0.0.1
+diff --git a/deploy/universal-terminal/entrypoint.sh b/deploy/universal-terminal/entrypoint.sh
+index 81349289f955b60c63019c5094dc16ba33ceb655..364b888556e0f0698a961ac109ab6d8e69fc26b9 100755
+--- a/deploy/universal-terminal/entrypoint.sh
++++ b/deploy/universal-terminal/entrypoint.sh
+@@ -4,12 +4,39 @@ set -eu
+ PROFILE_DIR="${QIKVRT_PROFILE_DIR:-/var/lib/qikvrt/profile}"
+ STATE_DIR="${QIKVRT_STATE_DIR:-/var/lib/qikvrt/state}"
+ RUNTIME_ID="${QIKVRT_RUNTIME_ID:-qikvrt-firefox-terminal}"
++HTTP_HOST="${QIKVRT_HTTP_HOST:-127.0.0.1}"
+ HTTP_PORT="${QIKVRT_HTTP_PORT:-8771}"
+ NOVNC_PORT="${QIKVRT_NOVNC_PORT:-6080}"
+ DISPLAY_VALUE="${DISPLAY:-:99}"
+-START_URL="${QIKVRT_START_URL:-https://arxiv.org/}"
++START_URL="${QIKVRT_START_URL:-http://qikvrt-gateway:8080/qik-vrt/mesh/v1/}"
+ 
+-mkdir -p /opt/qikvrt/runtime/logs "$PROFILE_DIR" "$STATE_DIR"
++# Firefox initializes its profile registry under HOME even with --profile.
++# Keep that registry and XDG state off the read-only container root.
++HOME="${STATE_DIR}/home"
++XDG_CACHE_HOME="${STATE_DIR}/cache"
++XDG_CONFIG_HOME="${HOME}/.config"
++export HOME XDG_CACHE_HOME XDG_CONFIG_HOME
++mkdir -p /opt/qikvrt/runtime/logs "$PROFILE_DIR" "$STATE_DIR" \
++  "$HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME"
++
++PIDS=""
++cleanup() {
++  # Only PIDs collected from our own children, never a pattern-based kill.
++  for pid in $PIDS; do kill "$pid" 2>/dev/null || true; done
++}
++diagnostics() {
++  for log in /opt/qikvrt/runtime/logs/*.log; do
++    [ -f "$log" ] || continue
++    printf '\n--- %s ---\n' "$log" >&2
++    tail -n 80 "$log" >&2
++  done
++}
++trap cleanup EXIT
++trap 'exit 143' TERM
++trap 'exit 130' INT
++
++test -s /usr/share/novnc/vnc.html
++test -s /usr/share/novnc/core/rfb.js
+ 
+ if [ ! -f "$PROFILE_DIR/.qikvrt-profile-initialized" ]; then
+   cp -a /opt/qikvrt/runtime/bootstrap-profile/. "$PROFILE_DIR/"
+@@ -17,15 +44,27 @@ if [ ! -f "$PROFILE_DIR/.qikvrt-profile-initialized" ]; then
+ fi
+ 
+ python3 -B /opt/qikvrt/src/qikvrt_effect_ack_http_terminal.py \
+-  --host 127.0.0.1 --port "$HTTP_PORT" \
++  --host "$HTTP_HOST" --port "$HTTP_PORT" \
+   > /opt/qikvrt/runtime/logs/effect-ack-http.log 2>&1 &
+ HTTP_PID=$!
++PIDS="$PIDS ${HTTP_PID}"
+ 
+ Xvfb "$DISPLAY_VALUE" -screen 0 1440x900x24 -nolisten tcp \
+   > /opt/qikvrt/runtime/logs/xvfb.log 2>&1 &
+ XVFB_PID=$!
++PIDS="$PIDS ${XVFB_PID}"
+ 
+-sleep 1
++# A bounded readiness check, not a timing assumption about Xvfb startup.
++attempt=0
++until xdpyinfo -display "$DISPLAY_VALUE" >/dev/null 2>&1; do
++  attempt=$((attempt + 1))
++  if ! kill -0 "$XVFB_PID" 2>/dev/null || [ "$attempt" -ge 30 ]; then
++    diagnostics
++    echo "BLOCK: X display did not become ready" >&2
++    exit 1
++  fi
++  sleep 1
++done
+ VNC_ARGS="-display $DISPLAY_VALUE -forever -shared -localhost -rfbport 5900"
+ if [ -n "${QIKVRT_VNC_PASSWORD_FILE:-}" ]; then
+   test -r "$QIKVRT_VNC_PASSWORD_FILE"
+@@ -39,29 +78,35 @@ fi
+ # shellcheck disable=SC2086
+ x11vnc $VNC_ARGS > /opt/qikvrt/runtime/logs/x11vnc.log 2>&1 &
+ VNC_PID=$!
++PIDS="$PIDS ${VNC_PID}"
+ 
+ websockify --web=/usr/share/novnc/ "$NOVNC_PORT" localhost:5900 \
+   > /opt/qikvrt/runtime/logs/novnc.log 2>&1 &
+ NOVNC_PID=$!
++PIDS="$PIDS ${NOVNC_PID}"
+ 
+ firefox-esr --no-remote --profile "$PROFILE_DIR" "$START_URL" \
+   > /opt/qikvrt/runtime/logs/firefox.log 2>&1 &
+ FIREFOX_PID=$!
++PIDS="$PIDS ${FIREFOX_PID}"
+ 
+-python3 -B - "$STATE_DIR/runtime.json" "$RUNTIME_ID" "$PROFILE_DIR" "$START_URL" "$NOVNC_PORT" <<'PY'
++python3 -B - "$STATE_DIR/runtime.json" "$RUNTIME_ID" "$PROFILE_DIR" "$START_URL" "$NOVNC_PORT" "$HTTP_HOST" "$HTTP_PORT" <<'PY'
+ import json,sys,time
+-path,runtime_id,profile,start_url,novnc_port=sys.argv[1:]
++path,runtime_id,profile,start_url,novnc_port,http_host,http_port=sys.argv[1:]
+ obj={
+-  'schema':'qikvrt_universal_terminal_runtime_state_v1',
++  'schema':'qikvrt_universal_terminal_runtime_state_v2',
+   'runtime_id':runtime_id,
+   'browser':'firefox-esr',
+   'profile_dir':profile,
+   'profile_persistent':True,
+   'start_url':start_url,
+   'novnc_port':int(novnc_port),
++  'effect_ack_host':http_host,
++  'effect_ack_port':int(http_port),
++  'mesh_path':'/qik-vrt/mesh/v1/',
+   'started_at_unix':int(time.time()),
+   'authenticated_session_storage':'FIREFOX_PROFILE',
+-  'adapter':'QIKVRT_FIREFOX_TERMINAL_PROXY_V1',
++  'adapter':'QIKVRT_FIREFOX_TERMINAL_PROXY_V2',
+   'external_effect_claimed':False,
+   'pass':False,
+   'final_pass':False,
+@@ -70,15 +115,33 @@ obj={
+ open(path,'w',encoding='utf-8').write(json.dumps(obj,indent=2,sort_keys=True)+'\n')
+ PY
+ 
+-cleanup() {
+-  kill "$FIREFOX_PID" "$NOVNC_PID" "$VNC_PID" "$XVFB_PID" "$HTTP_PID" 2>/dev/null || true
+-}
+-trap cleanup INT TERM EXIT
++attempt=0
++until /usr/local/bin/qikvrt-runtime-health >/dev/null 2>&1; do
++  attempt=$((attempt + 1))
++  for pid in $PIDS; do
++    if ! kill -0 "$pid" 2>/dev/null; then
++      diagnostics
++      echo "BLOCK: required terminal child exited during startup" >&2
++      exit 1
++    fi
++  done
++  if [ "$attempt" -ge 30 ]; then
++    diagnostics
++    echo "BLOCK: terminal health contract did not become ready" >&2
++    exit 1
++  fi
++  sleep 1
++done
+ 
+-printf '%s\n' "QIKVRT universal terminal ready: runtime=${RUNTIME_ID} noVNC=0.0.0.0:${NOVNC_PORT} effect_ack=127.0.0.1:${HTTP_PORT} profile=${PROFILE_DIR}"
++printf '%s\n' "QIKVRT universal terminal ready: runtime=${RUNTIME_ID} noVNC=0.0.0.0:${NOVNC_PORT} effect_ack=${HTTP_HOST}:${HTTP_PORT} profile=${PROFILE_DIR}"
+ 
+-while kill -0 "$HTTP_PID" 2>/dev/null && kill -0 "$FIREFOX_PID" 2>/dev/null && kill -0 "$NOVNC_PID" 2>/dev/null; do
++while :; do
++  for pid in $PIDS; do
++    if ! kill -0 "$pid" 2>/dev/null; then
++      diagnostics
++      echo "BLOCK: required terminal child exited" >&2
++      exit 1
++    fi
++  done
+   sleep 1
+ done
+-
+-exit 1
+diff --git a/deploy/universal-terminal/mesh-index.html b/deploy/universal-terminal/mesh-index.html
+new file mode 100644
+index 0000000000000000000000000000000000000000..e7c98c684914557245b6f0ca47597d563942b86c
+--- /dev/null
++++ b/deploy/universal-terminal/mesh-index.html
+@@ -0,0 +1,25 @@
++<!doctype html>
++<html lang="en">
++<head>
++  <meta charset="utf-8">
++  <meta name="viewport" content="width=device-width,initial-scale=1">
++  <title>QIK-VRT Mesh Universal Terminal</title>
++  <style>
++    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 70rem; }
++    code { background: #eee; padding: .15rem .35rem; }
++    li { margin: .6rem 0; }
++  </style>
++</head>
++<body>
++  <h1>QIK-VRT Mesh Universal Terminal</h1>
++  <p>Canonical local Mesh URL: <code>/qik-vrt/mesh/v1/</code></p>
++  <ul>
++    <li><a href="./terminal/vnc.html?autoconnect=true&resize=scale">Firefox / noVNC terminal</a></li>
++    <li><a href="./effect-ack/.well-known/effect-ack">Effect-Ack capability</a></li>
++    <li><a href="./effect-ack/terminal/state">Effect-Ack terminal state</a></li>
++    <li><a href="./healthz">Mesh proxy health</a></li>
++  </ul>
++  <p>This surface is a repository-bound runtime adapter. It does not itself assert publication,
++  deployment, empirical confirmation, PASS, FINAL_PASS, or EFFECT_ACK_DONE.</p>
++</body>
++</html>
+diff --git a/deploy/universal-terminal/mirror-bootstrap.sh b/deploy/universal-terminal/mirror-bootstrap.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..1a778891a805825bb82d7e475c97d9b02c3e6a6e
+--- /dev/null
++++ b/deploy/universal-terminal/mirror-bootstrap.sh
+@@ -0,0 +1,57 @@
++#!/bin/sh
++set -eu
++
++AUTHORITY_URL="${QIKVRT_AUTHORITY_URL:-https://github.com/Goldkelch/qik-vrt.git}"
++MIRROR_URL="${QIKVRT_MIRROR_URL:-https://github.com/ingolf-lohmann/qik-vrt.git}"
++ROOT="${QIKVRT_MIRROR_STATE_DIR:-/var/lib/qikvrt/mirror}"
++REPO="${ROOT}/qik-vrt.git"
++STATE="${ROOT}/mirror-state.json"
++
++mkdir -p "$ROOT"
++
++if [ ! -d "$REPO/objects" ]; then
++  git clone --mirror "$AUTHORITY_URL" "$REPO"
++else
++  git --git-dir="$REPO" remote set-url origin "$AUTHORITY_URL"
++  git --git-dir="$REPO" fetch --prune origin \
++    '+refs/heads/*:refs/heads/*' \
++    '+refs/tags/*:refs/tags/*'
++fi
++
++if git --git-dir="$REPO" remote get-url mirror >/dev/null 2>&1; then
++  git --git-dir="$REPO" remote set-url mirror "$MIRROR_URL"
++else
++  git --git-dir="$REPO" remote add mirror "$MIRROR_URL"
++fi
++
++AUTHORITY_HEAD="$(git --git-dir="$REPO" rev-parse refs/heads/main)"
++AUTHORITY_TREE="$(git --git-dir="$REPO" rev-parse "${AUTHORITY_HEAD}^{tree}")"
++MIRROR_HEAD="$(git ls-remote "$MIRROR_URL" refs/heads/main | awk 'NR==1 {print $1}')"
++
++python3 -B - "$STATE" "$AUTHORITY_URL" "$MIRROR_URL" "$AUTHORITY_HEAD" "$AUTHORITY_TREE" "$MIRROR_HEAD" <<'PY'
++import json,sys,time
++path,authority_url,mirror_url,authority_head,authority_tree,mirror_head=sys.argv[1:]
++obj={
++  "schema":"qikvrt_authority_connected_runtime_mirror_v1",
++  "authority_url":authority_url,
++  "mirror_url":mirror_url,
++  "authority_main_head":authority_head,
++  "authority_main_tree":authority_tree,
++  "observed_mirror_main_head":mirror_head or None,
++  "synchronized":bool(mirror_head) and mirror_head == authority_head,
++  "mutation_performed":False,
++  "served_protocol":"git",
++  "served_port":9418,
++  "observed_at_unix":int(time.time()),
++}
++open(path,"w",encoding="utf-8").write(json.dumps(obj,indent=2,sort_keys=True)+"\n")
++PY
++
++exec git daemon \
++  --reuseaddr \
++  --export-all \
++  --verbose \
++  --base-path="$ROOT" \
++  --listen=0.0.0.0 \
++  --port=9418 \
++  "$ROOT"
+diff --git a/deploy/universal-terminal/named.conf b/deploy/universal-terminal/named.conf
+new file mode 100644
+index 0000000000000000000000000000000000000000..17b250ab096a70c188913d9368e0493c6ffd0b87
+--- /dev/null
++++ b/deploy/universal-terminal/named.conf
+@@ -0,0 +1,16 @@
++options {
++  directory "/tmp";
++  pid-file "/run/named.pid";
++  session-keyfile "/run/session.key";
++  listen-on port 5353 { any; };
++  listen-on-v6 { none; };
++  recursion no;
++  allow-query { any; };
++  minimal-responses yes;
++};
++
++zone "qik-vrt.mesh" IN {
++  type master;
++  file "/opt/qikvrt/deploy/universal-terminal/db.qik-vrt.mesh";
++  allow-update { none; };
++};
+diff --git a/deploy/universal-terminal/nginx.conf b/deploy/universal-terminal/nginx.conf
+new file mode 100644
+index 0000000000000000000000000000000000000000..4954343ba0f2613d377a0e54d1a33b1ed9b86f4c
+--- /dev/null
++++ b/deploy/universal-terminal/nginx.conf
+@@ -0,0 +1,62 @@
++# The gateway container itself runs as explicit uid/gid 65534 and keeps all
++# Linux capabilities dropped. Keep every writable nginx path on its tmpfs.
++master_process off;
++worker_processes 1;
++pid /tmp/nginx.pid;
++error_log /dev/stderr info;
++
++events {
++  worker_connections 256;
++}
++
++http {
++  include /etc/nginx/mime.types;
++  default_type application/octet-stream;
++  access_log /dev/stdout;
++  sendfile on;
++  client_body_temp_path /tmp/nginx-client-body;
++  proxy_temp_path /tmp/nginx-proxy;
++  fastcgi_temp_path /tmp/nginx-fastcgi;
++  uwsgi_temp_path /tmp/nginx-uwsgi;
++  scgi_temp_path /tmp/nginx-scgi;
++
++  map $http_upgrade $connection_upgrade {
++    default upgrade;
++    '' close;
++  }
++
++  server {
++    listen 8080;
++    server_name _;
++
++    location = /qik-vrt/mesh/v1/ {
++      root /opt/qikvrt/deploy/universal-terminal;
++      try_files /mesh-index.html =404;
++      add_header Cache-Control "no-store" always;
++    }
++
++    location = /qik-vrt/mesh/v1/healthz {
++      default_type application/json;
++      return 200 '{"schema":"qikvrt_mesh_proxy_health_v1","state":"READY","external_effect":"NONE"}';
++    }
++
++    location /qik-vrt/mesh/v1/terminal/ {
++      proxy_pass http://127.0.0.1:6080/;
++      proxy_http_version 1.1;
++      proxy_set_header Upgrade $http_upgrade;
++      proxy_set_header Connection $connection_upgrade;
++      proxy_set_header Host $host;
++      proxy_read_timeout 3600s;
++      proxy_send_timeout 3600s;
++    }
++
++    location /qik-vrt/mesh/v1/effect-ack/ {
++      proxy_pass http://127.0.0.1:8771/;
++      proxy_http_version 1.1;
++      proxy_set_header Host $host;
++      proxy_set_header X-Forwarded-Proto $scheme;
++      proxy_set_header X-QIKVRT-Mesh-Path /qik-vrt/mesh/v1/;
++      proxy_buffering off;
++    }
++  }
++}
+diff --git a/deploy/universal-terminal/qikvrt_ip_bootstrap.c b/deploy/universal-terminal/qikvrt_ip_bootstrap.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..06a952c1e61ce94d1b569d6171b1853e37dc30dc
+--- /dev/null
++++ b/deploy/universal-terminal/qikvrt_ip_bootstrap.c
+@@ -0,0 +1,153 @@
++/*
++ * QIK-VRT IP bootstrap probe.
++ *
++ * Strict ISO C90 source plus POSIX/BSD socket interfaces.  The same source is
++ * compiled natively for runtime smoke tests and as an -m68000 ELF object.
++ * The M68000 object proves code generation for the CPU target; it is not a
++ * claim that Debian glibc or this container itself runs on a physical MC68000.
++ */
++#include <errno.h>
++#include <netdb.h>
++#include <netinet/in.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <sys/socket.h>
++#include <sys/types.h>
++#include <unistd.h>
++
++#define QIKVRT_BUF 8192
++#define QIKVRT_REQ 2048
++
++static int write_all(int fd, const char *buf, size_t len)
++{
++    size_t done;
++    ssize_t rc;
++
++    done = 0U;
++    while (done < len) {
++        rc = write(fd, buf + done, len - done);
++        if (rc < 0) {
++            if (errno == EINTR) {
++                continue;
++            }
++            return -1;
++        }
++        if (rc == 0) {
++            return -1;
++        }
++        done += (size_t)rc;
++    }
++    return 0;
++}
++
++int main(int argc, char **argv)
++{
++    const char *host;
++    const char *path;
++    long port_long;
++    int port;
++    struct hostent *hostent_value;
++    struct sockaddr_in address;
++    int fd;
++    char request[QIKVRT_REQ];
++    char buffer[QIKVRT_BUF + 1];
++    int request_len;
++    ssize_t count;
++    size_t used;
++    int saw_200;
++
++    if (argc != 4) {
++        fprintf(stderr, "usage: %s HOST PORT PATH\n", argv[0]);
++        return 64;
++    }
++
++    host = argv[1];
++    path = argv[3];
++    port_long = strtol(argv[2], (char **)0, 10);
++    if (port_long < 1L || port_long > 65535L) {
++        fprintf(stderr, "invalid TCP port\n");
++        return 64;
++    }
++    port = (int)port_long;
++    if (strlen(host) > 512U || strlen(path) > 1024U || path[0] != '/') {
++        fprintf(stderr, "host/path outside bounded bootstrap contract\n");
++        return 64;
++    }
++
++    hostent_value = gethostbyname(host);
++    if (hostent_value == (struct hostent *)0 ||
++        hostent_value->h_addrtype != AF_INET ||
++        hostent_value->h_length != (int)sizeof(address.sin_addr)) {
++        fprintf(stderr, "IPv4 resolution failed for %s\n", host);
++        return 69;
++    }
++
++    memset(&address, 0, sizeof(address));
++    address.sin_family = AF_INET;
++    address.sin_port = htons((unsigned short)port);
++    memcpy(&address.sin_addr, hostent_value->h_addr_list[0], sizeof(address.sin_addr));
++
++    fd = socket(AF_INET, SOCK_STREAM, 0);
++    if (fd < 0) {
++        perror("socket");
++        return 71;
++    }
++    if (connect(fd, (struct sockaddr *)&address, sizeof(address)) != 0) {
++        perror("connect");
++        close(fd);
++        return 69;
++    }
++
++    request_len = sprintf(
++        request,
++        "GET %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: qikvrt-ip-bootstrap/1\r\nConnection: close\r\n\r\n",
++        path,
++        host
++    );
++    if (request_len < 0 || (size_t)request_len >= sizeof(request)) {
++        close(fd);
++        return 70;
++    }
++    if (write_all(fd, request, (size_t)request_len) != 0) {
++        perror("write");
++        close(fd);
++        return 74;
++    }
++
++    used = 0U;
++    saw_200 = 0;
++    while (used < QIKVRT_BUF) {
++        count = read(fd, buffer + used, QIKVRT_BUF - used);
++        if (count < 0) {
++            if (errno == EINTR) {
++                continue;
++            }
++            perror("read");
++            close(fd);
++            return 74;
++        }
++        if (count == 0) {
++            break;
++        }
++        used += (size_t)count;
++        if (used >= 12U) {
++            buffer[used] = '\0';
++            if (strstr(buffer, "HTTP/1.0 200") != (char *)0 ||
++                strstr(buffer, "HTTP/1.1 200") != (char *)0) {
++                saw_200 = 1;
++            }
++        }
++    }
++    close(fd);
++
++    buffer[used] = '\0';
++    if (!saw_200) {
++        fprintf(stderr, "bootstrap endpoint did not return HTTP 200\n");
++        return 69;
++    }
++
++    printf("QIKVRT_IP_BOOTSTRAP_OK host=%s port=%d path=%s bytes=%lu\n",
++           host, port, path, (unsigned long)used);
++    return 0;
++}
+diff --git a/deploy/universal-terminal/qikvrt_smtpd.py b/deploy/universal-terminal/qikvrt_smtpd.py
+new file mode 100755
+index 0000000000000000000000000000000000000000..454606e89d09f845ed7470b9aed764dfb1ba884e
+--- /dev/null
++++ b/deploy/universal-terminal/qikvrt_smtpd.py
+@@ -0,0 +1,118 @@
++#!/usr/bin/env python3
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++import os
++import socketserver
++import time
++
++MAX_MESSAGE_BYTES = 1024 * 1024
++
++
++class SMTPHandler(socketserver.StreamRequestHandler):
++    def send_line(self, value: str) -> None:
++        self.wfile.write(value.encode("ascii") + b"\r\n")
++        self.wfile.flush()
++
++    def handle(self) -> None:
++        self.send_line("220 qik-vrt.mesh QIKVRT SMTP sink ready")
++        mail_from = None
++        rcpt_to: list[str] = []
++        while True:
++            raw = self.rfile.readline(8192)
++            if not raw:
++                return
++            line = raw.decode("utf-8", "replace").rstrip("\r\n")
++            upper = line.upper()
++            if upper.startswith("EHLO ") or upper.startswith("HELO "):
++                self.send_line("250-qik-vrt.mesh")
++                self.send_line("250 SIZE 1048576")
++            elif upper.startswith("MAIL FROM:"):
++                mail_from = line[10:].strip()
++                rcpt_to = []
++                self.send_line("250 2.1.0 sender accepted")
++            elif upper.startswith("RCPT TO:"):
++                if mail_from is None:
++                    self.send_line("503 5.5.1 MAIL required")
++                else:
++                    rcpt_to.append(line[8:].strip())
++                    self.send_line("250 2.1.5 recipient accepted")
++            elif upper == "DATA":
++                if mail_from is None or not rcpt_to:
++                    self.send_line("503 5.5.1 MAIL and RCPT required")
++                    continue
++                self.send_line("354 end with <CRLF>.<CRLF>")
++                chunks: list[bytes] = []
++                size = 0
++                while True:
++                    data = self.rfile.readline(8192)
++                    if not data:
++                        return
++                    if data in (b".\n", b".\r\n"):
++                        break
++                    if data.startswith(b".."):
++                        data = data[1:]
++                    size += len(data)
++                    if size > MAX_MESSAGE_BYTES:
++                        self.send_line("552 5.3.4 message too large")
++                        return
++                    chunks.append(data)
++                payload = b"".join(chunks)
++                digest = hashlib.sha256(payload).hexdigest()
++                stamp = "%d-%s" % (int(time.time()), digest)
++                data_path = os.path.join(self.server.spool, stamp + ".eml")
++                meta_path = os.path.join(self.server.spool, stamp + ".json")
++                with open(data_path, "wb") as stream:
++                    stream.write(payload)
++                meta = {
++                    "schema": "qikvrt_smtp_sink_receipt_v1",
++                    "mail_from": mail_from,
++                    "rcpt_to": rcpt_to,
++                    "sha256": digest,
++                    "bytes": len(payload),
++                    "relay_performed": False,
++                }
++                with open(meta_path, "w", encoding="utf-8") as stream:
++                    json.dump(meta, stream, indent=2, sort_keys=True)
++                    stream.write("\n")
++                self.send_line("250 2.0.0 queued " + digest)
++                mail_from = None
++                rcpt_to = []
++            elif upper == "RSET":
++                mail_from = None
++                rcpt_to = []
++                self.send_line("250 2.0.0 reset")
++            elif upper == "NOOP":
++                self.send_line("250 2.0.0 ok")
++            elif upper == "QUIT":
++                self.send_line("221 2.0.0 bye")
++                return
++            else:
++                self.send_line("502 5.5.1 command not implemented")
++
++
++class SMTPServer(socketserver.ThreadingTCPServer):
++    allow_reuse_address = True
++    daemon_threads = True
++
++    def __init__(self, address: tuple[str, int], spool: str) -> None:
++        super().__init__(address, SMTPHandler)
++        self.spool = spool
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--host", default="0.0.0.0")
++    parser.add_argument("--port", type=int, default=2525)
++    parser.add_argument("--spool", required=True)
++    args = parser.parse_args()
++    os.makedirs(args.spool, exist_ok=True)
++    with SMTPServer((args.host, args.port), args.spool) as server:
++        server.serve_forever()
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/deploy/universal-terminal/runtime-health.sh b/deploy/universal-terminal/runtime-health.sh
+index e735fba9ef6f154e940f3de410f8e002fba31828..68e4cf8e3aa6bab385994bb06cca1d18ab078477 100755
+--- a/deploy/universal-terminal/runtime-health.sh
++++ b/deploy/universal-terminal/runtime-health.sh
+@@ -5,17 +5,26 @@ HTTP_PORT="${QIKVRT_HTTP_PORT:-8771}"
+ NOVNC_PORT="${QIKVRT_NOVNC_PORT:-6080}"
+ STATE_DIR="${QIKVRT_STATE_DIR:-/var/lib/qikvrt/state}"
+ 
+-curl -fsS "http://127.0.0.1:${HTTP_PORT}/.well-known/effect-ack" >/dev/null
++curl --max-time 2 -fsS "http://127.0.0.1:${HTTP_PORT}/.well-known/effect-ack" >/dev/null
+ pgrep -af 'firefox|firefox-esr' >/dev/null
+-curl -fsS "http://127.0.0.1:${NOVNC_PORT}/vnc.html" >/dev/null
++# A profile error dialog is also a live Firefox process, but not a browser.
++# Require its real X11 Navigator window; CI separately drives and reads it.
++xwininfo -display "${DISPLAY:-:99}" -root -tree \
++  | grep -E '"Navigator" "firefox(-esr)?"' >/dev/null
++curl --max-time 2 -fsS "http://127.0.0.1:${NOVNC_PORT}/vnc.html" >/dev/null
+ test -f "${STATE_DIR}/runtime.json"
+ python3 -B - "${STATE_DIR}/runtime.json" <<'PY'
+ import json,sys
+ p=sys.argv[1]
+ obj=json.load(open(p,encoding='utf-8'))
+-assert obj['schema']=='qikvrt_universal_terminal_runtime_state_v1'
++assert obj['schema']=='qikvrt_universal_terminal_runtime_state_v2'
+ assert obj['runtime_id']
+ assert obj['profile_persistent'] is True
+ assert obj['browser']=='firefox-esr'
+ assert obj['external_effect_claimed'] is False
++assert obj['effect_ack_host'] in {'127.0.0.1', 'localhost'}
++assert obj['mesh_path']=='/qik-vrt/mesh/v1/'
++assert obj['pass'] is False
++assert obj['final_pass'] is False
++assert obj['effect_ack_done'] is False
+ PY
+diff --git a/deploy/universal-terminal/service-entrypoint.sh b/deploy/universal-terminal/service-entrypoint.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..df5695695c3a6662d65cb944283ee4a113dc4e95
+--- /dev/null
++++ b/deploy/universal-terminal/service-entrypoint.sh
+@@ -0,0 +1,72 @@
++#!/bin/sh
++set -eu
++mode="${QIKVRT_SERVICE_MODE:-terminal}"
++if [ "$#" -gt 0 ]; then exec "$@"; fi
++case "$mode" in
++  cloud) exec /usr/local/bin/qikvrt-cloud-terminal ;;
++  terminal) exec /usr/local/bin/qikvrt-universal-terminal ;;
++  gateway)
++    mkdir -p /tmp/nginx-client-body /tmp/nginx-proxy /tmp/nginx-fastcgi /tmp/nginx-uwsgi /tmp/nginx-scgi
++    exec nginx -c /opt/qikvrt/deploy/universal-terminal/nginx.conf -g 'daemon off;'
++    ;;
++  smtpd)
++    mkdir -p "${QIKVRT_SMTP_SPOOL:-/var/lib/qikvrt/smtp}"
++    exec /usr/local/bin/qikvrt-smtpd --host 0.0.0.0 --port "${QIKVRT_SMTP_PORT:-2525}" --spool "${QIKVRT_SMTP_SPOOL:-/var/lib/qikvrt/smtp}"
++    ;;
++  snmpd)
++    mkdir -p /tmp/qikvrt-snmp
++    export SNMP_PERSISTENT_DIR=/tmp/qikvrt-snmp
++    exec /usr/sbin/snmpd -f -Lo -C -c /opt/qikvrt/deploy/universal-terminal/snmpd.conf
++    ;;
++  dnsd)
++    exec /usr/sbin/named -g -c /opt/qikvrt/deploy/universal-terminal/named.conf -p "${QIKVRT_DNS_PORT:-5353}"
++    ;;
++  sshd)
++    SSH_STATE="${QIKVRT_SSH_STATE_DIR:-/var/lib/qikvrt/ssh}"
++    mkdir -p "$SSH_STATE" /run/sshd
++    if [ ! -f "$SSH_STATE/ssh_host_ed25519_key" ]; then ssh-keygen -q -t ed25519 -N '' -f "$SSH_STATE/ssh_host_ed25519_key"; fi
++    if [ -n "${QIKVRT_SSH_AUTHORIZED_KEYS:-}" ]; then
++      umask 077; printf '%s\n' "$QIKVRT_SSH_AUTHORIZED_KEYS" > "$SSH_STATE/authorized_keys"
++    elif [ ! -f "$SSH_STATE/authorized_keys" ]; then
++      : > "$SSH_STATE/authorized_keys"; chmod 600 "$SSH_STATE/authorized_keys"
++    fi
++    exec /usr/sbin/sshd -D -e -f /opt/qikvrt/deploy/universal-terminal/sshd_config
++    ;;
++  sqld)
++    DB_PASSWORD="${QIKVRT_DB_PASSWORD:-}"
++    [ -n "$DB_PASSWORD" ] || { echo 'QIKVRT_DB_PASSWORD is required for sqld' >&2; exit 64; }
++    PG_MAJOR="$(ls -1 /usr/lib/postgresql | sort -V | tail -1)"
++    PG_BIN="/usr/lib/postgresql/${PG_MAJOR}/bin"
++    PGDATA="${QIKVRT_PGDATA:-/var/lib/qikvrt/postgres}"
++    mkdir -p "$PGDATA"; chown -R postgres:postgres "$PGDATA"; install -d -m 700 -o postgres -g postgres /run/postgresql
++    cleanup_sql() { rm -f /run/qikvrt-db.pass; runuser -u postgres -- "$PG_BIN/pg_ctl" -D "$PGDATA" -m fast -w -t 30 stop >/dev/null 2>&1 || true; }
++    trap cleanup_sql EXIT; trap 'exit 143' TERM; trap 'exit 130' INT
++    if [ ! -s "$PGDATA/PG_VERSION" ]; then
++      umask 077; printf '%s\n' "$DB_PASSWORD" > /run/qikvrt-db.pass; chown postgres:postgres /run/qikvrt-db.pass
++      runuser -u postgres -- "$PG_BIN/initdb" -D "$PGDATA" --username=qikvrt --pwfile=/run/qikvrt-db.pass --auth-local=scram-sha-256 --auth-host=scram-sha-256 --encoding=UTF8
++      rm -f /run/qikvrt-db.pass
++      { printf "%s\n" "listen_addresses='0.0.0.0'"; printf "%s\n" "port=5432"; printf "%s\n" "password_encryption='scram-sha-256'"; } >> "$PGDATA/postgresql.conf"
++      printf '%s\n' 'host all all 0.0.0.0/0 scram-sha-256' >> "$PGDATA/pg_hba.conf"
++    fi
++    export PGPASSWORD="$DB_PASSWORD"
++    runuser -u postgres -- "$PG_BIN/pg_ctl" -D "$PGDATA" -o "-c listen_addresses='' -c unix_socket_directories=/run/postgresql" -l "$PGDATA/bootstrap.log" -w -t 30 start
++    exists="$(runuser -u postgres -- "$PG_BIN/psql" -X -w -h /run/postgresql -U qikvrt -d postgres -At -v ON_ERROR_STOP=1 -c "SELECT 1 FROM pg_database WHERE datname = 'qikvrt'")"
++    [ "$exists" = 1 ] || runuser -u postgres -- "$PG_BIN/createdb" -w -h /run/postgresql -U qikvrt qikvrt
++    runuser -u postgres -- "$PG_BIN/pg_ctl" -D "$PGDATA" -m fast -w -t 30 stop
++    unset PGPASSWORD DB_PASSWORD; trap - EXIT INT TERM
++    exec runuser -u postgres -- "$PG_BIN/postgres" -D "$PGDATA" -c unix_socket_directories=/run/postgresql
++    ;;
++  mirror) exec /usr/local/bin/qikvrt-mirror-bootstrap ;;
++  m68k)
++    qemu-m68k /usr/local/bin/qikvrt-m68k-selftest
++    if [ -x /var/lib/qikvrt/personal-posix/build-qikvrt-m68k.sh ]; then
++      export CC=m68k-linux-gnu-gcc CFLAGS='-m68000 -std=c90 -pedantic -Wall -Wextra -Werror -static' QIKVRT_M68K_RUNNER=qemu-m68k
++      exec /var/lib/qikvrt/personal-posix/build-qikvrt-m68k.sh
++    fi
++    if [ "${QIKVRT_REQUIRE_PERSONAL_POSIX:-0}" = 1 ]; then
++      echo 'PERSONAL_POSIX_UNBOUND' >&2; exit 78
++    fi
++    exec sh -c 'while :; do sleep 3600; done'
++    ;;
++  *) echo "unknown QIKVRT_SERVICE_MODE: $mode" >&2; exit 64 ;;
++esac
+diff --git a/deploy/universal-terminal/snmpd.conf b/deploy/universal-terminal/snmpd.conf
+new file mode 100644
+index 0000000000000000000000000000000000000000..bd555a057536c9f913fbdcc2a1a9ad3b42da28ab
+--- /dev/null
++++ b/deploy/universal-terminal/snmpd.conf
+@@ -0,0 +1,6 @@
++agentAddress udp:1161
++rocommunity qikvrt 0.0.0.0/0
++sysLocation QIK-VRT Mesh
++sysContact qik-vrt Authority
++sysServices 72
++dontLogTCPWrappersConnects yes
+diff --git a/deploy/universal-terminal/sshd_config b/deploy/universal-terminal/sshd_config
+new file mode 100644
+index 0000000000000000000000000000000000000000..e06dd174e059b3e81c0706278cfb5c269dbb380c
+--- /dev/null
++++ b/deploy/universal-terminal/sshd_config
+@@ -0,0 +1,19 @@
++Port 2222
++ListenAddress 0.0.0.0
++Protocol 2
++HostKey /var/lib/qikvrt/ssh/ssh_host_ed25519_key
++PidFile /run/sshd.pid
++AuthorizedKeysFile /var/lib/qikvrt/ssh/authorized_keys
++PasswordAuthentication no
++KbdInteractiveAuthentication no
++ChallengeResponseAuthentication no
++PubkeyAuthentication yes
++PermitRootLogin prohibit-password
++PermitEmptyPasswords no
++UsePAM no
++X11Forwarding no
++AllowTcpForwarding no
++GatewayPorts no
++PermitTunnel no
++PrintMotd no
++Subsystem sftp internal-sftp
+diff --git a/docs/terminal/QIKVRT_CLOUD_TRANSPUTER_MATERIALIZATION_V1.md b/docs/terminal/QIKVRT_CLOUD_TRANSPUTER_MATERIALIZATION_V1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fbe6412a47d753c74072ad6eceecab783ae84ad5
+--- /dev/null
++++ b/docs/terminal/QIKVRT_CLOUD_TRANSPUTER_MATERIALIZATION_V1.md
+@@ -0,0 +1,27 @@
++# QIK-VRT Cloud Transputer materialization v1
++
++Recovered sources: PR #1039 (Cloud Transputer v1), PR #1040 (observable Universal Terminal service plane), and Ingolf Lohmann's recovered QIK-VRT boundary description linking the four operational states directly to the Motorola-68000 D0 ABI.
++
++## Executable contract
++
++One OCI image provides Firefox ESR + Xvfb + x11vnc + noVNC, nginx, OpenSSH, bounded SMTP sink, BIND DNS, Net-SNMP, PostgreSQL, Git mirror support, the QIK-VRT terminal/effect HTTP plane, an ISO-C90 IP bootstrap probe, and an MC68000 cross-development/runtime path (`gcc-m68k-linux-gnu` + `qemu-m68k`).
++
++The MC68000-visible boundary contract now separates two concepts that were previously conflated:
++
++- `D0[1:0]` is the invariant four-state QIK-VRT/TEMDD decision ABI: `0=NOOP`, `1=HOLD`, `2=REOBSERVE`, `3=REQUEST_AUTHORITY`.
++- `0-1-2-4` is the binary composition hierarchy: zero/unset plus orthogonal weights `1`, `2`, `4`, ... . The value `3` is not a new primitive weight; it is `1+2`. Weight `4` opens the next independent composition dimension and must not redefine the meanings carried by `D0[1:0]`.
++- The five-state EFFECT_ACK protocol remains `NACK=0`, `CONTINUE=1`, `ISOLATE=2`, `BLOCK=3`, `DONE=4`, but it is a separate semantic state machine and is bound to `D4` in this MC68000 contract. Ordinary release remains permitted only from stable `EFFECT_ACK_DONE`.
++
++A statically linked `-m68000` executable witness is built inside the image and executed with qemu-m68k. It checks both state machines, verifies that D0 rejects bit weight 4 as part of the boundary code, and prints the preserved composition relation `3=1+2` and next orthogonal weight `4`. This is M68000-family machine-code execution in the emulator path, not a claim of physical 68000 hardware execution.
++
++## Infrastructure as Code / IP bootstrap
++
++`deploy/universal-terminal/compose.yaml` materializes a fixed `10.73.0.0/24` Mesh. The terminal occupies `10.73.0.2`, SQL `10.73.0.3`, Authority-connected mirror `10.73.0.4`, and the MC68000 development role `10.73.0.6`; service roles occupy additional fixed addresses. The recovered bootstrap contract uses server `10.73.0.1`, UDP discovery port 7331, client `10.73.0.2`, artifact `QIKVRT_BOOT.BIN`, 128-byte chunks, 2-second timeout, three retries and FNV1a32 over the discover/offer/request/data/done route.
++
++The persistent `/var/lib/qikvrt/personal-posix` volume is the owner source slot. If `build-qikvrt-m68k.sh` exists it is invoked with MC68000 C90 compiler/runner bindings. `QIKVRT_REQUIRE_PERSONAL_POSIX=1` makes absence fail closed rather than silently claiming a complete personal POSIX implementation.
++
++## Boundary and effect semantics
++
++The four operational D0 values answer only: **what may happen next?** They are not the five EFFECT_ACK protocol states. The latter answer a different question about the effect-verification lifecycle. Keeping both machines separate prevents `EFFECT_ACK_DONE=4` from being misread as a fifth D0 boundary decision.
++
++`TRANSPORT_ACK != EFFECT_ACK`. Container build, network reachability, emulator execution, authorization and physical effect remain independently observable facts. A public deployment, physical MC68000 execution, physical effect, or general EFFECT_ACK_DONE requires its own readback.
+diff --git a/policy/QIKVRT_CLOUD_TRANSPUTER_V1.json b/policy/QIKVRT_CLOUD_TRANSPUTER_V1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..f178a46a4f6c719abd3ae26a0383d123360f29d1
+--- /dev/null
++++ b/policy/QIKVRT_CLOUD_TRANSPUTER_V1.json
+@@ -0,0 +1,93 @@
++{
++  "schema": "qik-vrt-cloud-transputer-v1",
++  "architecture": "MC68000",
++  "boundary_contract": {
++    "d0_width_bits": 2,
++    "d0_mask": 3,
++    "states": ["NOOP", "HOLD", "REOBSERVE", "REQUEST_AUTHORITY"],
++    "decision_codes": {
++      "NOOP": 0,
++      "HOLD": 1,
++      "REOBSERVE": 2,
++      "REQUEST_AUTHORITY": 3
++    },
++    "binary_weights": [1, 2, 4],
++    "composition_rule": "3 = 1 + 2; weight 4 opens the next orthogonal composition dimension without redefining D0[1:0]",
++    "register_binding": {
++      "D0": "low two bits are the invariant QIK-VRT/TEMDD boundary decision",
++      "D1": "channel/session id",
++      "D2": "freshness marker / nonce",
++      "D3": "source-node id / capability context",
++      "D4": "effect-ack protocol state",
++      "A0": "request payload pointer",
++      "A1": "receipt output pointer"
++    }
++  },
++  "effect_ack_protocol": {
++    "states": [
++      "EFFECT_NACK",
++      "EFFECT_ACK_CONTINUE",
++      "EFFECT_ACK_ISOLATE",
++      "EFFECT_ACK_BLOCK",
++      "EFFECT_ACK_DONE"
++    ],
++    "state_codes": {
++      "EFFECT_NACK": 0,
++      "EFFECT_ACK_CONTINUE": 1,
++      "EFFECT_ACK_ISOLATE": 2,
++      "EFFECT_ACK_BLOCK": 3,
++      "EFFECT_ACK_DONE": 4
++    },
++    "register": "D4",
++    "ordinary_release": "EFFECT_ACK_DONE only"
++  },
++  "function_codes": [
++    {"fc": 1, "domain": "user-data"},
++    {"fc": 2, "domain": "user-program"},
++    {"fc": 5, "domain": "supervisor-data"},
++    {"fc": 6, "domain": "supervisor-program"},
++    {"fc": 7, "domain": "interrupt-acknowledge"}
++  ],
++  "interrupt_model": {
++    "levels": [1, 2, 3, 4, 5, 6, 7],
++    "autovector": true,
++    "level_7_non_maskable": true
++  },
++  "exception_model": {
++    "supervisor_state": {"S": 1},
++    "stack_banks": ["USP", "SSP"],
++    "exception_frame_fields": ["SR", "PC"],
++    "return_instruction": "RTE"
++  },
++  "task_frame": {
++    "saved_registers": ["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "A0", "A1", "A2", "A3", "A4", "A5", "A6", "USP", "SR", "PC"]
++  },
++  "overlay_model": {
++    "banks": 4,
++    "switch_register": "QIKVRT_OVERLAY_CTRL",
++    "fence_required": true,
++    "instruction_prefetch_flush": true,
++    "decision_link": "ordinary release is allowed only from stable EFFECT_ACK_DONE"
++  },
++  "ip_bootstrap": {
++    "subnet": "10.73.0.0/24",
++    "discovery_port": 7331,
++    "server_ip": "10.73.0.1",
++    "client_ip": "10.73.0.2",
++    "file_id": 1,
++    "binary": "QIKVRT_BOOT.BIN",
++    "timeout_seconds": 2,
++    "retries": 3,
++    "chunk_bytes": 128,
++    "checksum": "FNV1A32",
++    "route": ["discover", "offer", "request", "data", "done"]
++  },
++  "effect_boundary": {
++    "transport_ack_not_effect_ack": true,
++    "content_ack_signals": ["parse-complete", "checksum-complete", "bounded-range-check-complete"],
++    "semantic_effect_signals": ["requested state transition applied", "contract verification passed", "post-apply state re-observed"],
++    "note": "No protocol label establishes physical correspondence, quantum identity, or empirical model closure."
++  },
++  "logic_0124_source_status": "RECOVERED_FROM_OWNER_MATERIAL",
++  "logic_0124_note": "0 is the unset state; 1,2,4 are orthogonal binary weights. D0[1:0] carries 0..3, with 3 composed as 1+2. Bit weight 4 extends composition context and must not redefine the four D0 boundary meanings."
++}
+diff --git a/src/cloud_transputer/m68k_contract_probe.c b/src/cloud_transputer/m68k_contract_probe.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..d1d94775e6b0fa771d92647dfcb5ac1d07b7d047
+--- /dev/null
++++ b/src/cloud_transputer/m68k_contract_probe.c
+@@ -0,0 +1,56 @@
++/* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 */
++/* Copyright 2026 Ingolf Lohmann. */
++/* Bounded C90 executable witness for the MC68000-visible QIK-VRT boundary. */
++#include <stdio.h>
++
++enum qikvrt_boundary_d0 {
++    QIKVRT_NOOP = 0,
++    QIKVRT_HOLD = 1,
++    QIKVRT_REOBSERVE = 2,
++    QIKVRT_REQUEST_AUTHORITY = 3
++};
++
++enum qikvrt_effect_state {
++    QIKVRT_EFFECT_NACK = 0,
++    QIKVRT_EFFECT_ACK_CONTINUE = 1,
++    QIKVRT_EFFECT_ACK_ISOLATE = 2,
++    QIKVRT_EFFECT_ACK_BLOCK = 3,
++    QIKVRT_EFFECT_ACK_DONE = 4
++};
++
++static int ordinary_release(int effect_state)
++{
++    return effect_state == QIKVRT_EFFECT_ACK_DONE;
++}
++
++static int d0_valid(int value)
++{
++    return (value & ~3) == 0;
++}
++
++int main(void)
++{
++#ifdef __m68k__
++    puts("ARCH=MC68000_FAMILY");
++#else
++    puts("ARCH=NON_M68K");
++#endif
++    if (QIKVRT_NOOP != 0 || QIKVRT_HOLD != 1 || QIKVRT_REOBSERVE != 2 ||
++        QIKVRT_REQUEST_AUTHORITY != 3) return 10;
++    if (!d0_valid(QIKVRT_NOOP) || !d0_valid(QIKVRT_REQUEST_AUTHORITY) || d0_valid(4)) return 11;
++    if ((1 + 2) != QIKVRT_REQUEST_AUTHORITY) return 12;
++    if (QIKVRT_EFFECT_NACK != 0 || QIKVRT_EFFECT_ACK_CONTINUE != 1 ||
++        QIKVRT_EFFECT_ACK_ISOLATE != 2 || QIKVRT_EFFECT_ACK_BLOCK != 3 ||
++        QIKVRT_EFFECT_ACK_DONE != 4) return 13;
++    if (ordinary_release(QIKVRT_EFFECT_NACK) || ordinary_release(QIKVRT_EFFECT_ACK_BLOCK)) return 14;
++    if (!ordinary_release(QIKVRT_EFFECT_ACK_DONE)) return 15;
++    puts("D0_BOUNDARY_CODES=0,1,2,3");
++    puts("D0_BINARY_WEIGHTS=1,2");
++    puts("D0_COMPOSITION_3=1+2");
++    puts("NEXT_ORTHOGONAL_WEIGHT=4");
++    puts("EFFECT_ACK_CODES=0,1,2,3,4");
++    puts("EFFECT_ACK_REGISTER=D4");
++    puts("OVERLAY_BANKS=4");
++    puts("ORDINARY_RELEASE=EFFECT_ACK_DONE_ONLY");
++    return 0;
++}
+diff --git a/tests/test_qikvrt_cloud_transputer_materialization.py b/tests/test_qikvrt_cloud_transputer_materialization.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..8f36bcf3355a26e7ad3cd9876ba498f03c738337
+--- /dev/null
++++ b/tests/test_qikvrt_cloud_transputer_materialization.py
+@@ -0,0 +1,90 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++import json
++from pathlib import Path
++import unittest
++
++ROOT = Path(__file__).resolve().parents[1]
++
++class CloudTransputerMaterializationTests(unittest.TestCase):
++    @classmethod
++    def setUpClass(cls):
++        cls.policy = json.loads((ROOT/'policy/QIKVRT_CLOUD_TRANSPUTER_V1.json').read_text())
++        cls.dockerfile = (ROOT/'deploy/universal-terminal/Dockerfile').read_text()
++        cls.compose = (ROOT/'deploy/universal-terminal/compose.yaml').read_text()
++        cls.service = (ROOT/'deploy/universal-terminal/service-entrypoint.sh').read_text()
++        cls.probe = (ROOT/'src/cloud_transputer/m68k_contract_probe.c').read_text()
++
++    def test_d0_boundary_is_exact_four_state_machine(self):
++        self.assertEqual(self.policy['boundary_contract']['decision_codes'], {
++            'NOOP':0, 'HOLD':1, 'REOBSERVE':2, 'REQUEST_AUTHORITY':3})
++        self.assertEqual(self.policy['boundary_contract']['d0_width_bits'], 2)
++        self.assertEqual(self.policy['boundary_contract']['d0_mask'], 3)
++
++    def test_0124_is_binary_weight_composition_not_five_state_d0(self):
++        boundary = self.policy['boundary_contract']
++        self.assertEqual(boundary['binary_weights'], [1,2,4])
++        self.assertIn('3 = 1 + 2', boundary['composition_rule'])
++        self.assertIn('weight 4', boundary['composition_rule'])
++        self.assertEqual(self.policy['logic_0124_source_status'], 'RECOVERED_FROM_OWNER_MATERIAL')
++
++    def test_effect_ack_is_separate_protocol_state_register(self):
++        self.assertEqual(self.policy['effect_ack_protocol']['state_codes'], {
++            'EFFECT_NACK':0, 'EFFECT_ACK_CONTINUE':1, 'EFFECT_ACK_ISOLATE':2,
++            'EFFECT_ACK_BLOCK':3, 'EFFECT_ACK_DONE':4})
++        self.assertEqual(self.policy['effect_ack_protocol']['register'], 'D4')
++        self.assertEqual(self.policy['effect_ack_protocol']['ordinary_release'], 'EFFECT_ACK_DONE only')
++        self.assertEqual(self.policy['boundary_contract']['register_binding']['D0'],
++                         'low two bits are the invariant QIK-VRT/TEMDD boundary decision')
++        self.assertEqual(self.policy['boundary_contract']['register_binding']['D4'], 'effect-ack protocol state')
++
++    def test_mc68000_probe_enforces_boundary_split(self):
++        for token in ('D0_BOUNDARY_CODES=0,1,2,3','D0_BINARY_WEIGHTS=1,2',
++                      'D0_COMPOSITION_3=1+2','NEXT_ORTHOGONAL_WEIGHT=4',
++                      'EFFECT_ACK_CODES=0,1,2,3,4','EFFECT_ACK_REGISTER=D4'):
++            self.assertIn(token, self.probe)
++        self.assertIn('d0_valid', self.probe)
++        self.assertIn('d0_valid(4)', self.probe)
++
++    def test_mc68000_contract_and_overlay(self):
++        self.assertEqual(self.policy['architecture'], 'MC68000')
++        self.assertEqual(self.policy['overlay_model']['banks'], 4)
++        self.assertTrue(self.policy['overlay_model']['fence_required'])
++        self.assertTrue(self.policy['overlay_model']['instruction_prefetch_flush'])
++
++    def test_ip_bootstrap_contract(self):
++        value=self.policy['ip_bootstrap']
++        self.assertEqual(value['subnet'], '10.73.0.0/24')
++        self.assertEqual(value['discovery_port'], 7331)
++        self.assertEqual(value['route'], ['discover','offer','request','data','done'])
++        self.assertEqual(value['checksum'], 'FNV1A32')
++
++    def test_image_contains_required_runtime_planes(self):
++        for token in ('firefox-esr','novnc','openssh-server','postgresql','snmpd','bind9',
++                      'gcc-m68k-linux-gnu','qemu-user','qikvrt-m68k-selftest'):
++            self.assertIn(token, self.dockerfile)
++
++    def test_mc68000_checksum_binds_the_installed_executable(self):
++        self.assertIn('/usr/local/bin/qikvrt-m68k-selftest', self.dockerfile)
++        self.assertIn('qikvrt-m68k-selftest.sha256', self.dockerfile)
++        self.assertIn("awk '{print $1 \"  /usr/local/bin/qikvrt-m68k-selftest\"}'", self.dockerfile)
++        self.assertNotIn('(cd /out && sha256sum qikvrt-m68k-selftest > m68k/qikvrt-m68k-selftest.sha256)', self.dockerfile)
++
++    def test_compose_preserves_durable_terminal_restart(self):
++        terminal = self.compose.split('  qikvrt-universal-terminal:', 1)[1].split('\n\n  qikvrt-gateway:', 1)[0]
++        self.assertIn('restart: unless-stopped', terminal)
++
++    def test_compose_materializes_fixed_mesh(self):
++        for token in ('10.73.0.0/24','10.73.0.2','10.73.0.3','10.73.0.4','10.73.0.6',
++                      'qikvrt-universal-terminal','qikvrt-sqld','qikvrt-mirror','qikvrt-mc68000',
++                      'qikvrt-smtpd','qikvrt-dnsd','qikvrt-snmpd','qikvrt-sshd'):
++            self.assertIn(token, self.compose)
++
++    def test_personal_posix_is_fail_closed_when_required(self):
++        self.assertIn('QIKVRT_REQUIRE_PERSONAL_POSIX', self.service)
++        self.assertIn('PERSONAL_POSIX_UNBOUND', self.service)
++        self.assertIn('m68k-linux-gnu-gcc', self.service)
++        self.assertIn('qemu-m68k', self.service)
++
++if __name__ == '__main__':
++    unittest.main()
