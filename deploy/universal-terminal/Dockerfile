@@ -65,7 +65,6 @@ assert p['effect_ack_protocol']['register']=='D4'
 assert p['overlay_model']['banks']==4
 assert p['ip_bootstrap']['subnet']=='10.73.0.0/24'
 PY
-VOLUME ["/var/lib/qikvrt/profile", "/var/lib/qikvrt/state", "/var/lib/qikvrt/personal-posix"]
 EXPOSE 6080 8080 8771 2222 2525 5353 9418 1161 5432 7331/udp
 HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=6 CMD ["/usr/local/bin/qikvrt-runtime-health"]
 ENTRYPOINT ["/usr/local/bin/qikvrt-service-entrypoint"]
