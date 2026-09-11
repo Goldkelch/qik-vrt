@@ -1,7 +1,29 @@
 {
   "schema": "qik-vrt-cloud-transputer-v1",
   "architecture": "MC68000",
-  "protocol_contract": {
+  "boundary_contract": {
+    "d0_width_bits": 2,
+    "d0_mask": 3,
+    "states": ["NOOP", "HOLD", "REOBSERVE", "REQUEST_AUTHORITY"],
+    "decision_codes": {
+      "NOOP": 0,
+      "HOLD": 1,
+      "REOBSERVE": 2,
+      "REQUEST_AUTHORITY": 3
+    },
+    "binary_weights": [1, 2, 4],
+    "composition_rule": "3 = 1 + 2; weight 4 opens the next orthogonal composition dimension without redefining D0[1:0]",
+    "register_binding": {
+      "D0": "low two bits are the invariant QIK-VRT/TEMDD boundary decision",
+      "D1": "channel/session id",
+      "D2": "freshness marker / nonce",
+      "D3": "source-node id / capability context",
+      "D4": "effect-ack protocol state",
+      "A0": "request payload pointer",
+      "A1": "receipt output pointer"
+    }
+  },
+  "effect_ack_protocol": {
     "states": [
       "EFFECT_NACK",
       "EFFECT_ACK_CONTINUE",
@@ -9,21 +31,15 @@
       "EFFECT_ACK_BLOCK",
       "EFFECT_ACK_DONE"
     ],
-    "decision_codes": {
+    "state_codes": {
       "EFFECT_NACK": 0,
       "EFFECT_ACK_CONTINUE": 1,
       "EFFECT_ACK_ISOLATE": 2,
       "EFFECT_ACK_BLOCK": 3,
       "EFFECT_ACK_DONE": 4
     },
-    "register_binding": {
-      "D0": "decision code",
-      "D1": "channel/session id",
-      "D2": "freshness marker / nonce",
-      "D3": "source-node id / capability context",
-      "A0": "request payload pointer",
-      "A1": "receipt output pointer"
-    }
+    "register": "D4",
+    "ordinary_release": "EFFECT_ACK_DONE only"
   },
   "function_codes": [
     {"fc": 1, "domain": "user-data"},
@@ -72,6 +88,6 @@
     "semantic_effect_signals": ["requested state transition applied", "contract verification passed", "post-apply state re-observed"],
     "note": "No protocol label establishes physical correspondence, quantum identity, or empirical model closure."
   },
-  "logic_0124_source_status": "NOT_RECOVERED_VERBATIM",
-  "logic_0124_note": "No additional 0-1-2-4 algebra is inferred by this implementation. The recovered, source-backed contract is the D0 five-state mapping 0..4 plus the four-bank overlay model."
+  "logic_0124_source_status": "RECOVERED_FROM_OWNER_MATERIAL",
+  "logic_0124_note": "0 is the unset state; 1,2,4 are orthogonal binary weights. D0[1:0] carries 0..3, with 3 composed as 1+2. Bit weight 4 extends composition context and must not redefine the four D0 boundary meanings."
 }

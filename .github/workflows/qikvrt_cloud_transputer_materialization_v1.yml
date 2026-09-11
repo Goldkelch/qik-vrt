@@ -63,7 +63,11 @@ jobs:
             (cd /opt/qikvrt/runtime/m68k && sha256sum -c qikvrt-m68k-selftest.sha256 qikvrt_ip_bootstrap.sha256)
             qemu-m68k /usr/local/bin/qikvrt-m68k-selftest | tee /tmp/m68k.out
             grep -F "ARCH=MC68000_FAMILY" /tmp/m68k.out
-            grep -F "D0_CODES=0,1,2,3,4" /tmp/m68k.out
+            grep -F "D0_BOUNDARY_CODES=0,1,2,3" /tmp/m68k.out
+            grep -F "D0_COMPOSITION_3=1+2" /tmp/m68k.out
+            grep -F "NEXT_ORTHOGONAL_WEIGHT=4" /tmp/m68k.out
+            grep -F "EFFECT_ACK_CODES=0,1,2,3,4" /tmp/m68k.out
+            grep -F "EFFECT_ACK_REGISTER=D4" /tmp/m68k.out
             grep -F "ORDINARY_RELEASE=EFFECT_ACK_DONE_ONLY" /tmp/m68k.out
           '
       - name: Start IaC service plane
