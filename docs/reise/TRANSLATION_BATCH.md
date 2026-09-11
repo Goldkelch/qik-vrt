@@ -1,0 +1,14 @@
+<!-- SPDX-License-Identifier: CC-BY-NC-ND-4.0 -->
+# Finite translation materialization, not a publication controller
+
+Ingolf Lohmann requested the complete supplied essay at the fixed `/reise/` homepage in the recovered 47 Wikipedia editions. Two full texts are currently attached. Eight earlier complete drafts exist as independently recoverable Git blobs; they can be mechanically rebound to the current source only after reconstructing the previous German source and checking all blocks. No predecessor validation transfers.
+
+Repository search found no existing full-text multilingual translation executor. The existing reading renderer, source manifest, scoped blob IDs, cache-coverage generator, CI action pins and repository writer lease are reused. Existing integrity writers are deliberately not widened to write arbitrary translation files. A finite, literal-branch translation helper is added because those read-only/rendering/three-file integrity mechanisms cannot generate the missing full texts.
+
+Two explicit push-message phases are supported: recover eight drafts and prepare the optional runtime declarations; then, after those declarations are committed and checked, execute the fixed 34-language CPU model matrix. Simple English, Serbo-Croatian and Wu Chinese require separate direct AI editorial work. There is no substitute-language fallback and no claim that the current model supports those editions.
+
+Inference jobs have read-only repository authority. The isolated, non-preemptive object-materialization job may only create and independently read back content-addressed blobs for allowlisted translation paths and, in the recovery phase, the three runtime declaration files. It cannot update a ref, create a commit, approve, merge, deploy, publish, or change credentials/rulesets. The connected authorized writer must separately inspect the output, perform the exact-parent branch mutation, and reobserve the resulting subject. No model output supplies an API endpoint or an executable command.
+
+All translations remain explicitly unreviewed AI drafts. Block counts, digests, token bounds and protected URLs/signatures are technical checks, not proofs of linguistic accuracy. NLLB's research-only/model-card limitations and noncommercial license are explicit in `TRANSLATION_RUNTIME.json`. The model is not deployed as a public service. Independent language review and native code-owner review are not invented.
+
+The public homepage still requires full materialization, fresh exact-head validation, required same-head review, post-review readback, legitimate Main promotion, exact-Main readback and actual public content readback. The one-shot bulk transport must not become another perpetual controller. Before final promotion, its blob-writing job is to be removed from the net workflow surface; the content and receipts remain independently auditable.

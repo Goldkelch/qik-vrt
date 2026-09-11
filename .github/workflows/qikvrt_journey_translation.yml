@@ -1,0 +1,201 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT finite journey translation materialization
+on:
+  push:
+    branches:
+      - publication/self-explanation-47-homepage-v1
+    paths:
+      - .github/workflows/qikvrt_journey_translation.yml
+      - tools/qikvrt_journey_translation.py
+      - tests/test_qikvrt_journey_translation.py
+      - docs/reise/TRANSLATION_RUNTIME.json
+      - runtime/toolchains/TOOLCHAIN.lock.tsv
+      - runtime/toolchains/CACHE_REGISTRY.json
+      - runtime/toolchains/CACHE_COVERAGE.json
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.13'
+      - name: Run deterministic transport and subject-boundary regressions
+        run: python3 -B -m unittest discover -s tests -p test_qikvrt_journey_translation.py -v
+  recover:
+    needs: contract
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.ref == 'refs/heads/publication/self-explanation-47-homepage-v1' &&
+      github.run_attempt == 1 &&
+      startsWith(github.event.head_commit.message, 'i18n(journey): recover prepared drafts and freeze translation runtime')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.13'
+      - name: Verify current declared runtime before bounded preparation
+        run: python3 -B tools/qikvrt_tool_cache.py verify
+      - name: Rebind recovered drafts and generate optional runtime declarations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B tools/qikvrt_journey_translation.py prepare
+      - name: Preserve exact-head recovered content without ref mutation
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: journey-recover-bundle-${{ github.sha }}
+          path: /tmp/qikvrt-journey-generation
+          retention-days: 30
+          if-no-files-found: error
+  model:
+    needs: contract
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.ref == 'refs/heads/publication/self-explanation-47-homepage-v1' &&
+      github.run_attempt == 1 &&
+      startsWith(github.event.head_commit.message, 'i18n(journey): translate 34 missing editions with pinned local model')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    outputs:
+      manifest_sha256: ${{ steps.payload.outputs.manifest_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.13'
+      - name: Verify persisted optional runtime declaration
+        run: python3 -B tools/qikvrt_tool_cache.py verify
+      - name: Provision exactly versioned optional CPU translation tools
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/journey-venv"
+          "$RUNNER_TEMP/journey-venv/bin/python" -m pip install --disable-pip-version-check 'torch==2.8.0+cpu' --index-url https://download.pytorch.org/whl/cpu
+          "$RUNNER_TEMP/journey-venv/bin/python" -m pip install --disable-pip-version-check 'transformers==4.57.6' 'sentencepiece==0.2.1'
+      - name: Download and hash the pinned model payload
+        id: payload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HF_HUB_DISABLE_TELEMETRY: '1'
+          HF_HUB_DISABLE_IMPLICIT_TOKEN: '1'
+        run: '"$RUNNER_TEMP/journey-venv/bin/python" -B tools/qikvrt_journey_translation.py warm-model --model-root "$RUNNER_TEMP/qikvrt-nllb-payload"'
+      - name: Save only the verified model payload under this execution-head key
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/qikvrt-nllb-payload
+          key: qikvrt-journey-nllb-v1-${{ github.sha }}
+      - name: Preserve model provenance without publishing the model as a service
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: journey-model-${{ github.sha }}
+          path: /tmp/qikvrt-journey-generation
+          retention-days: 30
+          if-no-files-found: warn
+  translate:
+    needs: model
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        language: [ar, ast, bg, bn, ca, cs, el, eo, et, eu, fa, fi, gl, he, hr, hu, id, is, ja, kk, ko, lv, pl, ro, ru, sk, sl, sr, th, tr, uk, vi, zh-yue, zh]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.13'
+      - name: Verify declared runtime
+        run: python3 -B tools/qikvrt_tool_cache.py verify
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/qikvrt-nllb-payload
+          key: qikvrt-journey-nllb-v1-${{ github.sha }}
+          fail-on-cache-miss: true
+      - name: Provision exactly versioned optional CPU tools
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/journey-venv"
+          "$RUNNER_TEMP/journey-venv/bin/python" -m pip install --disable-pip-version-check 'torch==2.8.0+cpu' --index-url https://download.pytorch.org/whl/cpu
+          "$RUNNER_TEMP/journey-venv/bin/python" -m pip install --disable-pip-version-check 'transformers==4.57.6' 'sentencepiece==0.2.1'
+      - name: Translate every unprotected source block without truncation or fallback
+        env:
+          MODEL_MANIFEST_SHA256: ${{ needs.model.outputs.manifest_sha256 }}
+          TARGET_LANGUAGE: ${{ matrix.language }}
+          HF_HUB_OFFLINE: '1'
+          TRANSFORMERS_OFFLINE: '1'
+          HF_HUB_DISABLE_TELEMETRY: '1'
+          HF_HUB_DISABLE_IMPLICIT_TOKEN: '1'
+          TOKENIZERS_PARALLELISM: 'false'
+        run: '"$RUNNER_TEMP/journey-venv/bin/python" -B tools/qikvrt_journey_translation.py translate --language "$TARGET_LANGUAGE" --model-root "$RUNNER_TEMP/qikvrt-nllb-payload"'
+      - name: Preserve exact-source full-text draft
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: journey-translate-${{ matrix.language }}-${{ github.sha }}
+          path: /tmp/qikvrt-journey-generation
+          retention-days: 30
+          if-no-files-found: error
+  record-objects:
+    needs: [contract, recover, translate]
+    if: >-
+      always() && needs.contract.result == 'success' &&
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.ref == 'refs/heads/publication/self-explanation-47-homepage-v1' &&
+      github.run_attempt == 1 &&
+      (needs.recover.result == 'success' || needs.translate.result == 'success')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    concurrency:
+      group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.13'
+      - name: Verify runtime and exact generated files before content-addressed writes
+        run: python3 -B tools/qikvrt_tool_cache.py verify
+      - name: Store and independently read back allowlisted Git blobs only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PHASE: ${{ needs.recover.result == 'success' && 'recover' || 'translate' }}
+        run: python3 -B tools/qikvrt_journey_translation.py objects --phase "$PHASE"
+      - name: Preserve immutable object receipt for the connected branch writer
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: journey-object-receipt-${{ github.sha }}
+          path: /tmp/qikvrt-journey-generation
+          retention-days: 30
+          if-no-files-found: error
