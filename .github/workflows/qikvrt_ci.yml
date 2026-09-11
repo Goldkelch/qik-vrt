@@ -190,7 +190,8 @@ jobs:
     timeout-minutes: 15
     env:
       EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
-      PREVIEW_ROOT: ${{ runner.temp }}/qikvrt-journey-preview
+      # runner context does not exist at job-level env evaluation time.
+      PREVIEW_ROOT: /tmp/qikvrt-journey-preview
     steps:
       - name: Check out literal journey candidate without persisted credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
