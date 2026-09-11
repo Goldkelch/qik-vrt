@@ -2022,7 +2022,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             "total_count": 101, "workflow_runs": [],
         }) as read:
             with self.assertRaisesRegex(MODULE.ReviewObservationError, "exact-head workflow-run page is incomplete"):
-                MODULE._active_writer_observation("example/qik-vrt", 999, {"writer"}, {MAIN_SHA, HEAD_SHA})
+                MODULE._active_writer_observation("example/qik-vrt", 999, {"QIK-VRT autonomous bounded self-heal"}, {MAIN_SHA, HEAD_SHA})
             read.assert_called_once_with(
                 f"repos/example/qik-vrt/actions/runs?head_sha={MAIN_SHA}&status=queued&per_page=100&page=1"
             )
@@ -2923,7 +2923,7 @@ class ActiveWriterHistoryIndependenceTests(unittest.TestCase):
         return {
             "id": identifier, "head_sha": head, "status": status,
             "name": self.WRITER if name is None else name,
-            "workflow_id": 41, "path": ".github/workflows/qikvrt_autonomous_self_heal.yml",
+            "workflow_id": 41 if name in (None, self.WRITER) else 42, "path": (".github/workflows/qikvrt_autonomous_self_heal.yml" if name in (None, self.WRITER) else ".github/workflows/qikvrt_live_status_watch.yml"),
             "event": "push", "run_number": identifier, "run_attempt": 1,
         }
 
@@ -3075,6 +3075,70 @@ class ActiveWriterHistoryIndependenceTests(unittest.TestCase):
             with self.assertRaisesRegex(MODULE.ReviewObservationError, "relevant-head binding"):
                 MODULE._active_writer_observation("example/qik-vrt", 999, {self.WRITER}, {MAIN_SHA, HEAD_SHA, "f" * 40})
             read.assert_not_called()
+
+    def test_dynamic_run_name_keeps_allowlisted_writer_path(self):
+        history = [self.row(10000 + index) for index in range(250)]
+        active = self.row(7, status="in_progress")
+        active["name"] = "QIKVRT self-heal head=bound event=push"
+        calls = []
+        observed = self.observe(self.api(history + [active], calls))
+        self.assertEqual([row["id"] for row in observed], [7])
+        self.assertEqual(observed[0]["name"], self.WRITER)
+        self.assertEqual(observed[0]["workflow_id"], 41)
+        self.assertEqual(len(calls), 10)
+
+    def test_canonical_name_on_nonwriter_path_is_not_writer_identity(self):
+        active = self.row(7, status="queued")
+        active["path"] = ".github/workflows/qikvrt_live_status_watch.yml"
+        active["workflow_id"] = 42
+        calls = []
+        self.assertEqual(self.observe(self.api([active], calls)), [])
+        self.assertEqual(len(calls), 10)
+
+    def test_dynamic_writer_all_active_states_after_large_history(self):
+        for head in (MAIN_SHA, HEAD_SHA):
+            for state in self.STATES:
+                with self.subTest(head=head, state=state):
+                    history = [self.row(10000 + i, head=head) for i in range(250)]
+                    active = self.row(7, head=head, status=state)
+                    active["name"] = "dynamic display title, not workflow identity"
+                    calls = []
+                    observed = self.observe(self.api(history + [active], calls))
+                    self.assertEqual([row["id"] for row in observed], [7])
+                    self.assertEqual(observed[0]["name"], self.WRITER)
+                    self.assertEqual(len(calls), 10)
+
+    def test_missing_or_malformed_workflow_identity_is_not_zero_writers(self):
+        cases = [("workflow_id", None), ("workflow_id", True),
+                 ("workflow_id", 0), ("workflow_id", "41"),
+                 ("path", None), ("path", ""),
+                 ("path", "../qikvrt_autonomous_self_heal.yml"),
+                 ("path", ".github/workflows/qikvrt_autonomous_self_heal.yml@other")]
+        for key, value in cases:
+            with self.subTest(key=key, value=value):
+                active = self.row(7, head=MAIN_SHA, status="queued")
+                active[key] = value
+                with mock.patch.object(MODULE, "_gh_one", return_value={
+                    "total_count": 1, "workflow_runs": [active],
+                }) as read:
+                    with self.assertRaisesRegex(MODULE.ReviewObservationError, "workflow identity"):
+                        MODULE._active_writer_observation("example/qik-vrt", 999, {self.WRITER}, {MAIN_SHA})
+                    self.assertEqual(read.call_count, 1)
+
+    def test_unknown_writer_allowlist_binding_is_rejected_before_io(self):
+        with mock.patch.object(MODULE, "_gh_one") as read:
+            with self.assertRaisesRegex(MODULE.ReviewObservationError, "path binding is unknown"):
+                MODULE._active_writer_observation("example/qik-vrt", 999, {"unbound writer"}, {MAIN_SHA})
+            read.assert_not_called()
+
+    def test_writer_path_catalog_matches_actual_workflow_definitions(self):
+        import re
+        for name, path in MODULE.ACTIVE_WRITER_WORKFLOW_PATHS.items():
+            with self.subTest(name=name, path=path):
+                content = (ROOT / path).read_text(encoding="utf-8")
+                names = re.findall(r"^name:\s*(.+)$", content, re.MULTILINE)
+                self.assertEqual(len(names), 1)
+                self.assertEqual(names[0].strip().strip("\"'"), name)
 
 
 if __name__ == "__main__":
