@@ -1,6 +1,9 @@
 name: QIKVRT PR integrity projection
 
 on:
+  push:
+    branches:
+      - feature/cloud-transputer-materialization-v1-b4b0038
   pull_request:
     branches:
       - main
@@ -13,24 +16,24 @@ permissions:
   contents: read
 
 concurrency:
-  group: qikvrt-pr-integrity-projection-${{ github.event.pull_request.number }}
+  group: qikvrt-pr-integrity-projection-${{ github.event.pull_request.number || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   project:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 2
           persist-credentials: false
       - name: Bind exact subject
         shell: bash
         env:
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
@@ -44,7 +47,7 @@ jobs:
       - name: Preserve exact projection
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: qikvrt-integrity-projection-${{ github.event.pull_request.head.sha }}
+          name: qikvrt-integrity-projection-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
             REPOSITORY_FILE_MANIFEST.json
             REPOSITORY_FILE_MANIFEST.json.sha256
