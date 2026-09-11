@@ -14,7 +14,7 @@ RUN set -eux; \
     m68k-linux-gnu-readelf -h /out/qikvrt-m68k-selftest > /out/m68k/qikvrt-m68k-selftest.readelf.txt; \
     m68k-linux-gnu-objdump -dr /out/qikvrt-m68k-selftest > /out/m68k/qikvrt-m68k-selftest.objdump.txt; \
     m68k-linux-gnu-readelf -h /out/m68k/qikvrt_ip_bootstrap.o > /out/m68k/qikvrt_ip_bootstrap.readelf.txt; \
-    (cd /out && sha256sum qikvrt-m68k-selftest > m68k/qikvrt-m68k-selftest.sha256); \
+    sha256sum /out/qikvrt-m68k-selftest | awk '{print $1 "  /usr/local/bin/qikvrt-m68k-selftest"}' > /out/m68k/qikvrt-m68k-selftest.sha256; \
     (cd /out/m68k && sha256sum qikvrt_ip_bootstrap.o > qikvrt_ip_bootstrap.sha256)
 
 FROM debian:bookworm-slim
