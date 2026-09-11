@@ -46,7 +46,7 @@ def KnowledgeRegion (L : Language) (evidence : L.Evidence) :
     L.State → Prop :=
   fun state => L.evidencePossible state evidence
 
-structure ConservativeEmbedding (source : Language) (target : Language) where
+structure AdmissibilityData (source : Language) (target : Language) where
   mapState : source.State → target.State
   mapRequirement : source.Requirement → target.Requirement
   mapEvidence : source.Evidence → target.Evidence
@@ -88,12 +88,20 @@ structure ConservativeEmbedding (source : Language) (target : Language) where
   transition_preserved :
     ∀ state action next,
       source.step state action next →
-        target.reachable (mapState state) (mapAction action) (mapState next)
-  authority_preserved :
+        target.step (mapState state) (mapAction action) (mapState next)
+  actor_preserved :
+    ∀ action,
+      target.actor (mapAction action) =
+        mapAuthority (source.actor action)
+  allowed_preserved :
     ∀ authority action,
-      target.allowed (mapAuthority authority) (mapAction action) →
-        target.hasCapability (mapAuthority (source.actor action))
-          (mapAuthority authority)
+      source.allowed authority action ↔
+        target.allowed (mapAuthority authority) (mapAction action)
+  capability_preserved :
+    ∀ authority targetAuthority,
+      source.hasCapability authority targetAuthority ↔
+        target.hasCapability (mapAuthority authority)
+          (mapAuthority targetAuthority)
   completion_reflected :
     ∀ requirement evidence state,
       target.done (mapRequirement requirement) (mapEvidence evidence)
@@ -111,8 +119,11 @@ structure ConservativeEmbedding (source : Language) (target : Language) where
     ¬ source.evidenceTransferAllowed →
       ¬ target.evidenceTransferAllowed
 
+structure ConservativeEmbedding (source : Language) (target : Language)
+    extends AdmissibilityData source target
+
 def AdmissibleClass (source target : Language) : Prop :=
-  Nonempty (ConservativeEmbedding source target)
+  Nonempty (AdmissibilityData source target)
 
 theorem completion_reflection (source target : Language)
     (embedding : ConservativeEmbedding source target)
@@ -126,8 +137,8 @@ theorem completion_reflection (source target : Language)
 theorem temdd_conservative_universality (source target : Language)
     (hSource : AdmissibleClass source target) :
     ∃ embedding : ConservativeEmbedding source target, True := by
-  rcases hSource with ⟨embedding⟩
-  exact ⟨embedding, True.intro⟩
+  rcases hSource with ⟨data⟩
+  exact ⟨⟨data⟩, True.intro⟩
 
 def TEMDDConservativeUniversalityStatement : Prop :=
   ∀ source target, AdmissibleClass source target →
