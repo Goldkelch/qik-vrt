@@ -1,0 +1,192 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: Reconcile relational-time Zenodo create request v1
+
+on:
+  push:
+    branches:
+      - recovery/relational-time-zenodo-create-requested-v1
+    paths:
+      - .github/workflows/qikvrt_relational_time_zenodo_reconcile_v1.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-relational-time-zenodo-reconcile-v1
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      EXPECTED_BRANCH: recovery/relational-time-zenodo-create-requested-v1
+      EXPECTED_MAIN: a86054139b49c13c5cd344753b248b46b5daf66f
+      TARGET_EXECUTION_HEAD: 0cc8e5fe667a85bf4c0f112868dc43f47a4829dc
+      MANIFEST_PATH: release/relational-time-monotonic-evidence-sphere-zenodo-v1/publish-request.json
+      EVIDENCE_PATH: release/relational-time-monotonic-evidence-sphere-zenodo-v1/zenodo-publication.json
+      EXPECTED_RECOVERY_SHA256: bd20c567ac8ea373c1fe19844a13de4ca44efb9966fed6a2eea292db47499d3f
+      CONSUMPTION_REF: refs/tags/qikvrt-zenodo-auth/ea8412b6be8283441472a1659fc01f24c64191387385de193ef69d13fc5ae009
+      EXPECTED_TAG_OBJECT: 61c8956e6aec39f3dbd60fa0d1f0a00bde2731cc
+      ZENODO_API_BASE: https://zenodo.org/api
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONNOUSERSITE: '1'
+    steps:
+      - name: Check out exact recovery controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact recovery carrier and consumed lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = push
+          test "$GITHUB_REF" = "refs/heads/$EXPECTED_BRANCH"
+          test "$(git show -s --format=%P HEAD)" = "$EXPECTED_MAIN"
+          test "$(sha256sum "$EVIDENCE_PATH" | awk '{print $1}')" = "$EXPECTED_RECOVERY_SHA256"
+          python3 -B - <<'PY'
+          import json, os
+          from pathlib import Path
+          event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
+          if event.get('forced') is not False:
+              raise SystemExit('BLOCK: recovery carrier push was forced')
+          if event.get('before') != os.environ['EXPECTED_MAIN']:
+              raise SystemExit('BLOCK: recovery carrier parent differs from exact main')
+          if event.get('after') != os.environ['GITHUB_SHA']:
+              raise SystemExit('BLOCK: recovery carrier after SHA differs')
+          PY
+          expected="$(printf '%s\n' \
+            '.github/workflows/qikvrt_relational_time_zenodo_reconcile_v1.yml' \
+            "$EVIDENCE_PATH" | sort)"
+          observed="$(git diff --name-only "$EXPECTED_MAIN" HEAD -- | sort)"
+          test "$observed" = "$expected"
+          remote_main="$(git ls-remote --heads origin refs/heads/main | awk 'NR==1{print $1}')"
+          tag_object="$(git ls-remote origin "$CONSUMPTION_REF" | awk 'NR==1{print $1}')"
+          peeled_target="$(git ls-remote origin "$CONSUMPTION_REF^{}" | awk 'NR==1{print $1}')"
+          test "$remote_main" = "$EXPECTED_MAIN"
+          test "$tag_object" = "$EXPECTED_TAG_OBJECT"
+          test "$peeled_target" = "$TARGET_EXECUTION_HEAD"
+
+      - name: Prepare immutable execution worktree with exact recovery receipt
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/qikvrt-relational-time-zenodo-recovery"
+          git worktree add --detach "$target" "$TARGET_EXECUTION_HEAD"
+          mkdir -p "$target/$(dirname "$EVIDENCE_PATH")"
+          cp "$EVIDENCE_PATH" "$target/$EVIDENCE_PATH"
+          chmod 600 "$target/$EVIDENCE_PATH"
+          test "$(git -C "$target" rev-parse HEAD)" = "$TARGET_EXECUTION_HEAD"
+          test "$(sha256sum "$target/$EVIDENCE_PATH" | awk '{print $1}')" = "$EXPECTED_RECOVERY_SHA256"
+          printf 'path=%s\n' "$target" >> "$GITHUB_OUTPUT"
+
+      - name: Reconcile exact prior create request without duplicate create
+        id: reconcile
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+          TARGET_WORKTREE: ${{ steps.target.outputs.path }}
+        run: |
+          set -euo pipefail
+          cd "$TARGET_WORKTREE"
+          export GITHUB_SHA="$TARGET_EXECUTION_HEAD"
+          python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = Path.cwd().resolve()
+          manifest_path = root / os.environ['MANIFEST_PATH']
+          evidence_path = root / os.environ['EVIDENCE_PATH']
+          manifest = publish.load_manifest(manifest_path, root)
+          execution_head = publish._validate_repository_source_head(root, manifest_path, manifest)
+          if execution_head != os.environ['TARGET_EXECUTION_HEAD']:
+              raise SystemExit('BLOCK: recovery execution head differs')
+          publish._validate_origin_repository(root, manifest['repository'])
+          secrets = publish._validated_network_secrets()
+          value, _raw = publish._load_evidence_without_secrets(evidence_path, secrets)
+          evidence = publish._validate_recovery_evidence(value, manifest_path, root, manifest, execution_head)
+          if evidence['state'] != publish.CONSUMPTION_STATE or evidence['phase'] != 'create_requested':
+              raise SystemExit('BLOCK: exact create-requested recovery state differs')
+          remote = evidence['remote_consumption']
+          if remote['ref'] != os.environ['CONSUMPTION_REF'] or remote['tag_object'] != os.environ['EXPECTED_TAG_OBJECT']:
+              raise SystemExit('BLOCK: consumed lock identity differs')
+          publish._reject_owner_authorization_replay(
+              root,
+              manifest['owner_authorization'],
+              secrets,
+              current_evidence_path=evidence_path,
+          )
+          verified = publish.verify_files(manifest, root, secrets[publish.zenodo.TOKEN_ENVIRONMENT_VARIABLE])
+          publish._reject_tokens_in_publication_bytes(manifest_path, root, manifest, verified, secrets)
+          client = publish.zenodo.ZenodoClient(
+              secrets[publish.zenodo.TOKEN_ENVIRONMENT_VARIABLE],
+              publish.zenodo.validate_base_url(os.environ['ZENODO_API_BASE']),
+          )
+          metadata = manifest['metadata']
+          entries = publish._shared_entries(manifest['files'])
+          record_id, doi, already_public = publish._recover_create_requested_record(
+              client,
+              secrets[publish.zenodo.TOKEN_ENVIRONMENT_VARIABLE],
+              metadata,
+              entries,
+          )
+          record_created = publish._phase_evidence(
+              manifest_path, root, manifest, execution_head, remote,
+              'record_created', record_id=record_id, doi=doi,
+          )
+          publish._atomic_recovery_evidence(evidence_path, record_created, secrets)
+          final = publish._complete_exact_record(
+              evidence_path, manifest_path, root, manifest, execution_head,
+              remote, record_id, doi, client, verified, secrets,
+              already_public=already_public,
+          )
+          if final.get('state') != 'published' or final.get('phase') != 'public_verified':
+              raise SystemExit('BLOCK: reconciliation did not reach published/public_verified')
+          print('ZENODO_PUBLICATION_STATE=published')
+          print(f"ZENODO_RECORD_ID={final['record_id']}")
+          print(f"ZENODO_DOI={final['doi']}")
+          print(f"ZENODO_RECORD_URL={final['record_url']}")
+          PY
+
+      - name: Persist published evidence and regenerate repository integrity
+        shell: bash
+        env:
+          TARGET_WORKTREE: ${{ steps.target.outputs.path }}
+        run: |
+          set -euo pipefail
+          cp "$TARGET_WORKTREE/$EVIDENCE_PATH" "$EVIDENCE_PATH"
+          chmod 644 "$EVIDENCE_PATH"
+          python3 -B - <<'PY'
+          import json, os
+          from pathlib import Path
+          value = json.loads(Path(os.environ['EVIDENCE_PATH']).read_text())
+          if value.get('state') != 'published' or value.get('phase') != 'public_verified':
+              raise SystemExit('BLOCK: final evidence is not published/public_verified')
+          if not value.get('doi') or not value.get('record_url'):
+              raise SystemExit('BLOCK: final evidence lacks DOI or record URL')
+          PY
+          python3 -B tools/qikvrt_integrity.py generate
+          git diff --check
+          git config user.name 'qik-vrt-zenodo-recovery[bot]'
+          git config user.email 'qik-vrt-zenodo-recovery[bot]@users.noreply.github.com'
+          git add -- REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt "$EVIDENCE_PATH"
+          test -n "$(git diff --cached --name-only)"
+          git commit -m 'publication: persist verified relational-time Zenodo evidence'
+          git push origin "HEAD:$EXPECTED_BRANCH"
+
+      - name: Preserve exact publication receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: relational-time-zenodo-reconcile-${{ github.run_id }}
+          path: ${{ steps.target.outputs.path }}/release/relational-time-monotonic-evidence-sphere-zenodo-v1/zenodo-publication.json
+          if-no-files-found: error
+          retention-days: 30
