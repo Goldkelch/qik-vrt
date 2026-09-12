@@ -1,0 +1,50 @@
+name: QIKVRT PR1083 finite integrity extraction
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize]
+permissions:
+  contents: read
+jobs:
+  extract:
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.event.pull_request.number == 1083 &&
+      github.event.before == '7414129b37b36a60ad8b9f945e589ebd1cb0db36'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 7414129b37b36a60ad8b9f945e589ebd1cb0db36
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Generate and prove exact predecessor projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 7414129b37b36a60ad8b9f945e589ebd1cb0db36
+          test "$(git rev-parse HEAD^{tree})" = 839b4f3bd8f4ea2a48c90ccc62df6fe271d6a0d5
+          test -z "$(git status --porcelain)"
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          mapfile -t changed < <(git diff --name-only)
+          test "${#changed[@]}" -eq 3
+          printf '%s\n' "${changed[@]}" | sort > /tmp/changed
+          printf '%s\n' REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt | sort > /tmp/expected
+          diff -u /tmp/expected /tmp/changed
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+          mkdir -p "$RUNNER_TEMP/projection"
+          cp REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt "$RUNNER_TEMP/projection/"
+          sha256sum "$RUNNER_TEMP/projection/"* > "$RUNNER_TEMP/projection/SHA256SUMS.projection.txt"
+      - name: Upload exact three-file projection
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-pr1083-integrity-projection-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/projection
+          if-no-files-found: error
+          retention-days: 30
