@@ -28,6 +28,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
+from tools import qikvrt_journey_segmentation as segmentation
 REPO = 'Goldkelch/qik-vrt'
 BRANCH = 'publication/self-explanation-47-homepage-v1'
 SOURCE_SHA = '181314375effc68933baec365e7973a14ad3981605bb192f93a62c37a321f487'
@@ -353,32 +354,60 @@ def translate(code: str,folder: Path,output: Path) -> None:
     if target_id in (None,tokenizer.unk_token_id):raise ValueError('UNSUPPORTED_TARGET_TOKEN')
     protected=lambda s:s=='⸻' or s==MEDIA or s.startswith('q.e.d.')
     unique=list(dict.fromkeys(s for s in original if not protected(s)))
-    lengths={s:len(tokenizer(s,add_special_tokens=True)['input_ids']) for s in unique}
-    if any(n>512 for n in lengths.values()):raise ValueError('SOURCE_TOO_LONG_NO_TRUNCATION')
-    ordered=sorted(unique,key=lambda s:(lengths[s],s))
+    lengths={s:segmentation.token_count(tokenizer,s) for s in unique}
+    direct=sorted((s for s in unique if lengths[s] <= segmentation.MODEL_INPUT_LIMIT),
+                  key=lambda s:(lengths[s],s))
+    over_bound=sorted((s for s in unique if lengths[s] > segmentation.MODEL_INPUT_LIMIT),
+                      key=lambda s:(lengths[s],s))
     results={};t0=time.monotonic();batch_size=8
-    for start in range(0,len(ordered),batch_size):
-        batch=ordered[start:start+batch_size]
+
+    def generate_one(text: str) -> list[int]:
+        inputs=tokenizer([text],return_tensors='pt',padding=True,truncation=False)
+        with torch.inference_mode():
+            generated=model.generate(**inputs,forced_bos_token_id=target_id,
+                max_new_tokens=segmentation.MODEL_OUTPUT_LIMIT,
+                do_sample=False,num_beams=1,use_cache=True)
+        return generated[0].tolist()
+
+    def record_plan(src: str,plan: list[str] | None) -> None:
+        if plan:
+            emit('TRANSLATION_SEGMENT_PLAN',language=code,source_sha256=sha(src.encode()),
+                 segments=[{'sha256':sha(part.encode()),'input_tokens':segmentation.token_count(tokenizer,part)}
+                           for part in plan])
+
+    for start in range(0,len(direct),batch_size):
+        batch=direct[start:start+batch_size]
         inputs=tokenizer(batch,return_tensors='pt',padding=True,truncation=False)
         with torch.inference_mode():
-            tokens=model.generate(**inputs,forced_bos_token_id=target_id,max_new_tokens=512,
+            tokens=model.generate(**inputs,forced_bos_token_id=target_id,
+                max_new_tokens=segmentation.MODEL_OUTPUT_LIMIT,
                 do_sample=False,num_beams=1,use_cache=True)
         for src,seq in zip(batch,tokens.tolist()):
-            # Decoder start may itself be EOS: require a generated terminal EOS.
-            if tokenizer.eos_token_id not in seq[2:]:raise ValueError('OUTPUT_TRUNCATED_NO_ACCEPTANCE')
-            text=tokenizer.decode(seq,skip_special_tokens=True).strip()
-            if not text or '\n\n' in text:raise ValueError('EMPTY_OR_MALFORMED_OUTPUT_BLOCK')
-            results[src]=text
-        emit('TRANSLATION_BATCH',language=code,completed=min(start+batch_size,len(ordered)),
-             total=len(ordered),elapsed_seconds=round(time.monotonic()-t0,1))
-    values=[s if protected(s) else results[s] for s in original]
+            text,plan=segmentation.accept_or_segment(src,seq,tokenizer,generate_one)
+            results[src]=text;record_plan(src,plan)
+        emit('TRANSLATION_BATCH',language=code,completed=min(start+batch_size,len(direct)),
+             total=len(unique),elapsed_seconds=round(time.monotonic()-t0,1))
+    for src in over_bound:
+        text,plan=segmentation.translate_segmented(src,tokenizer,generate_one)
+        results[src]=text;record_plan(src,plan)
+        emit('TRANSLATION_BATCH',language=code,completed=len(results),total=len(unique),
+             elapsed_seconds=round(time.monotonic()-t0,1))
+    values=segmentation.reassemble_blocks(original,results,protected)
     # Translation is probabilistic in quality even though greedy decoding is used.
     store_edition(output,code,values,original,{
         'translator':'Meta NLLB-200 distilled 600M; repository-local draft generation',
-        'method':'PARAGRAPH_ALIGNED_CPU_DYNAMIC_INT8_GREEDY_DRAFT',
+        'method':'PARAGRAPH_ALIGNED_CPU_DYNAMIC_INT8_GREEDY_DRAFT_WITH_DETERMINISTIC_SEGMENT_FALLBACK',
         'model':MODEL,'model_revision':REVISION,'model_payload':model_manifest,
         'runtime':runtime,'target_token':TARGETS[code],'source_token':'deu_Latn',
         'source_head':head,'no_truncation':True,'human_quality_review':False,
+        'segmentation_contract':{
+            'model_input_limit':segmentation.MODEL_INPUT_LIMIT,
+            'model_output_limit':segmentation.MODEL_OUTPUT_LIMIT,
+            'segment_input_limit':segmentation.SEGMENT_INPUT_LIMIT,
+            'each_segment_requires_generated_eos':True,
+            'fallback_or_source_substitution':False,
+            'reassembled_source_block_count':len(values),
+        },
         'model_scope_notice':'Research model; not a certified or independently reviewed document translation.',
     })
     finish_manifest(output,head)
