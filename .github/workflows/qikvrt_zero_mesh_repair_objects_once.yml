@@ -2,6 +2,9 @@ name: QIKVRT finite zero-mesh repair objects
 on:
   push:
     branches: [materialize/zero-mesh-boundary-a860-20260912-v1]
+    paths:
+      - .github/workflows/qikvrt_zero_mesh_repair_objects_once.yml
+      - transport/zero-mesh-repair-a860.patch.gz
 permissions:
   contents: write
 concurrency:
@@ -11,7 +14,7 @@ jobs:
   materialize:
     if: github.repository == 'Goldkelch/qik-vrt'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -21,7 +24,7 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
-      - name: Bind Main and apply digest-verified five-path repair from fetched Git object
+      - name: Bind source and apply immutable five-path repair
         shell: bash
         run: |
           set -euo pipefail
@@ -52,78 +55,88 @@ jobs:
               assert hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()==digest,path
           (root/'EXPECTED_SOURCE_DIGESTS.json').write_text(json.dumps(expected,indent=2)+'\n')
           PY
-      - name: Execute regression, protocol and real TCP network suites
+      - name: Execute native regression and full repository tests
         shell: bash
         run: |
           set -euo pipefail
           PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v \
-            tests.test_qikvrt_real_mesh \
-            tests.test_qikvrt_real_mesh_system_verification \
-            tests.test_effect_ack_conformance \
-            2>&1 | tee "$RUNNER_TEMP/mesh-repair/TARGETED_TESTS.log"
-      - name: Generate canonical integrity and execute full repository gates
-        shell: bash
-        run: |
-          set -euo pipefail
+            tests.test_qikvrt_real_mesh tests.test_qikvrt_real_mesh_system_verification \
+            tests.test_effect_ack_conformance 2>&1 | tee "$RUNNER_TEMP/mesh-repair/TARGETED_TESTS.log"
           python3 -B tools/qikvrt_integrity.py generate
           python3 -B tools/qikvrt_integrity.py verify
           set +e
           make test > "$RUNNER_TEMP/mesh-repair/FULL_TESTS.log" 2>&1
           rc=$?
           set -e
-          tail -n 150 "$RUNNER_TEMP/mesh-repair/FULL_TESTS.log"
+          tail -n 60 "$RUNNER_TEMP/mesh-repair/FULL_TESTS.log"
           test "$rc" -eq 0
           python3 -B tools/qikvrt_integrity.py verify
           git diff --check
-      - name: Store only eight checked immutable objects and independently read them back
+      - name: Persist only transport copies on the existing exact helper ref and reobserve bytes
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           python3 -B - <<'PY'
-          import base64,hashlib,json,os,pathlib,subprocess,tarfile,time
+          import hashlib,json,os,pathlib,subprocess,tarfile
           root=pathlib.Path(os.environ['RUNNER_TEMP'])/'mesh-repair'
-          def api(path,payload=None):
-              args=['gh','api',path]
-              if payload is not None:args+=['--method','POST','--input','-']
-              for delay in (0,15,45):
-                  if delay:time.sleep(delay)
-                  p=subprocess.run(args,input=json.dumps(payload).encode() if payload is not None else None,capture_output=True,timeout=45)
-                  if p.returncode==0:return json.loads(p.stdout)
-                  if b'API rate limit exceeded for installation.' not in p.stderr:raise RuntimeError(p.stderr.decode())
-              (root/'QUOTA_HOLD.json').write_text(json.dumps({'state':'HOLD_UNVERIFIED','reason':'GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED','endpoint':path,'ref_mutation':False,'general_effect_ack_done':False})+'\n')
-              raise RuntimeError('HOLD: bounded installation quota backoff exhausted')
-          def main():
-              lines=subprocess.check_output(['git','ls-remote','--exit-code','--heads','origin','refs/heads/main'],text=True,timeout=45).splitlines()
+          source='a86054139b49c13c5cd344753b248b46b5daf66f'
+          branch='materialize/zero-mesh-boundary-a860-20260912-v1'
+          producer=os.environ['GITHUB_SHA']
+          assert os.environ['GITHUB_REPOSITORY']=='Goldkelch/qik-vrt'
+          assert os.environ['GITHUB_REF']=='refs/heads/'+branch
+          def git(*args,cwd=None):
+              return subprocess.check_output(['git',*args],cwd=cwd,timeout=90)
+          def remote(ref):
+              lines=git('ls-remote','--exit-code','--heads','origin','refs/heads/'+ref).decode().splitlines()
               assert len(lines)==1
               return lines[0].split()[0]
-          source='a86054139b49c13c5cd344753b248b46b5daf66f'
-          assert main()==source
+          assert remote('main')==source and remote(branch)==producer
           paths=list(json.loads((root/'EXPECTED_SOURCE_DIGESTS.json').read_text()))+['REPOSITORY_FILE_MANIFEST.json','REPOSITORY_FILE_MANIFEST.json.sha256','SHA256SUMS.txt']
-          assert sorted(subprocess.check_output(['git','diff','--name-only'],text=True).splitlines())==sorted(paths)
-          assert not subprocess.check_output(['git','ls-files','--others','--exclude-standard'],text=True).strip()
+          assert sorted(git('diff','--name-only').decode().splitlines())==sorted(paths)
+          assert not git('ls-files','--others','--exclude-standard').strip()
           with tarfile.open(root/'changed-files.tar.gz','w:gz') as archive:
               for path in paths:archive.add(path,arcname=path)
+          work=root/'transport-worktree'
+          git('worktree','add','--detach',str(work),producer)
+          prefix='transport/zero-mesh-checked/'
+          assert not (work/prefix).exists()
           files={}
           for path in paths:
               raw=pathlib.Path(path).read_bytes()
-              oid=hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
-              stored=api('repos/Goldkelch/qik-vrt/git/blobs',{'encoding':'base64','content':base64.b64encode(raw).decode()})
-              assert stored['sha']==oid
-              back=api('repos/Goldkelch/qik-vrt/git/blobs/'+oid)
-              assert base64.b64decode(back['content'])==raw
-              files[path]={'sha':oid,'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw)}
-          assert main()==source
-          receipt={'schema':'qikvrt_zero_mesh_repair_objects_v1','source_head':source,'source_tree':'feff1cae2401a3df83febc3b9458de70d79b818e','producer_run':os.environ['GITHUB_RUN_ID'],'producer_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'patch_sha256':'ff4b591e3b7db45b9cf423ecad766c7f533b8b18f16b7cefb9d4faa00ac69c8f','files':files,'regression_and_full_repository_tests_executed':True,'blob_bytes_independently_reobserved':True,'ref_mutation':False,'successor_validation_transferred':False,'general_effect_ack_done':False}
+              target=work/prefix/path;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(raw)
+              files[path]={'sha':hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest(),'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw)}
+          git('add','--',prefix,cwd=work)
+          assert sorted(git('diff','--cached','--name-only',cwd=work).decode().splitlines())==sorted(prefix+p for p in paths)
+          git('-c','user.name=qikvrt-mesh-object-transport','-c','user.email=qikvrt-mesh-object-transport@users.noreply.github.com','commit','-m','transport(mesh): preserve eight tested objects; candidate validation not transferred',cwd=work)
+          transport=git('rev-parse','HEAD',cwd=work).decode().strip()
+          assert git('rev-parse','HEAD^',cwd=work).decode().strip()==producer
+          assert remote('main')==source and remote(branch)==producer
+          helper='!f() { printf "username=x-access-token\\npassword=%s\\n" "$GH_TOKEN"; }; f'
+          git('-c','credential.helper='+helper,'push','origin','HEAD:refs/heads/'+branch,cwd=work)
+          assert remote(branch)==transport
+          git('fetch','--no-tags','origin','refs/heads/'+branch)
+          assert git('rev-parse','FETCH_HEAD').decode().strip()==transport
+          for path in paths:
+              back=git('show',transport+':'+prefix+path)
+              assert back==pathlib.Path(path).read_bytes(),path
+              assert git('rev-parse',transport+':'+prefix+path).decode().strip()==files[path]['sha']
+          assert remote('main')==source
+          receipt={'schema':'qikvrt_zero_mesh_repair_objects_v1','source_head':source,'source_tree':'feff1cae2401a3df83febc3b9458de70d79b818e','producer_run':os.environ['GITHUB_RUN_ID'],'producer_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'producer_head':producer,'patch_sha256':'ff4b591e3b7db45b9cf423ecad766c7f533b8b18f16b7cefb9d4faa00ac69c8f','files':files,'regression_and_full_repository_tests_executed':True,'blob_bytes_independently_reobserved':True,'transport_ref':branch,'transport_head':transport,'transport_ref_mutation':True,'main_mutation':False,'candidate_mutation':False,'successor_validation_transferred':False,'general_effect_ack_done':False}
           (root/'OBJECT_RECEIPT.json').write_text(json.dumps(receipt,indent=2)+'\n')
           print(json.dumps(receipt,indent=2))
+          git('worktree','remove',str(work))
           PY
-      - name: Preserve evidence even on quota HOLD without claiming successor validation
+      - name: Preserve exact transport receipt and diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: qikvrt-zero-mesh-repair-objects-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/mesh-repair
+          path: |
+            ${{ runner.temp }}/mesh-repair/*.json
+            ${{ runner.temp }}/mesh-repair/*.log
+            ${{ runner.temp }}/mesh-repair/*.patch
+            ${{ runner.temp }}/mesh-repair/*.tar.gz
           if-no-files-found: error
           retention-days: 30
