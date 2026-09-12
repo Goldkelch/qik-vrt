@@ -5,6 +5,8 @@ on:
     paths:
       - '.github/workflows/qikvrt_real_mesh.yml'
       - 'tools/qikvrt_real_mesh.py'
+      - 'tools/qikvrt_real_mesh_system_verification.py'
+      - 'tests/test_qikvrt_real_mesh_system_verification.py'
       - 'tests/test_qikvrt_real_mesh.py'
       - 'state/mesh/QIKVRT_REAL_MESH_V1.json'
       - 'docs/architecture/QIKVRT_REAL_MESH_V1.md'
@@ -17,6 +19,8 @@ on:
     paths:
       - '.github/workflows/qikvrt_real_mesh.yml'
       - 'tools/qikvrt_real_mesh.py'
+      - 'tools/qikvrt_real_mesh_system_verification.py'
+      - 'tests/test_qikvrt_real_mesh_system_verification.py'
       - 'tests/test_qikvrt_real_mesh.py'
       - 'state/mesh/QIKVRT_REAL_MESH_V1.json'
       - 'docs/architecture/QIKVRT_REAL_MESH_V1.md'
@@ -71,19 +75,12 @@ jobs:
             --workdir .qikvrt/real-mesh/runtime \
             --output .qikvrt/real-mesh/QIKVRT_REAL_MESH_EXECUTION_RECEIPT_V1.json \
             > .qikvrt/real-mesh/stdout.json
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          receipt=json.loads(Path('.qikvrt/real-mesh/QIKVRT_REAL_MESH_EXECUTION_RECEIPT_V1.json').read_text())
-          assert receipt['pair_count'] == 2
-          assert receipt['node_process_count'] == 4
-          assert receipt['network_scope'] == 'LOOPBACK_TCP_ONLY'
-          assert receipt['completion_claims']['real_multi_pair_mesh_runtime_executed'] is True
-          assert receipt['completion_claims']['bounded_loopback_effect_ack_done'] is True
-          assert receipt['completion_claims']['general_effect_ack_done'] is False
-          assert receipt['completion_claims']['authority_mirror_synchronization'] is False
-          assert receipt['external_effect'] == 'NONE'
-          PY
+          python3 -B tools/qikvrt_real_mesh_system_verification.py verify \
+            --receipt .qikvrt/real-mesh/QIKVRT_REAL_MESH_EXECUTION_RECEIPT_V1.json \
+            --expected-head "$(git rev-parse --verify HEAD^{commit})" \
+            --expected-tree "$(git rev-parse --verify HEAD^{tree})" \
+            --ledger-dir .qikvrt/real-mesh/runtime/ledgers \
+            --output .qikvrt/real-mesh/INDEPENDENT_AUDIT.json
 
       - name: Verify repository-native integrity
         run: python3 -B tools/qikvrt_integrity.py verify
@@ -95,4 +92,5 @@ jobs:
           name: qikvrt-real-mesh-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
           path: .qikvrt/real-mesh
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 30

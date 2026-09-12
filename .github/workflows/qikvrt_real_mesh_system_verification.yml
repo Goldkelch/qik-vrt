@@ -62,18 +62,22 @@ jobs:
 
       - name: Execute real mesh and produce audit receipt
         shell: bash
+        env:
+          MESH_EVIDENCE_DIR: ${{ runner.temp }}/qikvrt-real-mesh-sysverify
         run: |
           set -euo pipefail
-          mkdir -p .qikvrt/real-mesh-sysverify
+          mkdir -p "$MESH_EVIDENCE_DIR"
           python3 -B tools/qikvrt_real_mesh_system_verification.py run \
             --source-head "$(git rev-parse --verify HEAD^{commit})" \
             --source-tree "$(git rev-parse --verify HEAD^{tree})" \
-            --output .qikvrt/real-mesh-sysverify/AUDIT_RECEIPT.json \
-            > .qikvrt/real-mesh-sysverify/stdout.json
+            --workdir "$MESH_EVIDENCE_DIR/runtime" \
+            --output "$MESH_EVIDENCE_DIR/AUDIT_RECEIPT.json" \
+            > "$MESH_EVIDENCE_DIR/stdout.json"
           python3 - <<'PY'
           import json
+          import os
           from pathlib import Path
-          audit = json.loads(Path('.qikvrt/real-mesh-sysverify/AUDIT_RECEIPT.json').read_text())
+          audit = json.loads((Path(os.environ['MESH_EVIDENCE_DIR'])/'AUDIT_RECEIPT.json').read_text())
           assert audit['status'] == 'PASS', f"Audit status: {audit['status']}, findings: {audit['findings']}"
           assert audit['finding_count'] == 0, f"Unexpected findings: {audit['findings']}"
           assert audit['general_effect_ack_done'] is False, "general_effect_ack_done must be False"
@@ -82,3 +86,27 @@ jobs:
           assert audit['bounded_loopback_effect_ack_scope_confirmed'] is True
           print("PASS: all audit receipt assertions satisfied")
           PY
+
+      - name: Independently reverify exact receipt and preserved node ledgers
+        shell: bash
+        env:
+          MESH_EVIDENCE_DIR: ${{ runner.temp }}/qikvrt-real-mesh-sysverify
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_real_mesh_system_verification.py verify \
+            --receipt "$MESH_EVIDENCE_DIR/runtime/EXECUTION_RECEIPT.json" \
+            --expected-head "$(git rev-parse HEAD)" \
+            --expected-tree "$(git rev-parse HEAD^{tree})" \
+            --ledger-dir "$MESH_EVIDENCE_DIR/runtime/ledgers" \
+            --output "$MESH_EVIDENCE_DIR/READBACK_AUDIT.json"
+          test -z "$(git status --porcelain)"
+
+      - name: Preserve exact execution, audit and ledger byte evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mesh-system-verification-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qikvrt-real-mesh-sysverify
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30
