@@ -4,7 +4,7 @@ on:
     branches: [materialize/zero-mesh-boundary-a860-20260912-v1]
     paths:
       - .github/workflows/qikvrt_zero_mesh_repair_objects_once.yml
-      - transport/zero-mesh-clean-output.patch
+      - transport/zero-mesh-runner-context.patch
 permissions:
   contents: write
 concurrency:
@@ -18,37 +18,37 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: a3809ff867d19f278adc22b97b09e0f818a387a7
+          ref: 41ddf2d85f7d11ebf87d7e07a95b7a1dd97bf878
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
-      - name: Bind exact candidate and apply only digest-verified clean-output correction
+      - name: Bind exact source and apply the runner-context correction
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/mesh-repair"
           exec > >(tee "$RUNNER_TEMP/mesh-repair/BINDING.log") 2>&1
-          test "$(git rev-parse HEAD)" = a3809ff867d19f278adc22b97b09e0f818a387a7
-          test "$(git rev-parse HEAD^{tree})" = 49b0b8bce89a09d841423d52a34dc02a1646bbeb
+          test "$(git rev-parse HEAD)" = 41ddf2d85f7d11ebf87d7e07a95b7a1dd97bf878
+          test "$(git rev-parse HEAD^{tree})" = d58aa5a0234ad473910ea152b575930689c498ef
           test -z "$(git status --porcelain)"
           test "$(git ls-remote --heads origin refs/heads/main | awk '{print $1}')" = a86054139b49c13c5cd344753b248b46b5daf66f
-          test "$(git ls-remote --heads origin refs/heads/fix/mesh-receipt-ledger-binding-a860-v1 | awk '{print $1}')" = a3809ff867d19f278adc22b97b09e0f818a387a7
+          test "$(git ls-remote --heads origin refs/heads/fix/mesh-receipt-ledger-binding-a860-v1 | awk '{print $1}')" = 41ddf2d85f7d11ebf87d7e07a95b7a1dd97bf878
           python3 -B - <<'PY'
           import hashlib,json,os,pathlib,subprocess
           root=pathlib.Path(os.environ['RUNNER_TEMP'])/'mesh-repair'
-          raw=subprocess.check_output(['git','cat-file','blob','e937efa1ea0432d2643bf522ad1c5c298492665b'])
-          assert hashlib.sha256(raw).hexdigest()=='700e675227ce4db772401f109b33548123813f73c1d932b23a1c8b55ce1ce5de'
+          raw=subprocess.check_output(['git','cat-file','blob','ecefa925052fd4948f0671b2fdbe96d793edb954'])
+          assert hashlib.sha256(raw).hexdigest()=='036dcfbaef2c546ce2671542f9a343659dc4fe345e9de4d5025d8071254b88bb'
           path=root/'repair.patch';path.write_bytes(raw)
           subprocess.check_call(['git','apply','--check',str(path)])
           subprocess.check_call(['git','apply',str(path)])
-          expected={'.github/workflows/qikvrt_real_mesh_system_verification.yml':'591ec9698ab098faf1574c40850ccb12f7f5f88367272cdd7e2812faf21ddc20','tests/test_qikvrt_real_mesh_system_verification.py':'f182f6ce25f0bf08c76aa377089c8dbf62db8b5199dfeab52d4be03a90d2f47e'}
+          expected={'.github/workflows/qikvrt_real_mesh_system_verification.yml':'a95c96533fd982c7daf94f6a5363bca4383ba4452ca9fe2069c3bd4d286b2dab','tests/test_qikvrt_real_mesh_system_verification.py':'9d0e080c63d2a0e29e30c878a2d702cd6f984bd1932ccd2e7e9e30e1ae9874e5'}
           assert sorted(subprocess.check_output(['git','diff','--name-only'],text=True).splitlines())==sorted(expected)
           for path,digest in expected.items():assert hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()==digest,path
           (root/'EXPECTED_SOURCE_DIGESTS.json').write_text(json.dumps(expected,indent=2)+'\n')
           PY
-      - name: Execute real CLI regression, Mesh tests and full repository gates
+      - name: Execute actual CLI, context-boundary and complete repository regression suites
         shell: bash
         run: |
           set -euo pipefail
@@ -74,7 +74,7 @@ jobs:
           python3 -B - <<'PY'
           import hashlib,json,os,pathlib,subprocess,tarfile
           root=pathlib.Path(os.environ['RUNNER_TEMP'])/'mesh-repair'
-          source='a3809ff867d19f278adc22b97b09e0f818a387a7'
+          source='41ddf2d85f7d11ebf87d7e07a95b7a1dd97bf878'
           main='a86054139b49c13c5cd344753b248b46b5daf66f'
           subject_branch='fix/mesh-receipt-ledger-binding-a860-v1'
           branch='materialize/zero-mesh-boundary-a860-20260912-v1'
@@ -93,7 +93,7 @@ jobs:
           with tarfile.open(root/'changed-files.tar.gz','w:gz') as archive:
               for path in paths:archive.add(path,arcname=path)
           work=root/'transport-worktree';git('worktree','add','--detach',str(work),producer)
-          prefix='transport/zero-mesh-checked-v3/';assert not (work/prefix).exists()
+          prefix='transport/zero-mesh-checked-v4/';assert not (work/prefix).exists()
           files={}
           for path in paths:
               raw=pathlib.Path(path).read_bytes();target=work/prefix/path
@@ -101,7 +101,7 @@ jobs:
               files[path]={'sha':hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest(),'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw)}
           git('add','--',prefix,cwd=work)
           assert sorted(git('diff','--cached','--name-only',cwd=work).decode().splitlines())==sorted(prefix+p for p in paths)
-          git('-c','user.name=qikvrt-mesh-object-transport','-c','user.email=qikvrt-mesh-object-transport@users.noreply.github.com','commit','-m','transport(mesh): preserve checked external-output integration repair',cwd=work)
+          git('-c','user.name=qikvrt-mesh-object-transport','-c','user.email=qikvrt-mesh-object-transport@users.noreply.github.com','commit','-m','transport(mesh): preserve checked runner-context repair',cwd=work)
           transport=git('rev-parse','HEAD',cwd=work).decode().strip()
           assert git('rev-parse','HEAD^',cwd=work).decode().strip()==producer
           assert remote('main')==main and remote(subject_branch)==source and remote(branch)==producer
@@ -114,7 +114,7 @@ jobs:
               assert git('show',transport+':'+prefix+path)==pathlib.Path(path).read_bytes(),path
               assert git('rev-parse',transport+':'+prefix+path).decode().strip()==files[path]['sha']
           assert remote('main')==main and remote(subject_branch)==source
-          receipt={'schema':'qikvrt_zero_mesh_repair_objects_v1','source_head':source,'source_tree':'49b0b8bce89a09d841423d52a34dc02a1646bbeb','main_head':main,'producer_run':os.environ['GITHUB_RUN_ID'],'producer_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'producer_head':producer,'patch_sha256':'700e675227ce4db772401f109b33548123813f73c1d932b23a1c8b55ce1ce5de','files':files,'regression_and_full_repository_tests_executed':True,'blob_bytes_independently_reobserved':True,'transport_ref':branch,'transport_head':transport,'transport_ref_mutation':True,'main_mutation':False,'candidate_mutation':False,'successor_validation_transferred':False,'general_effect_ack_done':False}
+          receipt={'schema':'qikvrt_zero_mesh_repair_objects_v1','source_head':source,'source_tree':'d58aa5a0234ad473910ea152b575930689c498ef','main_head':main,'producer_run':os.environ['GITHUB_RUN_ID'],'producer_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'producer_head':producer,'patch_sha256':'036dcfbaef2c546ce2671542f9a343659dc4fe345e9de4d5025d8071254b88bb','files':files,'regression_and_full_repository_tests_executed':True,'blob_bytes_independently_reobserved':True,'transport_ref':branch,'transport_head':transport,'transport_ref_mutation':True,'main_mutation':False,'candidate_mutation':False,'successor_validation_transferred':False,'general_effect_ack_done':False}
           (root/'OBJECT_RECEIPT.json').write_text(json.dumps(receipt,indent=2)+'\n')
           print(json.dumps(receipt,indent=2));git('worktree','remove',str(work))
           PY
