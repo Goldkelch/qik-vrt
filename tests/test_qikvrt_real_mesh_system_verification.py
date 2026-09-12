@@ -448,6 +448,18 @@ class AdversarialWitnessTests(unittest.TestCase):
                 self.assertIn("--ledger-dir",text)
 
 
+    def test_runner_context_is_bound_only_after_runner_allocation(self):
+        text=(sysverify.ROOT/".github/workflows/qikvrt_real_mesh_system_verification.yml").read_text()
+        before_steps, separator, after_steps=text.partition("    steps:\n")
+        self.assertTrue(separator)
+        self.assertNotIn("${{ runner.", before_steps)
+        binding="          MESH_EVIDENCE_DIR: ${{ runner.temp }}/qikvrt-real-mesh-sysverify"
+        self.assertEqual(after_steps.count(binding),2)
+        for name in ("Execute real mesh and produce audit receipt",
+                     "Independently reverify exact receipt and preserved node ledgers"):
+            step=after_steps.split("      - name: "+name+"\n",1)[1].split("      - name:",1)[0]
+            self.assertIn("        env:\n"+binding+"\n",step)
+
     def test_real_cli_stdout_does_not_dirty_source_and_dirty_source_still_blocks(self):
         """Reproduce the native integration failure, not only mocked CLI parsing."""
         with tempfile.TemporaryDirectory(prefix="qikvrt-cli-clean-") as tmp:
