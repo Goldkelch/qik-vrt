@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
-"""Record only exact-head journey integrity blobs; never mutate a Git ref."""
+"""Record exact-head journey integrity and public-site Git blobs; never mutate a Git ref."""
 from __future__ import annotations
 
 import base64
@@ -12,9 +12,12 @@ from pathlib import Path
 import subprocess
 import urllib.request
 
+from tools import qikvrt_journey_site as journey_site
+
 REPOSITORY = "Goldkelch/qik-vrt"
 BRANCH = "publication/self-explanation-47-homepage-v1"
 PR_NUMBER = 1080
+PUBLIC_PATH = "docs/reise/index.html"
 ALLOWED = (
     "REPOSITORY_FILE_MANIFEST.json",
     "REPOSITORY_FILE_MANIFEST.json.sha256",
@@ -71,8 +74,36 @@ def validate_subject(pr: dict, ref: dict, expected: str) -> None:
         raise ValueError("HOLD: exact live journey subject changed or is inadmissible")
 
 
+def public_site_bytes(root: Path = Path("docs/reise")) -> bytes:
+    page, report = journey_site.render(root)
+    if not report.get("all_47_texts_present") or report.get("available_count") != 47:
+        raise ValueError("HOLD: public site requires exact 47/47 structural coverage")
+    preview_robots = '<meta name="robots" content="noindex,nofollow">'
+    preview_notice = (
+        '<strong>Unveröffentlichte Lesevorschau / Unpublished reading preview.</strong> '
+        '47 von 47 geplanten Sprachausgaben liegen als Volltext vor. Fehlende Übersetzungen sind nicht auswählbar. '
+        'Diese Vorschau ist kein Nachweis einer veröffentlichten 47-Sprachen-Homepage.'
+    )
+    public_notice = (
+        '<strong>47-Sprachen-Leseausgabe / 47-language reading edition.</strong> '
+        'Alle 47 festgelegten Sprachausgaben liegen als Volltext vor. Der deutsche Text ist die vom Autor bereitgestellte '
+        'Referenz; die Übersetzungen sind ausdrücklich ungeprüfte KI-Arbeitsfassungen und keine unabhängige sprachliche Bestätigung.'
+    )
+    if page.count(preview_robots) != 1 or page.count(preview_notice) != 1:
+        raise ValueError("HOLD: public render markers changed; explicit rebind required")
+    page = page.replace(preview_robots, '<meta name="robots" content="index,follow">', 1)
+    page = page.replace(preview_notice, public_notice, 1)
+    if "Unveröffentlichte Lesevorschau" in page or "Unpublished reading preview" in page or "noindex,nofollow" in page:
+        raise ValueError("HOLD: preview-only marker leaked into public site")
+    raw = page.encode("utf-8")
+    committed = root / "index.html"
+    if committed.exists():
+        if committed.is_symlink() or committed.read_bytes() != raw:
+            raise ValueError("HOLD: committed public homepage differs from deterministic exact-source render")
+    return raw
+
+
 def api(method: str, endpoint: str, payload: dict | None = None) -> dict:
-    # No generic endpoint input: callers below use only PR/ref GET and blob POST/GET.
     token = os.environ["GH_TOKEN"]
     if not token:
         raise ValueError("HOLD: missing GitHub capability")
@@ -102,6 +133,14 @@ def observe(expected: str) -> str:
     return main
 
 
+def store_readback(raw: bytes) -> dict:
+    created = api("POST", "git/blobs", {"encoding": "base64", "content": base64.b64encode(raw).decode("ascii")})
+    sha = blob_id(raw)
+    observed = api("GET", f"git/blobs/{sha}")
+    verify_blob(raw, created, observed)
+    return {"git_blob_sha1": sha, "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
+
+
 def main() -> None:
     expected = os.environ["EXPECTED_HEAD"]
     if os.environ.get("GITHUB_REPOSITORY") != REPOSITORY:
@@ -120,26 +159,26 @@ def main() -> None:
             path = Path(name)
             if path.is_symlink() or not path.is_file():
                 raise ValueError("HOLD: integrity output is not a regular file")
-            raw = path.read_bytes()
-            created = api("POST", "git/blobs", {"encoding": "base64", "content": base64.b64encode(raw).decode("ascii")})
-            sha = blob_id(raw)
-            observed = api("GET", f"git/blobs/{sha}")
-            verify_blob(raw, created, observed)
-            files[name] = {"git_blob_sha1": sha, "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
+            files[name] = store_readback(path.read_bytes())
+    site_raw = public_site_bytes()
+    site = store_readback(site_raw)
     if observe(expected) != source_main:
         raise ValueError("HOLD: Main changed during object materialization")
     if git("rev-parse", "HEAD") != expected:
         raise ValueError("HOLD: local subject mutated")
     receipt = {
-        "schema": "qikvrt_journey_integrity_objects_v1",
+        "schema": "qikvrt_journey_integrity_objects_v2",
         "repository": REPOSITORY,
         "pull_request": PR_NUMBER,
         "source_head": expected,
         "source_tree": source_tree,
         "source_main": source_main,
-        "state": "GIT_OBJECTS_READ_BACK_CANDIDATE_ONLY" if files else "INTEGRITY_PROJECTION_NOOP",
+        "state": "PUBLIC_SITE_AND_INTEGRITY_GIT_OBJECTS_READ_BACK_CANDIDATE_ONLY",
         "changed_paths": sorted(changed),
         "files": files,
+        "public_site_candidate": {"path": PUBLIC_PATH, **site},
+        "all_47_texts_present": True,
+        "linguistic_accuracy_certified": False,
         "ref_mutation": False,
         "predecessor_validation_transfer": False,
         "native_review": False,
