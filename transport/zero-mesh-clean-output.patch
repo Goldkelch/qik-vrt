@@ -1,0 +1,140 @@
+--- a/.github/workflows/qikvrt_real_mesh_system_verification.yml
++++ b/.github/workflows/qikvrt_real_mesh_system_verification.yml
+@@ -36,6 +36,8 @@
+   system-verification:
+     runs-on: ubuntu-24.04
+     timeout-minutes: 15
++    env:
++      MESH_EVIDENCE_DIR: ${{ runner.temp }}/qikvrt-real-mesh-sysverify
+     steps:
+       - name: Check out exact candidate head
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+@@ -64,17 +66,18 @@
+         shell: bash
+         run: |
+           set -euo pipefail
+-          mkdir -p .qikvrt/real-mesh-sysverify
++          mkdir -p "$MESH_EVIDENCE_DIR"
+           python3 -B tools/qikvrt_real_mesh_system_verification.py run \
+             --source-head "$(git rev-parse --verify HEAD^{commit})" \
+             --source-tree "$(git rev-parse --verify HEAD^{tree})" \
+-            --workdir .qikvrt/real-mesh-sysverify/runtime \
+-            --output .qikvrt/real-mesh-sysverify/AUDIT_RECEIPT.json \
+-            > .qikvrt/real-mesh-sysverify/stdout.json
++            --workdir "$MESH_EVIDENCE_DIR/runtime" \
++            --output "$MESH_EVIDENCE_DIR/AUDIT_RECEIPT.json" \
++            > "$MESH_EVIDENCE_DIR/stdout.json"
+           python3 - <<'PY'
+           import json
++          import os
+           from pathlib import Path
+-          audit = json.loads(Path('.qikvrt/real-mesh-sysverify/AUDIT_RECEIPT.json').read_text())
++          audit = json.loads((Path(os.environ['MESH_EVIDENCE_DIR'])/'AUDIT_RECEIPT.json').read_text())
+           assert audit['status'] == 'PASS', f"Audit status: {audit['status']}, findings: {audit['findings']}"
+           assert audit['finding_count'] == 0, f"Unexpected findings: {audit['findings']}"
+           assert audit['general_effect_ack_done'] is False, "general_effect_ack_done must be False"
+@@ -89,11 +92,11 @@
+         run: |
+           set -euo pipefail
+           python3 -B tools/qikvrt_real_mesh_system_verification.py verify \
+-            --receipt .qikvrt/real-mesh-sysverify/runtime/EXECUTION_RECEIPT.json \
++            --receipt "$MESH_EVIDENCE_DIR/runtime/EXECUTION_RECEIPT.json" \
+             --expected-head "$(git rev-parse HEAD)" \
+             --expected-tree "$(git rev-parse HEAD^{tree})" \
+-            --ledger-dir .qikvrt/real-mesh-sysverify/runtime/ledgers \
+-            --output .qikvrt/real-mesh-sysverify/READBACK_AUDIT.json
++            --ledger-dir "$MESH_EVIDENCE_DIR/runtime/ledgers" \
++            --output "$MESH_EVIDENCE_DIR/READBACK_AUDIT.json"
+           test -z "$(git status --porcelain)"
+ 
+       - name: Preserve exact execution, audit and ledger byte evidence
+@@ -101,7 +104,7 @@
+         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+         with:
+           name: qikvrt-mesh-system-verification-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+-          path: .qikvrt/real-mesh-sysverify
++          path: ${{ runner.temp }}/qikvrt-real-mesh-sysverify
+           if-no-files-found: error
+           include-hidden-files: true
+           retention-days: 30
+--- a/tests/test_qikvrt_real_mesh_system_verification.py
++++ b/tests/test_qikvrt_real_mesh_system_verification.py
+@@ -13,6 +13,9 @@
+ import shutil
+ import contextlib
+ import io
++import os
++import subprocess
++import sys
+ from unittest import mock
+ 
+ from tools import qikvrt_real_mesh as mesh
+@@ -433,7 +436,7 @@
+     def test_complete_hidden_receipt_and_ledger_exports_are_explicit(self):
+         for name, directory in (
+             ("qikvrt_real_mesh.yml", ".qikvrt/real-mesh"),
+-            ("qikvrt_real_mesh_system_verification.yml", ".qikvrt/real-mesh-sysverify"),
++            ("qikvrt_real_mesh_system_verification.yml", "${{ runner.temp }}/qikvrt-real-mesh-sysverify"),
+         ):
+             with self.subTest(workflow=name):
+                 text=(sysverify.ROOT/".github/workflows"/name).read_text()
+@@ -445,6 +448,59 @@
+                 self.assertIn("--ledger-dir",text)
+ 
+ 
++    def test_real_cli_stdout_does_not_dirty_source_and_dirty_source_still_blocks(self):
++        """Reproduce the native integration failure, not only mocked CLI parsing."""
++        with tempfile.TemporaryDirectory(prefix="qikvrt-cli-clean-") as tmp:
++            root=pathlib.Path(tmp);checkout=root/"checkout";checkout.mkdir()
++            paths=("tools/qikvrt_real_mesh.py",
++                   "tools/qikvrt_real_mesh_system_verification.py",
++                   "src/qikvrt_effect_ack.py", "state/mesh/QIKVRT_REAL_MESH_V1.json",
++                   "REFLEXIVE_FINDING_WORKFLOW_STANDARD.json")
++            for rel in paths:
++                dest=checkout/rel;dest.parent.mkdir(parents=True,exist_ok=True)
++                dest.write_bytes((sysverify.ROOT/rel).read_bytes())
++            env=dict(os.environ,PYTHONDONTWRITEBYTECODE="1",PYTHONNOUSERSITE="1")
++            for key in tuple(env):
++                if key.startswith("GIT_") or key=="PYTHONPATH":env.pop(key)
++            def git(*args):
++                return subprocess.check_output(["git",*args],cwd=checkout,env=env,
++                                               stderr=subprocess.DEVNULL,timeout=10).decode().strip()
++            git("init");git("add",".")
++            git("-c","user.name=Mesh fixture","-c","user.email=fixture@example.invalid",
++                "commit","-qm","Bound temporary fixture, not production evidence")
++            head=git("rev-parse","HEAD");tree=git("rev-parse","HEAD^{tree}")
++            evidence=root/"evidence";evidence.mkdir()
++            runtime=evidence/"runtime";audit=evidence/"audit.json"
++            command=[sys.executable,"-B",str(checkout/paths[1]),"run",
++                     "--source-head",head,"--source-tree",tree,
++                     "--workdir",str(runtime),"--output",str(audit)]
++            # Opening stdout in the checkout before invocation reproduces the defect.
++            badout=checkout/"stdout.json"
++            with badout.open("w") as handle:
++                failed=subprocess.run(command,cwd=checkout,env=env,stdout=handle,
++                                      stderr=subprocess.PIPE,text=True,timeout=60)
++            self.assertEqual(failed.returncode,2)
++            self.assertIn("uncommitted changes",failed.stderr)
++            self.assertFalse(runtime.exists())
++            badout.unlink()
++            # External stdout is safe and the same real CLI now executes all four nodes.
++            with (evidence/"stdout.json").open("w") as handle:
++                good=subprocess.run(command,cwd=checkout,env=env,stdout=handle,
++                                    stderr=subprocess.PIPE,text=True,timeout=60)
++            self.assertEqual(good.returncode,0,good.stderr)
++            value=json.loads(audit.read_text())
++            self.assertEqual(value["finding_count"],0)
++            self.assertFalse(value["general_effect_ack_done"])
++            self.assertTrue((runtime/"EXECUTION_RECEIPT.json").is_file())
++            self.assertEqual(len(list((runtime/"ledgers").glob("*.jsonl"))),4)
++            self.assertEqual(git("status","--porcelain"),"")
++            # External artifacts must not turn a genuinely changed source into success.
++            target=checkout/paths[0];target.write_bytes(target.read_bytes()+b"\n# dirty source\n")
++            failed=subprocess.run(command,cwd=checkout,env=env,capture_output=True,
++                                  text=True,timeout=60)
++            self.assertEqual(failed.returncode,2)
++            self.assertIn("uncommitted changes",failed.stderr)
++
+     def test_cli_run_does_not_accept_arbitrary_source_labels(self):
+         with mock.patch.object(sysverify.subprocess,"check_output",return_value="c"*40+"\n"+"d"*40+"\n"), \
+              mock.patch.object(sysverify,"run_and_verify") as run, \
