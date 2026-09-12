@@ -147,4 +147,12 @@ class TranslationBoundaries(unittest.TestCase):
             self.assertEqual(failure['error'],'fixture failure')
             self.assertFalse(failure['EFFECT_ACK_DONE'])
 
+    def test_recovery_artifact_excludes_whole_repository_snapshot(self):
+        text=(ROOT/'.github/workflows/qikvrt_journey_translation.yml').read_text()
+        section=text.split('name: journey-recover-bundle-',1)[1].split('  model:',1)[0]
+        self.assertIn('/tmp/qikvrt-journey-generation/files',section)
+        self.assertIn('/tmp/qikvrt-journey-generation/FILESET.json',section)
+        self.assertNotIn('path: /tmp/qikvrt-journey-generation\n',section)
+        self.assertNotIn('TRACKED_SOURCE.zip',section)
+
 if __name__=='__main__':unittest.main()

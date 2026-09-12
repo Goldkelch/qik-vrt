@@ -59,7 +59,13 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: journey-recover-bundle-${{ github.sha }}
-          path: /tmp/qikvrt-journey-generation
+          # Only proposal data belongs in the bounded writer envelope. The
+          # optional whole-repository diagnostic ZIP is not a mutation input.
+          path: |
+            /tmp/qikvrt-journey-generation/files
+            /tmp/qikvrt-journey-generation/FILESET.json
+            /tmp/qikvrt-journey-generation/PUBLIC_BASELINE.json
+            /tmp/qikvrt-journey-generation/FAILURE.json
           retention-days: 30
           if-no-files-found: error
   model:
