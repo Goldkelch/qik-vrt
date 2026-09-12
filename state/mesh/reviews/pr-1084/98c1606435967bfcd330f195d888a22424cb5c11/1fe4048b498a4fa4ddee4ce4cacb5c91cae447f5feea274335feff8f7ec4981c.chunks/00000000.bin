@@ -1,0 +1,935 @@
+diff --git a/.github/workflows/qikvrt_ietf_effect_extensions.yml b/.github/workflows/qikvrt_ietf_effect_extensions.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..29c41303fb255d40156e2f32125d46f8897dfd99
+--- /dev/null
++++ b/.github/workflows/qikvrt_ietf_effect_extensions.yml
+@@ -0,0 +1,128 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++name: QIKVRT IETF effect extensions exact-source validation
++
++on:
++  push:
++    branches: ['publication/ietf-effect-extensions-*']
++  pull_request:
++    paths:
++      - 'external/ietf/**'
++      - 'docs/publications/2026-08-12-observer-relative-retrocausality/ietf-local-change-time-provenance-00-current-synthesis-candidate/**'
++      - 'policy/QIKVRT_EXECUTION_PRECEDENCE_V1.json'
++      - 'policy/QIKVRT_IETF_EFFECT_EXTENSIONS_V1.json'
++      - 'state/delivery/requests/IETF_EFFECT_ACK_EXTENSIONS_V1.json'
++      - 'tools/qikvrt_ietf_effect_extensions.py'
++      - 'tests/test_qikvrt_ietf_effect_extensions.py'
++      - '.github/workflows/qikvrt_ietf_effect_extensions.yml'
++      - 'REPOSITORY_FILE_MANIFEST.json'
++      - 'REPOSITORY_FILE_MANIFEST.json.sha256'
++      - 'SHA256SUMS.txt'
++  workflow_dispatch:
++
++permissions:
++  contents: read
++
++jobs:
++  exact-source-validation:
++    runs-on: ubuntu-24.04
++    timeout-minutes: 20
++    env:
++      PYTHONDONTWRITEBYTECODE: '1'
++      PYTHONNOUSERSITE: '1'
++      PYTHONPATH: .
++      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
++    steps:
++      - name: Check out the literal candidate head
++        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
++        with:
++          ref: ${{ github.event.pull_request.head.sha || github.sha }}
++          persist-credentials: false
++          fetch-depth: 1
++
++      - name: Set up Python
++        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
++        with:
++          python-version: '3.12'
++
++      - name: Validate source, additive P7 policy and negative reference vectors
++        shell: bash
++        run: |
++          set -euo pipefail
++          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
++          python3 -B -m unittest -v tests.test_qikvrt_ietf_effect_extensions
++          python3 -B tools/qikvrt_ietf_effect_extensions.py --out "$RUNNER_TEMP/ietf-effect-extensions"
++          candidate='docs/publications/2026-08-12-observer-relative-retrocausality/ietf-local-change-time-provenance-00-current-synthesis-candidate'
++          (cd "$candidate" && python3 -B verify_candidate.py && sha256sum -c SHA256SUMS)
++
++      - name: Install the repository-pinned RFCXML renderer
++        shell: bash
++        run: |
++          set -euo pipefail
++          python3 -m pip install --disable-pip-version-check -r runtime/toolchains/requirements-xml2rfc-3.34.0.txt
++          test "$(xml2rfc --version | head -n1)" = 'xml2rfc 3.34.0'
++          python3 -m pip freeze > "$RUNNER_TEMP/ietf-effect-extensions/RENDER_ENVIRONMENT.txt"
++          cp runtime/toolchains/requirements-xml2rfc-3.34.0.txt "$RUNNER_TEMP/ietf-effect-extensions/"
++
++      - name: Expand references and reproduce both candidate renders
++        shell: bash
++        run: |
++          set -euo pipefail
++          out="$RUNNER_TEMP/ietf-effect-extensions"
++          mkdir -p "$out/expanded" "$out/render-a" "$out/render-b" "$out/logs"
++          for source in "$out"/draft-*.xml; do
++            name="$(basename "$source" .xml)"
++            xml2rfc "$source" --v3 --expand --skip-config-files --out "$out/expanded/$name.xml" 2> "$out/logs/$name-expand.log"
++            for pass in a b; do
++              xml2rfc "$out/expanded/$name.xml" --v3 --text --no-network --skip-config-files --out "$out/render-$pass/$name.txt" 2> "$out/logs/$name-text-$pass.log"
++              xml2rfc "$out/expanded/$name.xml" --v3 --html --no-network --skip-config-files --out "$out/render-$pass/$name.html" 2> "$out/logs/$name-html-$pass.log"
++            done
++            cmp "$out/render-a/$name.txt" "$out/render-b/$name.txt"
++            cmp "$out/render-a/$name.html" "$out/render-b/$name.html"
++          done
++
++      - name: Bind successful rendering to the exact source without claiming publication
++        shell: bash
++        run: |
++          set -euo pipefail
++          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
++          test -z "$(git status --porcelain)"
++          python3 -B - <<'PY'
++          import hashlib, json, os, pathlib, subprocess
++          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'ietf-effect-extensions'
++          files = []
++          for path in sorted(out.rglob('*')):
++              if path.is_file():
++                  data = path.read_bytes()
++                  files.append({'path': path.relative_to(out).as_posix(), 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
++          receipt = {
++              'schema': 'qikvrt_ietf_render_receipt_v1',
++              'repository': os.environ['GITHUB_REPOSITORY'],
++              'head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
++              'tree': subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip(),
++              'run_id': os.environ['GITHUB_RUN_ID'],
++              'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
++              'renderer': 'xml2rfc 3.34.0',
++              'two_renders_byte_identical': True,
++              'idnits': 'NOT_EXECUTED_NO_DECLARED_RUNTIME',
++              'renderer_diagnostics': 'Retained logs require review; no zero-warning claim is inferred.',
++              'files': files,
++              'scope': 'EXACT_SOURCE_RENDERING_ONLY_NOT_FULL_P2_OR_EFFECT',
++              'P2_complete': False,
++              'native_review': False,
++              'submission': False,
++              'public_readback': False,
++              'completion_claims': {'PASS': False, 'FINAL_PASS': False, 'EFFECT_ACK_DONE': False}
++          }
++          data = (json.dumps(receipt, indent=2) + '\n').encode()
++          (out / 'RENDER_RECEIPT.json').write_bytes(data)
++          (out / 'RENDER_RECEIPT.json.sha256').write_text(hashlib.sha256(data).hexdigest() + '  RENDER_RECEIPT.json\n')
++          PY
++
++      - name: Retain candidate sources, diagnostic logs and exact-head receipts
++        if: always()
++        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
++        with:
++          name: ietf-effect-extensions-${{ github.run_id }}-${{ github.run_attempt }}
++          path: ${{ runner.temp }}/ietf-effect-extensions
++          if-no-files-found: warn
++          retention-days: 30
+diff --git a/external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.xml b/external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.xml
+index 77b2ccf3b976bfe70fdde861a6628b82ce6f080c..199474aaf446cbcf5663789f7ea4530dfa894a35 100644
+--- a/external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.xml
++++ b/external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.xml
+@@ -4,149 +4,186 @@
+     <title abbrev="EFFECT_ACK for HTTP">Effect Acknowledgement for HTTP and Web Linking</title>
+     <seriesInfo name="Internet-Draft" value="draft-lohmann-qikvrt-effect-ack-http-00"/>
+     <author initials="I." surname="Lohmann" fullname="Ingolf Lohmann"><organization>Independent Researcher</organization><address><email>ingolf.lohmann@live.com</email></address></author>
+-    <date year="2026" month="August" day="16"/>
++    <date year="2026" month="September" day="13"/>
+     <area>Applications and Real-Time</area>
+-    <keyword>HTTP</keyword><keyword>Structured Fields</keyword><keyword>Web Linking</keyword><keyword>authorization</keyword>
++    <keyword>HTTP</keyword><keyword>Structured Fields</keyword><keyword>Web Linking</keyword><keyword>authorization</keyword><keyword>effect readback</keyword>
+     <abstract>
+-      <t>This document defines an Experimental HTTP binding for the QIK-VRT Effect Acknowledgement protocol. It introduces two Structured Fields and a Web Linking relation for capability discovery, preparation of a protected effect, validation of a full EFFECT_ACK responsibility record, and an exact-bound commit.</t>
+-      <t>The binding is opt-in and does not redefine HTTP transport acknowledgement or method semantics. Generic HTTP and HTML implementations can ignore the extension. A client that elects fail-closed protection, however, does not send a protected effect until support has been discovered and an EFFECT_ACK_DONE record has been independently validated.</t>
++      <t>This document specifies an Experimental HTTP binding for the QIK-VRT Effect Acknowledgement protocol. Structured Fields and Web Linking support capability discovery, preparation, independent validation of a responsibility record, and an exact-bound commit. A separately negotiated readback profile binds authoritative observations to the authorized action.</t>
++      <t>Transport receipt, authorization, execution and confirmation are separate facts. EFFECT_ACK_DONE retains its core meaning: eligibility for ordinary release, not proof that an effect occurred. The readback profile neither changes the closed core record nor introduces a sixth core state.</t>
+     </abstract>
+   </front>
+   <middle>
+     <section anchor="intro"><name>Introduction</name>
+-      <t>HTTP success, transport acknowledgement, successful parsing and application return values do not establish authorization for an external effect. The EFFECT_ACK core protocol separates those concepts. This document maps that gate to HTTP without changing HTTP itself.</t>
+-      <t>The binding uses Structured Field Values for HTTP <xref target="RFC9651"/> and Web Linking <xref target="RFC8288"/>. The same registered link relation can be represented in the HTTP Link field or by an HTML link element, providing one discovery model for protocol software and browsers.</t>
++      <t>The core protocol <xref target="EAP03"/> gates a downstream effect. This document binds that gate to HTTP <xref target="RFC9110"/> without changing HTTP method semantics. The binding uses Structured Fields <xref target="RFC9651"/> and Web Linking <xref target="RFC8288"/>. These mechanisms do not themselves authenticate principals, enforce a deployment policy, or prove an external state change.</t>
++      <t>Three distinct conformance claims are defined: HTTP binding conformance, readback-profile conformance, and deployment conformance. A local simulator, a browser demonstration, or a successful build is not evidence that a remote executor conforms.</t>
+     </section>
+     <section anchor="requirements"><name>Conventions and Requirements</name>
+-      <t>The key words MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, RECOMMENDED, NOT RECOMMENDED, MAY, and OPTIONAL are to be interpreted as described in BCP 14 <xref target="RFC2119"/> <xref target="RFC8174"/> when, and only when, they appear in all capitals.</t>
+-      <t>This document assumes the five-state EFFECT_ACK core model: EFFECT_NACK, EFFECT_ACK_CONTINUE, EFFECT_ACK_DONE, EFFECT_ACK_ISOLATE and EFFECT_ACK_BLOCK. Only a fresh, authenticated, independently validated EFFECT_ACK_DONE record can be eligible for ordinary release.</t>
++      <t>The capitalized requirement terms in this document have the meanings specified by BCP 14 <xref target="RFC2119"/> <xref target="RFC8174"/>. The core states remain EFFECT_NACK, EFFECT_ACK_CONTINUE, EFFECT_ACK_DONE, EFFECT_ACK_ISOLATE and EFFECT_ACK_BLOCK. Ordinary release requires a fresh, authenticated, independently validated core DONE record.</t>
++      <t>An action is the complete, immutable operation intended by the responsible principal. An execution is an attempt by an authorized executor. A readback is a distinct observation of the authoritative effect surface. An observer can be operated by the executor, but its identity, evidence sources and trust assumptions MUST be explicit; a separate request is not an assertion of institutional independence.</t>
+     </section>
+     <section anchor="discovery"><name>Capability Discovery</name>
+-      <t>An origin supporting this profile SHOULD advertise an <tt>effect-ack</tt> link relation. Discovery is metadata only and never authorizes an effect.</t>
+-      <sourcecode type="http-message"><![CDATA[
+-Link: </.well-known/effect-ack>; rel="effect-ack"; type="application/json"
++      <t>An origin supporting the HTTP binding SHOULD advertise an effect-ack link. Discovery is metadata, never authorization. A deployment MAY use a configured authenticated capability location. No well-known URI is allocated by this document.</t>
++      <sourcecode type="http-message"><![CDATA[Link: </effect-ack/capabilities>; rel="effect-ack"; type="application/json"
+ ]]></sourcecode>
+-      <t>An HTML representation MAY advertise the same relation:</t>
+-      <sourcecode type="html"><![CDATA[
+-<link rel="effect-ack" href="/.well-known/effect-ack" type="application/json">
+-]]></sourcecode>
+-      <t>A fail-closed client MUST establish support before sending a protected operation in prepare mode. If support cannot be established, the client MUST NOT send the protected effect.</t>
++      <t>The elected readback profile has the identifier eap-http-readback-1. Its capability representation is a separate JSON object, not the closed core capability object. It contains exactly the members http_profile, prepare_supported, commit_supported and readback_supported; their values MUST be eap-http-readback-1, true, true and true respectively. A client MUST authenticate the origin and validate the complete capability before sending a protected operation. A field that an unknown server may ignore MUST NOT be used as the sole protection against execution.</t>
++      <t>All network exchanges for this profile MUST use HTTPS with authenticated server identity and integrity protection. Client and observer authentication MUST follow the bound deployment policy. Cross-origin endpoints require an explicitly authorized destination and authentication context; redirects MUST NOT silently move protected requests or credentials to another authority.</t>
+     </section>
+     <section anchor="request"><name>Effect-Ack-Request Field</name>
+-      <t><tt>Effect-Ack-Request</tt> is an HTTP request field whose value is a Structured Dictionary. Version 1 defines the following members:</t>
+-      <table><thead><tr><th>Member</th><th>Type</th><th>Semantics</th></tr></thead><tbody>
+-        <tr><td>v</td><td>Integer</td><td>Protocol version; value 1 in this document.</td></tr>
+-        <tr><td>mode</td><td>Token</td><td><tt>prepare</tt> or <tt>commit</tt>.</td></tr>
+-        <tr><td>token</td><td>Byte Sequence</td><td>Opaque single-use commit token. Required for commit and absent for prepare.</td></tr>
+-        <tr><td>hash</td><td>Byte Sequence</td><td>32-octet SHA-256 digest of the canonical responsibility record. Required for commit.</td></tr>
+-      </tbody></table>
+-      <sourcecode type="http-message"><![CDATA[
+-Effect-Ack-Request: v=1, mode=prepare
++      <t>Effect-Ack-Request is a Structured Dictionary. Version 1 permits only v (Integer 1), mode (Token prepare or commit), token (Byte Sequence), and hash (Byte Sequence of 32 octets). Prepare contains exactly v and mode. Commit contains all four members. Duplicate dictionary keys, member parameters, unknown members, wrong types, malformed encodings and unsupported versions MUST prevent execution. An implementation MUST detect duplicate keys before a parser discards them.</t>
++      <sourcecode type="http-message"><![CDATA[Effect-Ack-Request: v=1, mode=prepare
+ Effect-Ack-Request: v=1, mode=commit, token=:AQIDBAUGBwgJCgsMDQ4PEA==:, hash=:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=:
+ ]]></sourcecode>
+-      <t>A server receiving prepare MUST NOT execute the protected effect. It MAY validate, simulate, preview, reserve or perform other work that deployment policy explicitly classifies as non-protected.</t>
+-    </section>
+-    <section anchor="response"><name>Effect-Ack Field</name>
+-      <t><tt>Effect-Ack</tt> is primarily an HTTP response field whose value is a Structured Dictionary. Version 1 defines:</t>
+-      <table><thead><tr><th>Member</th><th>Type</th><th>Semantics</th></tr></thead><tbody>
+-        <tr><td>v</td><td>Integer</td><td>Protocol version.</td></tr>
+-        <tr><td>state</td><td>Token</td><td><tt>nack</tt>, <tt>continue</tt>, <tt>done</tt>, <tt>isolate</tt> or <tt>block</tt>.</td></tr>
+-        <tr><td>hash</td><td>Byte Sequence</td><td>32-octet SHA-256 digest of the full canonical responsibility record.</td></tr>
+-        <tr><td>token</td><td>Byte Sequence</td><td>Opaque commit token, present only when commit can be attempted.</td></tr>
+-      </tbody></table>
+-      <t>The compact field does not replace the full responsibility record. A consumer MUST obtain the exact record from the <tt>effect-ack</tt> link target or another authenticated channel and MUST independently validate it before commit.</t>
+-      <sourcecode type="http-message"><![CDATA[
+-Effect-Ack: v=1, state=done, hash=:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=:, token=:AQIDBAUGBwgJCgsMDQ4PEA==:
+-Link: </effect-ack/records/42>; rel="effect-ack"; type="application/json"
+-]]></sourcecode>
++      <t>The second line is a syntax-only fixture, not a usable authorization. Production tokens MUST be unguessable, with at least 128 bits of entropy. A server receiving prepare MUST NOT execute the protected effect. Any reservation or other stateful preparation MUST itself be permitted by the applicable policy.</t>
++    </section>
++    <section anchor="response"><name>Effect-Ack Field and Record Hash</name>
++      <t>Effect-Ack is a Structured Dictionary with v (Integer 1), state (one of the Tokens nack, continue, done, isolate or block), hash (32-octet Byte Sequence), and optionally token (Byte Sequence). No other members or parameters are defined. A token MUST NOT be issued for a non-DONE record. The same parsing restrictions as for the request field apply.</t>
++      <t>The hash field identifies the complete responsibility record, including its core protocol_hash and created_utc members. After validation of the core normalization requirements, the complete object is serialized using JCS <xref target="RFC8785"/>, and SHA-256 <xref target="RFC6234"/> is applied to those UTF-8 octets. This full-record digest is distinct from the core protocol_hash, whose projection excludes specified members. Implementations MUST validate both digests under their respective definitions and MUST NOT substitute one for the other. Timestamp integrity does not by itself establish freshness.</t>
++      <t>The client obtains the full core record through the authenticated effect-ack link or an authenticated channel identified by the deployment policy. Compact fields cannot replace the core checks. A mismatch between compact state, full-record digest, rederived core state, or the expected action MUST prevent commit.</t>
++      <t>For the elected readback profile, a successful prepare response body is the prepare-envelope defined in <xref target="data"/>. The full record is retrieved from record_uri. The action manifest is supplied in the envelope and its JCS SHA-256 identifier MUST occur in both evidence_refs and required_evidence_refs of the core record. Existing core fields are reused; unknown fields MUST NOT be added to the closed core record. A non-releasing prepare response has no commit token and need not contain a prepare-envelope.</t>
++    </section>
++    <section anchor="action"><name>Exact Action and Subject Binding</name>
++      <t>The action manifest binds the method, absolute effective target URI, request content, effect-relevant request metadata, responsible principal, executor, immutable source subject, policy, readback requirements and prerequisite receipts. The client MUST compare it with its own intended operation; accepting an executor-supplied manifest without this comparison is insufficient.</t>
++      <t>content_hash is SHA-256 of the HTTP message content octets in the sense used by Content-Digest <xref target="RFC9530"/>, before decoding any content coding. The deployment policy MUST define a deterministic descriptor of all other effect-relevant request metadata, including content type and content coding when used. semantic_headers_hash binds that descriptor. Credentials and bearer tokens MUST NOT be included in a publicly retrievable manifest. The authenticated principal, not raw credential bytes, is bound. An undefined metadata comparison is a failure, not permission to ignore headers.</t>
++      <t>subject_hash identifies a separate immutable source-subject manifest. For a repository publication, it MUST identify repository authority, object-format-tagged full commit and tree identifiers, and every intended source artifact with byte length and SHA-256. A branch name, tag, title, current alias or predecessor tree alone is insufficient. That manifest MUST NOT contain its own digest or claim to bind a commit that includes its own newly generated receipt; action-time bindings are generated outside the immutable source checkout.</t>
++      <t>readback_requirements_hash identifies the exact requirements document: authorized observation authorities, permitted observer identities, resource selectors, expected postconditions, evidence formats, freshness/challenge rules and verifier implementation or procedure. Its bytes MUST be available and authenticated before commit. This document defines no universal interpreter for arbitrary business or physical postconditions. Two implementations lacking a common requirements document MUST NOT claim semantic interoperability.</t>
++      <t>preconditions contains sorted, unique receipt digests. Each required receipt MUST be authenticated and checked against the subject and relation required by that prerequisite. Array position, publication time and identifiers MUST NOT establish causal ordering. Missing, stale, failed, ambiguous or unbound prerequisites prevent execution.</t>
+     </section>
+     <section anchor="transaction"><name>Prepare and Commit Transaction</name>
+       <ol>
+-        <li>The client discovers the profile and decides that the proposed operation is protected.</li>
+-        <li>The client transmits the exact proposed operation with <tt>mode=prepare</tt>. The server MUST NOT perform the protected effect.</li>
+-        <li>The server evaluates the request under the EFFECT_ACK core protocol. A non-DONE result is returned without ordinary release.</li>
+-        <li>For a DONE result the server MAY issue a single-use, short-lived token. The token MUST be integrity-protected and bound to the effective request target, method, request-content digest, policy digest, responsible principal, record hash and expiration.</li>
+-        <li>The client obtains and independently validates the full responsibility record.</li>
+-        <li>The client repeats the exact operation with <tt>mode=commit</tt>, the token and record hash.</li>
+-        <li>The server atomically revalidates token freshness, single use, request equivalence, policy, record integrity and DONE state. Only then MAY the protected effect occur.</li>
+-        <li>After execution, the deployment SHOULD expose a post-effect observation that can be bound into a successor record. A successful response alone is not post-effect proof.</li>
++        <li>Discover and authenticate support, freeze the intended request and action manifest, and verify all prerequisites.</li>
++        <li>Send the exact proposed HTTP operation with mode=prepare. Preparation does not execute the protected effect.</li>
++        <li>For a releasing result, obtain the full record and independently check the core algorithm, freshness, authenticated authority, all evidence bindings and exact action equivalence.</li>
++        <li>The server issues a short-lived, single-use token bound to the complete action hash, full-record hash, request equivalence, authenticated principal, executor and expiration. Expiration MUST be enforced by trusted executor state, not a client-supplied clock.</li>
++        <li>Repeat the exact operation with mode=commit, token and hash. The executor atomically revalidates these bindings, current authorization and prerequisites, and durably records token consumption before admitting execution.</li>
++        <li>Record an execution identifier and its immutable binding to operation_id, action hash, full-record hash and the token-consumption record. Expose the readback endpoint without disclosing the token.</li>
++        <li>Perform a distinct authoritative readback. Report confirmation only under <xref target="readback"/>. HTTP success, a queued job or a process exit code alone is insufficient.</li>
+       </ol>
+-      <t>Any difference in method, effective request target, content digest, policy binding, responsible principal, token freshness or record hash MUST prevent commit.</t>
++      <t>Protected endpoints MUST reject effect-bearing requests that omit the required commit binding. All alternate paths to the same protected executor MUST enforce equivalent checks. A later revocation prevents future admissions; it does not retroactively undo an admitted or completed effect.</t>
++      <t>A change to request semantics, subject, policy, principal, executor, required evidence or readback requirements invalidates the prepared authorization. In repository workflows, any new commit identifier is a new validation subject even when its tree is unchanged. A new subject requires a new preparation and fresh applicable validation; predecessor receipts remain historical.</t>
++    </section>
++    <section anchor="recovery"><name>Replay, Crashes and Unknown Outcomes</name>
++      <t>The executor MUST durably deduplicate by authenticated principal, executor and operation_id, and MUST reject reuse of that tuple for a different action hash. A spent token MUST never admit a second execution. A repeated request MAY return a previously recorded status for the same operation, but MUST NOT repeat the protected effect.</t>
++      <t>Atomic token consumption is not a distributed exactly-once guarantee. A crash after consumption and before a reliable effect receipt can leave the outcome unknown. A timeout or lost response MUST be classified UNKNOWN, not as evidence that nothing happened. Automatic retransmission with a new token or operation identifier is prohibited while the outcome is unresolved. A distinct authenticated observation or an explicit authorized recovery plan is required.</t>
++      <t>Deployments MUST declare ledger durability, retention and recovery behavior. Spent-token records MUST be retained through the token validity and recovery horizon; operation deduplication records MUST cover the lifetime in which a client may retry that operation. Lost ledger state, exhaustion or unverifiable recovery MUST fail closed. Compensating an effect is a new separately authorized action, not erasure of the original receipt.</t>
++    </section>
++    <section anchor="readback"><name>Authoritative Effect Readback</name>
++      <t>The readback_uri in the prepare-envelope MUST be an authenticated absolute HTTPS URI without a query or fragment. Its identity MUST be permitted by the bound readback requirements and remain associated with the execution. Following an execution attempt, the client generates a fresh 256-bit random challenge and sends GET to that URI with the query parameter challenge encoded as 64 lowercase hexadecimal characters. Readback is observation-only and MUST NOT admit or retry a protected effect.</t>
++      <t>The authenticated observer obtains the authoritative source state, evaluates the bound requirements, and returns the closed readback object in <xref target="data"/> using application/json. Responses MUST use Cache-Control: no-store. The observer MUST bind the challenge and all receipt fields through an authenticated integrity-protected channel or authenticated outer envelope. Merely reflecting the challenge around an old status is not a fresh observation.</t>
++      <t>For third-party platforms that do not implement this profile, an authorized observer MAY obtain a fresh authenticated platform read and attest to it. The receipt MUST identify the actual source and observer and preserve the source evidence bytes or their retrievable digests. An adapter's submission response, screenshot of its own local state, or unverifiable assertion is not an authoritative platform readback.</t>
++      <t>CONFIRMED is admissible only when the consumer validates the action and authorization bindings, execution identity, challenge, observer authority, source identity, resource version, all required evidence and the declared postconditions. resource_uri and resource_version MUST be non-null and evidence MUST be nonempty. The consumer MUST independently evaluate the conditions or validate the assertion of an observer explicitly authorized for that predicate. A wire value of CONFIRMED alone is not a valid confirmation.</t>
++      <t>REFUTED requires equally authoritative evidence that the required postcondition is false. UNKNOWN covers unavailable, stale, incomplete, ambiguous or unauthenticated evidence; the absence of a visible resource after a timeout does not automatically establish REFUTED. A malformed or untrusted receipt MUST NOT yield confirmation or authorize a retry.</t>
++      <t>A receipt sequence is an append-only observation chain for one execution. The first sequence is 1 with previous_receipt_hash null. A successor increments sequence by one and cites the JCS SHA-256 of the complete preceding receipt. A consumer MUST validate the chain and retain an authenticated anchor when rewrite detection is required. A hash chain alone proves neither authenticity nor causality. Subsequent observations can change the outcome; they do not rewrite historical observations.</t>
++      <t>The observation outcome is distinct from core authorization. This profile MUST NOT reinterpret EFFECT_ACK_DONE as an effect receipt. A downstream obligation requiring confirmation remains unsatisfied until a valid CONFIRMED receipt exists. A new downstream effect also requires its own core authorization.</t>
++    </section>
++    <section anchor="data"><name>Closed Readback-Profile Data Model</name>
++      <t>The following CDDL <xref target="RFC8610"/> is normative for the auxiliary objects, not a replacement for core CDDL. JSON MUST be UTF-8 without a byte-order mark. Duplicate or unknown members, unsupported versions, floating-point values, non-finite numbers and invalid Unicode MUST be rejected. Auxiliary identifiers and URIs in this profile are printable ASCII; bounded-id is 1 through 256 characters and bounded-uri is 1 through 2048 characters. URI and HTTP-method validity are additional semantic checks. All SHA-256 identifiers have the indicated lowercase syntax. Arrays used as sets MUST be sorted and unique; no normalization or silent duplicate removal is permitted for these auxiliary objects. JCS applies to the complete object, with no omitted fields.</t>
++      <sourcecode type="cddl"><![CDATA[sha256-id = tstr .regexp "^sha256:[0-9a-f]{64}$"
++challenge-id = tstr .regexp "^[0-9a-f]{64}$"
++bounded-id = tstr
++bounded-uri = tstr
++positive-int = 1..9007199254740991
++receipt-set = [*128 sha256-id]
++http-capability = {
++  http_profile: "eap-http-readback-1",
++  prepare_supported: true,
++  commit_supported: true,
++  readback_supported: true
++}
++action-manifest = {
++  profile: "eap-http-readback-1",
++  operation_id: bounded-id,
++  subject_hash: sha256-id,
++  method: bounded-id,
++  target: bounded-uri,
++  content_hash: sha256-id,
++  semantic_headers_hash: sha256-id,
++  policy_hash: sha256-id,
++  responsible_principal: bounded-id,
++  executor: bounded-uri,
++  readback_requirements_hash: sha256-id,
++  preconditions: receipt-set
++}
++prepare-envelope = {
++  http_profile: "eap-http-readback-1",
++  record_uri: bounded-uri,
++  action: action-manifest,
++  readback_uri: bounded-uri
++}
++readback = {
++  profile: "eap-http-readback-1",
++  action_hash: sha256-id,
++  authorization_record_hash: sha256-id,
++  execution_id: bounded-id,
++  challenge: challenge-id,
++  observer: bounded-id,
++  source_uri: bounded-uri,
++  resource_uri: bounded-uri / null,
++  resource_version: bounded-id / null,
++  outcome: "CONFIRMED" / "REFUTED" / "UNKNOWN",
++  evidence: receipt-set,
++  sequence: positive-int,
++  previous_receipt_hash: sha256-id / null
++}
++]]></sourcecode>
++      <t>Consumers MUST enforce bounded message size before parsing; a deployment MUST specify its limit and MUST reject oversized objects without executing an effect. An implementation advertising this profile MUST accept auxiliary objects up to 65536 octets and MAY impose that limit. Evidence bodies are external, digest-addressed objects with separate deployment limits; inlining unbounded evidence is not permitted.</t>
+     </section>
+     <section anchor="compat"><name>Backward Compatibility</name>
+-      <t>The extension is opt-in. A generic HTTP recipient can ignore unknown fields according to HTTP semantics. Therefore, a fail-closed client MUST NOT send a protected operation to a server merely hoping that <tt>Effect-Ack-Request</tt> will be understood. Capability discovery or a deployment-configured equivalent is a prerequisite.</t>
+-      <t>Servers MAY continue legacy behavior for endpoints that local policy does not classify as protected. A protected endpoint SHOULD reject an effect-bearing request that omits the required commit binding. This allows incremental deployment without redefining legacy HTTP.</t>
++      <t>The base HTTP binding remains opt-in. A legacy recipient may ignore unfamiliar HTTP fields, so a fail-closed client MUST establish support before sending protected operations. A client requiring eap-http-readback-1 MUST NOT silently downgrade to preparation-only, core-only, or transport-only support. The core version-1 schema, five outcomes, DONE predicate and protocol_hash definition remain unchanged.</t>
++      <t>The readback profile is external evidence carried beside core records. Older implementations lacking this profile are not thereby invalid core implementations; they simply cannot satisfy an obligation requiring the stronger profile.</t>
+     </section>
+     <section anchor="html"><name>HTML Integration</name>
+-      <t>No new HTML element or parser behavior is defined. The registered Web Linking relation is expressed through the ordinary HTML <tt>link</tt> element. Browser software can discover the relation and expose a terminal, confirmation flow or other user interface without changing the document format.</t>
+-      <t>The presence of an HTML link is discovery evidence only. It MUST NOT be interpreted as DONE.</t>
++      <t>An ordinary HTML link element can advertise the proposed effect-ack relation. No new element, parser feature or browser permission is defined. Link presence is discovery only. Browser user interfaces MUST distinguish local preview, submitted input, prepared authorization, execution attempt, unknown outcome and authoritative confirmation.</t>
+     </section>
+     <section anchor="browser"><name>Browser Proxy Considerations</name>
+-      <t>A browser extension can implement this profile while remaining compatible with unmodified servers and pages. It can discover the link relation, keep protected requests in a local prepare state, validate a returned full record, and issue commit only after DONE.</t>
+-      <t>Audio, video and screen capture remain Web-platform permission events. Media bytes are not EFFECT_ACK evidence until the user explicitly submits them. A browser proxy MUST NOT silently capture or transmit media and MUST preserve a visible distinction between local preview, submitted input, prepared effect and committed effect.</t>
+-      <t>A proxy that renders other clients or backend states SHOULD normalize observations into a transport-neutral terminal frame while preserving source identifiers, exact record hashes, timestamps and uncertainty. Rendering is not authorization.</t>
++      <t>A proxy MUST preserve source identity and all exact-action bindings. Audio, video and screen capture require explicit user permission and submission; local preview is not an instruction to transmit. Browser permissions and session possession are not effect authorization. A proxy MUST NOT manufacture a native review, signature, publication status or remote effect receipt from a rendered page or a local return value.</t>
++      <t>Runtime confirmation for a remote terminal requires the declared runtime observation, not just an OCI build or deployment request. A profile can require exact image and source digests, a running browser process and an observable interactive surface. It MUST identify which of those facts were actually observed; a simulation is not physical hardware execution.</t>
+     </section>
+     <section anchor="intermediaries"><name>Intermediaries, Caches and CORS</name>
+-      <t>Intermediaries MUST NOT synthesize an <tt>Effect-Ack</tt> field. A transformation that changes bound request semantics invalidates a prepare token unless the transformation itself is included in the binding.</t>
+-      <t>An authorization result is not a reusable cache validator. A cached DONE assertion MUST NOT authorize a different request or later effect. Responsibility records containing sensitive metadata SHOULD use appropriate cache controls.</t>
+-      <t>Script access to response fields remains subject to ordinary Fetch and CORS rules. An origin that intends cross-origin script access explicitly exposes the field. Privileged extensions operate under separately granted browser permissions and MUST NOT treat those permissions as effect authorization.</t>
++      <t>Intermediaries MUST NOT synthesize authorization or confirmation. Any transformation of bound request content or effect-relevant metadata invalidates the preparation unless that transformation is explicitly included in the action and independently validated. Protected commit endpoints MUST NOT rely on cache state to prevent replay.</t>
++      <t>Tokens, prepared authorizations and readbacks MUST use Cache-Control: no-store. Script access remains subject to ordinary CORS and Fetch rules. Cross-origin credential delegation requires explicit policy; an advertised link does not grant it.</t>
++    </section>
++    <section anchor="conformance"><name>Conformance and Validation Boundaries</name>
++      <t>HTTP binding tests MUST cover syntax rejection, unknown versions, request substitution, non-DONE rejection, expiration, replay, policy change and alternate-path protection. Readback tests MUST additionally reject stale challenges, action or subject changes, mismatched authorization and execution identities, untrusted observers, missing evidence, unsupported resource versions and false confirmation after timeout.</t>
++      <t>A reference predicate over synthetic already-verified inputs tests only the decision relation. It does not implement authentication, an HTTP parser, durable distributed execution, a native review authority, a browser runtime, or empirical validation. Conformance claims MUST list the executed test scope and exact implementation subject; source inspection and workflow transport cannot substitute for execution evidence.</t>
+     </section>
+     <section anchor="security"><name>Security Considerations</name>
+-      <t>Threats include forged DONE assertions, token theft, replay, request substitution between prepare and commit, downgrade, stale record reuse, policy substitution, alternate-path bypass, confused deputies and compromised evaluators. The full responsibility record and deployment authentication remain authoritative; the compact HTTP field is insufficient by itself.</t>
+-      <t>Commit tokens MUST be unguessable, single-use, short-lived and exact-request bound. Consumers MUST rederive the EFFECT_ACK state. A browser or backend MUST NOT translate NACK, CONTINUE, ISOLATE or BLOCK into a releasing action.</t>
+-      <t>HTTP Message Signatures <xref target="RFC9421"/> MAY be used by a deployment profile to bind relevant HTTP components, but this specification does not require a particular signature system.</t>
++      <t>Threats include forged DONE or CONFIRMED values, token theft, replay, stale-record substitution, confused deputies, SSRF through evidence links, parser differentials, duplicate members, ledger rollback, mutable resource aliases and compromised observers. A content digest proves integrity only relative to a trusted digest. Authentication and authority for a specific predicate remain separate checks.</t>
++      <t>Implementations MUST restrict evidence retrieval to policy-authorized schemes and authorities, bound sizes and redirects, and avoid forwarding credentials to arbitrary references. HTTP Message Signatures <xref target="RFC9421"/> MAY authenticate selected HTTP components under an explicit deployment profile; their mere presence does not make a receipt trustworthy. TLS endpoint authentication does not establish that a claimed physical effect occurred.</t>
+     </section>
+     <section anchor="privacy"><name>Privacy Considerations</name>
+-      <t>Responsibility records can expose principals, policy identifiers and evidence references. Implementations SHOULD minimize metadata, avoid placing sensitive records in broadly cacheable responses, and retain media locally until explicit submission.</t>
++      <t>Subject manifests, principals and evidence references can expose sensitive activity. Deployments MUST apply appropriate access controls, minimize public metadata, and keep credentials out of source and public receipts. Retention and erasure policies MUST distinguish durable deduplication state from optional personal evidence; erasure cannot silently restore an operation's execution eligibility.</t>
+     </section>
+     <section anchor="iana"><name>IANA Considerations</name>
+-      <section><name>HTTP Field Name Registrations</name>
+-        <t>IANA is requested to add the following provisional registrations to the Hypertext Transfer Protocol (HTTP) Field Name Registry:</t>
+-        <table><thead><tr><th>Field Name</th><th>Status</th><th>Structured Type</th><th>Reference</th></tr></thead><tbody>
+-          <tr><td>Effect-Ack</td><td>provisional</td><td>Dictionary</td><td>This document, <xref target="response"/></td></tr>
+-          <tr><td>Effect-Ack-Request</td><td>provisional</td><td>Dictionary</td><td>This document, <xref target="request"/></td></tr>
+-        </tbody></table>
++      <section><name>HTTP Field Name Registration Requests</name>
++        <t>This document requests provisional HTTP Field Name Registry entries for Effect-Ack and Effect-Ack-Request, both Structured Dictionaries, with references to <xref target="response"/> and <xref target="request"/> respectively. These are requests, not assertions that registrations have occurred.</t>
+       </section>
+-      <section anchor="linkrel"><name>Link Relation Registration</name>
+-        <t>IANA is requested to register the following Link Relation Type:</t>
+-        <dl><dt>Relation Name</dt><dd>effect-ack</dd><dt>Description</dt><dd>Refers to an endpoint or representation exposing EFFECT_ACK capability information or the responsibility record bound to the link context.</dd><dt>Reference</dt><dd>This document.</dd></dl>
++      <section><name>Link Relation Registration Request</name>
++        <t>This document requests the relation name effect-ack: identifies an endpoint or representation for EFFECT_ACK capability information or the responsibility record bound to the link context. The reference is this document. No well-known URI, media type, new core state or new core field is requested.</t>
+       </section>
+     </section>
+   </middle>
+   <back>
+     <references><name>Normative References</name>
++      <reference anchor="EAP03" target="https://datatracker.ietf.org/doc/html/draft-lohmann-qikvrt-effect-ack-03"><front><title>QIK-VRT Effect Acknowledgement: Separating Receipt from Authorization for Downstream Effect</title><author initials="I." surname="Lohmann" fullname="Ingolf Lohmann"/><date year="2026" month="August" day="2"/></front><seriesInfo name="Internet-Draft" value="draft-lohmann-qikvrt-effect-ack-03"/><refcontent>Work in Progress</refcontent></reference>
+       <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.2119.xml"/>
+       <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.8174.xml"/>
++      <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.6234.xml"/>
+       <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.8288.xml"/>
++      <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.8610.xml"/>
++      <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.8785.xml"/>
+       <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.9110.xml"/>
+       <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.9421.xml"/>
++      <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.9530.xml"/>
+       <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.9651.xml"/>
+     </references>
+-    <section><name>Example Exchange</name>
+-      <sourcecode type="http-message"><![CDATA[
+-GET /.well-known/effect-ack HTTP/1.1
+-Host: example.test
+-
+-HTTP/1.1 200 OK
+-Link: </.well-known/effect-ack>; rel="effect-ack"; type="application/json"
+-
+-POST /effect HTTP/1.1
+-Host: example.test
+-Effect-Ack-Request: v=1, mode=prepare
+-Content-Digest: sha-256=:...:
+-
+-HTTP/1.1 200 OK
+-Effect-Ack: v=1, state=done, hash=:...:, token=:...:
+-Link: </effect-ack/records/42>; rel="effect-ack"; type="application/json"
+-
+-POST /effect HTTP/1.1
+-Host: example.test
+-Effect-Ack-Request: v=1, mode=commit, token=:...:, hash=:...:
+-Content-Digest: sha-256=:...:
+-
+-HTTP/1.1 204 No Content
+-Effect-Ack: v=1, state=done, hash=:...:
+-]]></sourcecode>
++    <section anchor="publication"><name>Repository Publication Profile</name>
++      <t>This appendix is an application profile, not a change to the general core protocol. The QIK-VRT repository requires an explicit causal chain: manifest latest knowledge; build one integration head; validate that exact head; obtain required review on that same validated head; freshly reobserve the unchanged head after review; legitimately promote; freshly observe the resulting exact Main; derive exact-Main-bound external obligations. Any head mutation resets candidate validation and downstream bindings. The source manifest and effect receipts are separate to avoid self-referential commit hashing.</t>
++      <t>Wikipedia, Zenodo, arXiv and IETF effects are independent only when their explicitly declared common prerequisite is satisfied. Deferral of one destination is not completion of that destination. A GitHub automated comment is not native Code-Owner approval; a merge is not publication on another platform.</t>
++      <t>An IETF submission receipt binds the exact draft name, revision, submitted XML bytes and submission identifier. Public draft appearance requires a separate Datatracker readback. The source XML and service-generated TXT/HTML are distinct artifacts: differences introduced by an identified platform renderer must be reported and reviewed rather than asserted byte-identical. A document's existence does not establish IETF consensus, working-group adoption, RFC publication or standards status.</t>
++      <t>Zenodo confirmation requires the authoritative record, DOI and exact public fileset; arXiv submission and later public-version status are separate milestones; Wikipedia request creation and acceptance are separate milestones. None establishes empirical confirmation of a scientific claim. A local-change-time provenance profile can supply source-order evidence, but does not authorize an effect or establish physical retrocausality.</t>
++    </section>
++    <section><name>Candidate Status</name>
++      <t>This repository candidate is prepared for author review and deterministic rendering. It is not evidence of a Datatracker upload. Before submission, the actual current document name and revision, final source bytes, author account, applicable submission terms, exact source subject and authorization must be bound and reobserved. Historical source and receipts are retained; no predecessor validation is transferred.</t>
+     </section>
+   </back>
+ </rfc>
+diff --git a/policy/QIKVRT_IETF_EFFECT_EXTENSIONS_V1.json b/policy/QIKVRT_IETF_EFFECT_EXTENSIONS_V1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..736bdab1c95069bca2f9f3b690752156af2a754b
+--- /dev/null
++++ b/policy/QIKVRT_IETF_EFFECT_EXTENSIONS_V1.json
+@@ -0,0 +1,45 @@
++{
++  "schema": "qikvrt_ietf_effect_extensions_v1",
++  "version": "1.0",
++  "status": "CANDIDATE_NOT_PROMOTED",
++  "extends": "policy/QIKVRT_EXECUTION_PRECEDENCE_V1.json",
++  "composition": "Validate the parent policy unchanged, copy it, and add exactly the E4_IETF edge below. Reject an existing conflicting E4_IETF definition. No phase, original external edge, source binding, or predecessor rule may be replaced. This candidate policy becomes executable publication policy only after its own legitimate promotion and exact-Main reobservation.",
++  "authority": {
++    "product_owner": "Ingolf Lohmann",
++    "repository": "Goldkelch/qik-vrt",
++    "request": "Specify the Effect Acknowledgement extensions correctly and submit them to the IETF.",
++    "request_date": "2026-09-13",
++    "authorization_is_not_native_review": true,
++    "authorization_is_not_external_readback": true
++  },
++  "external_fanout_extension": {
++    "E4_IETF": {
++      "requires": ["P7_DERIVE_BOUND_EXTERNAL_OBLIGATIONS"],
++      "steps": [
++        "BIND_EXACT_MAIN_DRAFT_FILESETS_AND_CURRENT_DATATRACKER_REVISIONS",
++        "VALIDATE_RENDERED_RFCXML_AND_APPLICABLE_NITS",
++        "VERIFY_AUTHOR_ACCOUNT_AND_SINGLE_USE_ACTION_BINDING",
++        "SUBMIT_EACH_AUTHORIZED_DRAFT_ONCE",
++        "READBACK_SUBMISSION_ID_AND_STATUS",
++        "READBACK_PUBLIC_DRAFT_REVISION_AND_ARTIFACT_HASHES"
++      ]
++    }
++  },
++  "request": "state/delivery/requests/IETF_EFFECT_ACK_EXTENSIONS_V1.json",
++  "cross_edge_order": "NONE_AFTER_COMMON_BARRIER",
++  "within_ietf": "Each bound draft has an independent submission and readback obligation. One successful draft does not complete another. The already published core is a reference, not a resubmission target.",
++  "preserved_boundaries": {
++    "core_wire_version_1_unchanged": true,
++    "core_five_states_unchanged": true,
++    "core_done_is_release_authorization_not_effect_confirmation": true,
++    "predecessor_evidence_transfer": false,
++    "head_mutation_resets_P2_and_downstream": true,
++    "no_order_from_timestamps_or_pr_numbers": true,
++    "native_review_required_on_validated_head": true,
++    "wiki_arxiv_owner_deferrals_unchanged": true,
++    "zenodo_standing_authorization_unchanged": true,
++    "unknown_submission_result_forbids_blind_retry": true,
++    "local_demo_is_not_deployment_conformance": true
++  },
++  "completion_claims": {"PASS": false, "FINAL_PASS": false, "EFFECT_ACK_DONE": false}
++}
+diff --git a/state/delivery/requests/IETF_EFFECT_ACK_EXTENSIONS_V1.json b/state/delivery/requests/IETF_EFFECT_ACK_EXTENSIONS_V1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..9b0915108ab34221b975405f99dc278124c2b72e
+--- /dev/null
++++ b/state/delivery/requests/IETF_EFFECT_ACK_EXTENSIONS_V1.json
+@@ -0,0 +1,108 @@
++{
++  "schema": "qikvrt_external_delivery_request_v1",
++  "id": "IETF_EFFECT_ACK_EXTENSIONS_V1",
++  "platform": "ietf",
++  "status": "P0_SOURCE_MANIFEST_NOT_AN_EXECUTION_TOKEN",
++  "authority": {
++    "product_owner": "Ingolf Lohmann",
++    "authorization": "OWNER_REQUESTED_SPECIFICATION_AND_IETF_SUBMISSION",
++    "source": "Owner request of 2026-09-13 in the publication-spine conversation",
++    "native_review_substituted": false
++  },
++  "historical_provenance": {
++    "publication_binding_pr": 966,
++    "observed_parent_main": "a86054139b49c13c5cd344753b248b46b5daf66f",
++    "observed_parent_tree": "feff1cae2401a3df83febc3b9458de70d79b818e",
++    "meaning": "Source ancestry only, not successor validation or publication evidence."
++  },
++  "preconditions": {
++    "execution_precedence": "policy/QIKVRT_EXECUTION_PRECEDENCE_V1.json",
++    "explicit_ietf_extension": "policy/QIKVRT_IETF_EFFECT_EXTENSIONS_V1.json",
++    "required_main_paths": [
++      "external/ietf/draft-lohmann-qikvrt-effect-ack-03.xml",
++      "external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.xml",
++      "docs/publications/2026-08-12-observer-relative-retrocausality/ietf-local-change-time-provenance-00-current-synthesis-candidate/draft-lohmann-qikvrt-local-change-time-00.xml",
++      "tools/qikvrt_ietf_effect_extensions.py",
++      "policy/QIKVRT_IETF_EFFECT_EXTENSIONS_V1.json"
++    ],
++    "exact_main_reobservation_required": true,
++    "predecessor_evidence_transfer": false,
++    "fresh_exact_head_validation_required": true,
++    "native_same_head_review_required": true,
++    "post_review_reobservation_required": true,
++    "legitimate_promotion_required": true
++  },
++  "operation": {
++    "type": "AUTHENTICATED_IETF_DATATRACKER_SUBMISSIONS",
++    "adapter": "QIKVRT_FIREFOX_TERMINAL_PROXY_V1",
++    "adapter_capability": "DECLARATION_ONLY_AUTHENTICATED_SESSION_NOT_OBSERVED_IN_THIS_RUN",
++    "destination": "https://datatracker.ietf.org/submit/",
++    "author": "Ingolf Lohmann",
++    "author_email": "ingolf.lohmann@live.com",
++    "intended_status": "Experimental",
++    "core_reference_only": "draft-lohmann-qikvrt-effect-ack-03",
++    "drafts": [
++      {
++        "candidate_name": "draft-lohmann-qikvrt-effect-ack-http-00",
++        "source": "external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.xml",
++        "scope": "HTTP prepare/commit, exact-action and causal prerequisite bindings, authoritative effect readback, replay and crash boundaries, browser and publication profiles",
++        "action_time_name_revision": null,
++        "submission_id": null,
++        "submission_status": "NOT_SUBMITTED_BY_THIS_REQUEST",
++        "public_readback": null
++      },
++      {
++        "candidate_name": "draft-lohmann-qikvrt-local-change-time-00",
++        "source": "docs/publications/2026-08-12-observer-relative-retrocausality/ietf-local-change-time-provenance-00-current-synthesis-candidate/draft-lohmann-qikvrt-local-change-time-00.xml",
++        "scope": "Authenticated receiver-local change order and comparable source-order provenance; no physical retrocausality or downstream authorization claim",
++        "historical_manifest": "docs/publications/2026-08-12-observer-relative-retrocausality/ietf-local-change-time-provenance-00-current-synthesis-candidate/SUBMISSION_MANIFEST.json",
++        "source_preservation": "REUSE_SOURCE_BYTES_REVALIDATE_ON_SUCCESSOR_NO_VALIDATION_TRANSFER",
++        "action_time_name_revision": null,
++        "submission_id": null,
++        "submission_status": "NOT_SUBMITTED_BY_THIS_REQUEST",
++        "public_readback": null
++      }
++    ],
++    "historical_candidates_not_silently_resubmitted": [
++      "ietf-temporal-provenance-00-candidate",
++      "draft-lohmann-qikvrt-epistemic-fairness-observation-profile-00",
++      "draft-lohmann-qikvrt-scientific-claim-assurance-00"
++    ],
++    "future_binding": {
++      "exact_main_sha": null,
++      "exact_main_tree": null,
++      "source_xml_sha256": null,
++      "rendered_artifact_sha256": null,
++      "submission_action_id": null,
++      "single_use_token": null,
++      "state": "UNBOUND_UNTIL_P6_P7",
++      "storage_rule": "Generate an external-to-source receipt after exact-Main reobservation; never claim that this source file contains its own commit identifier."
++    },
++    "checks_before_each_submission": [
++      "All P0-P7 requirements hold on the exact required subjects",
++      "Current Datatracker name and revision observed, with no collision or duplicate submission",
++      "Final standalone RFCXML and rendered TXT/HTML validated, exact bytes frozen",
++      "Applicable idnits findings resolved or explicitly reviewed; no unexecuted check labelled successful",
++      "Author/account, submission terms, destination and exact-artifact authority binding valid",
++      "Authenticated write capability actually available; no fabricated session or credential",
++      "Single-use operation identity durably recorded before mutation"
++    ]
++  },
++  "effect_ack": {
++    "required": true,
++    "readback_required": true,
++    "fields": ["draft_name", "revision", "submission_id", "submission_status", "source_xml_sha256", "public_artifact_hashes"],
++    "transport_success_is_not_submission_confirmation": true,
++    "unknown_outcome_requires_observation_not_blind_retry": true,
++    "public_service_render_changes_require_explicit_comparison": true
++  },
++  "completion_claims": {
++    "PASS": false,
++    "FINAL_PASS": false,
++    "EFFECT_ACK_DONE": false,
++    "ietf_submission": false,
++    "ietf_publication": false,
++    "ietf_consensus": false,
++    "empirical_confirmation": false
++  }
++}
+diff --git a/tests/test_qikvrt_ietf_effect_extensions.py b/tests/test_qikvrt_ietf_effect_extensions.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..0af4a387fc35390bfdedf561ca83f2a295b9aa04
+--- /dev/null
++++ b/tests/test_qikvrt_ietf_effect_extensions.py
+@@ -0,0 +1,19 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++from pathlib import Path
++import unittest
++
++from tools.qikvrt_ietf_effect_extensions import ReadbackModelTests, check_sources
++
++
++class IETFExtensionSourceTests(unittest.TestCase):
++    def test_source_inventory_and_strict_additive_precedence(self):
++        result = check_sources(Path(__file__).resolve().parents[1])
++        self.assertEqual(len(result["draft_sources"]), 2)
++        self.assertIs(result["P2_complete"], False)
++        self.assertIs(result["native_review"], False)
++        self.assertIs(result["external_submission"], False)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tools/qikvrt_ietf_effect_extensions.py b/tools/qikvrt_ietf_effect_extensions.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..53df1fca3be9e544bfb0b64057f7960ad3d031f9
+--- /dev/null
++++ b/tools/qikvrt_ietf_effect_extensions.py
+@@ -0,0 +1,317 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++"""Offline source/precedence checks and a bounded readback decision model.
++
++This is NOT an HTTP, authentication, durable-execution, or publication adapter.
++VerifiedContext represents assertions supplied by a trusted verifier, never
++booleans accepted from an untrusted wire record. Synthetic tests do not prove
++that any such verifier or remote effect has executed.
++"""
++from __future__ import annotations
++
++import argparse
++import copy
++import hashlib
++import json
++import re
++import shutil
++import subprocess
++import sys
++import unittest
++import xml.etree.ElementTree as ET
++from dataclasses import dataclass, fields, replace
++from pathlib import Path
++from urllib.parse import urlsplit
++
++PROFILE = "eap-http-readback-1"
++ROOT = Path(__file__).resolve().parents[1]
++POLICY = "policy/QIKVRT_IETF_EFFECT_EXTENSIONS_V1.json"
++REQUEST = "state/delivery/requests/IETF_EFFECT_ACK_EXTENSIONS_V1.json"
++MAX_BYTES = 65536
++DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
++CHALLENGE = re.compile(r"[0-9a-f]{64}\Z")
++MEMBERS = set("profile action_hash authorization_record_hash execution_id challenge observer source_uri resource_uri resource_version outcome evidence sequence previous_receipt_hash".split())
++SPINE = [
++    "P0_MANIFEST_LATEST_KNOWLEDGE", "P1_BUILD_ONE_INTEGRATION_HEAD",
++    "P2_VALIDATE_EXACT_INTEGRATION_HEAD", "P3_REVIEW_EXACT_INTEGRATION_HEAD",
++    "P4_REOBSERVE_POST_REVIEW_EXACT_HEAD", "P5_LEGITIMATE_PROMOTION_TO_TRUSTED_MAIN",
++    "P6_REOBSERVE_EXACT_TRUSTED_MAIN_HEAD", "P7_DERIVE_BOUND_EXTERNAL_OBLIGATIONS",
++]
++
++
++def require(condition: bool, reason: str) -> None:
++    if not condition:
++        raise ValueError(reason)
++
++
++def unique_object(pairs: list[tuple[str, object]]) -> dict:
++    result: dict = {}
++    for key, value in pairs:
++        require(key not in result, "duplicate JSON member")
++        result[key] = value
++    return result
++
++
++def invalid_number(value: str) -> None:
++    raise ValueError("unsupported JSON number: " + value)
++
++
++def parse_json(raw: bytes) -> object:
++    require(len(raw) <= MAX_BYTES, "oversized auxiliary object")
++    require(not raw.startswith(b"\xef\xbb\xbf"), "JSON BOM forbidden")
++    try:
++        return json.loads(raw.decode("utf-8"), object_pairs_hook=unique_object,
++                          parse_float=invalid_number, parse_constant=invalid_number)
++    except (UnicodeError, json.JSONDecodeError, RecursionError) as exc:
++        raise ValueError("invalid bounded JSON") from exc
++
++
++def bounded(value: object, maximum: int) -> bool:
++    return isinstance(value, str) and 1 <= len(value) <= maximum and all(32 <= ord(c) <= 126 for c in value)
++
++
++def digest(value: object) -> bool:
++    return isinstance(value, str) and DIGEST.fullmatch(value) is not None
++
++
++def https_uri(value: object) -> bool:
++    if not bounded(value, 2048) or " " in value:
++        return False
++    try:
++        parsed = urlsplit(value)
++        _ = parsed.port
++        return parsed.scheme == "https" and bool(parsed.hostname) and parsed.username is None and parsed.password is None and not parsed.fragment
++    except ValueError:
++        return False
++
++
++def validate_readback(value: object) -> dict:
++    require(isinstance(value, dict) and set(value) == MEMBERS, "closed readback members")
++    r = value
++    require(r["profile"] == PROFILE, "unsupported profile")
++    for key in ("action_hash", "authorization_record_hash"):
++        require(digest(r[key]), "invalid " + key)
++    for key in ("execution_id", "observer"):
++        require(bounded(r[key], 256), "invalid " + key)
++    require(isinstance(r["challenge"], str) and CHALLENGE.fullmatch(r["challenge"]) is not None, "invalid challenge")
++    require(https_uri(r["source_uri"]), "invalid source URI")
++    require(r["resource_uri"] is None or https_uri(r["resource_uri"]), "invalid resource URI")
++    require(r["resource_version"] is None or bounded(r["resource_version"], 256), "invalid resource version")
++    require(r["outcome"] in ("CONFIRMED", "REFUTED", "UNKNOWN"), "invalid outcome")
++    evidence = r["evidence"]
++    require(isinstance(evidence, list) and len(evidence) <= 128 and all(digest(x) for x in evidence), "invalid evidence set")
++    require(evidence == sorted(set(evidence)), "evidence must be sorted and unique")
++    require(type(r["sequence"]) is int and 1 <= r["sequence"] <= 9007199254740991, "invalid sequence")
++    require((r["sequence"] == 1 and r["previous_receipt_hash"] is None) or
++            (r["sequence"] > 1 and digest(r["previous_receipt_hash"])), "invalid chain shape")
++    if r["outcome"] != "UNKNOWN":
++        require(r["resource_uri"] is not None and r["resource_version"] is not None and bool(evidence), "authoritative outcome requires resource and evidence")
++    return r
++
++
++@dataclass(frozen=True)
++class VerifiedContext:
++    action_hash: str
++    authorization_record_hash: str
++    execution_id: str
++    challenge: str
++    observer: str
++    source_uri: str
++    resource_uri: str
++    resource_version: str
++    authorization_valid: bool = False
++    subject_current: bool = False
++    execution_binding_valid: bool = False
++    observer_authorized: bool = False
++    source_authenticated: bool = False
++    fresh_observation: bool = False
++    requirements_valid: bool = False
++    evidence_verified: bool = False
++    chain_valid: bool = False
++    postcondition_determined: bool = False
++    postcondition_satisfied: bool = False
++
++
++def classify_readback(raw: bytes, context: VerifiedContext) -> str:
++    """Reference relation only; cannot authenticate or authorize an action."""
++    if type(context) is not VerifiedContext:
++        return "UNKNOWN"
++    try:
++        record = validate_readback(parse_json(raw))
++        gates = ("authorization_valid", "subject_current", "execution_binding_valid",
++                 "observer_authorized", "source_authenticated", "fresh_observation",
++                 "requirements_valid", "evidence_verified", "chain_valid", "postcondition_determined")
++        if any(getattr(context, key) is not True for key in gates):
++            return "UNKNOWN"
++        for key in ("action_hash", "authorization_record_hash", "execution_id", "challenge",
++                    "observer", "source_uri", "resource_uri", "resource_version"):
++            if record[key] != getattr(context, key):
++                return "UNKNOWN"
++        if type(context.postcondition_satisfied) is not bool:
++            return "UNKNOWN"
++        derived = "CONFIRMED" if context.postcondition_satisfied else "REFUTED"
++        return derived if record["outcome"] == derived else "UNKNOWN"
++    except (ValueError, TypeError, KeyError, RecursionError):
++        return "UNKNOWN"
++
++
++def fixture() -> tuple[dict, VerifiedContext]:
++    record = dict(profile=PROFILE, action_hash="sha256:" + "1" * 64,
++                  authorization_record_hash="sha256:" + "2" * 64,
++                  execution_id="synthetic-execution", challenge="3" * 64,
++                  observer="synthetic-observer", source_uri="https://source.example/status",
++                  resource_uri="https://source.example/object/1", resource_version="v1",
++                  outcome="CONFIRMED", evidence=["sha256:" + "4" * 64],
++                  sequence=1, previous_receipt_hash=None)
++    binding = {f.name: record[f.name] for f in fields(VerifiedContext) if f.name in record}
++    booleans = {f.name: True for f in fields(VerifiedContext) if f.name not in binding}
++    return record, VerifiedContext(**binding, **booleans)
++
++
++def encode(value: object) -> bytes:
++    # Fixtures contain ASCII and bounded integers only. Not a general JCS implementation.
++    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("ascii")
++
++
++class ReadbackModelTests(unittest.TestCase):
++    def test_confirmed_and_refuted_require_verified_predicates(self):
++        r, c = fixture()
++        self.assertEqual(classify_readback(encode(r), c), "CONFIRMED")
++        r["outcome"] = "REFUTED"
++        self.assertEqual(classify_readback(encode(r), replace(c, postcondition_satisfied=False)), "REFUTED")
++        self.assertEqual(classify_readback(encode(r), c), "UNKNOWN")
++
++    def test_each_missing_verification_fails_closed(self):
++        r, c = fixture()
++        for f in fields(c):
++            if type(getattr(c, f.name)) is bool:
++                with self.subTest(gate=f.name):
++                    self.assertEqual(classify_readback(encode(r), replace(c, **{f.name: False})), "UNKNOWN")
++
++    def test_each_subject_or_identity_mutation_fails_closed(self):
++        r, c = fixture()
++        for f in fields(c):
++            if isinstance(getattr(c, f.name), str):
++                with self.subTest(binding=f.name):
++                    self.assertEqual(classify_readback(encode(r), replace(c, **{f.name: "different"})), "UNKNOWN")
++
++    def test_unauthenticated_wire_booleans_are_not_context(self):
++        r, _ = fixture()
++        self.assertEqual(classify_readback(encode(r), {"authorization_valid": True}), "UNKNOWN")
++        _, c = fixture()
++        r["authenticated"] = True
++        self.assertEqual(classify_readback(encode(r), c), "UNKNOWN")
++
++    def test_duplicate_members_and_numbers(self):
++        r, c = fixture()
++        raw = encode(r)
++        duplicate = raw[:-1] + b',"profile":"eap-http-readback-1"}'
++        for bad in (duplicate, b'{"sequence":NaN}', b'{"sequence":1.5}', b"\xef\xbb\xbf" + raw, b"\xff", b" " * (MAX_BYTES + 1)):
++            with self.subTest(raw=bad[:30]):
++                self.assertEqual(classify_readback(bad, c), "UNKNOWN")
++
++    def test_missing_evidence_and_bad_chain(self):
++        r, c = fixture()
++        changes = ({"evidence": []}, {"evidence": r["evidence"] * 2},
++                   {"resource_version": None}, {"resource_uri": None},
++                   {"sequence": True}, {"sequence": 2},
++                   {"sequence": 9007199254740992},
++                   {"previous_receipt_hash": "sha256:" + "5" * 64})
++        for change in changes:
++            with self.subTest(change=change):
++                self.assertEqual(classify_readback(encode(dict(r, **change)), c), "UNKNOWN")
++
++    def test_unknown_and_untrusted_directions_do_not_confirm(self):
++        r, c = fixture()
++        for change in ({"outcome": "UNKNOWN"}, {"outcome": "EFFECT_ACK_DONE"},
++                       {"profile": "future-profile"}, {"source_uri": "http://source.example/status"}):
++            with self.subTest(change=change):
++                self.assertEqual(classify_readback(encode(dict(r, **change)), c), "UNKNOWN")
++
++    def test_receipt_successor_still_needs_verified_chain(self):
++        r, c = fixture()
++        r.update(sequence=2, previous_receipt_hash="sha256:" + "5" * 64)
++        self.assertEqual(classify_readback(encode(r), replace(c, chain_valid=False)), "UNKNOWN")
++        self.assertEqual(classify_readback(encode(r), c), "CONFIRMED")
++
++
++def run_model_tests() -> int:
++    result = unittest.TextTestRunner(stream=sys.stderr, verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(ReadbackModelTests))
++    require(result.wasSuccessful(), "readback reference-model regressions")
++    return result.testsRun
++
++
++def check_sources(root: Path) -> dict:
++    sys.path.insert(0, str(root))
++    from tools.qikvrt_execution_precedence import validate_policy, next_eligible
++    extension = json.loads((root / POLICY).read_text())
++    parent = json.loads((root / extension["extends"]).read_text())
++    validate_policy(parent)
++    require(parent["canonical_spine"] == SPINE, "canonical spine changed")
++    for index, node in enumerate(SPINE):
++        require(parent["phases"][node]["requires"] == ([] if index == 0 else [SPINE[index - 1]]), "phase predecessor changed")
++    require(extension["preserved_boundaries"]["predecessor_evidence_transfer"] is False, "evidence transfer forbidden")
++    additions = extension["external_fanout_extension"]
++    require(set(additions) == {"E4_IETF"}, "unexpected additive edge")
++    combined = copy.deepcopy(parent)
++    for name, edge in additions.items():
++        require(name not in combined["external_fanout"]["edges"] or combined["external_fanout"]["edges"][name] == edge, "conflicting edge")
++        combined["external_fanout"]["edges"][name] = edge
++    validate_policy(combined)
++    ready = dict.fromkeys(SPINE, "SATISFIED")
++    require("E4_IETF" in next_eligible(combined, ready)["eligible"], "IETF must follow satisfied common barrier")
++    for blocked in ("UNKNOWN", "STALE", "FAILED", "UNBOUND", "UNSATISFIED"):
++        require("E4_IETF" not in next_eligible(combined, dict(ready, **{SPINE[-1]: blocked}))["eligible"], "IETF bypassed barrier")
++    request = json.loads((root / REQUEST).read_text())
++    require(request["operation"]["future_binding"]["exact_main_sha"] is None, "source is not an execution receipt")
++    require(all(value is False for value in request["completion_claims"].values()), "unearned completion claim")
++    inventory = []
++    for draft in request["operation"]["drafts"]:
++        path = root / draft["source"]
++        data = path.read_bytes()
++        xml = ET.fromstring(data)
++        require(xml.tag == "rfc" and xml.get("version") == "3", "not RFCXML v3")
++        require(xml.get("docName") == draft["candidate_name"], "draft name mismatch")
++        require(xml.get("ipr") == "trust200902" and xml.get("category") == "exp", "draft metadata changed")
++        require(xml.findtext("front/author/address/email") == "ingolf.lohmann@live.com", "author binding mismatch")
++        require(draft["submission_id"] is None and draft["public_readback"] is None, "source manifest is not publication evidence")
++        inventory.append(dict(path=draft["source"], name=draft["candidate_name"], bytes=len(data), sha256=hashlib.sha256(data).hexdigest()))
++    http_text = (root / request["operation"]["drafts"][0]["source"]).read_text()
++    for marker in (PROFILE, "Authoritative Effect Readback", "UNKNOWN", "protocol_hash", "prepare-envelope", "readback =", "Replay, Crashes and Unknown Outcomes", "Backward Compatibility", "HTML Integration", "MUST NOT execute the protected effect"):
++        require(marker in http_text, "missing normative section: " + marker)
++    return {"schema": "qikvrt_ietf_extension_source_check_v1", "draft_sources": inventory,
++            "scope": "SOURCE_AND_FINITE_REFERENCE_MODEL_ONLY", "P2_complete": False,
++            "native_review": False, "external_submission": False,
++            "completion_claims": {"PASS": False, "FINAL_PASS": False, "EFFECT_ACK_DONE": False}}
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--self-test-only", action="store_true")
++    parser.add_argument("--out", type=Path)
++    args = parser.parse_args()
++    try:
++        tests = run_model_tests()
++        if args.self_test_only:
++            print(json.dumps({"model_test_methods": tests, "scope": "SYNTHETIC_REFERENCE_ONLY"}))
++            return 0
++        result = check_sources(ROOT)
++        result["model_test_methods"] = tests
++        result["head"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
++        result["tree"] = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], cwd=ROOT, text=True).strip()
++        if args.out:
++            out = args.out.resolve()
++            require(not out.is_relative_to(ROOT.resolve()), "outputs must be outside immutable source checkout")
++            out.mkdir(parents=True, exist_ok=True)
++            for item in result["draft_sources"]:
++                shutil.copyfile(ROOT / item["path"], out / (item["name"] + ".xml"))
++            (out / "SOURCE_CHECK.json").write_text(json.dumps(result, indent=2) + "\n")
++        print(json.dumps(result, indent=2))
++        return 0
++    except (ValueError, OSError, KeyError, ET.ParseError, subprocess.CalledProcessError) as exc:
++        print("HOLD_UNVERIFIED: " + str(exc), file=sys.stderr)
++        return 1
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
