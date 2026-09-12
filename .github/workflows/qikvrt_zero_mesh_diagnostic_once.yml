@@ -1,0 +1,88 @@
+name: QIKVRT finite zero-mesh diagnostic
+on:
+  push:
+    branches: [diagnostic/zero-mesh-boundary-a860-20260912-v1]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: qikvrt-zero-mesh-diagnostic-20260912-v1
+  cancel-in-progress: false
+jobs:
+  diagnose:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: a86054139b49c13c5cd344753b248b46b5daf66f
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Bind source and reproduce receipt counterexamples
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = a86054139b49c13c5cd344753b248b46b5daf66f
+          test "$(git rev-parse HEAD^{tree})" = feff1cae2401a3df83febc3b9458de70d79b818e
+          test -z "$(git status --porcelain)"
+          mkdir -p "$RUNNER_TEMP/mesh-diagnostic"
+          git archive --format=tar.gz HEAD tools src tests state policy include .github/workflows Makefile REFLEXIVE_FINDING_WORKFLOW_STANDARD.json > "$RUNNER_TEMP/mesh-diagnostic/source.tar.gz"
+          PYTHONDONTWRITEBYTECODE=1 python3 -B - <<'PY'
+          import copy,json,os,pathlib
+          from tools import qikvrt_real_mesh as mesh
+          from tools import qikvrt_real_mesh_system_verification as verifier
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])/'mesh-diagnostic'
+          r=mesh.run_demo(root/'runtime', source_head='a86054139b49c13c5cd344753b248b46b5daf66f',source_tree='feff1cae2401a3df83febc3b9458de70d79b818e')
+          contract=verifier.load_contract()
+          assert verifier.verify_receipt(r,contract)==[]
+          (root/'baseline.json').write_text(json.dumps(r,indent=2)+'\n')
+          cases={}
+          def case(name,mutate,rehash=True):
+              bad=copy.deepcopy(r); mutate(bad)
+              if rehash:
+                  bad.pop('receipt_sha256',None);bad['receipt_sha256']=verifier.canonical_sha256(bad)
+              findings=verifier.verify_receipt(bad,contract)
+              cases[name]={'invalid_receipt_accepted':not findings,'findings':findings}
+          case('missing_receipt_hash',lambda x:x.pop('receipt_sha256'),False)
+          case('missing_source_head',lambda x:x.pop('source_head'))
+          case('malformed_source_tree',lambda x:x.update(source_tree='not-a-tree'))
+          case('missing_topology',lambda x:x.pop('topology'))
+          case('duplicate_route',lambda x:x['routes'].__setitem__(1,copy.deepcopy(x['routes'][0])))
+          case('missing_hop_readbacks',lambda x:x['routes'][0]['observation'].update(node_observations=[]))
+          case('blocked_ack',lambda x:x['routes'][0]['bounded_effect_ack'].update(state='EFFECT_ACK_BLOCK',ordinary_release=False))
+          case('unobserved_restart',lambda x:x['restart_replay'].update(observed=False))
+          result={'schema':'qikvrt_zero_mesh_counterexamples_v1','source_head':r['source_head'],'source_tree':r['source_tree'],'verifier_blob':'0b81d05e50a25ee08e33945ca8183ae79702a8d1','cases':cases,'general_effect_ack_done':False,'repository_mutation':False}
+          (root/'counterexamples.json').write_text(json.dumps(result,indent=2)+'\n')
+          print(json.dumps(result,indent=2))
+          PY
+      - name: Observe finite Authority and Mirror platform inventory
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json,os,pathlib,subprocess
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])/'mesh-diagnostic'
+          def get(path):
+              p=subprocess.run(['gh','api',path],capture_output=True,text=True,timeout=40)
+              if p.returncode: return {'observation_error':p.stderr,'exit':p.returncode}
+              return json.loads(p.stdout)
+          out={}
+          for repo in ['Goldkelch/qik-vrt','ingolf-lohmann/qik-vrt']:
+              commit=get(f'repos/{repo}/commits/main')
+              rows=get(f'repos/{repo}/actions/runs?branch=main&per_page=100')
+              fields=['id','name','path','head_sha','event','status','conclusion','created_at','updated_at','run_attempt']
+              out[repo]={'head':commit.get('sha'),'tree':commit.get('commit',{}).get('tree',{}).get('sha'),'runs':[ {k:r.get(k) for k in fields} for r in rows.get('workflow_runs',[]) ],'recent_window_not_complete_history':True,'error':rows.get('observation_error'),'head_after':get(f'repos/{repo}/git/ref/heads/main').get('object',{}).get('sha')}
+          (root/'platform-window.json').write_text(json.dumps(out,indent=2)+'\n')
+          print(json.dumps(out,indent=2))
+          PY
+      - name: Preserve diagnostic sources and evidence without refs or publication
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-zero-mesh-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/mesh-diagnostic
+          if-no-files-found: error
+          retention-days: 14
