@@ -1,0 +1,64 @@
+{
+  "_license": {
+    "classification": "machine_readable_boundary_test_report",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "completion_claims": {
+    "global_effect_ack_done": "UNCLAIMED",
+    "physical_backward_signalling": "NOT_PRESENT_IN_MODEL",
+    "repository_wide_final_pass": "UNCLAIMED"
+  },
+  "publication_id": "qikvrt-bidirectional-virtual-time-channel-v1",
+  "tests": [
+    {
+      "command": "cc -std=c90 -pedantic-errors -Wall -Wextra -Werror -O2 tools/qikvrt_bidirectional_virtual_channel_witness.c",
+      "result": "PASS",
+      "test_id": "C90-STRICT-BUILD"
+    },
+    {
+      "evidence": "WITNESS_RUN.txt",
+      "result": "PASS",
+      "test_id": "BIDIRECTIONAL-BYTE-EXACT-RUN"
+    },
+    {
+      "evidence": "tested payload lengths: 0,1,16,17,18,31,255,256,257,4096",
+      "result": "PASS",
+      "test_id": "PAYLOAD-BOUNDARY-SWEEP"
+    },
+    {
+      "evidence": "a deliberately missing chunk is rejected",
+      "result": "PASS",
+      "test_id": "MISSING-CHUNK-NEGATIVE"
+    },
+    {
+      "evidence": "source digest before/after: 41545 / 41545 plus direct source-byte comparison in the witness",
+      "result": "PASS",
+      "test_id": "SOURCE-IMMUTABILITY"
+    },
+    {
+      "evidence": "host sequence is strict and contiguous from 1 through 9",
+      "result": "PASS",
+      "test_id": "HOST-ORDER"
+    },
+    {
+      "evidence": "PHYSICAL_BACKWARD_SIGNALLING: not present in this model",
+      "result": "PASS",
+      "test_id": "PHYSICAL-OVERCLAIM-NEGATIVE"
+    },
+    {
+      "evidence": "PDF_RENDER_VALIDATION.json",
+      "result": "PASS",
+      "test_id": "PDF-RENDER-AND-VISUAL-QA"
+    },
+    {
+      "command": "python3 -m unittest tests.test_bidirectional_virtual_time_channel_publication -v",
+      "evidence": "7 tests ran; all returned ok",
+      "result": "PASS",
+      "test_id": "PUBLICATION-UNITTEST"
+    }
+  ],
+  "schema": "qikvrt_bidirectional_virtual_time_channel_boundary_tests_v1"
+}

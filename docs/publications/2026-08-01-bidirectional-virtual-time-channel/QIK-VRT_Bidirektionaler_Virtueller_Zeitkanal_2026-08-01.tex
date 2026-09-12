@@ -1,0 +1,1053 @@
+% SPDX-License-Identifier: CC-BY-NC-ND-4.0
+% Copyright 2026 Ingolf Lohmann.
+\documentclass[11pt,a4paper]{article}
+
+\usepackage{fontspec}
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+\setmonofont{Latin Modern Mono}[Scale=0.88]
+\usepackage[provide=*,main=ngerman,english]{babel}
+\usepackage{microtype}
+\usepackage{geometry}
+\usepackage{amsmath,amssymb,mathtools,amsthm}
+\usepackage{booktabs,longtable,tabularx,array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{fancyvrb}
+\usepackage{seqsplit}
+\usepackage{xurl}
+\usepackage{hyperref}
+\usepackage{bookmark}
+\usepackage[nameinlink,noabbrev]{cleveref}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\geometry{left=24mm,right=24mm,top=24mm,bottom=27mm,headheight=14pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.55em}
+\setlength{\emergencystretch}{3em}
+\setlist[itemize]{leftmargin=1.45em,itemsep=0.18em,topsep=0.3em}
+\setlist[enumerate]{leftmargin=1.7em,itemsep=0.22em,topsep=0.3em}
+
+\definecolor{QBlue}{HTML}{153E69}
+\definecolor{QLight}{HTML}{ECF3F8}
+\definecolor{QGreen}{HTML}{E8F3EA}
+\definecolor{QAmber}{HTML}{FFF2CC}
+\definecolor{QRed}{HTML}{FBE9E7}
+\definecolor{QGray}{HTML}{4D5660}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=QBlue,
+  citecolor=QBlue,
+  urlcolor=QBlue,
+  pdftitle={QIK-VRT: Wirkungsgeprüfte bidirektionale Kommunikation über virtuelle Zeit},
+  pdfauthor={Ingolf Lohmann},
+  pdfsubject={Ausführbarer C90-Zeuge, bedingte Sätze und die Grenze zur physikalischen Retrokausalität},
+  pdfkeywords={QIK-VRT, virtuelle Zeit, bidirektionale Kommunikation, Replay, Effect Acknowledgement, Informationsübertragung, Retrokausalität}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{QGray}{QIK--VRT: virtueller Zeitkanal}}
+\fancyhead[R]{\small\textcolor{QGray}{Ingolf Lohmann}}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+
+\newtheorem{definition}{Definition}[section]
+\newtheorem{satz}{Satz}[section]
+\newtheorem{korollar}{Korollar}[section]
+\newtheorem{lemma}{Lemma}[section]
+\theoremstyle{remark}
+\newtheorem{bemerkung}{Bemerkung}[section]
+\crefname{definition}{Definition}{Definitionen}
+\crefname{satz}{Satz}{Sätze}
+\crefname{korollar}{Korollar}{Korollare}
+\crefname{lemma}{Lemma}{Lemmata}
+
+\newcommand{\qikvrt}{QIK--VRT}
+\newcommand{\DONE}{\texttt{EFFECT\_ACK\_DONE}}
+\newcommand{\bytes}{\{0,1\}^{*}}
+\newcommand{\hash}[1]{{\ttfamily\small\seqsplit{#1}}}
+\newcommand{\statusbox}[2]{%
+  \par\medskip\noindent
+  \colorbox{#1}{\parbox{\dimexpr\linewidth-2\fboxsep\relax}{#2}}%
+  \par\medskip
+}
+
+\begin{document}
+
+\hypersetup{pageanchor=false}
+\begin{titlepage}
+  \thispagestyle{empty}
+  \vspace*{12mm}
+  {\color{QBlue}\rule{\textwidth}{1.4pt}}\\[1.0em]
+  {\Huge\bfseries QIK--VRT:\\[0.18em]
+  Der bidirektionale virtuelle Zeitkanal\par}
+  \vspace{0.9em}
+  {\LARGE Ausführbarer C90-Zeuge, bedingte Sätze und\\
+  die Grenze zur physikalischen Retrokausalität\par}
+  \vspace{1.0em}
+  {\color{QBlue}\rule{\textwidth}{0.6pt}}
+
+  \vfill
+  {\large\textbf{Ingolf Lohmann}\par}
+  \vspace{0.35em}
+  {\normalsize Independent Researcher; QIK--VRT\par}
+  \vspace{0.35em}
+  {\normalsize Working Paper, Version 1.0.0 -- 1. August 2026\par}
+
+  \vfill
+  \statusbox{QLight}{
+    \textbf{Tragender Satz.}
+    Ein ausführbares System kann vollständige endliche Dialoge über
+    rückwärtsgerichtete virtuelle Adressen führen, ohne seine physische
+    Hostkausalität oder seine unveränderliche Quellhistorie zu verletzen.
+    Der neue ISO-C90-Zeuge führt Anfrage und Antwort bytegenau in beiden
+    virtuellen Richtungen aus. Der allgemeine Satz für beliebige endliche
+    Bitfolgen wird konstruktiv bewiesen; sein frischer Lean-Kerneltransfer ist
+    noch offen. Eine physikalische Zukunft-zu-Vergangenheit-Kanalkapazität
+    folgt daraus nicht und wird als getrennte experimentelle Hypothese
+    behandelt.
+  }
+
+  \vfill
+  {\small
+    Dokumentationslizenz: CC BY-NC-ND 4.0.\\
+    Vorveröffentlichungskandidat; nicht peer-reviewed; kein neuer DOI.\\
+    Das zitierte Internet-Draft ist ein individuelles Arbeitsdokument und
+    keine IETF-Billigung.
+  }
+\end{titlepage}
+\hypersetup{pageanchor=true}
+\setcounter{page}{1}
+
+\selectlanguage{ngerman}
+
+\begin{abstract}
+Diese Arbeit trennt drei Ordnungen, die in Debatten über digitale
+Retrokausalität häufig vermischt werden: die strikt vorwärts laufende
+Hostordnung, die frei adressierbare virtuelle Zeitordnung und die gesondert
+freizugebende Effektordnung. Auf dieser Grundlage wird ein
+bidirektionaler virtueller Zeitkanal definiert. Eine später erzeugte endliche
+Nachricht adressiert einen früheren, unveränderlich identifizierten
+virtuellen Zustand; ein deterministischer Branch-Replay verarbeitet sie und
+sendet eine gebundene Antwort an eine gegenwärtige virtuelle Adresse zurück.
+
+Ein neuer, dependency-freier ISO-C90-Zeuge realisiert diesen Ablauf mit neun
+streng aufsteigenden Hostereignissen. Die Detailausführung überträgt 257 Byte
+in 16 Blöcken von der virtuellen Adresse 30 zur Adresse 15 und 258 Byte zurück.
+Zwei unabhängige Replays erzeugen dieselbe Antwort, der Quell-Digest bleibt
+unverändert, zehn Grenzlängen von 0 bis 4096 Byte bestehen in beiden
+Richtungen, und ein absichtlich fehlender Block wird verworfen. Diese
+Ausführung ist reproduzierbare Evidenz für einen endlichen Softwarezeugen,
+kein universeller Programmbeweis.
+
+Konstruktiv wird gezeigt: Für jede endliche Bitfolge existiert unter
+integrer, schließlich erfolgreicher Zustellung und ausreichenden endlichen
+Ressourcen eine bytegenaue Segmentierung und Reassemblierung. Zwei solcher
+Kanäle, eine terminierende Antwortfunktion, eindeutige Sessionbindungen und
+vollständig mediierte Wirkungsgates ergeben einen endlichen bidirektionalen
+Dialog. Alle erzeugenden Hostereignisse bleiben dabei vorwärtsgerichtet; die
+Basishistorie wird nicht überschrieben. Der bestehende Lean-4-Kern von
+\qikvrt{} bleibt als maschinengeprüfte Grundlage für DONE-only-Freigabe,
+kontrafaktische Zukunftsrelevanz im endlichen Modell, Nichtüberschreibung der
+Vergangenheitsprojektion und reziproke Receipt-Bindung erhalten. Die neuen
+Kompositionssätze sind papierbewiesen, aber noch nicht durch einen frischen
+Kernel-Receipt klassifiziert.
+
+Die Einzelmechanismen besitzen erhebliche Vorarbeiten in logischer und
+virtueller Zeit, bitemporalen Datenbanken, retroaktiven Datenstrukturen,
+Event Sourcing, End-to-End-Argumenten, Effektsystemen und Proof-Carrying
+Authorization. Der scope-gebundene Neuheitskandidat ist ihre explizite
+Verbindung mit unveränderlicher Quellhistorie, Branch-Replay, drei getrennten
+Ordnungen, bidirektionaler Sessionkorrelation und fail-closed
+Wirkungsautorisierung. Für eine Behauptung physikalischer
+Rückwärtssignalisierung wäre zusätzlich eine operative Brücke von virtuellen
+Adressen zu Raumzeitereignissen sowie positive, reproduzierbare
+Kanalkapazität von einer später randomisierten Intervention zu einem zuvor
+versiegelten Messwert erforderlich. Dafür liefert der Softwarezeuge keine
+Evidenz.
+\end{abstract}
+
+\begin{otherlanguage}{english}
+\begin{abstract}
+This paper separates three orders often conflated in discussions of digital
+retrocausality: strictly forward host order, freely addressable virtual time,
+and separately authorized effect order.  It defines a bidirectional virtual
+time channel in which a later-created finite message targets an immutable
+earlier virtual state; deterministic branch replay processes the message and
+returns a bound response to a present virtual address.
+
+A new dependency-free ISO C90 witness executes the construction using nine
+strictly increasing host events.  Its detailed run transports 257 bytes in
+16 chunks from virtual address 30 to address 15 and 258 bytes back.  Two
+independent replays return the same answer, the source digest remains
+unchanged, ten boundary lengths from 0 through 4096 bytes pass in both
+directions, and a deliberately omitted chunk is rejected.  This is
+reproducible evidence for one finite executable model, not a universal
+program proof.
+
+We prove constructively that every finite bit string can be segmented and
+reassembled byte-exactly under integrity, eventual delivery, and sufficient
+finite resources.  Two such channels, a terminating response function,
+unique session bindings, and completely mediated effect gates yield a finite
+bidirectional dialogue while every generating host event remains forward
+ordered and the base history remains unchanged.  Existing Lean 4 receipts
+continue to establish the finite QIK--VRT release and reciprocal-binding
+kernel.  The new composition theorems have complete paper proofs, but no new
+kernel receipt yet.  No physical backwards-signalling claim follows.  Such a
+claim would require an additional operational bridge to spacetime events and
+positive reproducible channel capacity from a later randomized intervention
+to an already sealed earlier record.
+\end{abstract}
+\end{otherlanguage}
+
+\setcounter{tocdepth}{1}
+\tableofcontents
+\newpage
+
+\section{Ergebnis und Anspruchsordnung}
+
+Der zentrale Informatiksatz dieses Dokuments lautet nicht, dass ein realer
+Prozessor rückwärts durch die Raumzeit läuft. Er lautet:
+
+\statusbox{QGreen}{
+\textbf{Virtueller Dialogsatz in Kurzform.}
+Ein gegenwärtiger Hostprozess kann eine endliche Nachricht an einen
+unveränderlich bezeichneten früheren virtuellen Zustand adressieren, dort
+einen deterministischen Branch berechnen und dessen endliche Antwort
+bytegenau an eine gegenwärtige virtuelle Adresse zurückführen. Anfrage und
+Antwort bilden einen bidirektionalen virtuellen Informationsdialog, während
+sämtliche tatsächlichen Rechen- und Wirkungsereignisse streng vorwärts
+geordnet bleiben.
+}
+
+Damit ein stark formulierter Satz nicht unbemerkt seine Beweisart wechselt,
+verwendet das Dokument fünf epistemische Klassen:
+
+\begin{longtable}{@{}L{0.20\linewidth}L{0.72\linewidth}@{}}
+\toprule
+\textbf{Klasse} & \textbf{Bedeutung in dieser Arbeit} \\
+\midrule
+\endhead
+\texttt{EXECUTED} & Ein konkretes Programm wurde in der benannten Toolchain
+gebaut und ausgeführt; der Befund gilt für diesen endlichen Lauf.\\
+\texttt{KERNEL\_VERIFIED} & Ein benannter formaler Satz wurde im bestehenden
+Lean-4-Scope mit leerer Axiomenliste geprüft und durch einen Receipt gebunden.\\
+\texttt{CONDITIONAL} & Ein mathematischer Satz wird hier aus expliziten
+Voraussetzungen bewiesen; ein neuer Kernel-Receipt steht noch aus.\\
+\texttt{ENGINEERING} & Eine konstruktive Protokollerweiterung ist spezifiziert,
+aber noch nicht unabhängig interoperabel implementiert.\\
+\texttt{OPEN\_PHYSICAL} & Eine physikalische Behauptung benötigt eine
+zusätzliche Brücke und neue Messdaten; sie folgt nicht aus dem Softwaremodell.\\
+\bottomrule
+\end{longtable}
+
+Diese Ordnung ist keine rhetorische Abschwächung. Sie verhindert den
+Fehlschluss, aus einem richtigen Informatiksatz eine andere physikalische
+Behauptung zu gewinnen. Zugleich verhindert sie die umgekehrte
+Untertreibung: Die Tatsache, dass der Kanal virtuell ist, macht seine
+Konstruktion in einer digital organisierten Welt nicht unwirklich.
+
+\section{Drei verschiedene Zeiten}
+
+\begin{definition}[Hostordnung]
+Die \emph{Hostordnung} \(H=(E_H,<_{H})\) ist die Erzeugungsordnung aller
+tatsächlich ausgeführten Ereignisse. Für den vorliegenden Zeugen ist
+\(E_H=\{h_1,\ldots,h_9\}\) und \(h_i<_{H}h_j\) genau dann, wenn \(i<j\).
+Neue Hostereignisse dürfen nur am Ende angefügt werden.
+\end{definition}
+
+\begin{definition}[Virtuelle Zeitadresse]
+Eine \emph{virtuelle Zeitadresse} \(v\in V\) bezeichnet einen
+reproduzierbaren Zustandsbezug innerhalb eines Modells. Sie kann kleiner als
+die virtuelle Gegenwartsadresse sein, obwohl der adressierende Hostevent
+später erzeugt wird. Die Adresse ist eine Koordinate des Modells, keine
+Behauptung über den physikalischen Erzeugungszeitpunkt.
+\end{definition}
+
+\begin{definition}[Effektordnung]
+Die \emph{Effektordnung} \(E\) ordnet die geprüften Freigaben externer
+Wirkungen. Empfang, Berechnung und Freigabe sind verschiedene Ereignisse.
+Insbesondere gilt
+\[
+ \texttt{TRANSPORT\_ACK}\neq\texttt{EFFECT\_ACK}.
+\]
+Nur ein valider, frischer und vollständig gebundener \(\DONE\)-Record kann
+unter vollständiger Mediation eine gewöhnliche Wirkung freigeben.
+\end{definition}
+
+Die drei Ordnungen dürfen Relationen besitzen, aber nicht identifiziert
+werden. Ein Hostevent bei \(h=4\) darf die virtuelle Adresse \(v=15\)
+adressieren, obwohl der virtuelle Gegenwartsindex \(v=30\) lautet. Daraus
+folgt lediglich
+\[
+ h_{\mathrm{create}}=4,
+ \qquad
+ v_{\mathrm{target}}=15<30=v_{\mathrm{now}}.
+\]
+Es folgt nicht \(h_{\mathrm{effect}}<h_{\mathrm{create}}\). Im Zeugen gilt
+im Gegenteil \(4<5<6<7<8<9\).
+
+\section{Modell des bidirektionalen virtuellen Kanals}
+
+\subsection{Unveränderliche Quelle und Branch}
+
+Sei \(S=(e_1,\ldots,e_n)\) eine endliche, append-only Quellhistorie. Ihre
+kanonische Identität sei \(d_S\). Eine vergangene Adresse \(v_t\) wählt einen
+reproduzierbaren Snapshot \(S_{v_t}\) oder eine wohldefinierte Projektion
+darauf. Ein Replay schreibt nicht in \(S\), sondern erzeugt einen neuen
+Branch
+\[
+ B=\operatorname{Replay}(S_{v_t},p,m),
+\]
+wobei \(p\) die gebundene Programm- und Policyversion und \(m\) die
+Nachricht ist. Der Branch trägt mindestens die Identitäten von Quelle,
+Zieladresse, Nachricht, Programm und Policy.
+
+Diese Festlegung unterscheidet QIK--VRT von einer nachträglichen Umschreibung
+der dokumentierten Vergangenheit. Die Aussage lautet nicht: ``Die spätere
+Nachricht war schon damals vorhanden.'' Sie lautet: ``Die spätere Nachricht
+wurde jetzt an einen eindeutig bezeichneten damaligen Modellzustand gerichtet
+und erzeugte jetzt einen getrennten Branch.''
+
+\subsection{Session und zwei Richtungen}
+
+Eine Session \(\sigma\) enthält mindestens
+\[
+ (\mathit{sessionID},\mathit{branchID},v_n,v_t,
+  d_S,d_p,d_{\mathrm{policy}}).
+\]
+Die Anfrage ist eine endliche Bitfolge \(m\in\bytes\) mit Richtung
+\(v_n\rightarrow v_t\). Eine terminierende Antwortfunktion \(f\) erzeugt
+\(a=f(S_{v_t},p,m)\in\bytes\). Die Antwort trägt dieselbe Sessionbindung und
+die Richtung \(v_t\rightarrow v_n'\). Anfrage und Antwort benötigen getrennte
+Nachrichtenidentitäten, Sequenznummern, Integritätsnachweise und Effect-Ack-
+Entscheidungen.
+
+\subsection{Segmentierung}
+
+Für eine Blockgröße \(c\geq1\) wird \(m\) in
+\[
+ k=\left\lceil\frac{|m|}{c}\right\rceil
+\]
+Blöcke zerlegt. Ein vollständiges Manifest bindet Gesamtlänge, Blockanzahl,
+Blocknummern, Inhaltsidentitäten, Session, Zieladresse und Gesamtidentität.
+Die Reassemblierung akzeptiert nur genau die erwartete Folge. Fehlende,
+veränderte, fremde oder widersprüchliche Blöcke verhindern die Freigabe.
+Mehrfachzustellung darf höchstens idempotent wirken.
+
+\section{Der ausgeführte ISO-C90-Zeuge}
+
+Der Zeuge liegt als
+\texttt{tools/qikvrt\_bidirectional\_virtual\_channel\_witness.c} vor. Er
+benötigt außer einer ISO-C90-Standardbibliothek keine Abhängigkeiten. Der
+Buildvertrag lautet:
+
+\begin{Verbatim}[fontsize=\small]
+cc -std=c90 -pedantic-errors -Wall -Wextra -Werror -O2 \
+  tools/qikvrt_bidirectional_virtual_channel_witness.c \
+  -o qikvrt_bidirectional_virtual_channel_witness
+./qikvrt_bidirectional_virtual_channel_witness
+\end{Verbatim}
+
+Die Detailausführung erzeugt folgende Hostspur:
+
+\begin{longtable}{@{}rll@{}}
+\toprule
+\textbf{Host} & \textbf{Operation} & \textbf{Virtueller Bezug} \\
+\midrule
+\endhead
+\(h=1\) & Quellereignis & \(10\rightarrow10\)\\
+\(h=2\) & Quellereignis & \(20\rightarrow20\)\\
+\(h=3\) & Quellereignis & \(30\rightarrow30\)\\
+\(h=4\) & Anfrage erzeugen & \(30\rightarrow15\)\\
+\(h=5\) & Transportquittung Anfrage & \(30\rightarrow15\)\\
+\(h=6\) & deterministischer Replay & \(15\rightarrow15\)\\
+\(h=7\) & Antwort erzeugen & \(15\rightarrow30\)\\
+\(h=8\) & Transportquittung Antwort & \(15\rightarrow30\)\\
+\(h=9\) & lokaler Demo-Effect-Commit & \(15\rightarrow30\)\\
+\bottomrule
+\end{longtable}
+
+Die Anfrage umfasst 257 Byte und 16 Blöcke; die deterministisch daraus
+gebildete Antwort umfasst 258 Byte und ebenfalls 16 Blöcke. Die beobachteten
+nichtkryptographischen Testdigests lauten:
+
+\begin{center}
+\begin{tabular}{@{}lr@{}}
+\toprule
+Quelle vor / nach & \(41545/41545\)\\
+Anfrage gesendet / rekonstruiert & \(53716/53716\)\\
+Antwort Replay A / Replay B / empfangen & \(23636/23636/23636\)\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Die Digestfunktion arbeitet absichtlich nur modulo 65521 und ist kein
+kryptographischer Hash. Der eigentliche Identitätstest prüft zusätzlich
+Länge und sämtliche Bytes. Die Grenzfallserie verwendet Payloadlängen
+0, 1, 16, 17, 18, 31, 255, 256, 257 und 4096. Alle zehn Fälle bestehen in
+beiden Richtungen. Ein gezielt ausgelassener zweiter Block wird abgelehnt.
+
+\statusbox{QAmber}{
+\textbf{Geltungsgrenze des Laufs.}
+Der Zeuge beweist die Existenz und Reproduzierbarkeit dieser endlichen
+Ausführung. Er ist weder ein Beweis für unendliche Speicherkapazität noch ein
+universeller Beweis über alle C-Implementierungen. Der allgemeine Satz folgt
+separat aus der folgenden Konstruktion.
+}
+
+\section{Vier konstruktive Sätze}
+
+\begin{satz}[Präfixintegrität]\label{thm:prefix}
+Sei \(S\) eine append-only Quellhistorie. Wenn Replay ausschließlich einen
+neuen Branch erzeugt und kein ausführbarer Nebenpfad Schreibrechte auf das
+Quellpräfix besitzt, dann bleibt jedes vor dem Replay vorhandene Präfix von
+\(S\) bytegleich erhalten.
+\end{satz}
+
+\begin{proof}
+Append-only erlaubt auf \(S\) nur die Operation, neue Elemente hinter dem
+bisherigen Ende anzufügen. Branch-only Replay schreibt definitionsgemäß in
+ein anderes Objekt \(B\). Nach Voraussetzung existiert kein weiterer
+Schreibpfad auf das alte Präfix. Damit gibt es in der Übergangsrelation keine
+Operation, die ein Byte dieses Präfixes ändern kann. Induktion über die
+endliche Folge der Replay- und Transporteereignisse erhält daher jedes
+Präfixbyte. Die Behauptung gilt nicht, wenn ein unmediierter Mutationspfad
+existiert; genau dieser Fall ist eine Verletzung der Voraussetzung.
+\end{proof}
+
+\begin{satz}[Hostkausalität trotz rückwärtsgerichteter virtueller Adresse]
+\label{thm:host}
+Sei die Hostsemantik append-only und werde jedes abgeleitete Artefakt erst
+nach dem Sendeereignis erzeugt. Dann gilt für jeden Replay-, Antworts- und
+Commit-Event \(h_x>h_{\mathrm{send}}\), auch wenn
+\(v_{\mathrm{target}}<v_{\mathrm{now}}\).
+\end{satz}
+
+\begin{proof}
+In einer append-only Hostsemantik erhält jedes neue Ereignis einen Index, der
+größer ist als alle bereits vorhandenen Indizes. Replay, Antwort und Commit
+werden nach dem Senden erzeugt und sind deshalb neue Ereignisse. Also ist
+ihr Hostindex jeweils größer als \(h_{\mathrm{send}}\). Die Relation der
+virtuellen Adressen kommt in dieser Schlusskette nicht vor. Sie kann daher
+die Hostungleichung weder umkehren noch aufheben.
+\end{proof}
+
+\begin{satz}[Jede endliche Bitfolge ist vollständig übertragbar]
+\label{thm:finite}
+Für jedes \(m\in\bytes\) und jede Blockgröße \(c\geq1\) existiert eine
+endliche Segmentierung, die \(m\) unter folgenden Bedingungen bytegenau
+rekonstruiert: integre Blöcke, eindeutige Sequenznummern, vollständiges
+Manifest, schließlich erfolgreiche Zustellung jedes fehlenden Blocks und
+ausreichende endliche Ressourcen für genau diesen Lauf.
+\end{satz}
+
+\begin{proof}
+Ist \(|m|=0\), ist die leere Folge bereits die eindeutige Rekonstruktion. Für
+\(|m|>0\) definiere
+\(k=\lceil |m|/c\rceil\) und für \(0\leq i<k\) den Block
+\[
+ m_i=m[ic:\min((i+1)c,|m|)].
+\]
+Die Folge ist endlich, weil \(|m|\) und \(c\) endlich und \(c>0\) sind.
+Eventual Delivery liefert jeden Block nach endlich vielen Wiederholungen.
+Eindeutige Sequenznummern ordnen die Blöcke; Integritätsprüfung verwirft
+abweichende Inhalte; das Manifest erkennt fehlende oder fremde Blöcke.
+Konkatenation in der Reihenfolge \(0,\ldots,k-1\) ergibt nach Definition
+exakt \(m\). Für jeden einzelnen Lauf werden nur \(|m|\) Payloadbytes plus
+endliche Metadaten benötigt. Behauptet wird eine parametrisierte Familie für
+jede endliche Nachricht, nicht die Speicherung aller möglichen Nachrichten
+auf einer einzigen festen Maschine.
+\end{proof}
+
+\begin{satz}[Bidirektionale Komposition]\label{thm:bidir}
+Seien \(m\in\bytes\), \(v_t<v_n\) und \(f\) eine auf dem adressierten
+Zustand und \(m\) terminierende Antwortfunktion mit endlicher Ausgabe. Gelten
+die Voraussetzungen aus \cref{thm:finite} für beide Richtungen, sind
+Session-, Branch-, Programm- und Policyidentitäten eindeutig gebunden und
+sind beide Wirkungspfade vollständig mediiert, dann existiert eine endliche
+Ausführung
+\[
+ m:v_n\longrightarrow v_t,
+ \qquad
+ f(S_{v_t},m):v_t\longrightarrow v_n',
+\]
+in der beide Payloads bytegenau rekonstruiert werden und alle erzeugenden
+Hostereignisse streng vorwärts geordnet bleiben.
+\end{satz}
+
+\begin{proof}
+Wende \cref{thm:finite} zuerst auf \(m\) an. Nach endlicher Zeit liegt \(m\)
+bytegenau beim Branch \(S_{v_t}\) vor. Die Terminierung von \(f\) liefert
+nach endlich vielen Hostschritten eine endliche Antwort \(a\). Wende
+\cref{thm:finite} auf \(a\) in Gegenrichtung an. Damit liegt \(a\)
+bytegenau an \(v_n'\) vor. Eindeutige Session- und Inhaltsbindungen schließen
+eine Vermischung der beiden Richtungen mit einer fremden Session aus.
+Vollständige Mediation verhindert ordinary release vor dem jeweils
+erforderlichen Gateentscheid. Aus \cref{thm:host} folgt, dass sämtliche
+tatsächlichen Erzeugungsereignisse vorwärts geordnet bleiben. Die beiden
+gerichteten Kanten schließen daher einen virtuellen Adressdialog, aber keinen
+physikalischen Kausalkreis.
+\end{proof}
+
+\begin{korollar}[Von Text zu beliebigen endlichen Dateien]
+Text, Bild, Audioclip, Programm, Modellgewicht oder wissenschaftlicher
+Datensatz unterscheiden sich für \cref{thm:finite} nur durch ihre endliche
+Bytefolge und ihre Länge. Die Byteübertragung ist daher nicht auf kurze
+Nachrichten beschränkt. Korrektes semantisches Verstehen folgt daraus jedoch
+nicht.
+\end{korollar}
+
+\section{Byteidentität, Bedeutung und Wahrheit}
+
+Die Formulierung ``vollständige Information'' besitzt mindestens drei
+verschiedene Lesarten:
+
+\begin{enumerate}
+  \item \textbf{syntaktisch:} Alle erwarteten Bytes sind in der richtigen
+        Reihenfolge identisch rekonstruiert;
+  \item \textbf{semantisch:} Sender und Empfänger verwenden denselben
+        versionsgebundenen Decoder und genügend gemeinsamen Kontext;
+  \item \textbf{epistemisch:} Die rekonstruierte Aussage ist wahr oder das
+        Modell bildet seinen Gegenstand angemessen ab.
+\end{enumerate}
+
+\cref{thm:finite} beweist die erste Lesart. Die zweite benötigt einen
+explizit gebundenen Codec, eine Ontologie oder eine ausführbare Semantik. Die
+dritte benötigt Evidenz über den Gegenstand. Ein Hash kann Inhalt binden,
+aber weder Bedeutung noch Wahrheit erzeugen. Ein vollständig übertragenes
+falsches Dokument bleibt falsch; ein bytegleich übertragenes Modell kann
+empirisch unzutreffend sein.
+
+\section{EFFECT\_ACK und Wirkungssicherheit}
+
+Transportprotokolle beantworten bewusst engere Fragen als eine
+Wirkungsfreigabe. Das End-to-End-Argument zeigt seit langem, dass bestimmte
+Korrektheitsfunktionen nur an den Anwendungsenden vollständig geprüft werden
+können \cite{saltzer}. TCP liefert einen zuverlässigen geordneten Bytestrom
+innerhalb seines Vertrags, aber keine Erlaubnis für eine Zahlung, Publikation
+oder Aktuatorbewegung \cite{rfc9293}. HTTP 202 trennt Annahme einer Anfrage
+von ihrer abgeschlossenen Verarbeitung \cite{rfc9110}; AMQP und MQTT kennen
+ebenfalls differenzierte Zustell- und Verarbeitungszustände
+\cite{amqp,mqtt}. \qikvrt{} beansprucht daher nicht die Erfindung der ersten
+``semantischen Quittung''.
+
+Der engere Beitrag des Effect-Ack-Vertrags ist eine fail-closed
+Autorisierungsentscheidung für eine konkrete Wirkung. Sie bindet Input,
+Policy, Evidenz, Provenienz, Verantwortung, Frische, Vorgängerzustand und
+beobachtetes Ergebnis. Der bestehende Lean-Kern prüft neun benannte Sätze:
+
+\begin{itemize}
+  \item \texttt{release\_eq\_true\_iff};
+  \item \texttt{release\_requires\_valid\_past};
+  \item \texttt{release\_requires\_valid\_future};
+  \item \texttt{release\_requires\_effect\_ack};
+  \item \texttt{future\_boundary\_is\_counterfactually\_relevant};
+  \item \texttt{future\_boundary\_does\_not\_overwrite\_past};
+  \item \texttt{identifier\_bound\_eq\_true\_iff};
+  \item \texttt{reciprocal\_closure\_eq\_true\_iff};
+  \item \texttt{reciprocal\_closure\_requires\_cause\_and\_effect}.
+\end{itemize}
+
+Diese Sätze gelten im endlichen booleschen Strukturmodell des gebundenen
+Kernel-Receipts. Insbesondere ist die Nichtüberschreibung der
+Vergangenheitsprojektion definitional; sie beweist nicht von selbst die
+Schreibschutzkonfiguration eines realen Speichers. Die kontrafaktische
+Zukunftsrelevanz vergleicht ein konkretes zugelassenes mit einem konkret
+abgelehnten Modellobjekt; sie ist keine Beobachtung aus der physikalischen
+Zukunft.
+
+\begin{satz}[DONE-only unter vollständiger Mediation]
+Wenn jeder Pfad zu einem Executor durch dasselbe Gate führt und ordinary
+release genau dann zugelassen wird, wenn der Record vollständig validiert
+ist und den Zustand \(\DONE\) trägt, kann kein Non-DONE-Record ordinary
+release auslösen.
+\end{satz}
+
+\begin{proof}
+Nach Voraussetzung besitzt der Executor nur eine eingehende gewöhnliche
+Freigabekante. Deren Prädikat enthält \(\mathit{valid}(r)\land
+\mathit{state}(r)=\DONE\). Für jeden Non-DONE-Record ist die zweite Konjunkte
+falsch, also die ganze Freigabebedingung falsch. Ein Bypass würde die
+Mediationsvoraussetzung falsifizieren und darf nicht als Gegenbeispiel zum
+bedingten Satz umetikettiert werden.
+\end{proof}
+
+\subsection{Exactly-once ist ein eigener Vertrag}
+
+EFFECT\_ACK allein macht einen nichttransaktionalen externen Aktuator nicht
+``exactly once''. At-most-once benötigt einen atomaren Dedup-/Effect-Commit
+oder einen idempotenten Executor. Liveness benötigt zusätzlich eventual
+delivery und eventual availability. Erst die Verbindung beider Seiten
+rechtfertigt unter den benannten Fehlerannahmen exactly-once. Ein Crash nach
+realer Wirkung, aber vor persistierter Quittung bleibt ohne atomare Kopplung
+ein klassisches Unsicherheitsfenster.
+
+\section{Verwandte Arbeiten und Neuheitsgrenze}
+
+Keine der folgenden Grundideen wird als erstmalig beansprucht:
+
+\begin{longtable}{@{}L{0.28\linewidth}L{0.29\linewidth}L{0.35\linewidth}@{}}
+\toprule
+\textbf{Vorarbeit} & \textbf{Bereits bekannt} & \textbf{Scope-Unterschied} \\
+\midrule
+\endhead
+Lamport \cite{lamport} & Ereignisordnung und Uhren sind zu trennen. & Drei
+explizite Ordnungen plus Wirkungsgate.\\
+Jefferson / Time Warp \cite{jefferson} & Kleinere virtuelle Zeitstempel,
+Rollback und Antimessages. & Unveränderte Quelle, neuer Branch und
+Freigabegate statt Quellrollback.\\
+Bitemporale Datenbanken \cite{snodgrass} & Valid time und transaction time. &
+Ausführung, Sessionreziprozität und Effektordnung.\\
+Retroaktive Datenstrukturen \cite{demaine} & Operationen an vergangenen
+logischen Zeiten. & Keine Umschreibung der Basishistorie; gebundener Branch.\\
+Event Sourcing \cite{fowler} & Append-only Log und Rekonstruktion früherer
+Zustände. & Typisierte Zieladresse und getrennte Wirkungsautorisierung.\\
+End-to-End \cite{saltzer} & Transporterfolg ist keine
+Anwendungskorrektheit. & Geschlossener Policy-/Evidenz-/Verantwortungsrecord.\\
+Effektsysteme \cite{lucassen,plotkin} & Effekte werden typisiert und
+interpretiert. & Dynamische Autorisierung einer konkreten externen Wirkung.\\
+Proof-Carrying Code / Authorization \cite{necula,appel} & Beweise können
+Sicherheit oder Berechtigung tragen. & Temporale Replaybindung plus
+antizipierte und beobachtete Wirkung.\\
+Reversible Berechnung \cite{bennett,danos} & Logische oder kausal konsistente
+Umkehr ist formalisiert. & QIK--VRT macht die Quelle nicht rückgängig, sondern
+erzeugt einen neuen Branch.\\
+\bottomrule
+\end{longtable}
+
+Die Einzelmechanismen besitzen somit erhebliche Vorarbeiten. Der hier
+untersuchte Neuheitskandidat ist ihre explizite Verbindung:
+
+\begin{quote}
+Vergangenheitsadressiertes deterministisches Branch-Replay über einer
+unveränderlichen Quellhistorie, getrennte Host-, virtuelle Ziel- und
+Effektordnungen, bidirektionale Sessionkorrelation und eine fail-closed
+Wirkungsfreigabe, die Input, Policy, Evidenz, Provenienz, Verantwortung,
+Frische und beobachtete Wirkung bindet.
+\end{quote}
+
+In der gezielten Literaturprüfung wurde kein hier zitiertes System gefunden,
+das diese vollständige Verbindung spezifiziert. Das ist ein scope-gebundener
+Forschungsneuheitsanspruch, keine Behauptung weltweiter Priorität. Eine solche
+Priorität würde systematische Literatur-, Patent- und Standardrecherche sowie
+unabhängiges Peer Review verlangen.
+
+\section{Beispiele}
+
+\subsection{Softwarefehler}
+
+Am Freitag wird eine Sicherheitsregel entdeckt. Der unveränderliche
+Montagssnapshot einer Software wird durch seinen Digest adressiert. Die neue
+Regel wird als Anfrage an die virtuelle Montagsadresse geschickt. Ein Branch
+reproduziert den alten Zustand, wendet die Regel an und antwortet: ``Dieser
+Angriff wäre blockiert worden'' oder ``Die Regel reicht nicht aus''. Die
+reale Montagsausführung ändert sich nicht. Das heutige Verständnis und eine
+heute freizugebende Reparatur können sich sehr wohl ändern.
+
+\subsection{Digitaler Zwilling eines Fahrzeugs}
+
+Ein gespeicherter Zustand enthält Softwareversion, Sensorlage, Wetter und
+Entscheidungspfad. Eine später entdeckte Gegenlichtregel wird an diesen
+Zustand adressiert. Der Branch antwortet mit der alternativen Trajektorie.
+Vor einer realen Aktualisierung prüft EFFECT\_ACK Quelle, Modellversion,
+Risiko und Verantwortungsfreigabe. Eine bloße erfolgreiche Simulation darf
+keine reale Fahrzeugflotte verändern.
+
+\subsection{Medizinische Reanalyse}
+
+Ein neues Auswertungsmodell kann rechtmäßig gespeicherte frühere Daten
+reanalysieren. Die Originalbefunde bleiben unverändert; die neue Analyse
+bildet einen getrennten Branch. Bytegenaue Übertragung des Modells und der
+Daten garantiert noch keine medizinische Richtigkeit. Dafür bleiben
+Validierung, Zulassung, Kontext, Datenschutz und ärztliche Verantwortung
+eigene Gates.
+
+\subsection{Eine Anweisung, die trotz Empfang blockiert bleibt}
+
+Eine Maschine empfängt alle Bytes einer Steueranweisung und bestätigt den
+Transport. Der Policy-Digest stimmt jedoch nicht mit dem autorisierten
+Branch überein. Der Record kann daher nicht DONE sein. Vollständige Mediation
+blockiert die reale Wirkung, obwohl die Nachricht technisch angekommen ist.
+Dieses Beispiel zeigt, warum bidirektionaler Transport und
+bidirektional verantwortete Wirkung verschiedene Leistungen sind.
+
+\section{Warum daraus keine physikalische Zeitmaschine folgt}
+
+Ein Computer ist selbstverständlich ein physikalisches System. Daraus folgt
+aber nicht, dass jede interne Koordinate des Computers dieselbe physikalische
+Bedeutung besitzt wie ihre Bezeichnung. Die virtuelle Adresse \(v=15\) ist
+eine Modelladresse. Damit sie einen früheren Raumzeitpunkt bezeichnete,
+müsste eine zusätzliche operative Abbildung
+\[
+ \Phi:V\longrightarrow\mathcal{E}_{\mathrm{spacetime}}
+\]
+definiert und experimentell bestätigt werden. Keine Zeile des C90-Zeugen
+liefert diese Abbildung.
+
+Ein Gegenmodell reicht aus, um den Fehlschluss sichtbar zu machen: Im Zeugen
+gilt die virtuelle Kante \(30\rightarrow15\), während alle Hostereignisse
+streng \(1\rightarrow2\rightarrow\cdots\rightarrow9\) laufen. Das Modell
+erfüllt virtuelle Retroadressierung und verletzt zugleich keine
+Vorwärtskausalität des Hosts. Daher impliziert virtuelle
+Retroadressierung allein keine physikalische Rückwärtssignalisierung.
+
+Zeit-symmetrische, all-at-once und nichtklassisch kausal geordnete Modelle
+sind seriöse Forschungsgegenstände \cite{wharton,ocb}. Auch
+Delayed-Choice-Experimente untersuchen nichtklassische zeitliche
+Beschreibungen \cite{ma}. Diese Literatur liefert jedoch keinen
+kontrollierbaren QIK--VRT-Kanal, der eine später gewählte Nachricht in einen
+bereits versiegelten früheren klassischen Record schreibt. Anschlussfähigkeit
+ist keine Identität.
+
+\section{Ein falsifizierbarer Test für die offene Physik}
+
+Eine physikalische Brückenbehauptung muss vor der Messung mehr leisten als
+eine Deutung im Nachhinein. Ein minimales Prüfprotokoll benötigt:
+
+\begin{enumerate}
+  \item einen früheren Messwert \(Y\) bei \(t_1\), der vor jeder späteren
+        Wahl irreversibel und extern prüfbar versiegelt wird;
+  \item eine erst bei \(t_2>t_1\) erzeugte, unabhängige randomisierte
+        Intervention \(X\);
+  \item vorregistrierte Ausschlüsse für Informationslecks, gemeinsame
+        Ursachen, Uhrfehler, Postselektion, optionale Stopregeln und
+        Mehrfachtests;
+  \item eine vorab angegebene quantitative Abweichung und Fehlerkontrolle;
+  \item unabhängige Replikation.
+\end{enumerate}
+
+Die operative Frage lautet, ob nach allen Kontrollen
+\[
+ P(Y\mid\operatorname{do}(X=x),\Lambda)
+\]
+reproduzierbar von \(x\) abhängt, obwohl \(Y\) zuvor versiegelt wurde. In
+informationstheoretischer Form müsste die kontrollierbare Kanalkapazität
+\[
+ C_{X\rightarrow Y}=\max_{P(X)} I(X;Y\mid\Lambda)
+\]
+positiv und gegen Leckmodelle robust sein \cite{shannon,pearl}. Ein einzelner
+p-Wert, ein konditioniertes Teilensemble oder ein später neu berechneter
+virtueller Branch genügt nicht. Für physisch bidirektionale Zeitkommunikation
+wären zwei entsprechend positive operationale Richtungen erforderlich.
+
+\statusbox{QRed}{
+\textbf{Aktueller Befund.}
+Für \(C_{X\rightarrow Y}>0\) in dieser physikalischen Bedeutung liefert die
+vorliegende Arbeit keine Evidenz. Die offene Brücke ist keine kleine
+Programmieraufgabe nach dem virtuellen Beweis, sondern eine logisch
+zusätzliche Naturhypothese.
+}
+
+\section{Sicherheits- und Fehlermodell}
+
+Ein realer bidirektionaler virtueller Kanal muss mindestens gegen folgende
+Fehler fail-closed sein:
+
+\begin{itemize}
+  \item \textbf{Branch-Verwechslung:} Richtige Bytes im falschen Snapshot
+        sind kein richtiger Dialog.
+  \item \textbf{Replay-Angriff:} Ein alter DONE-Record darf keine neue
+        Session oder widerrufene Policy autorisieren.
+  \item \textbf{Codec-Drift:} Byteidentität bei verschiedener
+        Decoder-Version kann verschiedene Bedeutung erzeugen.
+  \item \textbf{Quellmutation:} Ein veränderter Basissnapshot zerstört die
+        behauptete Gegenweltbindung.
+  \item \textbf{Unvollständige Mediation:} Jeder Bypass zum Executor
+        widerlegt Deployment-Konformität.
+  \item \textbf{Ressourcenerschöpfung:} ``Jede endliche Nachricht'' bedeutet
+        nicht, dass jede einzelne Maschine jede Größe akzeptieren muss.
+        Quoten und Abbruchregeln sind notwendig.
+  \item \textbf{Quittungslücke:} Crash zwischen externer Wirkung und
+        Receipt-Persistenz verhindert ohne atomare Kopplung exactly-once.
+  \item \textbf{Evidenzillusion:} Ein Digest bindet Bytes, validiert aber
+        nicht die Wahrheit der referenzierten Evidenz.
+\end{itemize}
+
+\section{Protokollskizze für eine spätere Interoperabilitätsfassung}
+
+Eine standardisierbare Session benötigt mindestens folgende typisierte
+Objekte:
+
+\begin{longtable}{@{}L{0.26\linewidth}L{0.66\linewidth}@{}}
+\toprule
+\textbf{Objekt} & \textbf{Pflichtbindung} \\
+\midrule
+\endhead
+Session & Session-ID, Erzeuger, Frische, Ablaufgrenze, beide virtuelle
+Endpunkte.\\
+Branch & Quellsnapshot, Zieladresse, Programm-/Codec-/Policy-Digest.\\
+Message & Richtung, Sequenz, Gesamtlänge, Blockmanifest, Inhaltsidentität.\\
+Replay receipt & Eingaben, deterministische Ausgabe, Laufzeitgrenze,
+Provenienz.\\
+EFFECT\_ACK request & separate Entscheidung über Verarbeitung am
+vergangenen virtuellen Zustand.\\
+EFFECT\_ACK response & separate Entscheidung über Wirkung am gegenwärtigen
+Zustand.\\
+Closure receipt & Korrelation beider Richtungen, beobachtete Wirkung und
+verantwortlicher Principal.\\
+\bottomrule
+\end{longtable}
+
+Das öffentlich vorliegende
+\texttt{draft-lohmann-qikvrt-effect-ack-02} spezifiziert den bestehenden
+Version-1-Effect-Ack-Record als individuelles Internet-Draft
+\cite{effectack}. Es ist kein RFC und keine IETF-Billigung. Das vorliegende
+wissenschaftliche Paper ist nicht selbst ein Internet-Draft. Erst ein
+separat geprüfter Revisionskandidat dürfte entscheiden, ob die Sessionobjekte
+nur ein informatives Anwendungsprofil sind oder eine neue Wire-Version mit
+CDDL, Sicherheitsanalyse und Interoperabilitätsvektoren erfordern.
+
+\section{Reproduzierbarkeit und aktuelle Grenzen}
+
+Der neue C90-Zeuge wurde lokal mit strikten Warnungen und
+\texttt{-pedantic-errors} gebaut und ausgeführt. XeLaTeX und Poppler stehen
+für den dokumentierten PDF-Build zur Verfügung. Der kanonische Lean-4.19-
+Runtime war in der aktuellen lokalen Umgebung nicht vorhanden; deshalb wird
+kein neuer Kernel-Receipt erfunden. Die früheren neun CTM-Theoreme bleiben
+durch ihren vorhandenen Receipt gebunden, die neuen
+\cref{thm:prefix,thm:host,thm:finite,thm:bidir} tragen bis zu einem frischen
+Kernel-Lauf den Status \texttt{CONDITIONAL/PAPER-PROVED} und in der
+maschinenlesbaren Zenodo-Policy fail-closed \texttt{OPEN}.
+
+Diese doppelte Bezeichnung ist beabsichtigt: Ein vollständiger Papierbeweis
+ist wissenschaftliche Mathematik; die Repository-Policy reserviert
+\texttt{FORMAL\_PROVED} jedoch strenger für kernelgeprüfte Claims. Der
+fehlende Kernellauf entwertet den Beweis nicht, darf aber auch nicht
+verschwiegen werden.
+
+\section{Bedrohungen der Gültigkeit}
+
+\begin{itemize}
+  \item Der C90-Zeuge benutzt einen bewusst kleinen deterministischen
+        Antworttransform und keine unabhängige Netzwerkimplementierung.
+  \item Der Längensweep ist endlich; Universalität stammt aus dem
+        Konstruktionsbeweis, nicht aus dem Sweep.
+  \item Die Digestwerte des Zeugen sind Testchecksummen, keine
+        Kollisionssicherheitsbehauptung.
+  \item Eventual Delivery, ausreichende Ressourcen, deterministisches Replay
+        und vollständige Mediation sind starke, explizite Voraussetzungen.
+  \item Eine terminierende Antwortfunktion ist nicht für jedes beliebige
+        Programm garantiert; der Satz löst das Halteproblem nicht.
+  \item Weltweite Neuheit ist nicht durch eine gezielte Literaturauswahl
+        bewiesen.
+  \item Repository-Gates und maschinelle Receipts ersetzen kein unabhängiges
+        Peer Review.
+  \item Virtuelle Nützlichkeit und physikalische Retrokausalität sind
+        logisch verschiedene Behauptungen.
+\end{itemize}
+
+\section{Claim-Matrix in lesbarer Form}
+
+\begin{longtable}{@{}L{0.13\linewidth}L{0.22\linewidth}L{0.57\linewidth}@{}}
+\toprule
+\textbf{ID} & \textbf{Disposition} & \textbf{Aussage und Grenze} \\
+\midrule
+\endhead
+VTI-001 & EXECUTED & Der neue C90-Lauf schließt Anfrage und Antwort zwischen
+\(v=30\) und \(v=15\) bei strikt wachsendem Hostclock; nur dieser endliche
+Zeuge.\\
+VTI-002 & EXECUTED & Zehn Payloadgrenzen bis 4096 Byte bestehen in beiden
+Richtungen; ein fehlender Block wird verworfen; kein Universalbeweis.\\
+VTI-003 & CONDITIONAL & Append-only Quelle plus branch-only Replay erhält das
+Quellpräfix; mutierende Nebenpfade sind ausgeschlossen.\\
+VTI-004 & CONDITIONAL & Monotone Hostsemantik schließt einen vor dem Senden
+erzeugten Replayeffekt aus; keine physikalische Rückwirkung.\\
+VTI-005 & CONDITIONAL & Jede einzelne endliche Bitfolge ist unter den
+angegebenen Liefer-, Integritäts- und Ressourcenbedingungen bytegenau
+übertragbar.\\
+VTI-006 & CONDITIONAL & Zwei endliche Kanäle plus terminierende Antwort und
+Gates ergeben einen bidirektionalen virtuellen Dialog.\\
+VTI-007 & \shortstack[l]{KERNEL\\VERIFIED} & Bestehender CTM-Kern bindet DONE-only-Freigabe,
+Zukunftsbedingung, Vergangenheitsprojektion und reziproke Identitäten im
+endlichen Modell.\\
+VTI-008 & CONDITIONAL & Non-DONE kann unter vollständiger Mediation keinen
+ordinary effect auslösen; Deployment-Vollständigkeit ist Voraussetzung.\\
+VTI-009 & OPEN & Exactly-once benötigt atomare Dedup-/Effect-Kopplung oder
+Idempotenz plus Liveness; EFFECT\_ACK allein genügt nicht.\\
+VTI-010 & NORMATIVE & Byteidentität, semantische Rekonstruktion und Wahrheit
+werden als getrennte Prüfziele behandelt.\\
+VTI-011 & OPEN & Die vollständige Mechanismenkonjunktion ist ein
+scope-gebundener Neuheitskandidat, keine Weltprioritätsbehauptung.\\
+VTI-012 & OPEN\_PHYSICAL & Eine Brücke von virtueller Adresse zu früherem
+Raumzeitereignis ist unbelegt.\\
+VTI-013 & OPEN\_PHYSICAL & Positive rückwärtsgerichtete physikalische
+Kanalkapazität verlangt den beschriebenen vorregistrierten Test.\\
+\bottomrule
+\end{longtable}
+
+\section{Schluss}
+
+Das Ergebnis ist stark genug, ohne seine Kategorie zu wechseln:
+
+\begin{enumerate}
+  \item Ein bidirektionaler virtueller Zeitkanal ist nicht nur denkbar,
+        sondern in einem strikten ISO-C90-Zeugen ausgeführt.
+  \item Der Schritt von kurzen Demo-Payloads zu jeder einzelnen endlichen
+        Bitfolge folgt konstruktiv aus Segmentierung, Manifest,
+        Integritätsprüfung und Reassemblierung.
+  \item Anfrage und Antwort lassen sich zu einem endlichen virtuellen Dialog
+        komponieren, wenn Replay und Antwort terminieren und beide Richtungen
+        vollständig mediiert sind.
+  \item Die Quellhistorie kann unverändert bleiben; die alternative
+        Entwicklung ist ein neuer Branch.
+  \item Transporterfolg und verantwortete Wirkung bleiben getrennt.
+  \item Alle tatsächlichen Hostereignisse laufen vorwärts. Deshalb beweist
+        der virtuelle Kanal keine physikalische Rückwärtssignalisierung.
+  \item Die physikalische Erweiterung ist klar formulierbar und
+        falsifizierbar, aber aktuell offen.
+\end{enumerate}
+
+Die Informatik gewinnt damit einen adressierbaren Dialograum über
+reproduzierbare Zustände. Die Mathematik liefert die Bedingungen, unter
+denen endliche Information vollständig hin- und zurückgeführt werden kann.
+Die Physik erhält eine scharf abgegrenzte Brückenfrage statt einer
+Begriffsverwechslung.
+
+\begin{center}
+\large
+\textbf{Heute fragt gestern. Das virtuelle Gestern antwortet dem Heute.}\\
+\textbf{Die wirkliche Geschichte bleibt dabei unverändert.}\\[0.6em]
+\textit{Quod erat demonstrandum -- im ausgewiesenen virtuellen Scope.}\\
+Ingolf Lohmann
+\end{center}
+
+\begin{thebibliography}{99}
+
+\bibitem{shannon}
+C. E. Shannon,
+``A Mathematical Theory of Communication,''
+\emph{Bell System Technical Journal}, 27, 379--423 and 623--656, 1948.
+\url{https://doi.org/10.1002/j.1538-7305.1948.tb01338.x}
+
+\bibitem{lamport}
+L. Lamport,
+``Time, Clocks, and the Ordering of Events in a Distributed System,''
+\emph{Communications of the ACM}, 21(7), 558--565, 1978.
+\url{https://doi.org/10.1145/359545.359563}
+
+\bibitem{jefferson}
+D. R. Jefferson,
+``Virtual Time,''
+\emph{ACM Transactions on Programming Languages and Systems}, 7(3),
+404--425, 1985.
+\url{https://doi.org/10.1145/3916.3988}
+
+\bibitem{snodgrass}
+R. T. Snodgrass and I. Ahn,
+``Temporal Databases,''
+\emph{IEEE Computer}, 19(9), 35--42, 1986.
+\url{https://doi.org/10.1109/MC.1986.1663327}
+
+\bibitem{demaine}
+E. D. Demaine, J. Iacono and S. Langerman,
+``Retroactive Data Structures,''
+\emph{ACM Transactions on Algorithms}, 3(2), Article 13, 2007.
+\url{https://doi.org/10.1145/1240233.1240236}
+
+\bibitem{fowler}
+M. Fowler,
+``Event Sourcing,'' 2005.
+\url{https://martinfowler.com/eaaDev/EventSourcing.html}
+
+\bibitem{saltzer}
+J. H. Saltzer, D. P. Reed and D. D. Clark,
+``End-to-End Arguments in System Design,''
+\emph{ACM Transactions on Computer Systems}, 2(4), 277--288, 1984.
+\url{https://doi.org/10.1145/357401.357402}
+
+\bibitem{lucassen}
+J. M. Lucassen and D. K. Gifford,
+``Polymorphic Effect Systems,'' in \emph{POPL '88}, 47--57.
+\url{https://doi.org/10.1145/73560.73564}
+
+\bibitem{plotkin}
+G. Plotkin and J. Power,
+``Algebraic Operations and Generic Effects,''
+\emph{Applied Categorical Structures}, 11, 69--94, 2003.
+\url{https://doi.org/10.1023/A:1023064908962}
+
+\bibitem{necula}
+G. C. Necula,
+``Proof-Carrying Code,'' in \emph{POPL '97}, 106--119.
+\url{https://doi.org/10.1145/263699.263712}
+
+\bibitem{appel}
+A. W. Appel and E. W. Felten,
+``Proof-Carrying Authentication,'' in \emph{CCS '99}, 52--62.
+\url{https://doi.org/10.1145/319709.319718}
+
+\bibitem{bennett}
+C. H. Bennett,
+``Logical Reversibility of Computation,''
+\emph{IBM Journal of Research and Development}, 17(6), 525--532, 1973.
+\url{https://doi.org/10.1147/rd.176.0525}
+
+\bibitem{danos}
+V. Danos and J. Krivine,
+``Reversible Communicating Systems,'' in \emph{CONCUR 2004}, 292--307.
+\url{https://doi.org/10.1007/978-3-540-28644-8_19}
+
+\bibitem{pearl}
+J. Pearl,
+``Causal Diagrams for Empirical Research,''
+\emph{Biometrika}, 82(4), 669--688, 1995.
+\url{https://doi.org/10.1093/biomet/82.4.669}
+
+\bibitem{wharton}
+K. B. Wharton and N. Argaman,
+``Colloquium: Bell's Theorem and Locally Mediated Reformulations of Quantum
+Mechanics,'' \emph{Reviews of Modern Physics}, 92, 021002, 2020.
+\url{https://doi.org/10.1103/RevModPhys.92.021002}
+
+\bibitem{ocb}
+O. Oreshkov, F. Costa and C. Brukner,
+``Quantum Correlations with No Causal Order,''
+\emph{Nature Communications}, 3, 1092, 2012.
+\url{https://doi.org/10.1038/ncomms2076}
+
+\bibitem{ma}
+X.-S. Ma, J. Kofler and A. Zeilinger,
+``Delayed-Choice Gedanken Experiments and Their Realizations,''
+\emph{Reviews of Modern Physics}, 88, 015005, 2016.
+\url{https://doi.org/10.1103/RevModPhys.88.015005}
+
+\bibitem{rfc9293}
+W. Eddy (ed.),
+\emph{Transmission Control Protocol}, RFC 9293, August 2022.
+\url{https://doi.org/10.17487/RFC9293}
+
+\bibitem{rfc9110}
+R. Fielding, M. Nottingham and J. Reschke,
+\emph{HTTP Semantics}, RFC 9110, June 2022.
+\url{https://doi.org/10.17487/RFC9110}
+
+\bibitem{amqp}
+OASIS,
+\emph{Advanced Message Queuing Protocol (AMQP) Version 1.0}, 2012.
+\url{https://docs.oasis-open.org/amqp/core/v1.0/}
+
+\bibitem{mqtt}
+OASIS,
+\emph{MQTT Version 5.0}, 2019.
+\url{https://docs.oasis-open.org/mqtt/mqtt/v5.0/mqtt-v5.0.html}
+
+\bibitem{effectack}
+I. Lohmann,
+\emph{QIK-VRT Effect Acknowledgement: Separating Receipt from Authorization
+for Downstream Effect},
+Internet-Draft draft-lohmann-qikvrt-effect-ack-02, work in progress, 2026.
+\url{https://datatracker.ietf.org/doc/draft-lohmann-qikvrt-effect-ack/}
+
+\bibitem{ctmzenodo}
+I. Lohmann,
+\emph{QIK-VRT und das Effect-Acknowledgement-Protokoll: Kanonischer Speicher
+zwischen Vergangenheit und Zukunft}, Zenodo, 2026.
+\url{https://doi.org/10.5281/zenodo.21711193}
+
+\end{thebibliography}
+
+\end{document}
