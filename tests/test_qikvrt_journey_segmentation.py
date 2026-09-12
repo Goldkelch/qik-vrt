@@ -46,19 +46,25 @@ class JourneySegmentationTests(unittest.TestCase):
         self.assertTrue(text.startswith('segment-'))
         self.assertNotEqual(text, self.SOURCE)
 
-    def test_every_segment_must_terminate(self):
+    def test_nonterminal_child_is_recursively_subdivided_until_terminal(self):
         tokenizer = FakeTokenizer()
-        count = 0
+        calls = []
 
         def generate(part):
-            nonlocal count
-            count += 1
-            if count == 2:
+            calls.append(part)
+            if len(part.split()) > 4:
                 return [0, 7, 7]
-            return [0, 7, tokenizer.eos_token_id]
+            return [0, len(part.split()), tokenizer.eos_token_id]
 
-        with self.assertRaisesRegex(ValueError, 'OUTPUT_TRUNCATED_NO_ACCEPTANCE'):
-            seg.translate_segmented(self.SOURCE, tokenizer, generate)
+        text, leaves = seg.translate_segmented(self.SOURCE, tokenizer, generate)
+        self.assertTrue(text.startswith('segment-'))
+        self.assertGreater(len(calls), len(leaves))
+        self.assertTrue(all(len(part.split()) <= 4 for part in leaves))
+
+    def test_irreducible_nonterminal_leaf_still_holds(self):
+        tokenizer = FakeTokenizer()
+        with self.assertRaisesRegex(ValueError, 'NO_SAFE_SEGMENT_BOUNDARY'):
+            seg.translate_segmented('eins zwei', tokenizer, lambda _part: [0, 7, 7])
 
     def test_protected_blocks_remain_byte_identical(self):
         original = ['Titel', 'https://example.test/media', 'Absatz', 'q.e.d. Ingolf Lohmann']
@@ -68,12 +74,15 @@ class JourneySegmentationTests(unittest.TestCase):
         self.assertEqual(values[3], original[3])
         self.assertEqual(len(values), len(original))
 
-    def test_no_source_fallback_when_segmentation_is_impossible(self):
+    def test_long_clause_uses_deterministic_whitespace_boundary_without_source_fallback(self):
         tokenizer = FakeTokenizer()
-        source = 'wort '*400
-        with self.assertRaisesRegex(ValueError, 'NO_SAFE_SEGMENT_BOUNDARY'):
-            seg.translate_segmented(source.strip(), tokenizer,
-                                    lambda _part: [0, 1, tokenizer.eos_token_id])
+        source = ' '.join('wort'+str(i) for i in range(400))
+        first = seg.segment_plan(source, tokenizer, limit=100)
+        second = seg.segment_plan(source, tokenizer, limit=100)
+        self.assertEqual(first, second)
+        self.assertGreaterEqual(len(first), 2)
+        self.assertTrue(all(seg.token_count(tokenizer, part) <= 100 for part in first))
+        self.assertEqual(' '.join(first), source)
 
     def test_repeated_execution_produces_identical_segmentation_plan(self):
         tokenizer = FakeTokenizer()
