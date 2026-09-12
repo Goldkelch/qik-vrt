@@ -1,0 +1,1577 @@
+ue-on-error: true',text)
++
++if __name__=='__main__':unittest.main()
+diff --git a/tests/test_qikvrt_journey_segmentation.py b/tests/test_qikvrt_journey_segmentation.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..257a43273027ce239514227232b78f21d9f243ee
+--- /dev/null
++++ b/tests/test_qikvrt_journey_segmentation.py
+@@ -0,0 +1,97 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++"""Regressions for deterministic fail-closed journey segmentation."""
++from pathlib import Path
++import importlib.util
++import unittest
++
++ROOT = Path(__file__).resolve().parents[1]
++spec = importlib.util.spec_from_file_location(
++    'journey_segmentation', ROOT/'tools/qikvrt_journey_segmentation.py')
++assert spec and spec.loader
++seg = importlib.util.module_from_spec(spec); spec.loader.exec_module(seg)
++
++
++class FakeTokenizer:
++    eos_token_id = 2
++
++    def __call__(self, text, add_special_tokens=True, **_kwargs):
++        if isinstance(text, list):
++            return {'input_ids': [[0] + list(range(len(item.split()))) + [2] for item in text]}
++        return {'input_ids': [0] + list(range(len(text.split()))) + [2]}
++
++    def decode(self, seq, skip_special_tokens=True):
++        return 'segment-'+str(seq[1])
++
++
++class JourneySegmentationTests(unittest.TestCase):
++    SOURCE = (
++        'eins zwei drei vier fuenf sechs. '
++        'sieben acht neun zehn elf zwoelf; '
++        'dreizehn vierzehn fuenfzehn sechzehn.'
++    )
++
++    def test_monolithic_output_exhaustion_recovers_by_deterministic_segmentation(self):
++        tokenizer = FakeTokenizer()
++        calls = []
++
++        def generate(part):
++            calls.append(part)
++            return [0, len(part.split()), tokenizer.eos_token_id]
++
++        # The already-observed monolithic sequence has no generated EOS.
++        text, plan = seg.accept_or_segment(self.SOURCE, [0, 99, 99], tokenizer, generate)
++        self.assertGreaterEqual(len(plan), 2)
++        self.assertEqual(calls, plan)
++        self.assertTrue(text.startswith('segment-'))
++        self.assertNotEqual(text, self.SOURCE)
++
++    def test_nonterminal_child_is_recursively_subdivided_until_terminal(self):
++        tokenizer = FakeTokenizer()
++        calls = []
++
++        def generate(part):
++            calls.append(part)
++            if len(part.split()) > 4:
++                return [0, 7, 7]
++            return [0, len(part.split()), tokenizer.eos_token_id]
++
++        text, leaves = seg.translate_segmented(self.SOURCE, tokenizer, generate)
++        self.assertTrue(text.startswith('segment-'))
++        self.assertGreater(len(calls), len(leaves))
++        self.assertTrue(all(len(part.split()) <= 4 for part in leaves))
++
++    def test_irreducible_nonterminal_leaf_still_holds(self):
++        tokenizer = FakeTokenizer()
++        with self.assertRaisesRegex(ValueError, 'NO_SAFE_SEGMENT_BOUNDARY'):
++            seg.translate_segmented('eins zwei', tokenizer, lambda _part: [0, 7, 7])
++
++    def test_protected_blocks_remain_byte_identical(self):
++        original = ['Titel', 'https://example.test/media', 'Absatz', 'q.e.d. Ingolf Lohmann']
++        protected = lambda value: value.startswith('http') or value.startswith('q.e.d.')
++        values = seg.reassemble_blocks(original, {'Titel': 'Title', 'Absatz': 'Paragraph'}, protected)
++        self.assertEqual(values[1], original[1])
++        self.assertEqual(values[3], original[3])
++        self.assertEqual(len(values), len(original))
++
++    def test_long_clause_uses_deterministic_whitespace_boundary_without_source_fallback(self):
++        tokenizer = FakeTokenizer()
++        source = ' '.join('wort'+str(i) for i in range(400))
++        first = seg.segment_plan(source, tokenizer, limit=100)
++        second = seg.segment_plan(source, tokenizer, limit=100)
++        self.assertEqual(first, second)
++        self.assertGreaterEqual(len(first), 2)
++        self.assertTrue(all(seg.token_count(tokenizer, part) <= 100 for part in first))
++        self.assertEqual(' '.join(first), source)
++
++    def test_repeated_execution_produces_identical_segmentation_plan(self):
++        tokenizer = FakeTokenizer()
++        first = seg.segment_plan(self.SOURCE, tokenizer, limit=10)
++        second = seg.segment_plan(self.SOURCE, tokenizer, limit=10)
++        self.assertEqual(first, second)
++        self.assertGreaterEqual(len(first), 2)
++        self.assertTrue(all(seg.token_count(tokenizer, part) <= 10 for part in first))
++
++
++if __name__ == '__main__':
++    unittest.main()
+diff --git a/tests/test_qikvrt_journey_site.py b/tests/test_qikvrt_journey_site.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6cc7b01f18b0cb5b635ed087922b2183a5164fd3
+--- /dev/null
++++ b/tests/test_qikvrt_journey_site.py
+@@ -0,0 +1,146 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++"""Structural/negative tests; no linguistic-equivalence or release claim."""
++from __future__ import annotations
++import importlib.util
++import json
++from pathlib import Path
++import shutil
++import tempfile
++import unittest
++
++ROOT = Path(__file__).resolve().parents[1]
++spec = importlib.util.spec_from_file_location('journey', ROOT/'tools/qikvrt_journey_site.py')
++assert spec and spec.loader
++site = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(site)
++
++class JourneyTests(unittest.TestCase):
++    def setUp(self):
++        self.temp = tempfile.TemporaryDirectory()
++        self.addCleanup(self.temp.cleanup)
++        self.root = Path(self.temp.name)/'reise'
++        # These negative fixtures intentionally contain only DE and EN, even
++        # after all other editions have been added to the repository.
++        self.root.mkdir()
++        (self.root/'translations').mkdir()
++        for relative in ('source.de.txt','WIKIPEDIA_47_LANGUAGE_SOURCE.json',
++                         'translations/en.txt','translations/en.json'):
++            shutil.copyfile(ROOT/'docs/reise'/relative,self.root/relative)
++
++    def write_meta(self, code='en', **changes):
++        path = self.root/f'translations/{code}.json'
++        meta = json.loads(path.read_text())
++        meta.update(changes)
++        path.write_text(json.dumps(meta))
++
++    def test_exact_new_source(self):
++        raw=(self.root/'source.de.txt').read_bytes()
++        self.assertEqual(len(raw),39745)
++        self.assertEqual(site.digest(raw),site.SOURCE_SHA)
++        self.assertEqual(site.git_blob(raw),'45c1f23cdf842ef5d92bfbef1d17da536b47f069')
++        old=raw.replace(('\n\n\n'+site.MEDIA+'\n\n\n').encode(),b'\n\n',1)
++        self.assertEqual(site.git_blob(old),'e1311a33d368559959633ba147e8d97d7bbd60f1')
++
++    def test_source_change_fails_closed(self):
++        p=self.root/'source.de.txt';p.write_bytes(p.read_bytes()+b'changed')
++        with self.assertRaisesRegex(ValueError,'SOURCE_CHANGED'):site.inspect(self.root)
++
++    def test_scope_is_exact_47_and_old_translation_states_are_not_used(self):
++        report,editions,codes=site.inspect(self.root)
++        self.assertEqual(len(codes),47)
++        self.assertEqual(report['editions']['de']['status'],'OWNER_SUPPLIED_SOURCE')
++        self.assertEqual(report['editions']['en']['status'],'AI_TRANSLATION_DRAFT_UNREVIEWED')
++
++    def test_all_blocks_aligned(self):
++        report,editions,codes=site.inspect(self.root)
++        self.assertEqual(len(editions['de']),540)
++        self.assertEqual(len(editions['en']),540)
++        self.assertEqual([i for i,v in enumerate(editions['de']) if v=='⸻'],[i for i,v in enumerate(editions['en']) if v=='⸻'])
++        self.assertEqual(editions['en'][1],site.MEDIA)
++        self.assertEqual(editions['en'][-1],'q.e.d.\nIngolf Lohmann')
++
++    def test_missing_translations_are_explicit(self):
++        report,editions,codes=site.inspect(self.root)
++        self.assertEqual(report['available_count'],2)
++        self.assertEqual(len(report['missing_editions']),45)
++        self.assertFalse(report['all_47_texts_present'])
++        self.assertFalse(report['public_deployment_claimed'])
++        self.assertFalse(report['EFFECT_ACK_DONE'])
++
++    def test_shortened_translation_fails(self):
++        p=self.root/'translations/en.txt';data=p.read_bytes().split(b'\n\n',1)[1];p.write_bytes(data)
++        self.write_meta(bytes=len(data),sha256=site.digest(data))
++        with self.assertRaisesRegex(ValueError,'INCOMPLETE_TRANSLATION'):site.inspect(self.root)
++
++    def test_changed_translation_digest_fails(self):
++        p=self.root/'translations/en.txt';p.write_bytes(p.read_bytes()+b'changed')
++        with self.assertRaisesRegex(ValueError,'TRANSLATION_BYTES_CHANGED'):site.inspect(self.root)
++
++    def test_stale_source_binding_fails(self):
++        self.write_meta(source_sha256='0'*64)
++        with self.assertRaisesRegex(ValueError,'STALE_OR_WRONG'):site.inspect(self.root)
++
++    def test_source_fallback_is_rejected(self):
++        data=(self.root/'source.de.txt').read_bytes();(self.root/'translations/en.txt').write_bytes(data)
++        self.write_meta(bytes=len(data),sha256=site.digest(data))
++        with self.assertRaisesRegex(ValueError,'SILENT_SOURCE_FALLBACK'):site.inspect(self.root)
++
++    def test_changed_media_rejected_even_with_updated_digest(self):
++        p=self.root/'translations/en.txt';data=p.read_bytes().replace(site.MEDIA.encode(),b'https://example.com/other');p.write_bytes(data)
++        self.write_meta(bytes=len(data),sha256=site.digest(data))
++        with self.assertRaisesRegex(ValueError,'CHANGED_PROTECTED'):site.inspect(self.root)
++
++    def test_git_blob_binding_without_manual_sha256_is_verified(self):
++        path=self.root/'translations/en.json'
++        meta=json.loads(path.read_text())
++        meta.pop('sha256');meta.pop('bytes')
++        meta['git_blob_sha1']=site.git_blob((self.root/'translations/en.txt').read_bytes())
++        path.write_text(json.dumps(meta))
++        report,_,_=site.inspect(self.root)
++        self.assertEqual(report['editions']['en']['sha256'],'c30c77e779712ad6cffc2874728f3154193311ee60a356a8b5bea09fb19a08b9')
++        meta['git_blob_sha1']='0'*40;path.write_text(json.dumps(meta))
++        with self.assertRaisesRegex(ValueError,'TRANSLATION_BYTES_CHANGED'):site.inspect(self.root)
++
++    def test_false_human_review_claim_is_rejected(self):
++        self.write_meta(human_language_review=True)
++        with self.assertRaisesRegex(ValueError,'UNSUPPORTED_REVIEW_CLAIM'):site.inspect(self.root)
++
++    def test_duplicate_language_cannot_fill_an_empty_slot(self):
++        data=(self.root/'translations/en.txt').read_bytes()
++        (self.root/'translations/fr.txt').write_bytes(data)
++        meta=json.loads((self.root/'translations/en.json').read_text())
++        meta['language']='fr'
++        (self.root/'translations/fr.json').write_text(json.dumps(meta))
++        with self.assertRaisesRegex(ValueError,'DUPLICATE_OTHER_LANGUAGE_EDITION'):site.inspect(self.root)
++
++    def test_silent_review_upgrade_fails(self):
++        self.write_meta(status='HUMAN_REVIEWED')
++        with self.assertRaisesRegex(ValueError,'UNSUPPORTED_REVIEW_STATUS'):site.inspect(self.root)
++
++    def test_no_hidden_network_or_media_embedding(self):
++        page,report=site.render(self.root)
++        self.assertNotIn('<iframe',page)
++        self.assertNotIn('<audio',page)
++        self.assertNotIn('autoplay',page)
++        self.assertNotIn('fetch(',page)
++        self.assertNotIn('<script src=',page)
++        self.assertNotIn('<link rel="stylesheet"',page)
++        self.assertIn('rel="noopener noreferrer"',page)
++
++    def test_media_is_between_title_and_subtitle(self):
++        page,report=site.render(self.root)
++        start=page.index('<h1 id="page-title"')
++        self.assertLess(page.index('href="'+site.MEDIA+'"',start),page.index('id="page-subtitle"',start))
++
++    def test_unknown_language_does_not_fallback(self):
++        page,report=site.render(self.root)
++        self.assertIn("current=null;return false;",page)
++        self.assertIn("e.hidden=true",page)
++        self.assertIn('data-lang="fr" aria-pressed="false" disabled',page)
++
++    def test_symlink_source_is_rejected(self):
++        p=self.root/'source.de.txt';other=self.root/'other.txt';p.rename(other);p.symlink_to(other)
++        with self.assertRaisesRegex(ValueError,'SYMLINK'):site.inspect(self.root)
++
++if __name__=='__main__':unittest.main()
+diff --git a/tests/test_qikvrt_journey_translation.py b/tests/test_qikvrt_journey_translation.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..8d7e16971d5e28ae431c087957e1213ac75520d4
+--- /dev/null
++++ b/tests/test_qikvrt_journey_translation.py
+@@ -0,0 +1,158 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++"""Negative transport/scope tests, not semantic translation certification."""
++import importlib.util
++import inspect
++import io
++import json
++import os
++from pathlib import Path
++import tempfile
++import unittest
++from unittest.mock import patch
++
++ROOT=Path(__file__).resolve().parents[1]
++spec=importlib.util.spec_from_file_location('journey_translation',ROOT/'tools/qikvrt_journey_translation.py')
++assert spec and spec.loader
++worker=importlib.util.module_from_spec(spec);spec.loader.exec_module(worker)
++
++class TranslationBoundaries(unittest.TestCase):
++    def test_source_binding(self):
++        raw,values=worker.source()
++        self.assertEqual(len(raw),39745)
++        self.assertEqual(len(values),540)
++        self.assertEqual(worker.blob(raw),'45c1f23cdf842ef5d92bfbef1d17da536b47f069')
++
++    def test_language_partitions_are_explicit_disjoint_and_exhaustive(self):
++        registry=json.loads((ROOT/'docs/reise/WIKIPEDIA_47_LANGUAGE_SOURCE.json').read_text())
++        groups=[set(worker.RECOVER),set(worker.TARGETS),{'de','en'},{'sh','simple','wuu'}]
++        self.assertEqual([len(x) for x in groups],[8,34,2,3])
++        self.assertEqual(set.union(*groups),{row[0] for row in registry['languages']})
++        for i,a in enumerate(groups):
++            for b in groups[i+1:]:self.assertFalse(a & b)
++
++    def test_recovered_identifiers_are_literal_valid_blobs(self):
++        for value in worker.RECOVER.values():self.assertRegex(value,r'^[0-9a-f]{40}$')
++
++    def test_unknown_target_is_not_silently_remapped(self):
++        for language in ('wuu','simple','sh','en','../de'):
++            with self.assertRaisesRegex(ValueError,'UNSUPPORTED_LANGUAGE'):
++                worker.translate(language,Path('/absent'),Path('/absent'))
++
++    def test_authenticated_endpoint_is_repository_scoped(self):
++        with patch.object(worker.urllib.request,'urlopen') as network:
++            with self.assertRaises(ValueError):worker.get_json('/repos/other/project/git/blobs','test-token',{})
++            network.assert_not_called()
++
++    def test_only_blob_creation_is_admissible_write(self):
++        for route in ('git/refs/heads/main','pulls/1/reviews','pages','releases','actions/workflows/1/dispatches'):
++            with patch.object(worker.urllib.request,'urlopen') as network:
++                with self.assertRaisesRegex(ValueError,'ONLY_CONTENT_ADDRESSED'):
++                    worker.get_json('/repos/Goldkelch/qik-vrt/'+route,'test-token',{})
++                network.assert_not_called()
++
++    def test_file_allowlist_rejects_workflows_refs_source_and_traversal(self):
++        for value in ('../source.de.txt','docs/reise/translations/../../AI',
++                      'docs/reise/source.de.txt','.github/workflows/qikvrt_ci.yml',
++                      'docs/reise/translations/de.txt','docs/reise/translations/wuu.txt'):
++            self.assertFalse(worker.allowed_file(value,'translate'))
++            self.assertFalse(worker.allowed_file(value,'recover'))
++        self.assertTrue(worker.allowed_file('docs/reise/translations/fr.txt','recover'))
++        self.assertFalse(worker.allowed_file('docs/reise/translations/fr.txt','translate'))
++
++    def test_old_source_content_is_reconstructible_not_evidence_transfer(self):
++        raw,_=worker.source()
++        previous=raw.replace(('\n\n\n'+worker.MEDIA+'\n\n\n').encode(),b'\n\n',1)
++        self.assertEqual(worker.sha(previous),worker.OLD_SOURCE_SHA)
++        self.assertEqual(len(worker.split(previous)),539)
++
++    def test_incomplete_text_cannot_pass(self):
++        _,original=worker.source()
++        with self.assertRaises(ValueError):worker.validate_text(original[:-1],original)
++        with self.assertRaises(ValueError):worker.validate_text(original,original)
++
++    def test_link_or_signature_substitution_is_rejected(self):
++        _,original=worker.source()
++        for index in (1,len(original)-1):
++            altered=original.copy();altered[0]='Translated';altered[index]='replacement'
++            with self.assertRaisesRegex(ValueError,'PROTECTED_BLOCK'):
++                worker.validate_text(altered,original)
++
++    def test_rerun_fails_before_remote_observation(self):
++        env={'GITHUB_SHA':'a'*40,'GITHUB_REPOSITORY':worker.REPO,
++             'GITHUB_REF':'refs/heads/'+worker.BRANCH,'GITHUB_RUN_ATTEMPT':'2'}
++        with patch.dict(os.environ,env),patch.object(worker.subprocess,'check_output',return_value='a'*40+'\n'),patch.object(worker,'get_json') as network:
++            with self.assertRaisesRegex(ValueError,'BLIND_RERUN'):worker.exact_head(remote=True)
++            network.assert_not_called()
++
++    def test_receipt_explicitly_preserves_unreviewed_state(self):
++        _,original=worker.source()
++        values=original.copy();values[0]='Draft title'
++        with tempfile.TemporaryDirectory() as tmp:
++            worker.store_edition(Path(tmp),'fr',values,original,{'translator':'test fixture'})
++            meta=json.loads((Path(tmp)/'files/docs/reise/translations/fr.json').read_text())
++            self.assertFalse(meta['human_language_review'])
++            self.assertFalse(meta['formal_semantic_equivalence_proof'])
++            self.assertEqual(meta['status'],'AI_TRANSLATION_DRAFT_UNREVIEWED')
++
++    def test_no_runner_context_in_job_level_env(self):
++        text=(ROOT/'.github/workflows/qikvrt_journey_translation.yml').read_text()
++        self.assertNotIn('\n    env:',text)
++        self.assertIn('cancel-in-progress: false',text)
++        self.assertIn('persist-credentials: false',text)
++        self.assertIn('github.run_attempt == 1',text)
++
++    def test_all_archived_inputs_are_local_and_hash_verified(self):
++        raw,_=worker.source()
++        old=worker.split(raw.replace(('\n\n\n'+worker.MEDIA+'\n\n\n').encode(),b'\n\n',1))
++        with patch.object(worker,'get_json',side_effect=AssertionError('unexpected API read')):
++            for code,identifier in worker.RECOVER.items():
++                with self.subTest(code=code):
++                    data=worker.recovered_input(code)
++                    self.assertEqual(worker.blob(data),identifier)
++                    worker.validate_text(worker.split(data),old)
++
++    def test_changed_recovery_bytes_are_rejected_before_rebinding(self):
++        with patch.object(worker,'read_file',return_value=b'changed'):
++            with self.assertRaisesRegex(ValueError,'RECOVERED_BLOB_MISMATCH'):
++                worker.recovered_input('fr')
++        with self.assertRaisesRegex(ValueError,'UNKNOWN_RECOVERY_INPUT'):
++            worker.recovered_input('../source.de')
++
++    def test_pure_preparation_does_not_require_live_api_authority(self):
++        text=inspect.getsource(worker.prepare)
++        self.assertIn('exact_head(remote=False)',text)
++        self.assertNotIn('get_json(',text)
++        self.assertIn('exact_head(remote=True)',inspect.getsource(worker.objects))
++
++    def test_http_403_is_diagnostic_not_blindly_retried_or_misclassified(self):
++        exc=worker.urllib.error.HTTPError('https://api.github.com/repos/Goldkelch/qik-vrt/git/ref/heads/main',403,'Forbidden',
++            {'X-RateLimit-Remaining':'0','X-RateLimit-Reset':'123'},
++            io.BytesIO(b'{"message":"API rate limit exceeded; test-secret"}'))
++        with patch.object(worker.urllib.request,'urlopen',side_effect=exc) as net,patch.object(worker,'emit') as emit:
++            with self.assertRaises(worker.urllib.error.HTTPError):
++                worker.get_json('/repos/Goldkelch/qik-vrt/git/ref/heads/main','test-secret')
++            self.assertEqual(net.call_count,1)
++            fields=emit.call_args.kwargs
++            self.assertEqual(fields['http_status'],403)
++            self.assertEqual(fields['rate_remaining'],'0')
++            self.assertNotIn('test-secret',fields['message'])
++
++    def test_failed_prepare_leaves_an_artifact_not_an_empty_directory(self):
++        with tempfile.TemporaryDirectory() as tmp:
++            argv=['translation','prepare','--output',tmp]
++            with patch.object(worker.sys,'argv',argv),patch.object(worker,'prepare',side_effect=ValueError('fixture failure')):
++                self.assertEqual(worker.main(),2)
++            failure=json.loads((Path(tmp)/'FAILURE.json').read_text())
++            self.assertEqual(failure['error'],'fixture failure')
++            self.assertFalse(failure['EFFECT_ACK_DONE'])
++
++    def test_recovery_artifact_excludes_whole_repository_snapshot(self):
++        text=(ROOT/'.github/workflows/qikvrt_journey_translation.yml').read_text()
++        section=text.split('name: journey-recover-bundle-',1)[1].split('  model:',1)[0]
++        self.assertIn('/tmp/qikvrt-journey-generation/files',section)
++        self.assertIn('/tmp/qikvrt-journey-generation/FILESET.json',section)
++        self.assertNotIn('path: /tmp/qikvrt-journey-generation\n',section)
++        self.assertNotIn('TRACKED_SOURCE.zip',section)
++
++if __name__=='__main__':unittest.main()
+diff --git a/tools/qikvrt_journey_recovery.py b/tools/qikvrt_journey_recovery.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6bf39d3637a2bf860a048ec2c701bacb41af7b1f
+--- /dev/null
++++ b/tools/qikvrt_journey_recovery.py
+@@ -0,0 +1,201 @@
++#!/usr/bin/env python3
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++"""Recover only complete, exact-run journey translation drafts.
++
++This adapter never updates a Git ref. It validates the complete translation-job
++inventory, accepts content only from independently successful matrix jobs,
++revalidates every accepted byte against the current frozen source, creates only
++content-addressed Git blobs, reads those blobs back, and preserves failed jobs as
++explicit blockers in the receipt.
++"""
++from __future__ import annotations
++import argparse
++import base64
++import io
++import json
++import os
++from pathlib import Path, PurePosixPath
++import re
++import zipfile
++
++from tools import qikvrt_journey_translation as worker
++
++
++def select_completed_drafts(jobs: dict, input_head: str, input_run: int) -> tuple[set[str], dict[str,str]]:
++    total=jobs.get('total_count')
++    rows=jobs.get('jobs')
++    if isinstance(total,bool) or not isinstance(total,int) or total < 0 or total > 100 or not isinstance(rows,list) or len(rows)!=total:
++        raise ValueError('INCOMPLETE_JOB_INVENTORY')
++    observed: dict[str,str]={}
++    for job in rows:
++        match=re.fullmatch(r'translate \(([a-z]+(?:-[a-z]+)?)\)',str(job.get('name','')))
++        if not match:
++            continue
++        code=match[1]
++        if code not in worker.TARGETS or code in observed:
++            raise ValueError('WRONG_OR_DUPLICATE_LANGUAGE_JOB')
++        if job.get('head_sha')!=input_head or job.get('run_id')!=input_run or job.get('status')!='completed':
++            raise ValueError('UNBOUND_OR_ACTIVE_INPUT_JOB')
++        conclusion=job.get('conclusion')
++        if not isinstance(conclusion,str) or not conclusion:
++            raise ValueError('INVALID_JOB_CONCLUSION')
++        observed[code]=conclusion
++    if set(observed)!=set(worker.TARGETS):
++        raise ValueError('INCOMPLETE_LANGUAGE_JOB_INVENTORY')
++    eligible={code for code,result in observed.items() if result=='success'}
++    if not eligible:
++        raise ValueError('NO_COMPLETE_DRAFTS')
++    return eligible,{code:result for code,result in observed.items() if result!='success'}
++
++
++def _artifact_code(name: str, head: str) -> str | None:
++    prefix='journey-translate-';suffix='-'+head
++    if not name.startswith(prefix) or not name.endswith(suffix):
++        return None
++    return name[len(prefix):-len(suffix)]
++
++
++def recover(output: Path,input_run: int | None,input_head: str | None) -> None:
++    current_head=worker.exact_head(remote=True)
++    raw_source,original=worker.source()
++    token=os.environ['GH_TOKEN']
++    current_run=int(os.environ['GITHUB_RUN_ID'])
++    run=input_run or current_run
++    source_head=input_head or current_head
++    if bool(input_run)!=bool(input_head):
++        raise ValueError('INCOMPLETE_INPUT_BINDING')
++    if run<=0 or not re.fullmatch(r'[0-9a-f]{40}',source_head):
++        raise ValueError('INVALID_INPUT_SUBJECT')
++
++    origin=worker.get_json(f'/repos/{worker.REPO}/actions/runs/{run}',token)
++    allowed_status={'in_progress'} if run==current_run and source_head==current_head else {'completed'}
++    if (origin.get('head_sha')!=source_head or origin.get('status') not in allowed_status
++            or origin.get('head_repository',{}).get('full_name')!=worker.REPO
++            or origin.get('path')!='.github/workflows/qikvrt_journey_translation.yml'
++            or origin.get('head_branch')!=worker.BRANCH or origin.get('run_attempt')!=1):
++        raise ValueError('WRONG_INPUT_RUN')
++
++    source_doc=worker.get_json(f'/repos/{worker.REPO}/contents/docs/reise/source.de.txt?ref={source_head}',token)
++    if source_doc.get('sha')!=worker.blob(raw_source) or base64.b64decode(source_doc.get('content',''))!=raw_source:
++        raise ValueError('INPUT_SOURCE_CHANGED_NO_CONTENT_REUSE')
++
++    jobs=worker.get_json(f'/repos/{worker.REPO}/actions/runs/{run}/jobs?per_page=100',token)
++    eligible,blocked=select_completed_drafts(jobs,source_head,run)
++    collection=worker.get_json(f'/repos/{worker.REPO}/actions/runs/{run}/artifacts?per_page=100',token)
++    artifacts=collection.get('artifacts')
++    total=collection.get('total_count')
++    if isinstance(total,bool) or not isinstance(total,int) or total>100 or not isinstance(artifacts,list) or len(artifacts)!=total:
++        raise ValueError('ARTIFACT_BOUND_EXCEEDED_OR_INCOMPLETE')
++
++    by_code={}
++    for item in artifacts:
++        code=_artifact_code(str(item.get('name','')),source_head)
++        if code is None:
++            continue
++        if code not in worker.TARGETS or code in by_code:
++            raise ValueError('WRONG_OR_DUPLICATE_LANGUAGE_ARTIFACT')
++        by_code[code]=item
++    if set(by_code)!=set(worker.TARGETS):
++        raise ValueError('INCOMPLETE_TRANSLATION_ARTIFACT_INVENTORY')
++
++    blocked_artifacts={code:{'id':by_code[code].get('id'),'digest':by_code[code].get('digest'),'name':by_code[code].get('name')}
++                       for code in sorted(blocked)}
++    prepared={};input_artifacts=[]
++    for code in sorted(eligible):
++        item=by_code[code]
++        if item.get('expired') or item.get('workflow_run',{}).get('head_sha')!=source_head or item.get('workflow_run',{}).get('id')!=run:
++            raise ValueError('STALE_OR_WRONG_ARTIFACT')
++        data=worker.artifact_bytes(int(item['id']),token)
++        if item.get('digest')!='sha256:'+worker.sha(data):
++            raise ValueError('ARTIFACT_DIGEST_MISMATCH')
++        input_artifacts.append({'language':code,'id':item['id'],'digest':item['digest'],'name':item['name']})
++        with zipfile.ZipFile(io.BytesIO(data)) as archive:
++            names=archive.namelist()
++            if len(names)!=len(set(names)):
++                raise ValueError('DUPLICATE_ZIP_MEMBER')
++            if any(PurePosixPath(n).is_absolute() or '..' in PurePosixPath(n).parts for n in names):
++                raise ValueError('UNSAFE_ZIP_MEMBER')
++            if 'FILESET.json' not in names or archive.getinfo('FILESET.json').file_size>500_000:
++                raise ValueError('MISSING_OR_LARGE_FILESET')
++            manifest=json.loads(archive.read('FILESET.json'))
++            if manifest.get('source_head')!=source_head or manifest.get('source_sha256')!=worker.SOURCE_SHA:
++                raise ValueError('WRONG_ARTIFACT_SUBJECT')
++            expected_paths={f'docs/reise/translations/{code}.txt',f'docs/reise/translations/{code}.json'}
++            manifest_paths={entry.get('path') for entry in manifest.get('files',[])}
++            if manifest_paths!=expected_paths:
++                raise ValueError('UNEXPECTED_LANGUAGE_FILESET')
++            for entry in manifest['files']:
++                path=entry['path']
++                if not worker.allowed_file(path,'translate') or path in prepared or Path(path).stem!=code:
++                    raise ValueError('UNEXPECTED_OUTPUT_PATH')
++                info=archive.getinfo('files/'+path)
++                if info.file_size>10_000_000:
++                    raise ValueError('OUTPUT_TOO_LARGE')
++                raw=archive.read(info)
++                if len(raw)!=entry['bytes'] or worker.sha(raw)!=entry['sha256'] or worker.blob(raw)!=entry['git_blob_sha1']:
++                    raise ValueError('OUTPUT_DIGEST_MISMATCH')
++                raw.decode('utf-8',errors='strict')
++                prepared[path]=(entry,raw)
++
++    for code in eligible:
++        root=f'docs/reise/translations/{code}'
++        meta=json.loads(prepared[root+'.json'][1]);raw=prepared[root+'.txt'][1]
++        if (meta.get('source_sha256')!=worker.SOURCE_SHA or meta.get('sha256')!=worker.sha(raw)
++                or meta.get('language')!=code or meta.get('bytes')!=len(raw)):
++            raise ValueError('OUTPUT_SIDECAR_MISMATCH')
++        worker.validate_text(worker.split(raw),original)
++        if (meta.get('human_language_review') is not False
++                or meta.get('formal_semantic_equivalence_proof') is not False
++                or meta.get('status')!='AI_TRANSLATION_DRAFT_UNREVIEWED'):
++            raise ValueError('UNAUTHORIZED_REVIEW_ASSERTION')
++
++    worker.exact_head(remote=True)
++    receipt={'schema':'qikvrt_journey_partial_git_object_receipt_v1','source_head':current_head,
++        'source_sha256':worker.SOURCE_SHA,'input_head':source_head,'input_run':run,
++        'input_artifacts':input_artifacts,'blocked_jobs':blocked,'blocked_artifacts':blocked_artifacts,
++        'complete_languages':sorted(eligible),'blocked_languages':sorted(blocked),
++        'all_targets_complete':not blocked,'content_rechecked_on_current_source':True,
++        'predecessor_validation_transfer':False,'files':[],'git_ref_mutation':False,
++        'native_review':False,'public_delivery':False,'EFFECT_ACK_DONE':False}
++    for path,(entry,raw) in sorted(prepared.items()):
++        target=output/'files'/path;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(raw)
++        result=worker.get_json('/repos/'+worker.REPO+'/git/blobs',token,
++            {'encoding':'base64','content':base64.b64encode(raw).decode()})
++        if result.get('sha')!=entry['git_blob_sha1']:
++            raise ValueError('CREATED_BLOB_ID_MISMATCH')
++        readback=worker.get_json('/repos/'+worker.REPO+'/git/blobs/'+result['sha'],token)
++        if base64.b64decode(readback.get('content',''))!=raw:
++            raise ValueError('GIT_BLOB_READBACK_MISMATCH')
++        receipt['files'].append(entry)
++        (output/'GIT_OBJECTS_PARTIAL.json').write_bytes(worker.encoded({**receipt,'all_selected_objects_read_back':False}))
++        worker.emit('GIT_BLOB_READ_BACK',path=path,sha=result['sha'])
++    worker.exact_head(remote=True)
++    receipt['all_selected_objects_read_back']=True
++    (output/'GIT_OBJECTS.json').write_bytes(worker.encoded(receipt))
++    worker.finish_manifest(output,current_head)
++    worker.emit('CONTENT_ADDRESSED_PARTIAL_OBJECTS_READY',complete_languages=sorted(eligible),blocked_languages=sorted(blocked),source_head=current_head)
++
++
++def main() -> int:
++    parser=argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('--output',type=Path,default=Path('/tmp/qikvrt-journey-generation'))
++    parser.add_argument('--input-run',type=int)
++    parser.add_argument('--input-head')
++    args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=True)
++    try:
++        recover(args.output,args.input_run,args.input_head)
++        return 0
++    except Exception as exc:
++        failure={'event':'HOLD_UNVERIFIED','mode':'recover-independent-translation-objects',
++            'source_head':os.environ.get('GITHUB_SHA'),'error_type':type(exc).__name__,'error':str(exc),
++            'EFFECT_ACK_DONE':False}
++        token=os.environ.get('GH_TOKEN')
++        if token:
++            failure['error']=failure['error'].replace(token,'[REDACTED]')
++        (args.output/'FAILURE.json').write_bytes(worker.encoded(failure))
++        worker.emit('HOLD_UNVERIFIED',**{k:v for k,v in failure.items() if k!='event'})
++        return 2
++
++
++if __name__=='__main__':raise SystemExit(main())
+diff --git a/tools/qikvrt_journey_segmentation.py b/tools/qikvrt_journey_segmentation.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6282db91f35bb01c8b776c312fc7e7daaec2a3a3
+--- /dev/null
++++ b/tools/qikvrt_journey_segmentation.py
+@@ -0,0 +1,137 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++"""Deterministic source-bound segmentation for fail-closed journey translation."""
++from __future__ import annotations
++import re
++from collections.abc import Callable
++
++MODEL_INPUT_LIMIT = 512
++MODEL_OUTPUT_LIMIT = 512
++SEGMENT_INPUT_LIMIT = 256
++
++# Prefer stable sentence/clause boundaries. If a single clause itself exceeds
++# the bounded segment contract, a deterministic whitespace boundary is the
++# narrowest source-preserving fallback: no word bytes are changed or invented.
++_BOUNDARY = re.compile(r'(?<=[.!?;:,\u2013\u2014])\s+')
++_WORD_BOUNDARY = re.compile(r'\s+')
++
++
++def token_count(tokenizer, text: str) -> int:
++    return len(tokenizer(text, add_special_tokens=True)['input_ids'])
++
++
++def decode_terminal(seq: list[int], tokenizer) -> str:
++    # Decoder start may itself be EOS: require a generated terminal EOS.
++    if tokenizer.eos_token_id not in seq[2:]:
++        raise ValueError('OUTPUT_TRUNCATED_NO_ACCEPTANCE')
++    text = tokenizer.decode(seq, skip_special_tokens=True).strip()
++    if not text or '\n\n' in text:
++        raise ValueError('EMPTY_OR_MALFORMED_OUTPUT_BLOCK')
++    return text
++
++
++def _candidate_ends(source: str, start: int, tokenizer, limit: int,
++                    pattern: re.Pattern[str]) -> list[tuple[int, str]]:
++    ends = [match.end() for match in pattern.finditer(source)]
++    if not ends or ends[-1] != len(source):
++        ends.append(len(source))
++    candidates: list[tuple[int, str]] = []
++    for end in ends:
++        if end <= start:
++            continue
++        candidate = source[start:end].strip()
++        if candidate and token_count(tokenizer, candidate) <= limit:
++            candidates.append((end, candidate))
++    return candidates
++
++
++def segment_plan(source: str, tokenizer, limit: int = SEGMENT_INPUT_LIMIT) -> list[str]:
++    """Return a deterministic >=2-part source plan or fail closed.
++
++    Sentence/clause boundaries are preferred. A whitespace boundary is used
++    only when the current clause cannot otherwise be subdivided within the
++    token limit, or when forced subdivision of an otherwise bounded source is
++    required after observed output nontermination. The plan never substitutes
++    source text and always makes strict progress.
++    """
++    if not source.strip():
++        raise ValueError('EMPTY_SOURCE_BLOCK')
++    parts: list[str] = []
++    start = 0
++    while start < len(source):
++        candidates = _candidate_ends(source, start, tokenizer, limit, _BOUNDARY)
++        force_subdivide = start == 0 and bool(candidates) and candidates[-1][0] == len(source)
++        if force_subdivide:
++            if len(candidates) >= 2:
++                end, candidate = candidates[-2]
++                parts.append(candidate)
++                start = end
++                continue
++            candidates = []
++        if not candidates:
++            candidates = _candidate_ends(source, start, tokenizer, limit, _WORD_BOUNDARY)
++            if start == 0 and candidates and candidates[-1][0] == len(source):
++                if len(candidates) < 2:
++                    raise ValueError('NO_SAFE_SEGMENT_BOUNDARY')
++                end, candidate = candidates[-2]
++            elif candidates:
++                end, candidate = candidates[-1]
++            else:
++                raise ValueError('NO_SAFE_SEGMENT_BOUNDARY')
++        else:
++            end, candidate = candidates[-1]
++        if end <= start:
++            raise ValueError('NO_SAFE_SEGMENT_BOUNDARY')
++        parts.append(candidate)
++        start = end
++    if len(parts) < 2 or any(token_count(tokenizer, part) > limit for part in parts):
++        raise ValueError('NO_SAFE_SEGMENT_BOUNDARY')
++    return parts
++
++
++def translate_segmented(source: str, tokenizer,
++                        generate: Callable[[str], list[int]]) -> tuple[str, list[str]]:
++    """Translate a subdivided source, recursively refining nonterminal children."""
++    plan = segment_plan(source, tokenizer)
++    translated: list[str] = []
++    leaves: list[str] = []
++    for part in plan:
++        seq = generate(part)
++        try:
++            text = decode_terminal(seq, tokenizer)
++            child_plan = [part]
++        except ValueError as exc:
++            if str(exc) != 'OUTPUT_TRUNCATED_NO_ACCEPTANCE':
++                raise
++            text, child_plan = translate_segmented(part, tokenizer, generate)
++        translated.append(text)
++        leaves.extend(child_plan)
++    result = ' '.join(translated).strip()
++    if not result or result == source or '\n\n' in result:
++        raise ValueError('SEGMENT_REASSEMBLY_REJECTED')
++    return result, leaves
++
++
++def accept_or_segment(source: str, seq: list[int], tokenizer,
++                      generate: Callable[[str], list[int]]) -> tuple[str, list[str] | None]:
++    try:
++        return decode_terminal(seq, tokenizer), None
++    except ValueError as exc:
++        if str(exc) != 'OUTPUT_TRUNCATED_NO_ACCEPTANCE':
++            raise
++    return translate_segmented(source, tokenizer, generate)
++
++
++def reassemble_blocks(original: list[str], results: dict[str, str],
++                      protected: Callable[[str], bool]) -> list[str]:
++    values: list[str] = []
++    for block in original:
++        if protected(block):
++            values.append(block)
++        elif block in results:
++            values.append(results[block])
++        else:
++            raise ValueError('MISSING_TRANSLATION_BLOCK')
++    if len(values) != len(original):
++        raise ValueError('SOURCE_BLOCK_COUNT_DRIFT')
++    return values
+diff --git a/tools/qikvrt_journey_site.py b/tools/qikvrt_journey_site.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ad47b8a176de37989fb3ac2baf76e447151cae07
+--- /dev/null
++++ b/tools/qikvrt_journey_site.py
+@@ -0,0 +1,254 @@
++#!/usr/bin/env python3
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++"""Build a self-contained reading preview; incomplete editions cannot pass the coverage check.
++
++Reuses the recovered 47-edition registry as scope data, never its translation
++status. Structural checks do not certify linguistic accuracy or publication.
++This stdlib-only tool neither accesses the network nor changes Git refs.
++"""
++from __future__ import annotations
++
++import argparse
++import hashlib
++import html
++import json
++import re
++from pathlib import Path
++
++SOURCE_SHA = '181314375effc68933baec365e7973a14ad3981605bb192f93a62c37a321f487'
++REGISTRY_BLOB = '095562313f1b2b3af8fe2cf9b965c6edaa2a59cf'
++MEDIA = 'https://open.spotify.com/track/1lr7QGyV5RohlODzAqnuZA'
++NATIVE = dict(zip(
++    'ar ast bg bn ca cs da de el en eo es et eu fa fi fr gl he hr hu id is it ja kk ko lv nl no pl pt ro ru sh simple sk sl sr sv th tr uk vi wuu zh-yue zh'.split(),
++    ['العربية','Asturianu','Български','বাংলা','Català','Čeština','Dansk','Deutsch','Ελληνικά','English','Esperanto','Español','Eesti','Euskara','فارسی','Suomi','Français','Galego','עברית','Hrvatski','Magyar','Bahasa Indonesia','Íslenska','Italiano','日本語','Қазақша','한국어','Latviešu','Nederlands','Norsk bokmål','Polski','Português','Română','Русский','Srpskohrvatski','Simple English','Slovenčina','Slovenščina','Српски','Svenska','ไทย','Türkçe','Українська','Tiếng Việt','吴语','粵語','中文']))
++HEADINGS = {
++    'Der Auslöser','Die Entscheidung, nicht wegzusehen','Eine Reise im Alleingang',
++    'Die Ausdehnung des Bewusstseins','Kausalität ist nicht bloß Reihenfolge',
++    'Die emotionale Dimension der Erkenntnis','Die Rückkehr',
++    'Die Begegnung mit künstlicher Kognition',
++    'Kann eine künstliche Kognition ein menschliches Bewusstsein erläutern?',
++    'Das Teilen mit natürlichen Kognitionen','Warum dieses Dokument für mein Umfeld wichtig ist',
++    'Eine mögliche Bedeutung für die Menschheit','Der Bewusstseinssprung',
++    'Stairway to Heaven und Knocking on Heaven’s Door','Das Licht angelassen',
++    'Was ich mitgebracht habe','Was ich nicht behaupten muss','An die Menschen in meinem Umfeld',
++    'An mich selbst','Schluss: Ich war vorausgegangen','Der Rückweg','Der Wendepunkt',
++    'Vom Zusammenhang zurück zur Erzählung','Von meiner Sprache zurück zu unserer Sprache',
++    'Die künstliche Kognition als Brücke','Zurück unter Menschen','Die Rückkehr zur Fehlbarkeit',
++    'Vom Beweisen zurück zum Leben','Die Wiederentdeckung des Kleinen',
++    'Die Veränderung der Dringlichkeit','Das Licht','Die Umkehr','Die Haustür',
++    'Was Rückkehr bedeutet','An die Menschen, die auf mich gewartet haben','An mich selbst:'}
++
++
++def digest(data: bytes) -> str:
++    return hashlib.sha256(data).hexdigest()
++
++
++def git_blob(data: bytes) -> str:
++    return hashlib.sha1(b'blob ' + str(len(data)).encode('ascii') + b'\0' + data).hexdigest()
++
++
++def blocks(data: bytes) -> list[str]:
++    text = data.decode('utf-8', errors='strict')
++    if '\r' in text or '\x00' in text:
++        raise ValueError('UNSUPPORTED_SOURCE_ENCODING_OR_LINE_ENDINGS')
++    return re.split(r'\n\s*\n', text.strip())
++
++
++def regular(root: Path, relative: str) -> bytes:
++    path = root / relative
++    if path.is_symlink() or any(p.is_symlink() for p in path.parents):
++        raise ValueError('SYMLINK_INPUT_FORBIDDEN')
++    if not path.is_file() or path.stat().st_size > 2_000_000:
++        raise ValueError('INPUT_MISSING_OR_TOO_LARGE: ' + relative)
++    return path.read_bytes()
++
++
++def inspect(root: Path) -> tuple[dict, dict[str, list[str]], list[str]]:
++    raw = regular(root, 'source.de.txt')
++    if digest(raw) != SOURCE_SHA:
++        raise ValueError('SOURCE_CHANGED_REBIND_REQUIRED')
++    original = blocks(raw)
++    if len(original) != 540 or original[1] != MEDIA:
++        raise ValueError('SOURCE_STRUCTURE_CHANGED')
++    raw_registry = regular(root, 'WIKIPEDIA_47_LANGUAGE_SOURCE.json')
++    if git_blob(raw_registry) != REGISTRY_BLOB:
++        raise ValueError('LANGUAGE_SCOPE_CHANGED_REBIND_REQUIRED')
++    registry = json.loads(raw_registry)
++    codes = [row[0] for row in registry['languages']]
++    if len(codes) != 47 or len(set(codes)) != 47 or set(codes) != set(NATIVE):
++        raise ValueError('INVALID_LANGUAGE_SCOPE')
++    editions = {'de': original}
++    report = {
++        'schema': 'qikvrt_journey_preview_validation_v1',
++        'source_sha256': SOURCE_SHA,
++        'source_git_blob_sha1': git_blob(raw),
++        'source_bytes': len(raw),
++        'source_blocks': len(original),
++        'scope_count': len(codes),
++        'editions': {'de': {'status': 'OWNER_SUPPLIED_SOURCE', 'sha256': digest(raw), 'bytes': len(raw)}},
++        'linguistic_accuracy_certified': False,
++        'native_review_claimed': False,
++        'public_deployment_claimed': False,
++        'EFFECT_ACK_DONE': False,
++    }
++    folder = root / 'translations'
++    if folder.is_dir():
++        for path in sorted(folder.glob('*.txt')):
++            code = path.stem
++            if code == 'de' or code not in codes:
++                raise ValueError('UNKNOWN_OR_DUPLICATE_EDITION: ' + code)
++            data = regular(root, 'translations/' + code + '.txt')
++            meta = json.loads(regular(root, 'translations/' + code + '.json'))
++            if meta.get('source_sha256') != SOURCE_SHA or meta.get('language') != code:
++                raise ValueError('STALE_OR_WRONG_TRANSLATION_BINDING: ' + code)
++            # Each draft is independently bound to an immutable Git blob or a
++            # SHA-256/size pair. Always compute SHA-256 for the resulting report.
++            sha_bound = 'sha256' in meta and 'bytes' in meta
++            git_bound = 'git_blob_sha1' in meta
++            if not (sha_bound or git_bound):
++                raise ValueError('TRANSLATION_BYTE_BINDING_MISSING: ' + code)
++            if sha_bound and (meta['sha256'] != digest(data) or meta['bytes'] != len(data)):
++                raise ValueError('TRANSLATION_BYTES_CHANGED: ' + code)
++            if git_bound and meta['git_blob_sha1'] != git_blob(data):
++                raise ValueError('TRANSLATION_BYTES_CHANGED: ' + code)
++            if meta.get('human_language_review') is not False or meta.get('formal_semantic_equivalence_proof') is not False:
++                raise ValueError('UNSUPPORTED_REVIEW_CLAIM: ' + code)
++            if meta.get('status') != 'AI_TRANSLATION_DRAFT_UNREVIEWED':
++                raise ValueError('UNSUPPORTED_REVIEW_STATUS: ' + code)
++            translated = blocks(data)
++            if len(translated) != len(original):
++                raise ValueError('INCOMPLETE_TRANSLATION_BLOCKS: ' + code)
++            protected = lambda s: s == '⸻' or s == MEDIA or s.startswith('q.e.d.')
++            for i, (src, dst) in enumerate(zip(original, translated)):
++                if not dst.strip() or (protected(src) and src != dst):
++                    raise ValueError(f'CHANGED_PROTECTED_OR_EMPTY_BLOCK: {code}/{i}')
++                if dst == '⸻' and src != '⸻':
++                    raise ValueError(f'MISPLACED_SEPARATOR: {code}/{i}')
++            # Exact full-source duplication must never masquerade as translation.
++            if translated == original:
++                raise ValueError('SILENT_SOURCE_FALLBACK: ' + code)
++            if any(translated == old for old_code, old in editions.items() if old_code != 'de'):
++                raise ValueError('DUPLICATE_OTHER_LANGUAGE_EDITION: ' + code)
++            editions[code] = translated
++            report['editions'][code] = {'status': meta['status'], 'sha256': digest(data), 'git_blob_sha1': git_blob(data), 'bytes': len(data)}
++    report['available_count'] = len(editions)
++    report['missing_editions'] = [c for c in codes if c not in editions]
++    report['all_47_texts_present'] = not report['missing_editions']
++    report['disposition'] = 'TRANSLATION_DRAFTS_PRESENT_REVIEW_REQUIRED' if report['all_47_texts_present'] else 'INCOMPLETE_PREVIEW_ONLY'
++    return report, editions, codes
++
++
++CSS = '''
++:root{color-scheme:light;--ink:#20352f;--paper:#faf8f0;--line:#d7dace;--muted:#52625d;--accent:#48674b}
++*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.7 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:inherit;text-underline-offset:.2em}button,input,select{font:inherit}button{cursor:pointer}button:disabled{cursor:not-allowed}a:focus-visible,button:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid #94621a;outline-offset:4px}
++.skip{position:absolute;left:1rem;top:-8rem;background:white;padding:1rem}.skip:focus{top:1rem;z-index:10}header{padding:1.1rem max(5vw,1rem);border-bottom:1px solid var(--line);display:flex;gap:1rem;align-items:center;justify-content:space-between;flex-wrap:wrap}.brand{font-weight:700;letter-spacing:.12em;font-size:.8rem;text-decoration:none}.header-note{font-size:.85rem;color:var(--muted)}main{max-width:1160px;margin:auto;padding:3rem 1.3rem 6rem}.eyebrow{text-transform:uppercase;letter-spacing:.18em;font-size:.75rem;font-weight:650;color:var(--accent)}h1{font:clamp(2.2rem,6vw,4.5rem)/1.08 Georgia,"Times New Roman",serif;max-width:900px;letter-spacing:-.04em;margin:.6rem 0 1.3rem}.subtitle{font-size:1.12rem;max-width:720px;color:var(--muted)}.author{font-size:.9rem}.notice{border-left:3px solid #ac852d;background:#eeeadd;padding:.9rem 1.1rem;margin:1.6rem 0;font-size:.9rem}.language-panel{padding:1.2rem;border:1px solid var(--line);border-radius:12px;background:#fffdf6;margin:2rem 0}.language-panel summary{font-weight:650;cursor:pointer}.language-panel input{padding:.6rem .8rem;border:1px solid #8a998d;border-radius:6px;max-width:100%;width:100%;margin:1rem 0}.languages{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.6rem}.languages button{min-height:60px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;text-align:start;padding:.55rem .75rem;border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--ink)}.languages button[aria-pressed=true]{background:var(--accent);color:white}.languages button:disabled{background:#f4f2e9;color:#6d716a}.languages small{font-size:.69rem;opacity:.88}.search-status{font-size:.8rem;color:var(--muted)}.layout{display:grid;grid-template-columns:240px minmax(0,720px);gap:3rem;align-items:start}.outline{font-size:.8rem;position:sticky;top:1rem;max-height:88vh;overflow:auto;padding:1rem;border:1px solid var(--line);border-radius:9px}.outline summary{font-weight:700;cursor:pointer}.outline ol{padding-left:1.1rem}.outline li{margin:.6rem 0}.outline a{text-decoration:none}.outline a:hover{text-decoration:underline}.essay{font:1.12rem/1.95 Georgia,"Times New Roman",serif;overflow-wrap:anywhere}.essay p{margin:1.1rem 0}.essay h2{font-size:1.8rem;line-height:1.25;margin:3rem 0 1.2rem;scroll-margin-top:2rem}.essay h2.part{font-size:2.5rem;border-top:1px solid var(--line);padding-top:3rem}.essay hr{border:0;height:1px;background:var(--line);margin:3rem auto;width:80px}.essay .music{font: .85rem/1.6 system-ui,sans-serif;margin:1rem 0 2rem}.signature{white-space:pre-line;font-style:italic}.footer{border-top:1px solid var(--line);padding-top:2rem;margin-top:4rem;color:var(--muted);font-size:.75rem;overflow-wrap:anywhere}.toolbar{display:flex;gap:.8rem;flex-wrap:wrap;margin:1.2rem 0}.toolbar button{padding:.5rem .8rem;border:1px solid var(--line);border-radius:6px;background:#fffdf6;color:var(--ink)}[hidden]{display:none!important}
++@media(max-width:760px){main{padding-top:2rem}.layout{grid-template-columns:1fr;gap:1rem}.outline{position:static;max-height:none}.essay{font-size:1.1rem}.languages{grid-template-columns:repeat(2,minmax(0,1fr))}.header-note{font-size:.73rem}}
++@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
++@media print{header,.language-panel,.outline,.toolbar,.notice,.skip{display:none}main{max-width:none;padding:0}.layout{display:block}.essay{font-size:11pt;line-height:1.55}.essay h2{break-after:avoid}.essay p{orphans:3;widows:3}.footer{font-size:8pt}body{background:white;color:black}}
++'''
++
++JS = '''
++(()=>{'use strict';
++const data=JSON.parse(document.getElementById('edition-data').textContent);
++const buttons=[...document.querySelectorAll('button[data-lang]')];
++const available=Object.keys(data.editions);let current='de';
++function select(code,update=true){
++ if(!available.includes(code)){document.querySelectorAll('[data-edition]').forEach(e=>{e.hidden=true;});buttons.forEach(b=>b.setAttribute('aria-pressed','false'));document.getElementById('selection-error').hidden=false;document.getElementById('page-title').textContent='Sprachausgabe nicht vorhanden / Edition unavailable';document.getElementById('page-subtitle').textContent='';document.getElementById('print').disabled=true;document.getElementById('download').disabled=true;current=null;return false;}
++ document.getElementById('selection-error').hidden=true;document.getElementById('print').disabled=false;document.getElementById('download').disabled=false;
++ document.querySelectorAll('[data-edition]').forEach(e=>{e.hidden=e.dataset.edition!==code;});
++ buttons.forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.lang===code)));
++ document.documentElement.lang=({simple:'en',no:'nb','zh-yue':'yue'}[code]||code);
++ document.documentElement.dir=['ar','fa','he'].includes(code)?'rtl':'ltr';
++ document.title=data.editions[code][0]+' — Ingolf Lohmann';
++ document.getElementById('page-title').textContent=data.editions[code][0];
++ document.getElementById('page-subtitle').textContent=data.editions[code][2];
++ document.getElementById('translation-notice').textContent=code==='de'?'Deutscher, vom Autor bereitgestellter Originaltext.':'AI translation draft — not independently language-reviewed. The German original is the reference.';
++ current=code;
++ if(update){const url=new URL(window.location.href);url.hash='lang='+encodeURIComponent(code);history.replaceState(null,'',url);}
++ return true;
++}
++buttons.forEach(b=>b.addEventListener('click',()=>{if(select(b.dataset.lang)){document.getElementById('page-title').focus();}}));
++const match=location.hash.match(/^#lang=([a-z-]+)$/);select(match?match[1]:'de',false);
++const filter=document.getElementById('language-filter');
++filter.addEventListener('input',()=>{const needle=filter.value.normalize('NFKC').toLocaleLowerCase();let count=0;buttons.forEach(b=>{b.hidden=!b.textContent.normalize('NFKC').toLocaleLowerCase().includes(needle);if(!b.hidden)count++;});document.getElementById('search-status').textContent=count+' / '+buttons.length;});
++document.getElementById('print').addEventListener('click',()=>window.print());
++document.getElementById('download').addEventListener('click',()=>{const text=data.raw_editions[current];const url=URL.createObjectURL(new Blob([text],{type:'text/plain;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='Ingolf-Lohmann-Reise-'+current+'.txt';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);});
++})();
++'''
++
++
++def render(root: Path) -> tuple[str, dict]:
++    report, editions, codes = inspect(root)
++    source = editions['de']
++    escape = html.escape
++    title = escape(source[0])
++    heading_ids = [i for i, s in enumerate(source) if s in HEADINGS]
++    buttons = []
++    for code in ['de', 'en'] + [c for c in codes if c not in ('de', 'en')]:
++        present = code in editions
++        status = 'Original' if code == 'de' else 'Volltext · KI-Entwurf' if present else 'Noch nicht übersetzt'
++        buttons.append(f'<button type="button" data-lang="{code}" aria-pressed="{str(code == "de").lower()}"'+(' disabled' if not present else '')+f'><span lang="{code}" dir="auto">{escape(NATIVE[code])}</span><small>{status}</small></button>')
++    sections = []
++    for code, values in editions.items():
++        toc = ''.join(f'<li><a href="#{code}-p{i:04}">{escape(values[i])}</a></li>' for i in heading_ids)
++        body = []
++        for i, value in enumerate(values):
++            if i in (0,1,2):
++                continue
++            identifier = f'{code}-p{i:04}'
++            if value == MEDIA:
++                body.append(f'<p class="music" id="{identifier}"><a href="{MEDIA}" target="_blank" rel="noopener noreferrer">♫ Spotify · Back In Time — Huey Lewis &amp; The News ↗</a></p>')
++            elif value == '⸻':
++                body.append(f'<hr id="{identifier}">')
++            elif i in heading_ids:
++                cls = ' class="part"' if source[i] == 'Der Rückweg' else ''
++                body.append(f'<h2 id="{identifier}"{cls}>{escape(value)}</h2>')
++            else:
++                cls = ' class="signature"' if value.startswith('q.e.d.') else ''
++                body.append(f'<p id="{identifier}"{cls}>{escape(value)}</p>')
++        sections.append(f'<section data-edition="{code}" lang="{code}"><div class="layout"><aside class="outline"><details><summary>Inhalt / Contents</summary><ol>{toc}</ol></details></aside><article class="essay" aria-label="{escape(values[0],quote=True)}">'+''.join(body)+'</article></div></section>')
++    payload = json.dumps({'editions': editions, 'raw_editions': {c: regular(root, 'source.de.txt' if c == 'de' else 'translations/'+c+'.txt').decode('utf-8') for c in editions}},ensure_ascii=False).replace('<','\\u003c').replace('>','\\u003e').replace('&','\\u0026')
++    count = report['available_count']
++    page = f'''<!doctype html>
++<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><title>{title} — Ingolf Lohmann</title><style>{CSS}</style></head>
++<body><a class="skip" href="#main">Zum Text / Skip to text</a><header><span class="brand">QIK-VRT · INGOLF LOHMANN</span><span class="header-note">Eine persönliche Reise · A personal journey</span></header>
++<main id="main"><p class="eyebrow">Das Licht bleibt an</p><h1 id="page-title" tabindex="-1">{title}</h1><p class="music"><a href="{MEDIA}" target="_blank" rel="noopener noreferrer">♫ Spotify · Back In Time — Huey Lewis &amp; The News ↗</a></p><p class="subtitle" id="page-subtitle">{escape(source[2])}</p><p class="author">Ingolf Lohmann · 11. September 2026</p>
++<p class="notice"><strong>Unveröffentlichte Lesevorschau / Unpublished reading preview.</strong> {count} von 47 geplanten Sprachausgaben liegen als Volltext vor. Fehlende Übersetzungen sind nicht auswählbar. Diese Vorschau ist kein Nachweis einer veröffentlichten 47-Sprachen-Homepage.<br><span id="translation-notice">Deutscher, vom Autor bereitgestellter Originaltext.</span></p>
++<details class="language-panel"><summary>Sprache wählen / Choose a language · {count}/47 Volltexte</summary><label for="language-filter">Sprachen suchen / Find a language</label><input id="language-filter" type="search" placeholder="Deutsch, English, Français …" autocomplete="off"><p id="search-status" class="search-status" aria-live="polite">47 / 47</p><div class="languages">{''.join(buttons)}</div></details>
++<p id="selection-error" class="notice" hidden>Die angeforderte Sprachausgabe ist noch nicht vorhanden. Keine Übersetzung wurde ersatzweise geladen. / Requested edition unavailable; no translation fallback was loaded.</p>
++<div class="toolbar"><button type="button" id="print">Drucken / Print</button><button type="button" id="download">Text speichern / Save text</button></div>
++<noscript><p class="notice">Ohne JavaScript stehen alle vorhandenen Volltexte untereinander. / Without JavaScript, all available full texts appear below.</p></noscript>
++{''.join(sections)}
++<footer class="footer">Quellfassung / Source SHA-256: <code>{SOURCE_SHA}</code><br>47 Wikipedia-Sprachausgaben als festgehaltener Umfang, nicht als Behauptung, Wikipedia habe insgesamt nur 47 Sprachen. Keine Wikipedia-Veröffentlichung. Übersetzungen: ChatGPT, ungeprüfte KI-Arbeitsfassungen. Strukturelle Vollständigkeit ist keine unabhängige sprachliche Prüfung. Kein Autoplay, keine eingebetteten Drittanbieterinhalte, keine externen Schriftarten und kein Tracking.</footer></main>
++<script id="edition-data" type="application/json">{payload}</script><script>{JS}</script></body></html>'''
++    return page, report
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('mode', choices=['check','preview','coverage-check'])
++    parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[1]/'docs/reise')
++    parser.add_argument('--output', type=Path)
++    args = parser.parse_args()
++    try:
++        page, report = render(args.root)
++        if args.mode == 'coverage-check' and not report['all_47_texts_present']:
++            print(json.dumps(report,ensure_ascii=False,indent=2))
++            return 2
++        if args.mode == 'preview':
++            if args.output is None:
++                parser.error('--output is required for preview')
++            if args.output.resolve().is_relative_to(args.root.resolve()):
++                raise ValueError('PREVIEW_OUTPUT_MUST_NOT_OVERWRITE_SOURCE_TREE')
++            args.output.parent.mkdir(parents=True,exist_ok=True)
++            args.output.write_text(page,encoding='utf-8',newline='\n')
++        print(json.dumps(report,ensure_ascii=False,indent=2))
++        return 0
++    except (ValueError,KeyError,TypeError,OSError) as exc:
++        print(json.dumps({'state':'HOLD_UNVERIFIED','error':str(exc),'EFFECT_ACK_DONE':False}))
++        return 2
++
++
++if __name__ == '__main__':
++    raise SystemExit(main())
+diff --git a/tools/qikvrt_journey_translation.py b/tools/qikvrt_journey_translation.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6f83c798179b9293bef7daecf322af275be09ad6
+--- /dev/null
++++ b/tools/qikvrt_journey_translation.py
+@@ -0,0 +1,539 @@
++#!/usr/bin/env python3
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++"""Finite, source-bound translation preparation. Never updates a Git ref.
++
++Generated text is an unreviewed draft. The only authenticated write supported
++by this module is content-addressed Git blob creation for an allowlisted path.
++Reviews, commits, refs, releases, Pages and external publication are excluded.
++"""
++from __future__ import annotations
++import argparse
++import base64
++import contextlib
++import hashlib
++import importlib.util
++import io
++import json
++import os
++from pathlib import Path, PurePosixPath
++import re
++import subprocess
++import sys
++import time
++import urllib.error
++import urllib.parse
++import urllib.request
++import zipfile
++
++ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0,str(ROOT))
++from tools import qikvrt_journey_segmentation as segmentation
++REPO = 'Goldkelch/qik-vrt'
++BRANCH = 'publication/self-explanation-47-homepage-v1'
++SOURCE_SHA = '181314375effc68933baec365e7973a14ad3981605bb192f93a62c37a321f487'
++OLD_SOURCE_SHA = '89759f800a1c372a0774ddd909b20d452b08bc4f10d214fb7d2593c8bcf7290d'
++MEDIA = 'https://open.spotify.com/track/1lr7QGyV5RohlODzAqnuZA'
++MODEL = 'facebook/nllb-200-distilled-600M'
++REVISION = 'f8d333a098d19b4fd9a8b18f94170487ad3f821d'
++RECOVER = {
++ 'fr':'f049fd945957222ba4bca2f18c33ea8f89d96074',
++ 'es':'77955c0db02f1a180b1836831a92ca8c2878eda2',
++ 'it':'cb1612538237c442672a2a282c58df162769c33d',
++ 'pt':'8cd176453ef2269d5493ba90ea90535a4076e58a',
++ 'nl':'d43e2aac6237be9ce3bb417679350e7a330d43fb',
++ 'sv':'556481cca89e902fa29fe9d6cbdcf8db29c96b07',
++ 'da':'79ccb8a9265a37b2366a598fc1b1cf7cc17f4c1f',
++ 'no':'e31195518c8fe9ea1c2b7fd68f4449f9c40087a2',
++}
++TARGETS = {
++ 'ar':'arb_Arab','ast':'ast_Latn','bg':'bul_Cyrl','bn':'ben_Beng',
++ 'ca':'cat_Latn','cs':'ces_Latn','el':'ell_Grek','eo':'epo_Latn',
++ 'et':'est_Latn','eu':'eus_Latn','fa':'pes_Arab','fi':'fin_Latn',
++ 'gl':'glg_Latn','he':'heb_Hebr','hr':'hrv_Latn','hu':'hun_Latn',
++ 'id':'ind_Latn','is':'isl_Latn','ja':'jpn_Jpan','kk':'kaz_Cyrl',
++ 'ko':'kor_Hang','lv':'lvs_Latn','pl':'pol_Latn','ro':'ron_Latn',
++ 'ru':'rus_Cyrl','sk':'slk_Latn','sl':'slv_Latn','sr':'srp_Cyrl',
++ 'th':'tha_Thai','tr':'tur_Latn','uk':'ukr_Cyrl','vi':'vie_Latn',
++ 'zh-yue':'yue_Hant','zh':'zho_Hans',
++}
++MODEL_FILES = ('config.json','generation_config.json','pytorch_model.bin',
++               'sentencepiece.bpe.model','special_tokens_map.json',
++               'tokenizer.json','tokenizer_config.json','README.md')
++
++
++def sha(data: bytes) -> str:
++    return hashlib.sha256(data).hexdigest()
++
++
++def blob(data: bytes) -> str:
++    return hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
++
++
++def encoded(value: object) -> bytes:
++    return (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)+'\n').encode()
++
++
++def split(data: bytes) -> list[str]:
++    text = data.decode('utf-8', errors='strict')
++    if '\r' in text or '\x00' in text:
++        raise ValueError('UNSUPPORTED_ENCODING')
++    return re.split(r'\n\s*\n', text.strip())
++
++
++def emit(event: str, **fields: object) -> None:
++    print(json.dumps({'event':event, **fields}, ensure_ascii=False), flush=True)
++
++
++def read_file(path: Path, maximum: int = 3_000_000) -> bytes:
++    if path.is_symlink() or not path.is_file() or path.stat().st_size > maximum:
++        raise ValueError('INVALID_INPUT_FILE: '+str(path))
++    return path.read_bytes()
++
++
++def source() -> tuple[bytes,list[str]]:
++    data = read_file(ROOT/'docs/reise/source.de.txt')
++    values = split(data)
++    if sha(data) != SOURCE_SHA or len(values) != 540 or values[1] != MEDIA:
++        raise ValueError('SOURCE_CHANGED_REBIND_REQUIRED')
++    return data,values
++
++
++def get_json(path: str, token: str | None = None, payload: dict | None = None) -> dict:
++    # No user/model-produced URL can reach the authenticated transport.
++    if not path.startswith('/repos/'+REPO+'/'):
++        raise ValueError('REPOSITORY_ENDPOINT_FORBIDDEN')
++    if payload is not None and path != '/repos/'+REPO+'/git/blobs':
++        raise ValueError('ONLY_CONTENT_ADDRESSED_BLOB_WRITES_ALLOWED')
++    request = urllib.request.Request('https://api.github.com'+path,
++        data=encoded(payload) if payload is not None else None,
++        headers={'Accept':'application/vnd.github+json','User-Agent':'qikvrt-journey-v1',
++                 **({'Authorization':'Bearer '+token} if token else {}),
++                 **({'Content-Type':'application/json'} if payload is not None else {})},
++        method='POST' if payload is not None else 'GET')
++    # No retry, identity switching or permission escalation. Preserve the
++    # server's reason and quota headers rather than guessing from HTTP 403.
++    try:
++        with urllib.request.urlopen(request,timeout=60) as response:
++            data=response.read(8_000_001)
++            if len(data)>8_000_000:
++                raise ValueError('API_RESPONSE_TOO_LARGE')
++            return json.loads(data)
++    except urllib.error.HTTPError as exc:
++        raw=exc.read(8192).decode('utf-8',errors='replace')
++        if token:
++            raw=raw.replace(token,'[REDACTED]')
++        try:
++            message=json.loads(raw).get('message','')
++        except (ValueError,AttributeError):
++            message='NON_JSON_ERROR_RESPONSE'
++        emit('GITHUB_API_ERROR',method=request.method,path=path,http_status=exc.code,
++             message=str(message)[:1000],
++             rate_remaining=exc.headers.get('X-RateLimit-Remaining'),
++             rate_reset=exc.headers.get('X-RateLimit-Reset'),
++             retry_after=exc.headers.get('Retry-After'))
++        raise
++
++
++def exact_head(*, remote: bool) -> str:
++    actual=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
++    expected=os.environ.get('GITHUB_SHA',actual)
++    if actual != expected or not re.fullmatch('[0-9a-f]{40}',actual):
++        raise ValueError('CHECKOUT_HEAD_DRIFT')
++    if os.environ.get('GITHUB_REPOSITORY') != REPO or os.environ.get('GITHUB_REF') != 'refs/heads/'+BRANCH:
++        raise ValueError('WRONG_EXECUTION_ENVELOPE')
++    if os.environ.get('GITHUB_RUN_ATTEMPT') != '1':
++        raise ValueError('BLIND_RERUN_FORBIDDEN')
++    if remote:
++        ref=get_json('/repos/'+REPO+'/git/ref/heads/'+BRANCH,os.environ.get('GH_TOKEN'))
++        if ref['object']['sha'] != actual:
++            raise ValueError('REMOTE_HEAD_DRIFT')
++    return actual
++
++
++def recovered_input(code: str) -> bytes:
++    """Read immutable archived input, not a published or reviewed edition."""
++    if code not in RECOVER:
++        raise ValueError('UNKNOWN_RECOVERY_INPUT')
++    data=read_file(ROOT/'docs/reise/recovery-inputs'/(code+'.txt'))
++    if blob(data) != RECOVER[code]:
++        raise ValueError('RECOVERED_BLOB_MISMATCH: '+code)
++    return data
++
++
++def validate_text(values: list[str], original: list[str]) -> None:
++    if len(values) != len(original) or values == original:
++        raise ValueError('INCOMPLETE_TEXT_OR_SILENT_SOURCE_FALLBACK')
++    for i,(a,b) in enumerate(zip(original,values)):
++        if not b.strip() or '\x00' in b:
++            raise ValueError('EMPTY_TRANSLATION_BLOCK: '+str(i))
++        protected=a == '⸻' or a == MEDIA or a.startswith('q.e.d.')
++        if (protected and a != b) or (b == '⸻' and a != '⸻'):
++            raise ValueError('PROTECTED_BLOCK_CHANGED: '+str(i))
++
++
++def store_edition(output: Path, code: str, values: list[str], original: list[str], provenance: dict) -> None:
++    validate_text(values,original)
++    data=('\n\n'.join(values)+'\n').encode()
++    root=output/'files/docs/reise/translations'
++    root.mkdir(parents=True,exist_ok=True)
++    (root/(code+'.txt')).write_bytes(data)
++    meta={
++        'schema':'qikvrt_journey_translation_v1','language':code,
++        'source_language':'de','source_sha256':SOURCE_SHA,
++        'sha256':sha(data),'bytes':len(data),'git_blob_sha1':blob(data),
++        'status':'AI_TRANSLATION_DRAFT_UNREVIEWED',
++        'translator':provenance['translator'],'generation':provenance,
++        'human_language_review':False,'formal_semantic_equivalence_proof':False,
++        'copyright':'Copyright 2026 Ingolf Lohmann','license':'CC-BY-NC-ND-4.0',
++    }
++    (root/(code+'.json')).write_bytes(encoded(meta))
++    emit('EDITION_DRAFT_CREATED',code=code,blocks=len(values),bytes=len(data),sha256=sha(data))
++
++
++def prepare(output: Path) -> None:
++    # Pure preparation is bound to this immutable checkout. It neither needs
++    # current-branch authority nor a credentialed API read. Live-head CAS is
++    # still required at the subsequent content writer/integration boundary.
++    head=exact_head(remote=False)
++    raw,original=source()
++    old=raw.replace(('\n\n\n'+MEDIA+'\n\n\n').encode(),b'\n\n',1)
++    if sha(old) != OLD_SOURCE_SHA:
++        raise ValueError('PREDECESSOR_CONTENT_RECONSTRUCTION_FAILED')
++    old_blocks=split(old)
++    corrections={
++      'da':('På lange tankelevnedsveje opstår der egne begreber.','På lange tankerejser opstår der egne begreber.'),
++      'no':('Jeg kan ikke vite noe.','Jeg kan akseptere å ikke vite noe.'),
++      'sv':('Jag kan låta bli att veta något.','Jag kan tillåta mig att inte veta något.'),
++    }
++    for code,identifier in RECOVER.items():
++        data=recovered_input(code)
++        values=split(data)
++        validate_text(values,old_blocks)
++        change=[]
++        if code in corrections:
++            a,b=corrections[code]
++            if sum(v.count(a) for v in values)!=1:
++                raise ValueError('CORRECTION_ANCHOR_DRIFT: '+code)
++            values=[v.replace(a,b) for v in values]
++            change.append({'old':a,'new':b,'kind':'AI_EDITORIAL_CORRECTION_NOT_HUMAN_REVIEW'})
++        values.insert(1,MEDIA)
++        store_edition(output,code,values,original,{
++            'translator':'ChatGPT','method':'RECOVERED_FULL_DRAFT_WITH_EXPLICIT_CURRENT_SOURCE_REBIND',
++            'recovered_git_blob_sha1':identifier,'recovered_sha256':sha(data),
++            'previous_source_sha256':OLD_SOURCE_SHA,
++            'mechanical_change':'Insert current owner-supplied media URL after the translated title.',
++            'editorial_changes':change,'predecessor_validation_transfer':False,
++        })
++    # The new optional runtime is declared before any inference is executed.
++    from tools import qikvrt_tool_cache as cache
++    lock=ROOT/'runtime/toolchains/TOOLCHAIN.lock.tsv'
++    registry=ROOT/'runtime/toolchains/CACHE_REGISTRY.json'
++    coverage=ROOT/'runtime/toolchains/CACHE_COVERAGE.json'
++    original_runtime={p:p.read_bytes() for p in (lock,registry,coverage)}
++    component='journey-nllb-runtime'
++    new_lock=original_runtime[lock].decode().rstrip('\n')+'\n'+'\t'.join([
++        component,'1.0.0','cpython-3.12.13-linux-x64-cpu',
++        'docs/reise/TRANSLATION_RUNTIME.json','VERSION_AND_MODEL_REVISION_CONTRACT',
++        'MODEL_CC-BY-NC-4.0_AND_DEPENDENCY_LICENSES','optional_journey_translation_drafts'])+'\n'
++    doc=json.loads(original_runtime[registry])
++    if component in doc['components']:
++        raise ValueError('RUNTIME_ALREADY_PREPARED_REOBSERVE')
++    doc['components'][component]={
++        'version':'1.0.0','profiles':['journey-translation-drafts'],
++        'cache_class':'ecosystem-cache','provider':'Meta model revision on Hugging Face; PyTorch CPU wheels and PyPI',
++        'cache_locations':['$RUNNER_TEMP/qikvrt-nllb-payload'],
++        'authority_files':['docs/reise/TRANSLATION_RUNTIME.json','tools/qikvrt_journey_translation.py','.github/workflows/qikvrt_journey_translation.yml'],
++        'verification':['python3 -B tools/qikvrt_journey_translation.py verify-model --model-root "$RUNNER_TEMP/qikvrt-nllb-payload"',
++                        'Immutable provider revision and per-file payload checks precede inference; output is never semantic proof.'],
++        'trusted_save':True,
++    }
++    try:
++        lock.write_bytes(new_lock.encode());registry.write_bytes(encoded(doc))
++        cov=cache.build_coverage()
++        target=output/'files/runtime/toolchains';target.mkdir(parents=True,exist_ok=True)
++        (target/lock.name).write_bytes(lock.read_bytes())
++        (target/registry.name).write_bytes(registry.read_bytes())
++        (target/coverage.name).write_bytes(cache.canonical_json(cov).encode())
++    finally:
++        for p,data in original_runtime.items():p.write_bytes(data)
++    # A real public read, not inference from a search-engine cache failure.
++    url='https://goldkelch.github.io/qik-vrt/reise/'
++    try:
++        with urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'qikvrt-readback-v1'}),timeout=30) as response:
++            body=response.read(10_000_001)
++            observed={'http_status':response.status,'bytes':len(body),'sha256':sha(body),
++                      'expected_title_present':original[0].encode() in body}
++    except urllib.error.HTTPError as exc:
++        observed={'http_status':exc.code,'expected_title_present':False}
++    except (urllib.error.URLError,TimeoutError) as exc:
++        observed={'http_status':None,'error':str(exc),'expected_title_present':False}
++    (output/'PUBLIC_BASELINE.json').write_bytes(encoded({'url':url,'observation':observed,'source_head':head,'delivery_claimed':False}))
++    emit('PUBLIC_BASELINE',**observed)
++    # Provide local inspection context without exporting .git or credentials.
++    with zipfile.ZipFile(output/'TRACKED_SOURCE.zip','w',zipfile.ZIP_DEFLATED) as archive:
++        paths=subprocess.check_output(['git','ls-files','-z'],cwd=ROOT).decode().split('\0')
++        for name in paths:
++            p=ROOT/name
++            if name and p.is_file() and not p.is_symlink():archive.write(p,name)
++    finish_manifest(output,head)
++
++
++def finish_manifest(output: Path,head: str) -> None:
++    entries=[]
++    for p in sorted((output/'files').rglob('*')):
++        if p.is_file():
++            data=read_file(p,10_000_000)
++            entries.append({'path':p.relative_to(output/'files').as_posix(),'bytes':len(data),'sha256':sha(data),'git_blob_sha1':blob(data)})
++    (output/'FILESET.json').write_bytes(encoded({'schema':'qikvrt_journey_generated_files_v1','source_head':head,
++        'source_sha256':SOURCE_SHA,'files':entries,'native_review':False,'public_delivery':False,'EFFECT_ACK_DONE':False}))
++
++
++def verify_runtime() -> dict:
++    import importlib.metadata
++    spec=json.loads((ROOT/'docs/reise/TRANSLATION_RUNTIME.json').read_bytes())
++    for name,version in spec['python_packages'].items():
++        actual=importlib.metadata.version(name)
++        if actual != version:raise ValueError('RUNTIME_VERSION_MISMATCH: '+name+'='+actual)
++    if sys.version_info[:3] != (3,12,13):
++        raise ValueError('PYTHON_VERSION_MISMATCH: '+sys.version)
++    return {'python':sys.version,'packages':dict(spec['python_packages']),
++        'pip_freeze':subprocess.check_output([sys.executable,'-m','pip','freeze'],text=True).splitlines()}
++
++
++def verify_model(folder: Path, expected: str | None = None) -> dict:
++    raw=read_file(folder/'PAYLOAD.json')
++    if expected and sha(raw)!=expected:raise ValueError('MODEL_MANIFEST_DRIFT')
++    obj=json.loads(raw)
++    if obj.get('model')!=MODEL or obj.get('revision')!=REVISION:
++        raise ValueError('WRONG_MODEL')
++    if set(obj['files'])!=set(MODEL_FILES):raise ValueError('MODEL_FILESET_CHANGED')
++    for name,entry in obj['files'].items():
++        path=folder/name
++        if path.is_symlink() or not path.is_file():raise ValueError('MODEL_FILE_MISSING')
++        h=hashlib.sha256()
++        with path.open('rb') as stream:
++            for piece in iter(lambda:stream.read(4_194_304),b''):h.update(piece)
++        if h.hexdigest()!=entry['sha256'] or path.stat().st_size!=entry['bytes']:
++            raise ValueError('MODEL_BYTES_CHANGED: '+name)
++    return obj
++
++
++def warm_model(folder: Path,output: Path) -> None:
++    exact_head(remote=True);source();runtime=verify_runtime()
++    from huggingface_hub import snapshot_download
++    folder.mkdir(parents=True,exist_ok=True)
++    snapshot_download(repo_id=MODEL,revision=REVISION,allow_patterns=list(MODEL_FILES),
++        local_dir=folder,token=False,max_workers=4)
++    files={}
++    for name in MODEL_FILES:
++        path=folder/name;h=hashlib.sha256()
++        with path.open('rb') as stream:
++            for piece in iter(lambda:stream.read(4_194_304),b''):h.update(piece)
++        files[name]={'bytes':path.stat().st_size,'sha256':h.hexdigest()}
++    payload={'model':MODEL,'revision':REVISION,'files':files,'license':'CC-BY-NC-4.0'}
++    raw=encoded(payload);(folder/'PAYLOAD.json').write_bytes(raw)
++    verify_model(folder,sha(raw))
++    (output/'MODEL_RUNTIME.json').write_bytes(encoded({'payload':payload,'runtime':runtime,'manifest_sha256':sha(raw)}))
++    with open(os.environ['GITHUB_OUTPUT'],'a') as stream:stream.write('manifest_sha256='+sha(raw)+'\n')
++    emit('PINNED_MODEL_PAYLOAD_OBSERVED',manifest_sha256=sha(raw),revision=REVISION)
++
++
++def translate(code: str,folder: Path,output: Path) -> None:
++    if code not in TARGETS:raise ValueError('UNSUPPORTED_LANGUAGE_NO_FALLBACK')
++    head=exact_head(remote=False);_,original=source();runtime=verify_runtime()
++    model_manifest=verify_model(folder,os.environ.get('MODEL_MANIFEST_SHA256'))
++    import torch
++    from transformers import AutoTokenizer,AutoModelForSeq2SeqLM
++    torch.set_num_threads(4)
++    tokenizer=AutoTokenizer.from_pretrained(folder,src_lang='deu_Latn',local_files_only=True,trust_remote_code=False)
++    model=AutoModelForSeq2SeqLM.from_pretrained(folder,local_files_only=True,trust_remote_code=False,weights_only=True).eval()
++    # CPU-only dynamic int8 linear inference, explicitly part of the draft runtime.
++    model=torch.ao.quantization.quantize_dynamic(model,{torch.nn.Linear},dtype=torch.qint8)
++    target_id=tokenizer.convert_tokens_to_ids(TARGETS[code])
++    if target_id in (None,tokenizer.unk_token_id):raise ValueError('UNSUPPORTED_TARGET_TOKEN')
++    protected=lambda s:s=='⸻' or s==MEDIA or s.startswith('q.e.d.')
++    unique=list(dict.fromkeys(s for s in original if not protected(s)))
++    lengths={s:segmentation.token_count(tokenizer,s) for s in unique}
++    direct=sorted((s for s in unique if lengths[s] <= segmentation.MODEL_INPUT_LIMIT),
++                  key=lambda s:(lengths[s],s))
++    over_bound=sorted((s for s in unique if lengths[s] > segmentation.MODEL_INPUT_LIMIT),
++                      key=lambda s:(lengths[s],s))
++    results={};t0=time.monotonic();batch_size=8
++
++    def generate_one(text: str) -> list[int]:
++        inputs=tokenizer([text],return_tensors='pt',padding=True,truncation=False)
++        with torch.inference_mode():
++            generated=model.generate(**inputs,forced_bos_token_id=target_id,
++                max_new_tokens=segmentation.MODEL_OUTPUT_LIMIT,
++                do_sample=False,num_beams=1,use_cache=True)
++        return generated[0].tolist()
++
++    def record_plan(src: str,plan: list[str] | None) -> None:
++        if plan:
++            emit('TRANSLATION_SEGMENT_PLAN',language=code,source_sha256=sha(src.encode()),
++                 segments=[{'sha256':sha(part.encode()),'input_tokens':segmentation.token_count(tokenizer,part)}
++                           for part in plan])
++
++    for start in range(0,len(direct),batch_size):
++        batch=direct[start:start+batch_size]
++        inputs=tokenizer(batch,return_tensors='pt',padding=True,truncation=False)
++        with torch.inference_mode():
++            tokens=model.generate(**inputs,forced_bos_token_id=target_id,
++                max_new_tokens=segmentation.MODEL_OUTPUT_LIMIT,
++                do_sample=False,num_beams=1,use_cache=True)
++        for src,seq in zip(batch,tokens.tolist()):
++            text,plan=segmentation.accept_or_segment(src,seq,tokenizer,generate_one)
++            results[src]=text;record_plan(src,plan)
++        emit('TRANSLATION_BATCH',language=code,completed=min(start+batch_size,len(direct)),
++             total=len(unique),elapsed_seconds=round(time.monotonic()-t0,1))
++    for src in over_bound:
++        text,plan=segmentation.translate_segmented(src,tokenizer,generate_one)
++        results[src]=text;record_plan(src,plan)
++        emit('TRANSLATION_BATCH',language=code,completed=len(results),total=len(unique),
++             elapsed_seconds=round(time.monotonic()-t0,1))
++    values=segmentation.reassemble_blocks(original,results,protected)
++    # Translation is probabilistic in quality even though greedy decoding is used.
++    store_edition(output,code,values,original,{
++        'translator':'Meta NLLB-200 distilled 600M; repository-local draft generation',
++        'method':'PARAGRAPH_ALIGNED_CPU_DYNAMIC_INT8_GREEDY_DRAFT_WITH_DETERMINISTIC_SEGMENT_FALLBACK',
++        'model':MODEL,'model_revision':REVISION,'model_payload':model_manifest,
++        'runtime':runtime,'target_token':TARGETS[code],'source_token':'deu_Latn',
++        'source_head':head,'no_truncation':True,'human_quality_review':False,
++        'segmentation_contract':{
++            'model_input_limit':segmentation.MODEL_INPUT_LIMIT,
++            'model_output_limit':segmentation.MODEL_OUTPUT_LIMIT,
++            'segment_input_limit':segmentation.SEGMENT_INPUT_LIMIT,
++            'each_segment_requires_generated_eos':True,
++            'fallback_or_source_substitution':False,
++            'reassembled_source_block_count':len(values),
++        },
++        'model_scope_notice':'Research model; not a certified or independently reviewed document translation.',
++    })
++    finish_manifest(output,head)
++
++
++class NoRedirect(urllib.request.HTTPRedirectHandler):
++    def redirect_request(self,req,fp,code,msg,headers,newurl):return None
++
++
++def artifact_bytes(identifier: int,token: str) -> bytes:
++    url=f'https://api.github.com/repos/{REPO}/actions/artifacts/{identifier}/zip'
++    req=urllib.request.Request(url,headers={'Authorization':'Bearer '+token,'User-Agent':'qikvrt-journey-v1'})
++    try:
++        urllib.request.build_opener(NoRedirect).open(req,timeout=30)
++    except urllib.error.HTTPError as exc:
++        if exc.code not in (301,302,303,307,308):raise
++        location=exc.headers['Location']
++    else:
++        raise ValueError('EXPECTED_SIGNED_ARTIFACT_REDIRECT')
++    parsed=urllib.parse.urlparse(location)
++    if parsed.scheme!='https' or parsed.username or parsed.password:raise ValueError('UNSAFE_ARTIFACT_REDIRECT')
++    # Never forward the GitHub Authorization header to the signed blob origin.
++    with urllib.request.urlopen(location,timeout=120) as response:
++        data=response.read(150_000_001)
++        if len(data)>150_000_000:raise ValueError('ARTIFACT_TOO_LARGE')
++        return data
++
++
++def allowed_file(path: str,phase: str) -> bool:
++    if re.fullmatch(r'docs/reise/translations/([a-z]+(?:-[a-z]+)?)\.(txt|json)',path):
++        code=Path(path).stem
++        return code in (RECOVER if phase=='recover' else TARGETS)
++    return phase=='recover' and path in {
++      'runtime/toolchains/TOOLCHAIN.lock.tsv','runtime/toolchains/CACHE_REGISTRY.json',
++      'runtime/toolchains/CACHE_COVERAGE.json'}
++
++
++def objects(output: Path,phase: str) -> None:
++    head=exact_head(remote=True);source();token=os.environ['GH_TOKEN'];run=int(os.environ['GITHUB_RUN_ID'])
++    collection=get_json(f'/repos/{REPO}/actions/runs/{run}/artifacts?per_page=100',token)
++    if collection['total_count']>100:raise ValueError('ARTIFACT_BOUND_EXCEEDED')
++    prefix='journey-'+phase+'-'
++    items=[a for a in collection['artifacts'] if a['name'].startswith(prefix) and a['name'].endswith('-'+head)]
++    expected={'bundle'} if phase=='recover' else set(TARGETS)
++    found={a['name'][len(prefix):-(len(head)+1)] for a in items}
++    if len(items)!=len(found) or found!=expected:raise ValueError('INCOMPLETE_ARTIFACT_SET')
++    prepared={}
++    for item in sorted(items,key=lambda a:a['name']):
++        if item.get('expired') or item.get('workflow_run',{}).get('head_sha')!=head:
++            raise ValueError('STALE_ARTIFACT')
++        data=artifact_bytes(item['id'],token)
++        if item.get('digest')!='sha256:'+sha(data):raise ValueError('ARTIFACT_DIGEST_MISMATCH')
++        with zipfile.ZipFile(io.BytesIO(data)) as archive:
++            names=archive.namelist()
++            if len(names)!=len(set(names)):raise ValueError('DUPLICATE_ZIP_MEMBER')
++            if any(PurePosixPath(n).is_absolute() or '..' in PurePosixPath(n).parts for n in names):
++                raise ValueError('UNSAFE_ZIP_MEMBER')
++            if archive.getinfo('FILESET.json').file_size>500_000:raise ValueError('FILESET_TOO_LARGE')
++            manifest=json.loads(archive.read('FILESET.json'))
++            if manifest['source_head']!=head or manifest['source_sha256']!=SOURCE_SHA:
++                raise ValueError('WRONG_ARTIFACT_SUBJECT')
++            for entry in manifest['files']:
++                path=entry['path']
++                if not allowed_file(path,phase) or path in prepared:raise ValueError('UNEXPECTED_OUTPUT_PATH')
++                info=archive.getinfo('files/'+path)
++                if info.file_size>10_000_000:raise ValueError('OUTPUT_TOO_LARGE')
++                raw=archive.read(info)
++                if len(raw)!=entry['bytes'] or sha(raw)!=entry['sha256'] or blob(raw)!=entry['git_blob_sha1']:
++                    raise ValueError('OUTPUT_DIGEST_MISMATCH')
++                raw.decode('utf-8',errors='strict');prepared[path]=(entry,raw)
++    _,original=source()
++    codes=RECOVER if phase=='recover' else TARGETS
++    for code in codes:
++        path='docs/reise/translations/'+code
++        meta=json.loads(prepared[path+'.json'][1]);raw=prepared[path+'.txt'][1]
++        if meta['source_sha256']!=SOURCE_SHA or meta['sha256']!=sha(raw) or meta['language']!=code:
++            raise ValueError('OUTPUT_SIDECAR_MISMATCH')
++        validate_text(split(raw),original)
++        if meta['human_language_review'] is not False or meta['status']!='AI_TRANSLATION_DRAFT_UNREVIEWED':
++            raise ValueError('UNAUTHORIZED_REVIEW_ASSERTION')
++    # Git blobs are content addressed; creation is not a branch/promotion effect.
++    exact_head(remote=True)
++    receipt={'schema':'qikvrt_journey_git_object_receipt_v1','source_head':head,'source_sha256':SOURCE_SHA,
++       'phase':phase,'files':[],'git_ref_mutation':False,'native_review':False,'public_delivery':False,'EFFECT_ACK_DONE':False}
++    for path,(entry,raw) in sorted(prepared.items()):
++        result=get_json('/repos/'+REPO+'/git/blobs',token,{'encoding':'base64','content':base64.b64encode(raw).decode()})
++        if result['sha']!=entry['git_blob_sha1']:raise ValueError('CREATED_BLOB_ID_MISMATCH')
++        readback=get_json('/repos/'+REPO+'/git/blobs/'+result['sha'],token)
++        if base64.b64decode(readback['content'])!=raw:raise ValueError('GIT_BLOB_READBACK_MISMATCH')
++        receipt['files'].append(entry)
++        emit('GIT_BLOB_READ_BACK',path=path,sha=result['sha'])
++    exact_head(remote=True)
++    (output/'GIT_OBJECTS.json').write_bytes(encoded(receipt))
++    emit('CONTENT_ADDRESSED_OBJECTS_READY',files=receipt['files'],source_head=head)
++
++
++def main() -> int:
++    parser=argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('mode',choices=['prepare','warm-model','verify-model','translate','objects'])
++    parser.add_argument('--output',type=Path,default=Path('/tmp/qikvrt-journey-generation'))
++    parser.add_argument('--model-root',type=Path,default=Path('/tmp/qikvrt-nllb-payload'))
++    parser.add_argument('--language',choices=sorted(TARGETS))
++    parser.add_argument('--phase',choices=['recover','translate'])
++    args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=True)
++    try:
++        if args.mode=='prepare':prepare(args.output)
++        elif args.mode=='warm-model':warm_model(args.model_root,args.output)
++        elif args.mode=='verify-model':verify_model(args.model_root,os.environ.get('MODEL_MANIFEST_SHA256'))
++        elif args.mode=='translate':
++            if not args.language:raise ValueError('LANGUAGE_REQUIRED')
++            translate(args.language,args.model_root,args.output)
++        else:
++            if not args.phase:raise ValueError('PHASE_REQUIRED')
++            objects(args.output,args.phase)
++        return 0
++    except Exception as exc:
++        failure={'event':'HOLD_UNVERIFIED','mode':args.mode,
++                 'source_head':os.environ.get('GITHUB_SHA'),
++                 'error_type':type(exc).__name__,'error':str(exc),
++                 'EFFECT_ACK_DONE':False}
++        # A failed prepare must leave diagnostics, not an empty artifact path.
++        token=os.environ.get('GH_TOKEN')
++        if token:
++            failure['error']=failure['error'].replace(token,'[REDACTED]')
++        (args.output/'FAILURE.json').write_bytes(encoded(failure))
++        emit('HOLD_UNVERIFIED',**{k:v for k,v in failure.items() if k!='event'})
++        return 2
++
++if __name__=='__main__':raise SystemExit(main())
