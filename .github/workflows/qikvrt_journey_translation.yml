@@ -173,7 +173,8 @@ jobs:
       github.repository == 'Goldkelch/qik-vrt' &&
       github.ref == 'refs/heads/publication/self-explanation-47-homepage-v1' &&
       github.run_attempt == 1 &&
-      github.event.before == '968482b55b99aace753b43eb0e219eea45111d0c' &&
+      (github.event.before == '968482b55b99aace753b43eb0e219eea45111d0c' ||
+       github.event.before == '27448d95b7d2a7f2db1459a54af6379b9df5e35a') &&
       startsWith(github.event.head_commit.message, 'i18n(journey): recover successful exact-run drafts')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -197,10 +198,21 @@ jobs:
       - name: Recover only independently successful exact-run drafts as content-addressed blobs
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          python3 -B tools/qikvrt_journey_recovery.py
-          --input-run 34660991113
-          --input-head 968482b55b99aace753b43eb0e219eea45111d0c
+          RECOVERY_BASE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          case "$RECOVERY_BASE" in
+            968482b55b99aace753b43eb0e219eea45111d0c)
+              python3 -B tools/qikvrt_journey_recovery.py \
+                --input-run 34660991113 \
+                --input-head 968482b55b99aace753b43eb0e219eea45111d0c ;;
+            27448d95b7d2a7f2db1459a54af6379b9df5e35a)
+              python3 -B tools/qikvrt_journey_recovery.py \
+                --input-run 34676257032 \
+                --input-head 27448d95b7d2a7f2db1459a54af6379b9df5e35a \
+                --input-attempt 1 --languages ast bn eu pl th ;;
+            *) echo 'HOLD: unbound recovery origin' >&2; exit 2 ;;
+          esac
       - name: Preserve exact recovery receipt without ref mutation
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
