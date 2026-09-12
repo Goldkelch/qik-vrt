@@ -13,6 +13,9 @@ import unittest
 import shutil
 import contextlib
 import io
+import os
+import subprocess
+import sys
 from unittest import mock
 
 from tools import qikvrt_real_mesh as mesh
@@ -433,7 +436,7 @@ class AdversarialWitnessTests(unittest.TestCase):
     def test_complete_hidden_receipt_and_ledger_exports_are_explicit(self):
         for name, directory in (
             ("qikvrt_real_mesh.yml", ".qikvrt/real-mesh"),
-            ("qikvrt_real_mesh_system_verification.yml", ".qikvrt/real-mesh-sysverify"),
+            ("qikvrt_real_mesh_system_verification.yml", "${{ runner.temp }}/qikvrt-real-mesh-sysverify"),
         ):
             with self.subTest(workflow=name):
                 text=(sysverify.ROOT/".github/workflows"/name).read_text()
@@ -444,6 +447,59 @@ class AdversarialWitnessTests(unittest.TestCase):
                 self.assertNotIn("path: .qikvrt\n",upload)
                 self.assertIn("--ledger-dir",text)
 
+
+    def test_real_cli_stdout_does_not_dirty_source_and_dirty_source_still_blocks(self):
+        """Reproduce the native integration failure, not only mocked CLI parsing."""
+        with tempfile.TemporaryDirectory(prefix="qikvrt-cli-clean-") as tmp:
+            root=pathlib.Path(tmp);checkout=root/"checkout";checkout.mkdir()
+            paths=("tools/qikvrt_real_mesh.py",
+                   "tools/qikvrt_real_mesh_system_verification.py",
+                   "src/qikvrt_effect_ack.py", "state/mesh/QIKVRT_REAL_MESH_V1.json",
+                   "REFLEXIVE_FINDING_WORKFLOW_STANDARD.json")
+            for rel in paths:
+                dest=checkout/rel;dest.parent.mkdir(parents=True,exist_ok=True)
+                dest.write_bytes((sysverify.ROOT/rel).read_bytes())
+            env=dict(os.environ,PYTHONDONTWRITEBYTECODE="1",PYTHONNOUSERSITE="1")
+            for key in tuple(env):
+                if key.startswith("GIT_") or key=="PYTHONPATH":env.pop(key)
+            def git(*args):
+                return subprocess.check_output(["git",*args],cwd=checkout,env=env,
+                                               stderr=subprocess.DEVNULL,timeout=10).decode().strip()
+            git("init");git("add",".")
+            git("-c","user.name=Mesh fixture","-c","user.email=fixture@example.invalid",
+                "commit","-qm","Bound temporary fixture, not production evidence")
+            head=git("rev-parse","HEAD");tree=git("rev-parse","HEAD^{tree}")
+            evidence=root/"evidence";evidence.mkdir()
+            runtime=evidence/"runtime";audit=evidence/"audit.json"
+            command=[sys.executable,"-B",str(checkout/paths[1]),"run",
+                     "--source-head",head,"--source-tree",tree,
+                     "--workdir",str(runtime),"--output",str(audit)]
+            # Opening stdout in the checkout before invocation reproduces the defect.
+            badout=checkout/"stdout.json"
+            with badout.open("w") as handle:
+                failed=subprocess.run(command,cwd=checkout,env=env,stdout=handle,
+                                      stderr=subprocess.PIPE,text=True,timeout=60)
+            self.assertEqual(failed.returncode,2)
+            self.assertIn("uncommitted changes",failed.stderr)
+            self.assertFalse(runtime.exists())
+            badout.unlink()
+            # External stdout is safe and the same real CLI now executes all four nodes.
+            with (evidence/"stdout.json").open("w") as handle:
+                good=subprocess.run(command,cwd=checkout,env=env,stdout=handle,
+                                    stderr=subprocess.PIPE,text=True,timeout=60)
+            self.assertEqual(good.returncode,0,good.stderr)
+            value=json.loads(audit.read_text())
+            self.assertEqual(value["finding_count"],0)
+            self.assertFalse(value["general_effect_ack_done"])
+            self.assertTrue((runtime/"EXECUTION_RECEIPT.json").is_file())
+            self.assertEqual(len(list((runtime/"ledgers").glob("*.jsonl"))),4)
+            self.assertEqual(git("status","--porcelain"),"")
+            # External artifacts must not turn a genuinely changed source into success.
+            target=checkout/paths[0];target.write_bytes(target.read_bytes()+b"\n# dirty source\n")
+            failed=subprocess.run(command,cwd=checkout,env=env,capture_output=True,
+                                  text=True,timeout=60)
+            self.assertEqual(failed.returncode,2)
+            self.assertIn("uncommitted changes",failed.stderr)
 
     def test_cli_run_does_not_accept_arbitrary_source_labels(self):
         with mock.patch.object(sysverify.subprocess,"check_output",return_value="c"*40+"\n"+"d"*40+"\n"), \
