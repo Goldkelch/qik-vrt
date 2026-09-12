@@ -110,12 +110,28 @@ def get_json(path: str, token: str | None = None, payload: dict | None = None) -
                  **({'Authorization':'Bearer '+token} if token else {}),
                  **({'Content-Type':'application/json'} if payload is not None else {})},
         method='POST' if payload is not None else 'GET')
-    # Deliberately no blind retry. Content-addressed writes can be reconciled.
-    with urllib.request.urlopen(request,timeout=60) as response:
-        data=response.read(8_000_001)
-        if len(data)>8_000_000:
-            raise ValueError('API_RESPONSE_TOO_LARGE')
-        return json.loads(data)
+    # No retry, identity switching or permission escalation. Preserve the
+    # server's reason and quota headers rather than guessing from HTTP 403.
+    try:
+        with urllib.request.urlopen(request,timeout=60) as response:
+            data=response.read(8_000_001)
+            if len(data)>8_000_000:
+                raise ValueError('API_RESPONSE_TOO_LARGE')
+            return json.loads(data)
+    except urllib.error.HTTPError as exc:
+        raw=exc.read(8192).decode('utf-8',errors='replace')
+        if token:
+            raw=raw.replace(token,'[REDACTED]')
+        try:
+            message=json.loads(raw).get('message','')
+        except (ValueError,AttributeError):
+            message='NON_JSON_ERROR_RESPONSE'
+        emit('GITHUB_API_ERROR',method=request.method,path=path,http_status=exc.code,
+             message=str(message)[:1000],
+             rate_remaining=exc.headers.get('X-RateLimit-Remaining'),
+             rate_reset=exc.headers.get('X-RateLimit-Reset'),
+             retry_after=exc.headers.get('Retry-After'))
+        raise
 
 
 def exact_head(*, remote: bool) -> str:
@@ -132,6 +148,16 @@ def exact_head(*, remote: bool) -> str:
         if ref['object']['sha'] != actual:
             raise ValueError('REMOTE_HEAD_DRIFT')
     return actual
+
+
+def recovered_input(code: str) -> bytes:
+    """Read immutable archived input, not a published or reviewed edition."""
+    if code not in RECOVER:
+        raise ValueError('UNKNOWN_RECOVERY_INPUT')
+    data=read_file(ROOT/'docs/reise/recovery-inputs'/(code+'.txt'))
+    if blob(data) != RECOVER[code]:
+        raise ValueError('RECOVERED_BLOB_MISMATCH: '+code)
+    return data
 
 
 def validate_text(values: list[str], original: list[str]) -> None:
@@ -165,7 +191,10 @@ def store_edition(output: Path, code: str, values: list[str], original: list[str
 
 
 def prepare(output: Path) -> None:
-    head=exact_head(remote=True)
+    # Pure preparation is bound to this immutable checkout. It neither needs
+    # current-branch authority nor a credentialed API read. Live-head CAS is
+    # still required at the subsequent content writer/integration boundary.
+    head=exact_head(remote=False)
     raw,original=source()
     old=raw.replace(('\n\n\n'+MEDIA+'\n\n\n').encode(),b'\n\n',1)
     if sha(old) != OLD_SOURCE_SHA:
@@ -177,10 +206,7 @@ def prepare(output: Path) -> None:
       'sv':('Jag kan låta bli att veta något.','Jag kan tillåta mig att inte veta något.'),
     }
     for code,identifier in RECOVER.items():
-        obj=get_json('/repos/'+REPO+'/git/blobs/'+identifier,os.environ.get('GH_TOKEN'))
-        data=base64.b64decode(obj['content'],validate=False)
-        if obj['sha'] != identifier or blob(data) != identifier:
-            raise ValueError('RECOVERED_BLOB_MISMATCH: '+code)
+        data=recovered_input(code)
         values=split(data)
         validate_text(values,old_blocks)
         change=[]
@@ -469,7 +495,16 @@ def main() -> int:
             objects(args.output,args.phase)
         return 0
     except Exception as exc:
-        emit('HOLD_UNVERIFIED',error_type=type(exc).__name__,error=str(exc),EFFECT_ACK_DONE=False)
+        failure={'event':'HOLD_UNVERIFIED','mode':args.mode,
+                 'source_head':os.environ.get('GITHUB_SHA'),
+                 'error_type':type(exc).__name__,'error':str(exc),
+                 'EFFECT_ACK_DONE':False}
+        # A failed prepare must leave diagnostics, not an empty artifact path.
+        token=os.environ.get('GH_TOKEN')
+        if token:
+            failure['error']=failure['error'].replace(token,'[REDACTED]')
+        (args.output/'FAILURE.json').write_bytes(encoded(failure))
+        emit('HOLD_UNVERIFIED',**{k:v for k,v in failure.items() if k!='event'})
         return 2
 
 if __name__=='__main__':raise SystemExit(main())

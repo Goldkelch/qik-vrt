@@ -2,6 +2,8 @@
 # Copyright 2026 Ingolf Lohmann.
 """Negative transport/scope tests, not semantic translation certification."""
 import importlib.util
+import inspect
+import io
 import json
 import os
 from pathlib import Path
@@ -95,11 +97,54 @@ class TranslationBoundaries(unittest.TestCase):
 
     def test_no_runner_context_in_job_level_env(self):
         text=(ROOT/'.github/workflows/qikvrt_journey_translation.yml').read_text()
-        # The new workflow never uses job-level env. runner context is used
-        # only in step inputs, where the platform makes it available.
         self.assertNotIn('\n    env:',text)
         self.assertIn('cancel-in-progress: false',text)
         self.assertIn('persist-credentials: false',text)
         self.assertIn('github.run_attempt == 1',text)
+
+    def test_all_archived_inputs_are_local_and_hash_verified(self):
+        raw,_=worker.source()
+        old=worker.split(raw.replace(('\n\n\n'+worker.MEDIA+'\n\n\n').encode(),b'\n\n',1))
+        with patch.object(worker,'get_json',side_effect=AssertionError('unexpected API read')):
+            for code,identifier in worker.RECOVER.items():
+                with self.subTest(code=code):
+                    data=worker.recovered_input(code)
+                    self.assertEqual(worker.blob(data),identifier)
+                    worker.validate_text(worker.split(data),old)
+
+    def test_changed_recovery_bytes_are_rejected_before_rebinding(self):
+        with patch.object(worker,'read_file',return_value=b'changed'):
+            with self.assertRaisesRegex(ValueError,'RECOVERED_BLOB_MISMATCH'):
+                worker.recovered_input('fr')
+        with self.assertRaisesRegex(ValueError,'UNKNOWN_RECOVERY_INPUT'):
+            worker.recovered_input('../source.de')
+
+    def test_pure_preparation_does_not_require_live_api_authority(self):
+        text=inspect.getsource(worker.prepare)
+        self.assertIn('exact_head(remote=False)',text)
+        self.assertNotIn('get_json(',text)
+        self.assertIn('exact_head(remote=True)',inspect.getsource(worker.objects))
+
+    def test_http_403_is_diagnostic_not_blindly_retried_or_misclassified(self):
+        exc=worker.urllib.error.HTTPError('https://api.github.com/repos/Goldkelch/qik-vrt/git/ref/heads/main',403,'Forbidden',
+            {'X-RateLimit-Remaining':'0','X-RateLimit-Reset':'123'},
+            io.BytesIO(b'{"message":"API rate limit exceeded; test-secret"}'))
+        with patch.object(worker.urllib.request,'urlopen',side_effect=exc) as net,patch.object(worker,'emit') as emit:
+            with self.assertRaises(worker.urllib.error.HTTPError):
+                worker.get_json('/repos/Goldkelch/qik-vrt/git/ref/heads/main','test-secret')
+            self.assertEqual(net.call_count,1)
+            fields=emit.call_args.kwargs
+            self.assertEqual(fields['http_status'],403)
+            self.assertEqual(fields['rate_remaining'],'0')
+            self.assertNotIn('test-secret',fields['message'])
+
+    def test_failed_prepare_leaves_an_artifact_not_an_empty_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            argv=['translation','prepare','--output',tmp]
+            with patch.object(worker.sys,'argv',argv),patch.object(worker,'prepare',side_effect=ValueError('fixture failure')):
+                self.assertEqual(worker.main(),2)
+            failure=json.loads((Path(tmp)/'FAILURE.json').read_text())
+            self.assertEqual(failure['error'],'fixture failure')
+            self.assertFalse(failure['EFFECT_ACK_DONE'])
 
 if __name__=='__main__':unittest.main()
