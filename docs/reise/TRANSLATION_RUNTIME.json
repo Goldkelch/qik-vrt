@@ -17,7 +17,7 @@
   "model_scope_notice": "Research model, not released for production model deployment or certified translations. Its model card does not recommend document translation. Here each bounded paragraph is independently translated to a visibly unreviewed research draft; semantic and literary quality still require review.",
   "maximum_source_tokens_per_block": 512,
   "input_truncation": false,
-  "runtime_execution": "CPU dynamic-int8 linear quantization; greedy decoding; no model-supplied remote Python code; weights_only loading",
+  "runtime_execution": "CPU dynamic-int8 linear quantization; greedy decoding; monolithic block first, then deterministic sentence/clause segmentation only after output nontermination with generated EOS required for every segment and fail-closed reassembly; no model-supplied remote Python code; weights_only loading",
   "network": "Download fixed public model files and package distributions. Inference stays on GitHub's runner; the essay is not submitted to an external translation API.",
   "cache": "Single exact-execution-head model payload, hashes verified in every matrix job. No authentication state in payload.",
   "unsupported_editions": ["sh", "simple", "wuu"],
