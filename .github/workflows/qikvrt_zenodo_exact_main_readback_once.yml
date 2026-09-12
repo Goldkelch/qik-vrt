@@ -1,0 +1,106 @@
+name: QIKVRT finite Zenodo exact-Main readback
+on:
+  push:
+    branches: [observe/zenodo-current-main-a860-20260912-v1]
+permissions:
+  contents: read
+concurrency:
+  group: qikvrt-zenodo-exact-main-readback-a860-20260912-v1
+  cancel-in-progress: false
+jobs:
+  readback:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact Trusted Main subject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: a86054139b49c13c5cd344753b248b46b5daf66f
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind exact Main before external reads
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = a86054139b49c13c5cd344753b248b46b5daf66f
+          test "$(git rev-parse HEAD^{tree})" = feff1cae2401a3df83febc3b9458de70d79b818e
+          remote="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          test "$remote" = a86054139b49c13c5cd344753b248b46b5daf66f
+          test -z "$(git status --porcelain)"
+      - name: Install deterministic TeX runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends texlive-latex-base texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended texlive-science lmodern
+      - name: Rebuild exact six-file publication set and GET authoritative Zenodo bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .qikvrt/zenodo-readback/build .qikvrt/zenodo-readback/downloads
+          cp docs/research/2026-09-03-planck-tick-gap-law/QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex .qikvrt/zenodo-readback/build/
+          cp docs/research/2026-09-03-planck-tick-gap-law/README.md .qikvrt/zenodo-readback/build/README.md
+          cp physics/planck_tick_gap_law_v1.json .qikvrt/zenodo-readback/build/planck_tick_gap_law_v1.json
+          cp release/planck-tick-gap-law-zenodo-v1/ZENODO_METADATA.json .qikvrt/zenodo-readback/build/ZENODO_METADATA.json
+          (
+            cd .qikvrt/zenodo-readback/build
+            export SOURCE_DATE_EPOCH=1788415200
+            pdflatex -interaction=nonstopmode -halt-on-error QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex >/dev/null
+            pdflatex -interaction=nonstopmode -halt-on-error QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex >/dev/null
+            sha256sum QIKVRT_Planck_Tick_Gap_Law_2026-09-03.pdf QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex README.md planck_tick_gap_law_v1.json ZENODO_METADATA.json > SHA256SUMS.txt
+          )
+          python3 -B - <<'PY'
+          import hashlib,json,pathlib,re,subprocess,urllib.request
+          root=pathlib.Path('.qikvrt/zenodo-readback')
+          publication=json.loads(pathlib.Path('release/planck-tick-gap-law-zenodo-v1/zenodo-publication.json').read_text())
+          request=json.loads(pathlib.Path('state/delivery/requests/ZENODO_PLANCK_TICK_GAP_LAW_V1.json').read_text())
+          assert request['preconditions']['predecessor_evidence_transfer'] is False
+          assert request['effect_ack']['readback_required'] is True
+          assert publication['record_id']==22283396 and publication['doi']=='10.5281/zenodo.22283396'
+          expected={x['name']:x for x in publication['files']}
+          assert set(expected)=={'QIKVRT_Planck_Tick_Gap_Law_2026-09-03.pdf','QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex','README.md','planck_tick_gap_law_v1.json','ZENODO_METADATA.json','SHA256SUMS.txt'}
+          for name,item in expected.items():
+              data=(root/'build'/name).read_bytes()
+              digest=hashlib.sha256(data).hexdigest()
+              if digest!=item['sha256'] or len(data)!=item['bytes']:
+                  raise SystemExit(f'CURRENT_MAIN_BUILD_MISMATCH:{name}:{digest}:{len(data)}')
+          def get(url,accept):
+              req=urllib.request.Request(url,headers={'Accept':accept,'User-Agent':'qik-vrt-exact-main-readback/1'},method='GET')
+              with urllib.request.urlopen(req,timeout=120) as r:return r.read()
+          record=json.loads(get('https://zenodo.org/api/records/22283396','application/json'))
+          rid=int(record.get('id') or record.get('record_id') or 0)
+          pids=record.get('pids') or {}
+          doi=record.get('doi') or ((pids.get('doi') or {}).get('identifier')) or ((record.get('metadata') or {}).get('doi'))
+          if rid!=22283396 or doi!='10.5281/zenodo.22283396':raise SystemExit(f'RECORD_ID_DOI_MISMATCH:{rid}:{doi}')
+          title=(record.get('metadata') or {}).get('title')
+          if title!='From Exact Causal Binding to a Falsifiable Planck-Tick Gap Law':raise SystemExit('TITLE_MISMATCH:'+str(title))
+          fv=record.get('files') or {}
+          if isinstance(fv,dict):
+              ev=fv.get('entries') or {}; entries=[dict(v or {},key=k) for k,v in ev.items()]
+          elif isinstance(fv,list):entries=fv
+          else:raise SystemExit('FILES_SHAPE_UNSUPPORTED')
+          by={str(x.get('key') or x.get('filename') or x.get('name')):x for x in entries}
+          if set(by)!=set(expected):raise SystemExit('FILESET_MISMATCH:'+json.dumps(sorted(by)))
+          observed=[]
+          for name in sorted(expected):
+              item=by[name]; links=item.get('links') or {}; url=links.get('content') or links.get('self') or expected[name]['zenodo']['links']['self']
+              data=get(url,'application/octet-stream'); digest=hashlib.sha256(data).hexdigest()
+              if digest!=expected[name]['sha256'] or len(data)!=expected[name]['bytes']:
+                  raise SystemExit(f'ZENODO_FILE_MISMATCH:{name}:{digest}:{len(data)}')
+              (root/'downloads'/name).write_bytes(data)
+              observed.append({'name':name,'bytes':len(data),'sha256':digest,'zenodo_checksum':item.get('checksum')})
+          remote=subprocess.check_output(['git','ls-remote','origin','refs/heads/main'],text=True).split()[0]
+          if remote!='a86054139b49c13c5cd344753b248b46b5daf66f':raise SystemExit('MAIN_DRIFT:'+remote)
+          receipt={'schema':'qikvrt_zenodo_exact_main_public_readback_v1','state':'PUBLIC_RECORD_REOBSERVED','repository':'Goldkelch/qik-vrt','exact_trusted_main':{'head':'a86054139b49c13c5cd344753b248b46b5daf66f','tree':'feff1cae2401a3df83febc3b9458de70d79b818e'},'record_id':rid,'doi':doi,'title':title,'files':observed,'historical_publication_head':publication['repository_head'],'historical_receipt_used_as_identity_and_hash_target_only':True,'predecessor_evidence_transfer':False,'new_zenodo_publication':False,'empirical_confirmation':False,'PASS':False,'FINAL_PASS':False,'general_EFFECT_ACK_DONE':False,'post_readback_main_head':remote}
+          (root/'READBACK_RECEIPT.json').write_text(json.dumps(receipt,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(receipt,indent=2,sort_keys=True))
+          PY
+      - name: Preserve exact-Main readback receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-zenodo-exact-main-readback-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .qikvrt/zenodo-readback
+          if-no-files-found: error
+          retention-days: 30
