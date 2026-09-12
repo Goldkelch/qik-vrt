@@ -1325,11 +1325,13 @@ def run_demo(
         ack_a = finalize_effect_ack(message_a, observation_a)
 
         source_node = harness.nodes[route_a[0]]
+        processes_before = {key: node.process.pid for key, node in harness.nodes.items()}
         before_restart_records = len(
             _read_ledger_records(source_node.ledger_path)
         )
         harness.restart(route_a[0])
         replay = harness.route_message(message_a)
+        processes_after = {key: node.process.pid for key, node in harness.nodes.items()}
         after_restart_records = len(
             _read_ledger_records(source_node.ledger_path)
         )
@@ -1375,16 +1377,25 @@ def run_demo(
             "redundant_path_observed": route_a != route_b,
             "routes": [
                 {
+                    "message": message_a,
                     "observation": observation_a,
                     "bounded_effect_ack": ack_a,
                 },
                 {
+                    "message": message_b,
                     "observation": observation_b,
                     "bounded_effect_ack": ack_b,
                 },
             ],
             "restart_replay": {
                 "node_id": route_a[0],
+                "message_id": message_a["message_id"],
+                "record_count_before": before_restart_records,
+                "record_count_after": after_restart_records,
+                "terminal_sha256_before": canonical_sha256(terminal_a),
+                "terminal_sha256_after": canonical_sha256(replay),
+                "processes_before": processes_before,
+                "processes_after": processes_after,
                 "same_terminal_receipt": replay == terminal_a,
                 "ledger_record_count_unchanged": (
                     before_restart_records == after_restart_records

@@ -68,6 +68,7 @@ jobs:
           python3 -B tools/qikvrt_real_mesh_system_verification.py run \
             --source-head "$(git rev-parse --verify HEAD^{commit})" \
             --source-tree "$(git rev-parse --verify HEAD^{tree})" \
+            --workdir .qikvrt/real-mesh-sysverify/runtime \
             --output .qikvrt/real-mesh-sysverify/AUDIT_RECEIPT.json \
             > .qikvrt/real-mesh-sysverify/stdout.json
           python3 - <<'PY'
@@ -82,3 +83,25 @@ jobs:
           assert audit['bounded_loopback_effect_ack_scope_confirmed'] is True
           print("PASS: all audit receipt assertions satisfied")
           PY
+
+      - name: Independently reverify exact receipt and preserved node ledgers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_real_mesh_system_verification.py verify \
+            --receipt .qikvrt/real-mesh-sysverify/runtime/EXECUTION_RECEIPT.json \
+            --expected-head "$(git rev-parse HEAD)" \
+            --expected-tree "$(git rev-parse HEAD^{tree})" \
+            --ledger-dir .qikvrt/real-mesh-sysverify/runtime/ledgers \
+            --output .qikvrt/real-mesh-sysverify/READBACK_AUDIT.json
+          test -z "$(git status --porcelain)"
+
+      - name: Preserve exact execution, audit and ledger byte evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mesh-system-verification-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+          path: .qikvrt/real-mesh-sysverify
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30
