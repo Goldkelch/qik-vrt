@@ -101,6 +101,27 @@
       ],
       "version": "2.96.0"
     },
+    "journey-nllb-runtime": {
+      "authority_files": [
+        "docs/reise/TRANSLATION_RUNTIME.json",
+        "tools/qikvrt_journey_translation.py",
+        ".github/workflows/qikvrt_journey_translation.yml"
+      ],
+      "cache_class": "ecosystem-cache",
+      "cache_locations": [
+        "$RUNNER_TEMP/qikvrt-nllb-payload"
+      ],
+      "profiles": [
+        "journey-translation-drafts"
+      ],
+      "provider": "Meta model revision on Hugging Face; PyTorch CPU wheels and PyPI",
+      "trusted_save": true,
+      "verification": [
+        "python3 -B tools/qikvrt_journey_translation.py verify-model --model-root \"$RUNNER_TEMP/qikvrt-nllb-payload\"",
+        "Immutable provider revision and per-file payload checks precede inference; output is never semantic proof."
+      ],
+      "version": "1.0.0"
+    },
     "lean": {
       "authority_files": [
         "runtime/toolchains/TOOLCHAIN.lock.tsv",
