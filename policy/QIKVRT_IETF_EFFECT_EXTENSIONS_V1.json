@@ -1,0 +1,45 @@
+{
+  "schema": "qikvrt_ietf_effect_extensions_v1",
+  "version": "1.0",
+  "status": "CANDIDATE_NOT_PROMOTED",
+  "extends": "policy/QIKVRT_EXECUTION_PRECEDENCE_V1.json",
+  "composition": "Validate the parent policy unchanged, copy it, and add exactly the E4_IETF edge below. Reject an existing conflicting E4_IETF definition. No phase, original external edge, source binding, or predecessor rule may be replaced. This candidate policy becomes executable publication policy only after its own legitimate promotion and exact-Main reobservation.",
+  "authority": {
+    "product_owner": "Ingolf Lohmann",
+    "repository": "Goldkelch/qik-vrt",
+    "request": "Specify the Effect Acknowledgement extensions correctly and submit them to the IETF.",
+    "request_date": "2026-09-13",
+    "authorization_is_not_native_review": true,
+    "authorization_is_not_external_readback": true
+  },
+  "external_fanout_extension": {
+    "E4_IETF": {
+      "requires": ["P7_DERIVE_BOUND_EXTERNAL_OBLIGATIONS"],
+      "steps": [
+        "BIND_EXACT_MAIN_DRAFT_FILESETS_AND_CURRENT_DATATRACKER_REVISIONS",
+        "VALIDATE_RENDERED_RFCXML_AND_APPLICABLE_NITS",
+        "VERIFY_AUTHOR_ACCOUNT_AND_SINGLE_USE_ACTION_BINDING",
+        "SUBMIT_EACH_AUTHORIZED_DRAFT_ONCE",
+        "READBACK_SUBMISSION_ID_AND_STATUS",
+        "READBACK_PUBLIC_DRAFT_REVISION_AND_ARTIFACT_HASHES"
+      ]
+    }
+  },
+  "request": "state/delivery/requests/IETF_EFFECT_ACK_EXTENSIONS_V1.json",
+  "cross_edge_order": "NONE_AFTER_COMMON_BARRIER",
+  "within_ietf": "Each bound draft has an independent submission and readback obligation. One successful draft does not complete another. The already published core is a reference, not a resubmission target.",
+  "preserved_boundaries": {
+    "core_wire_version_1_unchanged": true,
+    "core_five_states_unchanged": true,
+    "core_done_is_release_authorization_not_effect_confirmation": true,
+    "predecessor_evidence_transfer": false,
+    "head_mutation_resets_P2_and_downstream": true,
+    "no_order_from_timestamps_or_pr_numbers": true,
+    "native_review_required_on_validated_head": true,
+    "wiki_arxiv_owner_deferrals_unchanged": true,
+    "zenodo_standing_authorization_unchanged": true,
+    "unknown_submission_result_forbids_blind_retry": true,
+    "local_demo_is_not_deployment_conformance": true
+  },
+  "completion_claims": {"PASS": false, "FINAL_PASS": false, "EFFECT_ACK_DONE": false}
+}
