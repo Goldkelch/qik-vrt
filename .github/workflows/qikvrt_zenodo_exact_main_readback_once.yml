@@ -91,6 +91,7 @@ jobs:
                   print(json.dumps({k:v for k,v in failure.items() if k!='body_base64'},indent=2,sort_keys=True))
                   raise SystemExit(f"ZENODO_HTTP_ERROR:{exc.code}:{failure['body_sha256']}:{len(body)}")
           record=json.loads(get('https://zenodo.org/api/records/22283396','*/*'))
+          (root/'RECORD.json').write_text(json.dumps(record,indent=2,sort_keys=True)+'\n')
           rid=int(record.get('id') or record.get('record_id') or 0)
           pids=record.get('pids') or {}
           doi=record.get('doi') or ((pids.get('doi') or {}).get('identifier')) or ((record.get('metadata') or {}).get('doi'))
@@ -107,7 +108,7 @@ jobs:
           observed=[]
           for name in sorted(expected):
               item=by[name]; links=item.get('links') or {}; url=links.get('content') or links.get('self') or expected[name]['zenodo']['links']['self']
-              data=get(url,'application/octet-stream'); digest=hashlib.sha256(data).hexdigest()
+              data=get(url,'application/json'); digest=hashlib.sha256(data).hexdigest()
               if digest!=expected[name]['sha256'] or len(data)!=expected[name]['bytes']:
                   raise SystemExit(f'ZENODO_FILE_MISMATCH:{name}:{digest}:{len(data)}')
               (root/'downloads'/name).write_bytes(data)
