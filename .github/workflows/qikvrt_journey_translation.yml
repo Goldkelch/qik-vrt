@@ -8,7 +8,9 @@ on:
     paths:
       - .github/workflows/qikvrt_journey_translation.yml
       - tools/qikvrt_journey_translation.py
+      - tools/qikvrt_journey_recovery.py
       - tests/test_qikvrt_journey_translation.py
+      - tests/test_qikvrt_journey_recovery.py
       - docs/reise/TRANSLATION_RUNTIME.json
       - runtime/toolchains/TOOLCHAIN.lock.tsv
       - runtime/toolchains/CACHE_REGISTRY.json
@@ -29,7 +31,7 @@ jobs:
         with:
           python-version: '3.12.13'
       - name: Run deterministic transport and subject-boundary regressions
-        run: python3 -B -m unittest discover -s tests -p test_qikvrt_journey_translation.py -v
+        run: python3 -B -m unittest discover -s tests -p 'test_qikvrt_journey*.py' -v
   recover:
     needs: contract
     if: >-
@@ -165,6 +167,48 @@ jobs:
           path: /tmp/qikvrt-journey-generation
           retention-days: 30
           if-no-files-found: error
+  recover-successful-translation-objects:
+    needs: contract
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.ref == 'refs/heads/publication/self-explanation-47-homepage-v1' &&
+      github.run_attempt == 1 &&
+      github.event.before == '968482b55b99aace753b43eb0e219eea45111d0c' &&
+      startsWith(github.event.head_commit.message, 'i18n(journey): recover successful exact-run drafts')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    concurrency:
+      group: qikvrt-repository-evidence-${{ github.ref_name }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.13'
+      - name: Verify runtime before exact prior-run recovery
+        run: python3 -B tools/qikvrt_tool_cache.py verify
+      - name: Recover only independently successful exact-run drafts as content-addressed blobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python3 -B tools/qikvrt_journey_recovery.py
+          --input-run 34660991113
+          --input-head 968482b55b99aace753b43eb0e219eea45111d0c
+      - name: Preserve exact recovery receipt without ref mutation
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: journey-recovered-object-receipt-${{ github.sha }}
+          path: /tmp/qikvrt-journey-generation
+          retention-days: 30
+          if-no-files-found: error
   record-objects:
     needs: [contract, recover, translate]
     if: >-
@@ -172,7 +216,7 @@ jobs:
       github.repository == 'Goldkelch/qik-vrt' &&
       github.ref == 'refs/heads/publication/self-explanation-47-homepage-v1' &&
       github.run_attempt == 1 &&
-      (needs.recover.result == 'success' || needs.translate.result == 'success')
+      (needs.recover.result == 'success' || needs.translate.result != 'skipped')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -196,7 +240,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PHASE: ${{ needs.recover.result == 'success' && 'recover' || 'translate' }}
-        run: python3 -B tools/qikvrt_journey_translation.py objects --phase "$PHASE"
+        run: |
+          set -euo pipefail
+          if [ "$PHASE" = recover ]; then
+            python3 -B tools/qikvrt_journey_translation.py objects --phase recover
+          else
+            python3 -B tools/qikvrt_journey_recovery.py
+          fi
       - name: Preserve immutable object receipt for the connected branch writer
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
