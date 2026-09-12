@@ -44,12 +44,17 @@ jobs:
           path=root/'repair.patch';path.write_bytes(patch)
           subprocess.check_call(['git','apply','--check',str(path)])
           subprocess.check_call(['git','apply',str(path)])
+          amendment=subprocess.check_output(['git','cat-file','blob','ec0c8ade5f1b840a55fcddeb372d08ac57697a3f'])
+          assert hashlib.sha256(amendment).hexdigest()=='1f30fc2eea792317f715c89b72731109ea569a58891c1784c12f658a08f9d790'
+          amended=root/'evidence-export.patch';amended.write_bytes(amendment)
+          subprocess.check_call(['git','apply','--check',str(amended)])
+          subprocess.check_call(['git','apply',str(amended)])
           expected={
             'tools/qikvrt_real_mesh.py':'71df8c92ade4b49c792c6231e499d39c60751d51aa86a4b5cd4e8269bd467fda',
-            'tools/qikvrt_real_mesh_system_verification.py':'60b6414992e441a02f9bd48fd74c5cc7795414383c854ef0348a3c6fd75f31d0',
-            'tests/test_qikvrt_real_mesh_system_verification.py':'bff76f6933e0c34f1d3f71d67020e467f11ef9d85a19f281275b8d6202f803a0',
-            '.github/workflows/qikvrt_real_mesh.yml':'1cf7145606019b781671209570ff4265366e7d30957c8bfe6ff8edb30eab3259',
-            '.github/workflows/qikvrt_real_mesh_system_verification.yml':'2a3f93c5f0c4dfa631e891b317be3cd40c2586de7ff183122954dd27ed3e1ac5'}
+            'tools/qikvrt_real_mesh_system_verification.py':'d90a48f8d4b2d326177ae1b862c6936b40df38a9039602410a64a8b838cbfa6e',
+            'tests/test_qikvrt_real_mesh_system_verification.py':'84f2762550546a79cf8446ab3ba642b0b120602c0d87bea3f87b6895108f9176',
+            '.github/workflows/qikvrt_real_mesh.yml':'995377faba2556da1c8c1c36bb6d858c4aa9c539508ebf66137c4a2ab81d5b5a',
+            '.github/workflows/qikvrt_real_mesh_system_verification.yml':'e921abd38270a0a818e8fc83670602fe8cf813b0da1be34fa4fd101189e54a25'}
           assert sorted(subprocess.check_output(['git','diff','--name-only'],text=True).splitlines())==sorted(expected)
           for path,digest in expected.items():
               assert hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()==digest,path
@@ -100,7 +105,7 @@ jobs:
               for path in paths:archive.add(path,arcname=path)
           work=root/'transport-worktree'
           git('worktree','add','--detach',str(work),producer)
-          prefix='transport/zero-mesh-checked/'
+          prefix='transport/zero-mesh-checked-v2/'
           assert not (work/prefix).exists()
           files={}
           for path in paths:
@@ -123,7 +128,7 @@ jobs:
               assert back==pathlib.Path(path).read_bytes(),path
               assert git('rev-parse',transport+':'+prefix+path).decode().strip()==files[path]['sha']
           assert remote('main')==source
-          receipt={'schema':'qikvrt_zero_mesh_repair_objects_v1','source_head':source,'source_tree':'feff1cae2401a3df83febc3b9458de70d79b818e','producer_run':os.environ['GITHUB_RUN_ID'],'producer_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'producer_head':producer,'patch_sha256':'ff4b591e3b7db45b9cf423ecad766c7f533b8b18f16b7cefb9d4faa00ac69c8f','files':files,'regression_and_full_repository_tests_executed':True,'blob_bytes_independently_reobserved':True,'transport_ref':branch,'transport_head':transport,'transport_ref_mutation':True,'main_mutation':False,'candidate_mutation':False,'successor_validation_transferred':False,'general_effect_ack_done':False}
+          receipt={'schema':'qikvrt_zero_mesh_repair_objects_v1','source_head':source,'source_tree':'feff1cae2401a3df83febc3b9458de70d79b818e','producer_run':os.environ['GITHUB_RUN_ID'],'producer_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'producer_head':producer,'patch_sha256':'ff4b591e3b7db45b9cf423ecad766c7f533b8b18f16b7cefb9d4faa00ac69c8f','amendment_sha256':'1f30fc2eea792317f715c89b72731109ea569a58891c1784c12f658a08f9d790','files':files,'regression_and_full_repository_tests_executed':True,'blob_bytes_independently_reobserved':True,'transport_ref':branch,'transport_head':transport,'transport_ref_mutation':True,'main_mutation':False,'candidate_mutation':False,'successor_validation_transferred':False,'general_effect_ack_done':False}
           (root/'OBJECT_RECEIPT.json').write_text(json.dumps(receipt,indent=2)+'\n')
           print(json.dumps(receipt,indent=2))
           git('worktree','remove',str(work))

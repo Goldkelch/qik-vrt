@@ -1,0 +1,53 @@
+--- a/tools/qikvrt_real_mesh_system_verification.py
++++ b/tools/qikvrt_real_mesh_system_verification.py
+@@ -16,7 +16,9 @@
+ Usage::
+ 
+     python3 -B tools/qikvrt_real_mesh_system_verification.py verify \\
+-        --receipt path/to/EXECUTION_RECEIPT.json
++        --receipt path/to/EXECUTION_RECEIPT.json \\
++        --expected-head <sha1> --expected-tree <sha1> \\
++        --ledger-dir path/to/node-ledgers
+ 
+     python3 -B tools/qikvrt_real_mesh_system_verification.py run \\
+         --source-head <sha1> --source-tree <sha1>
+--- a/tests/test_qikvrt_real_mesh_system_verification.py
++++ b/tests/test_qikvrt_real_mesh_system_verification.py
+@@ -430,6 +430,21 @@
+                     "--expected-tree",SOURCE_TREE,"--ledger-dir",str(_FIXTURE_DIR/"ledgers")])
+             self.assertEqual(result,2)
+ 
++    def test_complete_hidden_receipt_and_ledger_exports_are_explicit(self):
++        for name, directory in (
++            ("qikvrt_real_mesh.yml", ".qikvrt/real-mesh"),
++            ("qikvrt_real_mesh_system_verification.yml", ".qikvrt/real-mesh-sysverify"),
++        ):
++            with self.subTest(workflow=name):
++                text=(sysverify.ROOT/".github/workflows"/name).read_text()
++                upload=text.split("uses: actions/upload-artifact@",1)[1]
++                self.assertIn("include-hidden-files: true",upload)
++                self.assertIn("path: "+directory+"\n",upload)
++                self.assertIn("if-no-files-found: error",upload)
++                self.assertNotIn("path: .qikvrt\n",upload)
++                self.assertIn("--ledger-dir",text)
++
++
+     def test_cli_run_does_not_accept_arbitrary_source_labels(self):
+         with mock.patch.object(sysverify.subprocess,"check_output",return_value="c"*40+"\n"+"d"*40+"\n"), \
+              mock.patch.object(sysverify,"run_and_verify") as run, \
+--- a/.github/workflows/qikvrt_real_mesh.yml
++++ b/.github/workflows/qikvrt_real_mesh.yml
+@@ -92,4 +92,5 @@
+           name: qikvrt-real-mesh-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+           path: .qikvrt/real-mesh
+           if-no-files-found: error
++          include-hidden-files: true
+           retention-days: 30
+--- a/.github/workflows/qikvrt_real_mesh_system_verification.yml
++++ b/.github/workflows/qikvrt_real_mesh_system_verification.yml
+@@ -103,4 +103,5 @@
+           name: qikvrt-mesh-system-verification-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+           path: .qikvrt/real-mesh-sysverify
+           if-no-files-found: error
++          include-hidden-files: true
+           retention-days: 30
