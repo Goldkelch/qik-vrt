@@ -51,7 +51,7 @@ jobs:
             sha256sum QIKVRT_Planck_Tick_Gap_Law_2026-09-03.pdf QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex README.md planck_tick_gap_law_v1.json ZENODO_METADATA.json > SHA256SUMS.txt
           )
           python3 -B - <<'PY'
-          import hashlib,json,pathlib,subprocess,urllib.request
+          import base64,hashlib,json,pathlib,subprocess,urllib.error,urllib.request
           root=pathlib.Path('.qikvrt/zenodo-readback')
           publication=json.loads(pathlib.Path('release/planck-tick-gap-law-zenodo-v1/zenodo-publication.json').read_text())
           request=json.loads(pathlib.Path('state/delivery/requests/ZENODO_PLANCK_TICK_GAP_LAW_V1.json').read_text())
@@ -67,7 +67,29 @@ jobs:
                   raise SystemExit(f'CURRENT_MAIN_BUILD_MISMATCH:{name}:{digest}:{len(data)}')
           def get(url,accept):
               req=urllib.request.Request(url,headers={'Accept':accept,'User-Agent':'qik-vrt-exact-main-readback/1'},method='GET')
-              with urllib.request.urlopen(req,timeout=120) as r:return r.read()
+              try:
+                  with urllib.request.urlopen(req,timeout=120) as r:return r.read()
+              except urllib.error.HTTPError as exc:
+                  body=exc.read(262144)
+                  failure={
+                      'schema':'qikvrt_zenodo_http_failure_observation_v1',
+                      'url':url,
+                      'accept':accept,
+                      'status':exc.code,
+                      'reason':str(exc.reason),
+                      'headers':dict(exc.headers.items()),
+                      'body_sha256':hashlib.sha256(body).hexdigest(),
+                      'body_bytes':len(body),
+                      'body_base64':base64.b64encode(body).decode('ascii'),
+                      'exact_trusted_main_head':'a86054139b49c13c5cd344753b248b46b5daf66f',
+                      'exact_trusted_main_tree':'feff1cae2401a3df83febc3b9458de70d79b818e',
+                      'predecessor_evidence_transfer':False,
+                      'repository_mutation':False,
+                      'new_zenodo_publication':False,
+                  }
+                  (root/'HTTP_ERROR.json').write_text(json.dumps(failure,indent=2,sort_keys=True)+'\n')
+                  print(json.dumps({k:v for k,v in failure.items() if k!='body_base64'},indent=2,sort_keys=True))
+                  raise SystemExit(f"ZENODO_HTTP_ERROR:{exc.code}:{failure['body_sha256']}:{len(body)}")
           record=json.loads(get('https://zenodo.org/api/records/22283396','*/*'))
           rid=int(record.get('id') or record.get('record_id') or 0)
           pids=record.get('pids') or {}
