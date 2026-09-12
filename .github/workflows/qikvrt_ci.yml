@@ -184,3 +184,103 @@ jobs:
           path: ${{ env.EVIDENCE_ROOT }}
           retention-days: 30
           if-no-files-found: error
+
+  journey-reading-preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      # runner context does not exist at job-level env evaluation time.
+      PREVIEW_ROOT: /tmp/qikvrt-journey-preview
+    steps:
+      - name: Check out literal journey candidate without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect complete journey source surface
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -f docs/reise/REQUEST.json; then
+            test -f docs/reise/source.de.txt
+            test -f tools/qikvrt_journey_site.py
+            test -f tests/test_qikvrt_journey_site.py
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Set up declared Python runtime
+        if: steps.detect.outputs.present == 'true'
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Verify tool cache contract
+        if: steps.detect.outputs.present == 'true'
+        run: python3 -B tools/qikvrt_tool_cache.py verify
+      - name: Test source binding and render available complete editions
+        if: steps.detect.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
+          mkdir -p "$PREVIEW_ROOT"
+          python3 -B -m unittest discover -s tests -p test_qikvrt_journey_site.py -v \
+            2>&1 | tee "$PREVIEW_ROOT/tests.log"
+          python3 -B tools/qikvrt_journey_site.py preview \
+            --output "$PREVIEW_ROOT/index.html" \
+            | tee "$PREVIEW_ROOT/validation.json"
+          cp -R docs/reise "$PREVIEW_ROOT/source"
+      - name: Export canonical integrity proposal without mutating the checkout
+        if: steps.detect.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          from tools import qikvrt_integrity as integrity
+          root = pathlib.Path(os.environ['PREVIEW_ROOT'])
+          root.mkdir(parents=True, exist_ok=True)
+          head = subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip()
+          tree = subprocess.check_output(['git','rev-parse','HEAD^{tree}'], text=True).strip()
+          if head != os.environ['EXPECTED_HEAD']:
+              raise SystemExit('HOLD_UNVERIFIED: source head drift')
+          manifest, index, detached, _ = integrity.build_outputs()
+          hashes = {}
+          for name, data in ((integrity.MANIFEST_NAME,manifest),
+                             (integrity.INDEX_NAME,index),
+                             (integrity.DETACHED_NAME,detached)):
+              (root/name).write_bytes(data)
+              hashes[name] = {'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}
+          (root/'INTEGRITY_PROPOSAL.json').write_text(json.dumps({
+              'schema':'qikvrt_journey_integrity_proposal_v1',
+              'repository':os.environ['GITHUB_REPOSITORY'],
+              'source_head':head,'source_tree':tree,'files':hashes,
+              'mutation':'NONE','native_review':False,'public_delivery':False,
+              'EFFECT_ACK_DONE':False},indent=2)+'\n',encoding='utf-8')
+          PY
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Check all 47 editions without hiding missing translations
+        id: coverage
+        if: steps.detect.outputs.present == 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_journey_site.py coverage-check \
+            | tee "$PREVIEW_ROOT/coverage.json"
+      - name: Preserve exact-source reading preview and diagnostics
+        if: always() && steps.detect.outputs.present == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-journey-preview-${{ env.EXPECTED_HEAD }}
+          path: ${{ env.PREVIEW_ROOT }}
+          retention-days: 30
+          if-no-files-found: error
+      - name: Enforce complete 47-edition coverage
+        if: steps.detect.outputs.present == 'true' && steps.coverage.outcome != 'success'
+        run: |
+          echo 'HOLD_UNVERIFIED: complete 47-edition coverage is not established.' >&2
+          exit 2
