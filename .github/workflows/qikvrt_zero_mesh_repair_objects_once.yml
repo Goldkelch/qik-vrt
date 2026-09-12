@@ -21,22 +21,20 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
-      - name: Bind Main and apply only digest-verified five-path repair
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Bind Main and apply digest-verified five-path repair from fetched Git object
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/mesh-repair"
+          exec > >(tee "$RUNNER_TEMP/mesh-repair/BINDING.log") 2>&1
           test "$(git rev-parse HEAD)" = a86054139b49c13c5cd344753b248b46b5daf66f
           test "$(git rev-parse HEAD^{tree})" = feff1cae2401a3df83febc3b9458de70d79b818e
           test -z "$(git status --porcelain)"
-          test "$(gh api repos/Goldkelch/qik-vrt/git/ref/heads/main --jq .object.sha)" = a86054139b49c13c5cd344753b248b46b5daf66f
-          mkdir -p "$RUNNER_TEMP/mesh-repair"
+          test "$(git ls-remote --exit-code --heads origin refs/heads/main | awk '{print $1}')" = a86054139b49c13c5cd344753b248b46b5daf66f
           python3 -B - <<'PY'
-          import base64,gzip,hashlib,json,os,pathlib,subprocess
+          import gzip,hashlib,json,os,pathlib,subprocess
           root=pathlib.Path(os.environ['RUNNER_TEMP'])/'mesh-repair'
-          obj=json.loads(subprocess.check_output(['gh','api','repos/Goldkelch/qik-vrt/git/blobs/f770ef10c1f263bcd1e0fa81bb6c9f4f4ca8ce72']))
-          raw=base64.b64decode(obj['content'])
+          raw=subprocess.check_output(['git','cat-file','blob','f770ef10c1f263bcd1e0fa81bb6c9f4f4ca8ce72'])
           assert hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()=='f770ef10c1f263bcd1e0fa81bb6c9f4f4ca8ce72'
           patch=gzip.decompress(raw)
           assert hashlib.sha256(patch).hexdigest()=='ff4b591e3b7db45b9cf423ecad766c7f533b8b18f16b7cefb9d4faa00ac69c8f'
@@ -77,25 +75,36 @@ jobs:
           test "$rc" -eq 0
           python3 -B tools/qikvrt_integrity.py verify
           git diff --check
-      - name: Store only eight checked immutable objects and read every byte back
+      - name: Store only eight checked immutable objects and independently read them back
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           python3 -B - <<'PY'
-          import base64,hashlib,json,os,pathlib,subprocess,tarfile
+          import base64,hashlib,json,os,pathlib,subprocess,tarfile,time
           root=pathlib.Path(os.environ['RUNNER_TEMP'])/'mesh-repair'
           def api(path,payload=None):
               args=['gh','api',path]
               if payload is not None:args+=['--method','POST','--input','-']
-              return json.loads(subprocess.check_output(args,input=json.dumps(payload).encode() if payload is not None else None))
-          def main():return api('repos/Goldkelch/qik-vrt/git/ref/heads/main')['object']['sha']
+              for delay in (0,15,45):
+                  if delay:time.sleep(delay)
+                  p=subprocess.run(args,input=json.dumps(payload).encode() if payload is not None else None,capture_output=True,timeout=45)
+                  if p.returncode==0:return json.loads(p.stdout)
+                  if b'API rate limit exceeded for installation.' not in p.stderr:raise RuntimeError(p.stderr.decode())
+              (root/'QUOTA_HOLD.json').write_text(json.dumps({'state':'HOLD_UNVERIFIED','reason':'GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED','endpoint':path,'ref_mutation':False,'general_effect_ack_done':False})+'\n')
+              raise RuntimeError('HOLD: bounded installation quota backoff exhausted')
+          def main():
+              lines=subprocess.check_output(['git','ls-remote','--exit-code','--heads','origin','refs/heads/main'],text=True,timeout=45).splitlines()
+              assert len(lines)==1
+              return lines[0].split()[0]
           source='a86054139b49c13c5cd344753b248b46b5daf66f'
           assert main()==source
           paths=list(json.loads((root/'EXPECTED_SOURCE_DIGESTS.json').read_text()))+['REPOSITORY_FILE_MANIFEST.json','REPOSITORY_FILE_MANIFEST.json.sha256','SHA256SUMS.txt']
           assert sorted(subprocess.check_output(['git','diff','--name-only'],text=True).splitlines())==sorted(paths)
           assert not subprocess.check_output(['git','ls-files','--others','--exclude-standard'],text=True).strip()
+          with tarfile.open(root/'changed-files.tar.gz','w:gz') as archive:
+              for path in paths:archive.add(path,arcname=path)
           files={}
           for path in paths:
               raw=pathlib.Path(path).read_bytes()
@@ -108,11 +117,9 @@ jobs:
           assert main()==source
           receipt={'schema':'qikvrt_zero_mesh_repair_objects_v1','source_head':source,'source_tree':'feff1cae2401a3df83febc3b9458de70d79b818e','producer_run':os.environ['GITHUB_RUN_ID'],'producer_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'patch_sha256':'ff4b591e3b7db45b9cf423ecad766c7f533b8b18f16b7cefb9d4faa00ac69c8f','files':files,'regression_and_full_repository_tests_executed':True,'blob_bytes_independently_reobserved':True,'ref_mutation':False,'successor_validation_transferred':False,'general_effect_ack_done':False}
           (root/'OBJECT_RECEIPT.json').write_text(json.dumps(receipt,indent=2)+'\n')
-          with tarfile.open(root/'changed-files.tar.gz','w:gz') as archive:
-              for path in paths:archive.add(path,arcname=path)
           print(json.dumps(receipt,indent=2))
           PY
-      - name: Preserve producer-only evidence; final candidate needs fresh native validation
+      - name: Preserve evidence even on quota HOLD without claiming successor validation
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
