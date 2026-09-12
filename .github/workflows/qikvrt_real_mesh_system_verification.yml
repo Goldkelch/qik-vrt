@@ -36,8 +36,6 @@ jobs:
   system-verification:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    env:
-      MESH_EVIDENCE_DIR: ${{ runner.temp }}/qikvrt-real-mesh-sysverify
     steps:
       - name: Check out exact candidate head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -64,6 +62,8 @@ jobs:
 
       - name: Execute real mesh and produce audit receipt
         shell: bash
+        env:
+          MESH_EVIDENCE_DIR: ${{ runner.temp }}/qikvrt-real-mesh-sysverify
         run: |
           set -euo pipefail
           mkdir -p "$MESH_EVIDENCE_DIR"
@@ -89,6 +89,8 @@ jobs:
 
       - name: Independently reverify exact receipt and preserved node ledgers
         shell: bash
+        env:
+          MESH_EVIDENCE_DIR: ${{ runner.temp }}/qikvrt-real-mesh-sysverify
         run: |
           set -euo pipefail
           python3 -B tools/qikvrt_real_mesh_system_verification.py verify \
