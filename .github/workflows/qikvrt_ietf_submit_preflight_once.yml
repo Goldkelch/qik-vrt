@@ -1,0 +1,166 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Read-only diagnostic carrier; never a submission or a review.
+name: QIKVRT IETF submission preflight exact ee171c7b
+on:
+  push:
+    branches: [observe/ietf-submit-preflight-ee171c7b-v1]
+    paths: [.github/workflows/qikvrt_ietf_submit_preflight_once.yml]
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      EXPECTED_HEAD: ee171c7bbf47388e476936d7f5baa6e7e019c8c7
+      EXPECTED_TREE: 4f62fe811260e3b4795ec52706b18511696a6b0d
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONNOUSERSITE: '1'
+      PYTHONPATH: .
+    steps:
+      - name: Check out the literal candidate, not this carrier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ee171c7bbf47388e476936d7f5baa6e7e019c8c7
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Fresh exact-source repository and model tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
+          mkdir -p "$RUNNER_TEMP/ietf-submit-preflight"
+          make test > "$RUNNER_TEMP/ietf-submit-preflight/make-test.log" 2>&1 || { tail -n 100 "$RUNNER_TEMP/ietf-submit-preflight/make-test.log"; exit 1; }
+          python3 -B -m unittest -v tests.test_qikvrt_ietf_effect_extensions
+          python3 -B tools/qikvrt_ietf_effect_extensions.py --out "$RUNNER_TEMP/ietf-submit-preflight"
+      - name: Render fresh standalone XML and plaintext
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check -r runtime/toolchains/requirements-xml2rfc-3.34.0.txt
+          test "$(xml2rfc --version | head -n1)" = 'xml2rfc 3.34.0'
+          out="$RUNNER_TEMP/ietf-submit-preflight"
+          mkdir -p "$out/expanded" "$out/render" "$out/logs"
+          for source in "$out"/draft-*.xml; do
+            name="$(basename "$source" .xml)"
+            xml2rfc "$source" --v3 --expand --skip-config-files --out "$out/expanded/$name.xml" 2> "$out/logs/$name-expand.log"
+            xml2rfc "$out/expanded/$name.xml" --v3 --text --no-network --skip-config-files --out "$out/render/$name.txt" 2> "$out/logs/$name-render.log"
+          done
+      - name: Provision exact upstream idnits 3.1.0 with its dependency lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool="$RUNNER_TEMP/ietf-idnits"
+          git init "$tool"
+          git -C "$tool" fetch --depth=1 https://github.com/ietf-tools/idnits.git 69706cf6d18f723ac5d59c4396e2eee59e1f6ac7
+          git -C "$tool" checkout --detach FETCH_HEAD
+          test "$(git -C "$tool" rev-parse HEAD)" = 69706cf6d18f723ac5d59c4396e2eee59e1f6ac7
+          (cd "$tool" && npm ci --ignore-scripts --omit=dev --no-audit --no-fund)
+          out="$RUNNER_TEMP/ietf-submit-preflight"
+          node --version > "$out/node-version.txt"
+          npm --version > "$out/npm-version.txt"
+          node "$tool/cli.js" --version > "$out/idnits-version.txt"
+          cp "$tool/package-lock.json" "$out/idnits-package-lock.json"
+          cp "$tool/package.json" "$out/idnits-package.json"
+      - name: Execute submission-mode nits without reclassifying findings as success
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json, os, pathlib, subprocess
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'ietf-submit-preflight'
+          cli = pathlib.Path(os.environ['RUNNER_TEMP']) / 'ietf-idnits' / 'cli.js'
+          outcomes = []
+          for source in sorted((out / 'expanded').glob('*.xml')) + sorted((out / 'render').glob('*.txt')):
+              label = source.stem + '-' + source.suffix[1:]
+              command = ['node', str(cli), '--mode', 'submission', '--output', 'json', str(source)]
+              try:
+                  proc = subprocess.run(command, capture_output=True, timeout=120)
+                  (out / (label + '-idnits.json')).write_bytes(proc.stdout)
+                  (out / (label + '-idnits.stderr')).write_bytes(proc.stderr)
+                  entry = {'source': str(source.relative_to(out)), 'exit_code': proc.returncode, 'execution': 'COMPLETED', 'findings_reviewed': False}
+              except subprocess.TimeoutExpired as exc:
+                  (out / (label + '-idnits.partial')).write_bytes(exc.stdout or b'')
+                  entry = {'source': str(source.relative_to(out)), 'exit_code': None, 'execution': 'TIMEOUT', 'findings_reviewed': False}
+              outcomes.append(entry)
+          (out / 'IDNITS_EXECUTION.json').write_text(json.dumps(outcomes, indent=2) + '\n')
+          print(json.dumps(outcomes, indent=2))
+          PY
+      - name: Finite destination and repository gate observation GET only
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import hashlib, json, os, pathlib, urllib.request, urllib.error, urllib.parse
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'ietf-submit-preflight'
+          out.mkdir(parents=True, exist_ok=True)
+          records = []
+          urls = [('submission_api_help', 'https://datatracker.ietf.org/api/submission')]
+          for name in ['draft-lohmann-qikvrt-effect-ack-http', 'draft-lohmann-qikvrt-local-change-time']:
+              query = urllib.parse.urlencode({'name': name, 'format': 'json', 'limit': '100'})
+              urls += [(name + '-documents', 'https://datatracker.ietf.org/api/v1/doc/document/?' + query),
+                       (name + '-submissions', 'https://datatracker.ietf.org/api/v1/submit/submission/?' + query)]
+          urls += [('pr1084', 'https://api.github.com/repos/Goldkelch/qik-vrt/pulls/1084'),
+                   ('pr1084-reviews', 'https://api.github.com/repos/Goldkelch/qik-vrt/pulls/1084/reviews?per_page=100'),
+                   ('authority-main', 'https://api.github.com/repos/Goldkelch/qik-vrt/git/ref/heads/main')]
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+          opener = urllib.request.build_opener(NoRedirect)
+          for label, url in urls:
+              headers = {'User-Agent': 'QIKVRT-exact-ietf-preflight/1'}
+              if urllib.parse.urlsplit(url).hostname == 'api.github.com':
+                  headers['Authorization'] = 'Bearer ' + os.environ['GH_TOKEN']
+                  headers['Accept'] = 'application/vnd.github+json'
+              entry = {'label': label, 'url': url, 'method': 'GET'}
+              try:
+                  with opener.open(urllib.request.Request(url, headers=headers), timeout=30) as response:
+                      body = response.read(2000001)
+                      if len(body) > 2000000:
+                          raise ValueError('response exceeds bound')
+                      entry.update(status=response.status, date=response.headers.get('Date'), content_type=response.headers.get('Content-Type'))
+                  (out / (label + '.response')).write_bytes(body)
+                  entry.update(bytes=len(body), sha256=hashlib.sha256(body).hexdigest())
+              except urllib.error.HTTPError as exc:
+                  entry.update(status=exc.code, outcome='UNVERIFIED_RESPONSE_ERROR')
+                  (out / (label + '.error')).write_bytes(exc.read(65536))
+              except Exception as exc:
+                  entry.update(status=None, outcome='UNKNOWN', error=type(exc).__name__)
+              records.append(entry)
+          (out / 'FINITE_READBACKS.json').write_text(json.dumps(records, indent=2) + '\n')
+          print(json.dumps(records, indent=2))
+          PY
+      - name: Bind diagnostic receipt to the immutable subject
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'ietf-submit-preflight'
+          out.mkdir(parents=True, exist_ok=True)
+          git = lambda *args: subprocess.check_output(['git', *args], text=True).strip()
+          receipt = {'schema':'qikvrt_ietf_submission_preflight_v1', 'head':git('rev-parse','HEAD'), 'tree':git('rev-parse','HEAD^{tree}'), 'worktree_clean':not bool(git('status','--porcelain')), 'carrier_head':os.environ['GITHUB_SHA'], 'run_id':os.environ['GITHUB_RUN_ID'], 'idnits_source':'69706cf6d18f723ac5d59c4396e2eee59e1f6ac7', 'findings_reviewed':False, 'upload_attempted':False, 'external_effect':'NONE', 'full_P2':False, 'P3':False, 'P5':False, 'P7':False}
+          receipt['files'] = [{'path':p.relative_to(out).as_posix(), 'bytes':p.stat().st_size, 'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in sorted(out.rglob('*')) if p.is_file()]
+          raw = (json.dumps(receipt, indent=2) + '\n').encode()
+          (out/'PREFLIGHT_RECEIPT.json').write_bytes(raw)
+          (out/'PREFLIGHT_RECEIPT.json.sha256').write_text(hashlib.sha256(raw).hexdigest() + '  PREFLIGHT_RECEIPT.json\n')
+          print(json.dumps({key:val for key,val in receipt.items() if key != 'files'},indent=2))
+          PY
+      - name: Preserve actual results including failures and unknowns
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ietf-submit-preflight-ee171c7b-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ietf-submit-preflight
+          if-no-files-found: error
+          retention-days: 30
