@@ -6,6 +6,10 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 COMPOSE = ROOT / "deploy/universal-terminal/compose.yaml"
 POLICY = ROOT / "policy/QIKVRT_UNIVERSAL_TERMINAL_VIRTUALIZATION_V1.json"
+ENTRYPOINT = ROOT / "deploy/universal-terminal/entrypoint.sh"
+CLOUD_ENTRYPOINT = ROOT / "deploy/universal-terminal/cloud-entrypoint.sh"
+DOCKERFILE = ROOT / "deploy/universal-terminal/Dockerfile"
+WORKFLOW = ROOT / ".github/workflows/qikvrt_universal_terminal_container.yml"
 
 
 class UniversalTerminalNetworkBoundaryTests(unittest.TestCase):
@@ -36,6 +40,28 @@ class UniversalTerminalNetworkBoundaryTests(unittest.TestCase):
             policy["definition_of_done"]["loopback_only_host_bind_regression"],
             "REQUIRED",
         )
+
+    def test_standalone_default_and_cloud_mesh_route_are_explicit_and_distinct(self):
+        policy = json.loads(POLICY.read_text(encoding="utf-8"))
+        self.assertEqual(policy["runtime_transport"]["default_start_surface"], "about:blank")
+        self.assertEqual(
+            policy["runtime_transport"]["runtime_state_schema"],
+            "qikvrt_universal_terminal_runtime_state_v2",
+        )
+        self.assertIn(
+            'START_URL="${QIKVRT_START_URL:-about:blank}"',
+            ENTRYPOINT.read_text(encoding="utf-8"),
+        )
+        dockerfile = DOCKERFILE.read_text(encoding="utf-8")
+        self.assertIn("QIKVRT_START_URL=about:blank", dockerfile)
+        self.assertIn('browser.startup.homepage", "about:blank"', dockerfile)
+        self.assertIn(
+            'export QIKVRT_START_URL="${QIKVRT_CLOUD_START_URL:-http://127.0.0.1:8080/qik-vrt/mesh/v1/}"',
+            CLOUD_ENTRYPOINT.read_text(encoding="utf-8"),
+        )
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("qikvrt_universal_terminal_runtime_state_v2", workflow)
+        self.assertNotIn("qikvrt_universal_terminal_runtime_state_v1", workflow)
 
 
 if __name__ == "__main__":

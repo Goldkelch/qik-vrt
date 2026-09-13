@@ -8,7 +8,10 @@ HTTP_HOST="${QIKVRT_HTTP_HOST:-127.0.0.1}"
 HTTP_PORT="${QIKVRT_HTTP_PORT:-8771}"
 NOVNC_PORT="${QIKVRT_NOVNC_PORT:-6080}"
 DISPLAY_VALUE="${DISPLAY:-:99}"
-START_URL="${QIKVRT_START_URL:-http://qikvrt-gateway:8080/qik-vrt/mesh/v1/}"
+# A terminal launched on its own has no Compose gateway namespace.  Cloud and
+# Compose carriers opt into their explicit Mesh URLs; the standalone image must
+# remain addressable without assuming a peer service exists.
+START_URL="${QIKVRT_START_URL:-about:blank}"
 
 # Firefox initializes its profile registry under HOME even with --profile.
 # Keep that registry and XDG state off the read-only container root.
@@ -25,6 +28,8 @@ cleanup() {
   for pid in $PIDS; do kill "$pid" 2>/dev/null || true; done
 }
 diagnostics() {
+  printf '\n--- process snapshot ---\n' >&2
+  ps -eo pid,ppid,stat,args >&2 || true
   for log in /opt/qikvrt/runtime/logs/*.log; do
     [ -f "$log" ] || continue
     printf '\n--- %s ---\n' "$log" >&2
@@ -48,6 +53,19 @@ python3 -B /opt/qikvrt/src/qikvrt_effect_ack_http_terminal.py \
   > /opt/qikvrt/runtime/logs/effect-ack-http.log 2>&1 &
 HTTP_PID=$!
 PIDS="$PIDS ${HTTP_PID}"
+
+# Prove that the daemon is readable before unrelated GUI children are started.
+# This preserves the separate daemon failure boundary in its own log/receipt.
+attempt=0
+until curl --max-time 2 -fsS "http://127.0.0.1:${HTTP_PORT}/.well-known/effect-ack" >/dev/null 2>&1; do
+  attempt=$((attempt + 1))
+  if ! kill -0 "$HTTP_PID" 2>/dev/null || [ "$attempt" -ge 30 ]; then
+    diagnostics
+    echo "BLOCK: Effect-Ack daemon did not become readable" >&2
+    exit 1
+  fi
+  sleep 1
+done
 
 Xvfb "$DISPLAY_VALUE" -screen 0 1440x900x24 -nolisten tcp \
   > /opt/qikvrt/runtime/logs/xvfb.log 2>&1 &

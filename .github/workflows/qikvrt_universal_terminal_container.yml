@@ -8,6 +8,7 @@ on:
       - "src/qikvrt_effect_ack_http_terminal.py"
       - "policy/QIKVRT_UNIVERSAL_TERMINAL_VIRTUALIZATION_V1.json"
       - "tests/test_qikvrt_universal_terminal_network_boundary.py"
+      - "tests/test_qikvrt_effect_ack_http_terminal.py"
       - ".github/workflows/qikvrt_universal_terminal_container.yml"
   workflow_dispatch:
 
@@ -60,6 +61,7 @@ jobs:
           docker volume create qikvrt-test-state >/dev/null
           docker run -d --name qikvrt-terminal \
             -p 127.0.0.1:6080:6080 \
+            -e QIKVRT_START_URL=about:blank \
             -v qikvrt-test-profile:/var/lib/qikvrt/profile \
             -v qikvrt-test-state:/var/lib/qikvrt/state \
             qikvrt/universal-terminal:${EXACT_SUBJECT_SHA}
@@ -71,8 +73,11 @@ jobs:
             if docker exec qikvrt-terminal /usr/local/bin/qikvrt-runtime-health; then break; fi
             sleep 1
           done
-          docker exec qikvrt-terminal /usr/local/bin/qikvrt-runtime-health
-          docker exec qikvrt-terminal curl -fsS http://127.0.0.1:8771/.well-known/effect-ack > /tmp/effect-ack.json
+          for i in $(seq 1 3); do
+            docker exec qikvrt-terminal /usr/local/bin/qikvrt-runtime-health
+            docker exec qikvrt-terminal curl -fsS http://127.0.0.1:8771/.well-known/effect-ack > /tmp/effect-ack.json
+            sleep 1
+          done
           python3 - <<'PY'
           import json
           value=json.load(open('/tmp/effect-ack.json',encoding='utf-8'))
@@ -92,6 +97,7 @@ jobs:
           docker rm -f qikvrt-terminal >/dev/null
           docker run -d --name qikvrt-terminal \
             -p 127.0.0.1:6080:6080 \
+            -e QIKVRT_START_URL=about:blank \
             -v qikvrt-test-profile:/var/lib/qikvrt/profile \
             -v qikvrt-test-state:/var/lib/qikvrt/state \
             qikvrt/universal-terminal:${EXACT_SUBJECT_SHA}
@@ -99,16 +105,21 @@ jobs:
             if docker exec qikvrt-terminal /usr/local/bin/qikvrt-runtime-health; then break; fi
             sleep 1
           done
-          docker exec qikvrt-terminal /usr/local/bin/qikvrt-runtime-health
+          for i in $(seq 1 3); do
+            docker exec qikvrt-terminal /usr/local/bin/qikvrt-runtime-health
+            docker exec qikvrt-terminal curl -fsS http://127.0.0.1:8771/.well-known/effect-ack > /tmp/effect-ack-after-restart.json
+            sleep 1
+          done
           test "$(docker exec qikvrt-terminal cat /var/lib/qikvrt/profile/.qikvrt-restart-sentinel)" = durable-session-sentinel
           docker cp qikvrt-terminal:/var/lib/qikvrt/state/runtime.json /tmp/runtime-after.json
           python3 - <<'PY'
           import json
           before=json.load(open('/tmp/runtime-before.json',encoding='utf-8'))
           after=json.load(open('/tmp/runtime-after.json',encoding='utf-8'))
-          assert before['schema']==after['schema']=='qikvrt_universal_terminal_runtime_state_v1'
+          assert before['schema']==after['schema']=='qikvrt_universal_terminal_runtime_state_v2'
           assert before['runtime_id']==after['runtime_id']=='qikvrt-firefox-terminal'
           assert before['profile_persistent'] is True and after['profile_persistent'] is True
+          assert before['start_url']==after['start_url']=='about:blank'
           assert after['authenticated_session_storage']=='FIREFOX_PROFILE'
           assert after['external_effect_claimed'] is False
           assert after['started_at_unix'] >= before['started_at_unix']
@@ -119,29 +130,33 @@ jobs:
           mkdir -p /tmp/qikvrt-terminal-evidence/runtime-logs
           docker inspect qikvrt-terminal > /tmp/qikvrt-terminal-evidence/container-inspect.json 2>/dev/null || true
           docker logs qikvrt-terminal > /tmp/qikvrt-terminal-evidence/container.log 2>&1 || true
+          docker exec qikvrt-terminal ps -eo pid,ppid,stat,args > /tmp/qikvrt-terminal-evidence/processes.txt 2>&1 || true
           docker cp qikvrt-terminal:/opt/qikvrt/runtime/logs/. /tmp/qikvrt-terminal-evidence/runtime-logs/ 2>/dev/null || true
           docker cp qikvrt-terminal:/var/lib/qikvrt/state/runtime.json /tmp/qikvrt-terminal-evidence/runtime-state.json 2>/dev/null || true
           cp /tmp/runtime-before.json /tmp/qikvrt-terminal-evidence/runtime-before.json 2>/dev/null || true
           cp /tmp/runtime-after.json /tmp/qikvrt-terminal-evidence/runtime-after.json 2>/dev/null || true
           cp /tmp/effect-ack.json /tmp/qikvrt-terminal-evidence/effect-ack-capability.json 2>/dev/null || true
+          cp /tmp/effect-ack-after-restart.json /tmp/qikvrt-terminal-evidence/effect-ack-after-restart.json 2>/dev/null || true
           cp /tmp/vnc.html /tmp/qikvrt-terminal-evidence/vnc.html 2>/dev/null || true
           cp /tmp/qikvrt-compose.json /tmp/qikvrt-terminal-evidence/compose-rendered.json 2>/dev/null || true
           printf '%s\n' "$EXACT_SUBJECT_SHA" > /tmp/qikvrt-terminal-evidence/exact-head.txt
           python3 - <<'PY'
           import json, os
           sha=os.environ['EXACT_SUBJECT_SHA']
-          effect_ack_observed=os.path.exists('/tmp/effect-ack.json') and os.path.getsize('/tmp/effect-ack.json') > 0
-          runtime_observed=os.path.exists('/tmp/runtime-after.json')
+          initial_effect_ack_observed=os.path.exists('/tmp/effect-ack.json') and os.path.getsize('/tmp/effect-ack.json') > 0
+          restart_effect_ack_observed=os.path.exists('/tmp/effect-ack-after-restart.json') and os.path.getsize('/tmp/effect-ack-after-restart.json') > 0
+          initial_runtime_observed=os.path.exists('/tmp/runtime-before.json')
+          restart_runtime_observed=os.path.exists('/tmp/runtime-after.json')
           receipt={
             'schema':'qikvrt_universal_terminal_runtime_receipt_v2',
             'subject_head_sha':sha,
-            'oci_build':'EXECUTED' if runtime_observed else 'UNOBSERVED',
-            'container_start':'EXECUTED' if runtime_observed else 'UNOBSERVED',
-            'durable_restart':'EXECUTED' if runtime_observed else 'UNOBSERVED',
-            'persistent_profile_readback':'OBSERVED' if runtime_observed else 'UNOBSERVED',
-            'runtime_health_readback':'OBSERVED' if runtime_observed else 'UNOBSERVED',
-            'effect_ack_capability_readback':'OBSERVED' if effect_ack_observed else 'UNOBSERVED',
-            'firefox_process_check':'EXECUTED' if runtime_observed else 'UNOBSERVED',
+            'oci_build':'EXECUTED',
+            'container_start':'EXECUTED' if initial_runtime_observed else 'UNOBSERVED',
+            'durable_restart':'EXECUTED' if restart_runtime_observed else 'UNOBSERVED',
+            'persistent_profile_readback':'OBSERVED' if restart_runtime_observed else 'UNOBSERVED',
+            'runtime_health_readback':'OBSERVED' if initial_runtime_observed and restart_runtime_observed else 'UNOBSERVED',
+            'effect_ack_capability_readback':'OBSERVED' if initial_effect_ack_observed and restart_effect_ack_observed else 'UNOBSERVED',
+            'firefox_process_check':'EXECUTED' if initial_runtime_observed and restart_runtime_observed else 'UNOBSERVED',
             'novnc_surface_check':'EXECUTED' if os.path.exists('/tmp/vnc.html') else 'UNOBSERVED',
             'external_arxiv_submission':'NOT_EXECUTED',
             'external_wikipedia_edit':'NOT_EXECUTED',

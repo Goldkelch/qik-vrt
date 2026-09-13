@@ -20,7 +20,7 @@ RUN set -eux; \
 FROM debian:bookworm-slim
 ENV DEBIAN_FRONTEND=noninteractive DISPLAY=:99 \
     QIKVRT_HTTP_HOST=127.0.0.1 QIKVRT_HTTP_PORT=8771 QIKVRT_NOVNC_PORT=6080 \
-    QIKVRT_START_URL=http://qikvrt-gateway:8080/qik-vrt/mesh/v1/ \
+    QIKVRT_START_URL=about:blank \
     QIKVRT_PROFILE_DIR=/var/lib/qikvrt/profile QIKVRT_STATE_DIR=/var/lib/qikvrt/state \
     QIKVRT_RUNTIME_ID=qikvrt-firefox-terminal QIKVRT_SERVICE_MODE=terminal \
     QIKVRT_MC68000_CC=m68k-linux-gnu-gcc QIKVRT_MC68000_RUNNER=qemu-m68k
@@ -42,7 +42,7 @@ RUN mkdir -p /opt/qikvrt/runtime/bootstrap-profile/extensions /opt/qikvrt/runtim
     /var/lib/qikvrt/postgres /var/lib/qikvrt/mirror /var/lib/qikvrt/personal-posix \
     && (cd browser/firefox/qikvrt-terminal && zip -qr /opt/qikvrt/runtime/bootstrap-profile/extensions/qikvrt-ai-terminal@goldkelch.local.xpi .) \
     && printf '%s\n' 'user_pref("browser.shell.checkDefaultBrowser", false);' \
-      'user_pref("browser.startup.homepage", "http://qikvrt-gateway:8080/qik-vrt/mesh/v1/");' \
+      'user_pref("browser.startup.homepage", "about:blank");' \
       'user_pref("toolkit.telemetry.reportingpolicy.firstRun", false);' \
       'user_pref("datareporting.policy.dataSubmissionEnabled", false);' \
       'user_pref("browser.sessionstore.resume_from_crash", true);' \
