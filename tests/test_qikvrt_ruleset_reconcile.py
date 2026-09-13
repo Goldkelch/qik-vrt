@@ -106,6 +106,25 @@ class RulesetReconcileTests(unittest.TestCase):
         self.assertNotIn("pull-requests: write", workflow)
         self.assertNotIn("contents: write", workflow)
 
+    def test_autonomous_effect_loop_never_shadows_native_reads_with_optional_admin_secret(self):
+        workflow = (
+            reconcile.ROOT
+            / ".github/workflows/qikvrt_autonomous_ruleset_effect_loop.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("GH_TOKEN: ${{ github.token }}", workflow)
+        self.assertIn(
+            "QIKVRT_RULESET_ADMIN_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}",
+            workflow,
+        )
+        self.assertNotIn(
+            "GH_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}",
+            workflow,
+        )
+        self.assertLess(
+            workflow.index("GH_TOKEN: ${{ github.token }}"),
+            workflow.index("QIKVRT_RULESET_ADMIN_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
