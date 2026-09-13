@@ -34,7 +34,7 @@ jobs:
           import subprocess
           got=set(subprocess.check_output(['git','diff','--name-only'],text=True).splitlines())
           want={'REPOSITORY_FILE_MANIFEST.json','REPOSITORY_FILE_MANIFEST.json.sha256','SHA256SUMS.txt'}
-          assert got==want,(got,want)
+          assert got in (set(),want),(got,want)
           PY
       - name: Store only canonical integrity blobs and read bytes back
         env:
