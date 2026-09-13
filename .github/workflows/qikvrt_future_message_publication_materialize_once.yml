@@ -45,7 +45,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m pip install --disable-pip-version-check --no-deps 'reportlab==5.0.1'
+          python3 -m pip install --disable-pip-version-check 'reportlab==5.0.1'
+          python3 -m pip freeze | sort > "$RUNNER_TEMP/pdf-runtime.freeze"
           dir='docs/publications/2026-09-13-future-message-present-receiver'
           python3 -B "$dir/render_publication_pdf.py"
           cp "$dir/Eine_Nachricht_aus_der_Zukunft_QIK-VRT_Lohmann_2026-09-13.pdf" "$RUNNER_TEMP/first.pdf"
@@ -81,11 +82,10 @@ jobs:
             'docs/publications/2026-09-13-future-message-present-receiver/Eine_Nachricht_aus_der_Zukunft_QIK-VRT_Lohmann_2026-09-13.pdf',
             'docs/publications/index.json','docs/publications/index.html',
             'REPOSITORY_FILE_MANIFEST.json','REPOSITORY_FILE_MANIFEST.json.sha256','SHA256SUMS.txt'}
-          changed=set(subprocess.check_output(['git','status','--porcelain=v1','-z']).decode().strip('\0').split('\0'))
+          raw=subprocess.check_output(['git','status','--porcelain=v1','-z']).decode().strip('\0')
           paths=set()
-          for item in changed:
-              if not item: continue
-              paths.add(item[3:] if len(item)>3 else item)
+          for item in raw.split('\0') if raw else []:
+              if item: paths.add(item[3:] if len(item)>3 else item)
           if not paths or not paths <= allowed:
               raise SystemExit('HOLD: unexpected or empty materialized delta '+repr(paths))
           PY
@@ -110,6 +110,7 @@ jobs:
           path: |
             ${{ runner.temp }}/first.pdf
             ${{ runner.temp }}/pdf.sha256
+            ${{ runner.temp }}/pdf-runtime.freeze
             ${{ runner.temp }}/publication-overview.json
             ${{ runner.temp }}/make-test.log
             ${{ runner.temp }}/pr-readback.json
