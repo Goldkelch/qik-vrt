@@ -2,6 +2,10 @@
 
 This file is an ordinary human/machine entrypoint into the QIK-VRT evidence model.
 
+## Scope
+
+This contract applies **exclusively to Ingolf Lohmann's QIK-VRT Tested Event Model Driven Development Mesh Repository**, including its Authority/Mirror topology and its internal Mesh nodes, adapters and working copies where they are explicitly bound to this project. It does **not** assert a generic contract for arbitrary Mesh repositories or unrelated repositories.
+
 ## Fastest safe orientation path
 
 The repository must explain the same canonical state to human cognition and artificial cognition without requiring either reader to reconstruct meaning from chat history.
@@ -89,11 +93,11 @@ Normative machine-readable policy: `policy/MESH_SELF_EXPLANATION_V1.json`.
 
 ## Maintenance rule
 
-A material semantic change is incomplete until the normative policy and every affected human, artificial-cognitive and machine-readable surface agree again and the self-explanation regression has passed on the exact successor. Partial updates are fail-closed. This is how the Mesh keeps self-explanation as a maintained property rather than a one-time documentation exercise.
+A material semantic change is incomplete until the normative policy and every affected human, artificial-cognitive, canonical-context and machine-readable surface agree again and the self-explanation regression has passed on the exact successor. Partial updates are fail-closed. This is how the QIK-VRT TEMDD Mesh keeps self-explanation as a maintained property rather than a one-time documentation exercise.
 
 ## Adaptation contract
 
-Downstream Mesh nodes and adapters may add stronger checks, richer metadata, domain-specific schemas and local execution logic. They may not weaken the core semantic distinctions above. At minimum they must preserve:
+Internal downstream Mesh nodes and adapters of this QIK-VRT Tested Event Model Driven Development Mesh may add stronger checks, richer metadata, domain-specific schemas and local execution logic. They may not weaken the core semantic distinctions above. This clause does not extend the contract to arbitrary external Mesh repositories. At minimum internal elements must preserve:
 
 - provenance;
 - exact-subject binding;
@@ -142,4 +146,4 @@ For the full synthesis and public-language bridge, continue to:
 
 ## Bootstrap
 
-Artificial-cognitive systems must still begin at `/AI` and follow `AI_CONTEXT.json`. This document is an explanatory and interoperability surface, not a replacement for the repository boot protocol.
+Artificial-cognitive systems operating on this QIK-VRT TEMDD Mesh must still begin at `/AI` and follow `AI_CONTEXT.json`. This document is an explanatory and interoperability surface, not a replacement for the repository boot protocol.
