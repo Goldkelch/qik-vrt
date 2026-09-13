@@ -233,6 +233,16 @@ jobs:
             --output "$PREVIEW_ROOT/index.html" \
             | tee "$PREVIEW_ROOT/validation.json"
           cp -R docs/reise "$PREVIEW_ROOT/source"
+          python3 -B - <<'PYBIND'
+          import json, os, pathlib, subprocess
+          from tools.qikvrt_journey_integrity_objects import public_site_bytes, rendered_delivery_manifest
+          head = subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip()
+          tree = subprocess.check_output(['git','rev-parse','HEAD^{tree}'], text=True).strip()
+          assert head == os.environ['EXPECTED_HEAD']
+          raw = public_site_bytes()
+          manifest = rendered_delivery_manifest(pathlib.Path('docs/reise'), raw, head=head, tree=tree)
+          pathlib.Path(os.environ['PREVIEW_ROOT'], 'DELIVERY_MANIFEST.json').write_text(json.dumps(manifest, indent=2, sort_keys=True)+'\n', encoding='utf-8')
+          PYBIND
       - name: Export canonical integrity proposal without mutating the checkout
         if: steps.detect.outputs.present == 'true'
         shell: bash

@@ -69,6 +69,55 @@ class IntegrityObjectsTest(unittest.TestCase):
         if index.exists():
             self.assertEqual(index.read_bytes(), expected)
 
+
+    def test_delivery_manifest_binds_all_rendered_texts_and_current_subject(self):
+        root = Path(__file__).resolve().parents[1] / "docs/reise"
+        raw = subject.public_site_bytes(root)
+        receipt = subject.rendered_delivery_manifest(root, raw, head="a" * 40, tree="b" * 40)
+        self.assertEqual(receipt["homepage"]["git_blob_sha1"], subject.blob_id(raw))
+        self.assertEqual(len(receipt["editions"]), 47)
+        self.assertTrue(all(row["rendered_blocks"] == 540 for row in receipt["editions"]))
+        self.assertEqual(len(receipt["language_chooser"]["edition_order"]), 47)
+        self.assertEqual(receipt["public_http_readback"], "NOT_OBSERVED")
+        self.assertFalse(receipt["public_delivery"])
+        self.assertFalse(receipt["native_review"])
+        self.assertFalse(receipt["EFFECT_ACK_DONE"])
+        successor = subject.rendered_delivery_manifest(root, raw, head="c" * 40, tree="d" * 40)
+        self.assertNotEqual(receipt["subject"], successor["subject"])
+        self.assertEqual(receipt["homepage"], successor["homepage"])
+
+    def test_rendered_content_chooser_download_and_script_tampering_is_rejected(self):
+        root = Path(__file__).resolve().parents[1] / "docs/reise"
+        raw = subject.public_site_bytes(root)
+        mutations = [
+            raw.replace(b'id="en-p0003"', b'id="en-p9999"', 1),
+            raw.replace(b'data-lang="en"', b'data-lang="unknown"', 1),
+            raw.replace(b'data-lang="en"', b'disabled data-lang="en"', 1),
+            raw.replace(b'current=null;return false;', b'current="de";return true;', 1),
+            raw.replace(b'"raw_editions": {"de":', b'"raw_editions": {"wrong":', 1),
+            raw.replace(b'id="en-p0003"', b'id="de-p0003"', 1),
+            raw.replace(b'id="en-p0003">', b'id="en-p0003">CHANGED', 1),
+        ]
+        for changed in mutations:
+            self.assertNotEqual(changed, raw)
+            with self.subTest(bytes=len(changed)), self.assertRaises((ValueError, KeyError)):
+                subject.rendered_delivery_manifest(root, changed, head="a" * 40, tree="b" * 40)
+
+    def test_journey_has_separate_pending_delivery_obligation(self):
+        import json
+        root = Path(__file__).resolve().parents[1]
+        active = json.loads((root / "state/delivery/ACTIVE_DELIVERY_OBLIGATIONS_V1.json").read_text())
+        rows = [o for o in active["obligations"] if o["id"] == "JOURNEY_47_HOMEPAGE_TO_PAGES_V1"]
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["source_pr"], 1080)
+        self.assertEqual(row["completion"], "PENDING")
+        self.assertIn(subject.PUBLIC_PATH, row["required_main_paths"])
+        self.assertIn("mobile_browser_receipt", row["delivery"]["authoritative_readback"])
+        self.assertIn("deployment_source_sha", row["delivery"]["authoritative_readback"])
+        request = json.loads((root / row["delivery"]["request"]).read_text())
+        self.assertEqual(request["delivery"]["binding_manifest"]["obligation_id"], row["id"])
+
     def test_workflow_is_event_bound_and_has_no_ref_writer(self):
         root = Path(__file__).resolve().parents[1]
         workflow = (root / ".github/workflows/qikvrt_journey_integrity_objects.yml").read_text()

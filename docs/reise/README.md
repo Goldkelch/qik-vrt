@@ -34,12 +34,18 @@ python3 -B tools/qikvrt_journey_site.py preview --output /tmp/qikvrt-journey/ind
 python3 -B tools/qikvrt_journey_site.py coverage-check
 ```
 
-The preview is explicitly incomplete until all 47 full texts are present.
-The initial candidate contains the German original and the English draft;
-45 editions remain unimplemented. Missing editions are disabled, not replaced
-by a different language or a link to an unarchived translation service.
-The coverage command must return a nonzero result while any edition is absent.
-Structural equality of block counts is not a proof of linguistic equivalence.
+The candidate now contains the German original and 46 source-bound, unreviewed
+AI translation drafts. `docs/reise/index.html` is the deterministic public-page
+candidate. Structural coverage is not independent linguistic confirmation.
+
+The existing Journey object workflow and literal-head CI preview emit
+`qikvrt_journey_delivery_manifest_v1`: it binds the actual public HTML bytes,
+the request and frozen language scope, all 47 chooser options, script/style
+identities, all 540 blocks per edition and the exact downloadable text bytes.
+The HTML text nodes are checked independently of the renderer's source inventory.
+The CI artifact includes `DELIVERY_MANIFEST.json`; the Journey object receipt
+includes the same manifest under `delivery_manifest`. Both bind the producing
+candidate head/tree and explicitly leave HTTP and browser effects open.
 
 The read-only preview job extends the existing QIKVRT CI workflow. It uploads
 an exact-head preview, coverage report and canonical integrity proposal without
@@ -49,12 +55,20 @@ fresh exact-successor validation can be claimed.
 
 ## Remaining delivery conditions
 
-Complete the remaining source-bound translations, validate their coverage and
-language quality, then follow the required exact-head validation, native review,
+Validate the source-bound drafts and retain their unreviewed status. Follow
+the required exact-head validation, native review,
 post-review readback, legitimate Main promotion and exact-Main readback path.
 Public delivery requires a separate actual deployment and HTTP/content readback
-of the landing page and every available language route. The planned `/reise/`
-URL is not a delivered homepage until those observations exist.
+of the landing page and every available language route. The active obligation is `JOURNEY_47_HOMEPAGE_TO_PAGES_V1` in
+`state/delivery/ACTIVE_DELIVERY_OBLIGATIONS_V1.json`; its request and exact
+readback requirements are in `REQUEST.json`. At P7, regenerate or independently
+verify the manifest against the freshly observed Trusted Main and bind the
+actual deployment source SHA. Require the served response bytes to equal that
+Main-bound homepage and verify each `#lang=` state in a browser. Fragments are
+client-side state and cannot be verified by HTTP status alone. Desktop/mobile
+chooser behavior, search, keyboard focus, RTL, downloads and content remain
+separately required browser observations. The planned `/reise/` URL is not a
+delivered homepage until those observations exist.
 
 No native review, merge, deployment, Wikipedia/Zenodo/arXiv publication,
 independent empirical confirmation, PASS, FINAL_PASS or EFFECT_ACK_DONE is
