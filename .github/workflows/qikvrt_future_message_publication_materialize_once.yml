@@ -35,7 +35,7 @@ jobs:
         with:
           ref: ${{ env.EXPECTED_HEAD }}
           fetch-depth: 0
-          persist-credentials: false
+          persist-credentials: true
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
@@ -66,7 +66,7 @@ jobs:
           make test > "$RUNNER_TEMP/make-test.log" 2>&1 || { tail -n 160 "$RUNNER_TEMP/make-test.log"; exit 1; }
           python3 -B tools/qikvrt_integrity.py verify
           git diff --check
-      - name: Persist productive delta with Git transport; create PR only if API budget permits
+      - name: Persist productive delta with bounded checkout credential; create PR only if API budget permits
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -93,7 +93,7 @@ jobs:
           git commit -m 'publication: persist deterministic future-message evidence PDF and indexes'
           successor="$(git rev-parse HEAD)"
           tree="$(git rev-parse HEAD^{tree})"
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: bearer $GH_TOKEN" push origin "HEAD:refs/heads/$TARGET_REF"
+          git push origin "HEAD:refs/heads/$TARGET_REF"
           observed="$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/heads/$TARGET_REF" | awk 'NR==1{print $1}')"
           test "$observed" = "$successor" || { echo 'HOLD: persisted ref readback mismatch'; exit 2; }
           printf '{"head":"%s","tree":"%s","ref":"%s","ref_readback":true}\n' "$successor" "$tree" "$TARGET_REF" | tee "$RUNNER_TEMP/persistence-readback.json"
