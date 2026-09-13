@@ -77,6 +77,11 @@ class UniversalTerminalNetworkBoundaryTests(unittest.TestCase):
         self.assertIn("initial-readback-observations.log", workflow)
         self.assertIn("restart-readback-observations.log", workflow)
         self.assertIn("loopback-sockets.txt", workflow)
+        self.assertIn("initial-post-readback-checks.log", workflow)
+        self.assertIn("restart-post-readback-checks.log", workflow)
+        self.assertEqual(workflow.count("CHECK_NAME=stable_paired_readback"), 2)
+        self.assertIn("CHECK_NAME=profile_extension", workflow)
+        self.assertIn("CHECK_NAME=initial_runtime_state_copy", workflow)
 
 
 if __name__ == "__main__":

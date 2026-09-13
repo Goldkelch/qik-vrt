@@ -51,7 +51,7 @@
     },
     {
       "type": "IMPLEMENTATION",
-      "description": "Integrated current Main append-only, restored a standalone-neutral terminal start surface, retained explicit Cloud/Compose Mesh routing, aligned the runtime contract at V2, and made the container contract require three consecutive full Health-plus-capability readback pairs with bounded observation and socket evidence."
+      "description": "Integrated current Main append-only, restored a standalone-neutral terminal start surface, retained explicit Cloud/Compose Mesh routing, aligned the runtime contract at V2, made the container contract require three consecutive full Health-plus-capability readback pairs with bounded observation and socket evidence, and labelled every post-readback check in the runtime artifact."
     },
     {
       "type": "VERIFICATION_PREPARATION",
@@ -67,7 +67,7 @@
     }
   ],
   "unresolved_origin": [
-    "Both the historical container artifact and exact head a20b2a1ba02f4e10d1127b4085f5357285b show a loopback refusal after a successful health readback while the daemon process remains alive; neither exposes decisive socket state or a child-process exit cause. The candidate requires a bounded stable-pair observation and preserves socket evidence rather than inventing that cause."
+    "The historical artifact and exact head a20b2a1ba02f4e10d1127b4085f5357285b show an early loopback refusal after a successful health readback while the daemon process remains alive. Exact head 4565067583f50bef85cd45ff5a2d17955d9878cc then achieved stable readback attempts 4 through 6 and exposed a later unlabelled post-readback failure. The next candidate preserves socket state and labels every remaining check rather than inventing either cause."
   ],
   "inputs": {
     "retention_mode": "METADATA_ONLY",
@@ -78,7 +78,8 @@
       "Main a86054139b49c13c5cd344753b248b46b5daf66f",
       "universal-terminal run 34571994361 job 103175902892",
       "diagnostic artifact 10188149377 SHA-256 2c958a2b64d34e6b4503e928c4dd595dda9c1c6e8d0956ef71cb3c6ee742f5ac",
-      "exact-head universal-terminal run 34774954700 job 103771256756 artifact 10322584913"
+      "exact-head universal-terminal run 34774954700 job 103771256756 artifact 10322584913",
+      "exact-head universal-terminal run 34775510859 job 103772787501 artifact 10323212000"
     ]
   },
   "outputs": {
@@ -101,10 +102,10 @@
     "tool_cache": "PASS_14_OF_14",
     "bootstrap_before_repair": "BLOCK_PERSISTED_REPOSITORY_INTEGRITY_MISMATCH",
     "standalone_daemon_liveness_before_repair": "PASS_THREE_CONSECUTIVE_LOOPBACK_READBACKS",
-    "focused_tests": "PASS_12_TESTS_LOCAL_STABILITY_REPAIR_WORKTREE",
-    "full_repository_tests": "PASS_MAKE_TEST_EXIT_0_LOCAL_STABILITY_REPAIR_WORKTREE",
-    "repository_integrity_after_change": "PASS_4114_CLASSIFIED_ENTRIES_4105_IMMUTABLE_DIGESTS_LOCAL_STABILITY_REPAIR_WORKTREE",
-    "trusted_exact_head_ci": "PENDING_NEW_STABILITY_CANDIDATE_COMMIT_AND_REMOTE_REOBSERVATION"
+    "focused_tests": "PASS_12_TESTS_LOCAL_CHECK_LEDGER_WORKTREE",
+    "full_repository_tests": "PASS_MAKE_TEST_EXIT_0_LOCAL_CHECK_LEDGER_WORKTREE",
+    "repository_integrity_after_change": "PASS_4114_CLASSIFIED_ENTRIES_4105_IMMUTABLE_DIGESTS_LOCAL_CHECK_LEDGER_WORKTREE",
+    "trusted_exact_head_ci": "PENDING_NEW_CHECK_LEDGER_CANDIDATE_COMMIT_AND_REMOTE_REOBSERVATION"
   },
   "human_decision": {
     "implementation_authorization": "PRODUCT_OWNER_AUTHORIZED_CURRENT_CHAT",
@@ -119,7 +120,7 @@
     "deployment": "NOT_EXECUTED",
     "publication": "NOT_EXECUTED"
   },
-  "status": "LOCAL_VALIDATED_STABILITY_REPAIR_PENDING_CANDIDATE_COMMIT_AND_EXACT_HEAD_CI",
+  "status": "LOCAL_VALIDATED_CHECK_LEDGER_REPAIR_PENDING_CANDIDATE_COMMIT_AND_EXACT_HEAD_CI",
   "release_claims": {
     "PASS": false,
     "FINAL_PASS": false,

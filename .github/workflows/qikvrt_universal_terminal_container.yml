@@ -68,6 +68,10 @@ jobs:
       - name: Reobserve EFFECT_ACK daemon visible browser and runtime state
         run: |
           set -euo pipefail
+          CHECK_LOG=/tmp/initial-post-readback-checks.log
+          CHECK_NAME=initialization
+          : > "$CHECK_LOG"
+          trap 'status=$?; printf "check=%s state=FAIL exit=%s\\n" "$CHECK_NAME" "$status" >> "$CHECK_LOG"; exit "$status"' ERR
           reobserve_stable_terminal() {
             payload="$1"
             observation_log="$2"
@@ -88,7 +92,10 @@ jobs:
             done
             return 1
           }
+          CHECK_NAME=stable_paired_readback
           reobserve_stable_terminal /tmp/effect-ack.json /tmp/effect-ack-observations.log
+          printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
+          CHECK_NAME=capability_payload
           python3 - <<'PY'
           import json
           value=json.load(open('/tmp/effect-ack.json',encoding='utf-8'))
@@ -96,15 +103,31 @@ jobs:
           assert value['modes']==['prepare','commit']
           assert value['external_effects']=='NONE'
           PY
+          printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
+          CHECK_NAME=novnc_surface
           curl -fsS http://127.0.0.1:6080/vnc.html >/tmp/vnc.html
           grep -Eqi '<html|<!doctype html' /tmp/vnc.html
+          printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
+          CHECK_NAME=profile_extension
           docker exec qikvrt-terminal test -f /var/lib/qikvrt/profile/extensions/qikvrt-ai-terminal@goldkelch.local.xpi
+          printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
+          CHECK_NAME=profile_initialization_marker
           docker exec qikvrt-terminal test -f /var/lib/qikvrt/profile/.qikvrt-profile-initialized
+          printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
+          CHECK_NAME=durable_profile_write
           docker exec qikvrt-terminal sh -lc 'printf "%s\n" durable-session-sentinel > /var/lib/qikvrt/profile/.qikvrt-restart-sentinel'
+          printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
+          CHECK_NAME=initial_runtime_state_copy
           docker cp qikvrt-terminal:/var/lib/qikvrt/state/runtime.json /tmp/runtime-before.json
+          printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
+          trap - ERR
       - name: Restart with same persistent profile and reobserve
         run: |
           set -euo pipefail
+          CHECK_LOG=/tmp/restart-post-readback-checks.log
+          CHECK_NAME=initialization
+          : > "$CHECK_LOG"
+          trap 'status=$?; printf "check=%s state=FAIL exit=%s\\n" "$CHECK_NAME" "$status" >> "$CHECK_LOG"; exit "$status"' ERR
           docker rm -f qikvrt-terminal >/dev/null
           docker run -d --name qikvrt-terminal \
             -p 127.0.0.1:6080:6080 \
@@ -132,9 +155,16 @@ jobs:
             done
             return 1
           }
+          CHECK_NAME=stable_paired_readback
           reobserve_stable_terminal /tmp/effect-ack-after-restart.json /tmp/effect-ack-after-restart-observations.log
+          printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
+          CHECK_NAME=restart_sentinel
           test "$(docker exec qikvrt-terminal cat /var/lib/qikvrt/profile/.qikvrt-restart-sentinel)" = durable-session-sentinel
+          printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
+          CHECK_NAME=restart_runtime_state_copy
           docker cp qikvrt-terminal:/var/lib/qikvrt/state/runtime.json /tmp/runtime-after.json
+          printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
+          CHECK_NAME=restart_runtime_contract
           python3 - <<'PY'
           import json
           before=json.load(open('/tmp/runtime-before.json',encoding='utf-8'))
@@ -147,6 +177,8 @@ jobs:
           assert after['external_effect_claimed'] is False
           assert after['started_at_unix'] >= before['started_at_unix']
           PY
+          printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
+          trap - ERR
       - name: Preserve exact runtime evidence
         if: always()
         run: |
@@ -163,6 +195,8 @@ jobs:
           cp /tmp/effect-ack-after-restart.json /tmp/qikvrt-terminal-evidence/effect-ack-after-restart.json 2>/dev/null || true
           cp /tmp/effect-ack-observations.log /tmp/qikvrt-terminal-evidence/initial-readback-observations.log 2>/dev/null || true
           cp /tmp/effect-ack-after-restart-observations.log /tmp/qikvrt-terminal-evidence/restart-readback-observations.log 2>/dev/null || true
+          cp /tmp/initial-post-readback-checks.log /tmp/qikvrt-terminal-evidence/initial-post-readback-checks.log 2>/dev/null || true
+          cp /tmp/restart-post-readback-checks.log /tmp/qikvrt-terminal-evidence/restart-post-readback-checks.log 2>/dev/null || true
           cp /tmp/vnc.html /tmp/qikvrt-terminal-evidence/vnc.html 2>/dev/null || true
           cp /tmp/qikvrt-compose.json /tmp/qikvrt-terminal-evidence/compose-rendered.json 2>/dev/null || true
           printf '%s\n' "$EXACT_SUBJECT_SHA" > /tmp/qikvrt-terminal-evidence/exact-head.txt
