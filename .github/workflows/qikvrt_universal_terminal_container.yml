@@ -68,16 +68,27 @@ jobs:
       - name: Reobserve EFFECT_ACK daemon visible browser and runtime state
         run: |
           set -euo pipefail
-          : > /tmp/effect-ack.json
-          for i in $(seq 1 40); do
-            if docker exec qikvrt-terminal /usr/local/bin/qikvrt-runtime-health; then break; fi
-            sleep 1
-          done
-          for i in $(seq 1 3); do
-            docker exec qikvrt-terminal /usr/local/bin/qikvrt-runtime-health
-            docker exec qikvrt-terminal curl -fsS http://127.0.0.1:8771/.well-known/effect-ack > /tmp/effect-ack.json
-            sleep 1
-          done
+          reobserve_stable_terminal() {
+            payload="$1"
+            observation_log="$2"
+            : > "$payload"
+            : > "$observation_log"
+            stable=0
+            for attempt in $(seq 1 40); do
+              if docker exec qikvrt-terminal /usr/local/bin/qikvrt-runtime-health \
+                && docker exec qikvrt-terminal curl --max-time 2 -fsS http://127.0.0.1:8771/.well-known/effect-ack > "$payload"; then
+                stable=$((stable + 1))
+                printf 'attempt=%s paired_readback=SUCCESS consecutive=%s\n' "$attempt" "$stable" >> "$observation_log"
+                if [ "$stable" -eq 3 ]; then return 0; fi
+              else
+                stable=0
+                printf 'attempt=%s paired_readback=FAILURE consecutive=0\n' "$attempt" >> "$observation_log"
+              fi
+              sleep 1
+            done
+            return 1
+          }
+          reobserve_stable_terminal /tmp/effect-ack.json /tmp/effect-ack-observations.log
           python3 - <<'PY'
           import json
           value=json.load(open('/tmp/effect-ack.json',encoding='utf-8'))
@@ -101,15 +112,27 @@ jobs:
             -v qikvrt-test-profile:/var/lib/qikvrt/profile \
             -v qikvrt-test-state:/var/lib/qikvrt/state \
             qikvrt/universal-terminal:${EXACT_SUBJECT_SHA}
-          for i in $(seq 1 40); do
-            if docker exec qikvrt-terminal /usr/local/bin/qikvrt-runtime-health; then break; fi
-            sleep 1
-          done
-          for i in $(seq 1 3); do
-            docker exec qikvrt-terminal /usr/local/bin/qikvrt-runtime-health
-            docker exec qikvrt-terminal curl -fsS http://127.0.0.1:8771/.well-known/effect-ack > /tmp/effect-ack-after-restart.json
-            sleep 1
-          done
+          reobserve_stable_terminal() {
+            payload="$1"
+            observation_log="$2"
+            : > "$payload"
+            : > "$observation_log"
+            stable=0
+            for attempt in $(seq 1 40); do
+              if docker exec qikvrt-terminal /usr/local/bin/qikvrt-runtime-health \
+                && docker exec qikvrt-terminal curl --max-time 2 -fsS http://127.0.0.1:8771/.well-known/effect-ack > "$payload"; then
+                stable=$((stable + 1))
+                printf 'attempt=%s paired_readback=SUCCESS consecutive=%s\n' "$attempt" "$stable" >> "$observation_log"
+                if [ "$stable" -eq 3 ]; then return 0; fi
+              else
+                stable=0
+                printf 'attempt=%s paired_readback=FAILURE consecutive=0\n' "$attempt" >> "$observation_log"
+              fi
+              sleep 1
+            done
+            return 1
+          }
+          reobserve_stable_terminal /tmp/effect-ack-after-restart.json /tmp/effect-ack-after-restart-observations.log
           test "$(docker exec qikvrt-terminal cat /var/lib/qikvrt/profile/.qikvrt-restart-sentinel)" = durable-session-sentinel
           docker cp qikvrt-terminal:/var/lib/qikvrt/state/runtime.json /tmp/runtime-after.json
           python3 - <<'PY'
@@ -133,10 +156,13 @@ jobs:
           docker exec qikvrt-terminal ps -eo pid,ppid,stat,args > /tmp/qikvrt-terminal-evidence/processes.txt 2>&1 || true
           docker cp qikvrt-terminal:/opt/qikvrt/runtime/logs/. /tmp/qikvrt-terminal-evidence/runtime-logs/ 2>/dev/null || true
           docker cp qikvrt-terminal:/var/lib/qikvrt/state/runtime.json /tmp/qikvrt-terminal-evidence/runtime-state.json 2>/dev/null || true
+          docker exec qikvrt-terminal sh -c 'cat /proc/net/tcp; cat /proc/net/tcp6' > /tmp/qikvrt-terminal-evidence/loopback-sockets.txt 2>&1 || true
           cp /tmp/runtime-before.json /tmp/qikvrt-terminal-evidence/runtime-before.json 2>/dev/null || true
           cp /tmp/runtime-after.json /tmp/qikvrt-terminal-evidence/runtime-after.json 2>/dev/null || true
           cp /tmp/effect-ack.json /tmp/qikvrt-terminal-evidence/effect-ack-capability.json 2>/dev/null || true
           cp /tmp/effect-ack-after-restart.json /tmp/qikvrt-terminal-evidence/effect-ack-after-restart.json 2>/dev/null || true
+          cp /tmp/effect-ack-observations.log /tmp/qikvrt-terminal-evidence/initial-readback-observations.log 2>/dev/null || true
+          cp /tmp/effect-ack-after-restart-observations.log /tmp/qikvrt-terminal-evidence/restart-readback-observations.log 2>/dev/null || true
           cp /tmp/vnc.html /tmp/qikvrt-terminal-evidence/vnc.html 2>/dev/null || true
           cp /tmp/qikvrt-compose.json /tmp/qikvrt-terminal-evidence/compose-rendered.json 2>/dev/null || true
           printf '%s\n' "$EXACT_SUBJECT_SHA" > /tmp/qikvrt-terminal-evidence/exact-head.txt

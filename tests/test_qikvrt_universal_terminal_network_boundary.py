@@ -63,6 +63,21 @@ class UniversalTerminalNetworkBoundaryTests(unittest.TestCase):
         self.assertIn("qikvrt_universal_terminal_runtime_state_v2", workflow)
         self.assertNotIn("qikvrt_universal_terminal_runtime_state_v1", workflow)
 
+    def test_workflow_requires_bounded_stable_paired_readbacks(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertEqual(workflow.count("reobserve_stable_terminal()"), 2)
+        self.assertEqual(workflow.count("for attempt in $(seq 1 40); do"), 2)
+        self.assertEqual(workflow.count('if [ "$stable" -eq 3 ]; then return 0; fi'), 2)
+        self.assertEqual(
+            workflow.count(
+                "curl --max-time 2 -fsS http://127.0.0.1:8771/.well-known/effect-ack"
+            ),
+            2,
+        )
+        self.assertIn("initial-readback-observations.log", workflow)
+        self.assertIn("restart-readback-observations.log", workflow)
+        self.assertIn("loopback-sockets.txt", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
