@@ -12,6 +12,10 @@ DISCLOSURE = ROOT / ".well-known/qik-vrt-self-disclosure.json"
 README = ROOT / "README.md"
 AI = ROOT / "AI"
 HUMAN_CONTRACT = ROOT / "docs/MESH_SELF_EXPLANATION_AND_DELIVERY.md"
+MATERIALIZER = ROOT / ".github/workflows/qikvrt_batch04_integrity.yml"
+MATERIALIZER_CONTINUATION = (
+    ROOT / ".github/workflows/qikvrt_materializer_exact_head_continuation.yml"
+)
 
 
 class AutokognitiveAutodidacticPolicyTests(unittest.TestCase):
@@ -24,6 +28,10 @@ class AutokognitiveAutodidacticPolicyTests(unittest.TestCase):
         cls.readme = README.read_text(encoding="utf-8")
         cls.ai = AI.read_text(encoding="utf-8")
         cls.human_contract = HUMAN_CONTRACT.read_text(encoding="utf-8")
+        cls.materializer = MATERIALIZER.read_text(encoding="utf-8")
+        cls.materializer_continuation = MATERIALIZER_CONTINUATION.read_text(
+            encoding="utf-8"
+        )
 
     def test_identity_and_recursive_learning_are_explicit(self):
         self.assertEqual(
@@ -200,6 +208,52 @@ class AutokognitiveAutodidacticPolicyTests(unittest.TestCase):
             self.mesh_explanation["mesh_interoperability"]["all_mesh_components_must_preserve_this_contract"],
             True,
         )
+
+    def test_materializer_persists_same_repository_pr_projection(self):
+        self.assertIn("Commit materialized repository evidence", self.materializer)
+        self.assertNotIn(
+            "if: github.event_name != 'pull_request'",
+            self.materializer,
+        )
+        for token in (
+            'git ls-remote --heads origin "refs/heads/$TARGET_REF"',
+            "BLOCK: target ref advanced before repository evidence persistence",
+            "remote_head_after_commit",
+            "BLOCK: target ref advanced while repository evidence was materialized",
+            'git push origin "HEAD:$TARGET_REF"',
+        ):
+            self.assertIn(token, self.materializer)
+
+    def test_materializer_successor_continuation_is_exact_and_non_authoritative(self):
+        text = self.materializer_continuation
+        self.assertIn("workflow_run:", text)
+        self.assertIn('"QIKVRT repository evidence materialization"', text)
+        self.assertIn("types: [completed]", text)
+        self.assertNotIn("schedule:", text)
+        self.assertNotIn("pull_request_target:", text)
+        self.assertIn("github.event.workflow_run.head_branch != 'main'", text)
+        self.assertIn(
+            "github.event.workflow_run.head_repository.full_name == github.repository",
+            text,
+        )
+        self.assertNotIn("actions/checkout", text)
+        self.assertNotIn("git push", text)
+        self.assertNotIn("gh pr merge", text)
+        self.assertNotIn("gh pr review", text)
+        self.assertIn('test "$parent_count" -eq 1', text)
+        self.assertIn('test "$parent_sha" = "$SOURCE_HEAD"', text)
+        self.assertIn(
+            'test "$commit_message" = "ci: materialize repository evidence"',
+            text,
+        )
+        self.assertIn('test "$author_login" = "github-actions[bot]"', text)
+        self.assertIn('test "$live_head_again" = "$live_head"', text)
+        self.assertIn("qikvrt_autonomous_exact_head_verify", text)
+        self.assertIn("'head_sha': '${live_head}'", text)
+        self.assertIn("'source_head_sha': '${SOURCE_HEAD}'", text)
+        self.assertIn("pull-requests: read", text)
+        self.assertNotIn("pull-requests: write", text)
+        self.assertNotIn("actions: write", text)
 
 
 if __name__ == "__main__":
