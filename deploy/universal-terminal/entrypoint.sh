@@ -48,6 +48,24 @@ if [ ! -f "$PROFILE_DIR/.qikvrt-profile-initialized" ]; then
   : > "$PROFILE_DIR/.qikvrt-profile-initialized"
 fi
 
+# The repository carries an unsigned local reference XPI.  Firefox ESR admits
+# such a development package only with an explicit profile preference and an
+# add-on ID.  Keep that exception opt-in: normal terminal and cloud profiles
+# retain Firefox's signing policy, while the isolated CI reference run can
+# exercise the packaged profile across its durable restart.
+case "${QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION:-0}" in
+  0) ;;
+  1)
+    if ! grep -Fqx 'user_pref("xpinstall.signatures.required", false);' "$PROFILE_DIR/user.js"; then
+      printf '%s\n' 'user_pref("xpinstall.signatures.required", false);' >> "$PROFILE_DIR/user.js"
+    fi
+    ;;
+  *)
+    echo "BLOCK: QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION must be 0 or 1" >&2
+    exit 64
+    ;;
+esac
+
 python3 -B /opt/qikvrt/src/qikvrt_effect_ack_http_terminal.py \
   --host "$HTTP_HOST" --port "$HTTP_PORT" \
   > /opt/qikvrt/runtime/logs/effect-ack-http.log 2>&1 &

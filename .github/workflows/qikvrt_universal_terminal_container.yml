@@ -62,6 +62,7 @@ jobs:
           docker run -d --name qikvrt-terminal \
             -p 127.0.0.1:6080:6080 \
             -e QIKVRT_START_URL=about:blank \
+            -e QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION=1 \
             -v qikvrt-test-profile:/var/lib/qikvrt/profile \
             -v qikvrt-test-state:/var/lib/qikvrt/state \
             qikvrt/universal-terminal:${EXACT_SUBJECT_SHA}
@@ -108,8 +109,11 @@ jobs:
           curl -fsS http://127.0.0.1:6080/vnc.html >/tmp/vnc.html
           grep -Eqi '<html|<!doctype html' /tmp/vnc.html
           printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
+          CHECK_NAME=reference_extension_signature_mode
+          docker exec qikvrt-terminal grep -Fqx 'user_pref("xpinstall.signatures.required", false);' /var/lib/qikvrt/profile/user.js
+          printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
           CHECK_NAME=profile_extension
-          docker exec qikvrt-terminal test -f /var/lib/qikvrt/profile/extensions/qikvrt-ai-terminal@goldkelch.local.xpi
+          docker exec qikvrt-terminal test -s /var/lib/qikvrt/profile/extensions/qikvrt-ai-terminal@goldkelch.local.xpi
           printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
           CHECK_NAME=profile_initialization_marker
           docker exec qikvrt-terminal test -f /var/lib/qikvrt/profile/.qikvrt-profile-initialized
@@ -132,6 +136,7 @@ jobs:
           docker run -d --name qikvrt-terminal \
             -p 127.0.0.1:6080:6080 \
             -e QIKVRT_START_URL=about:blank \
+            -e QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION=1 \
             -v qikvrt-test-profile:/var/lib/qikvrt/profile \
             -v qikvrt-test-state:/var/lib/qikvrt/state \
             qikvrt/universal-terminal:${EXACT_SUBJECT_SHA}

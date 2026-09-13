@@ -55,6 +55,12 @@ class UniversalTerminalNetworkBoundaryTests(unittest.TestCase):
         dockerfile = DOCKERFILE.read_text(encoding="utf-8")
         self.assertIn("QIKVRT_START_URL=about:blank", dockerfile)
         self.assertIn('browser.startup.homepage", "about:blank"', dockerfile)
+        entrypoint = ENTRYPOINT.read_text(encoding="utf-8")
+        self.assertIn("QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION", entrypoint)
+        self.assertIn(
+            'user_pref("xpinstall.signatures.required", false);',
+            entrypoint,
+        )
         self.assertIn(
             'export QIKVRT_START_URL="${QIKVRT_CLOUD_START_URL:-http://127.0.0.1:8080/qik-vrt/mesh/v1/}"',
             CLOUD_ENTRYPOINT.read_text(encoding="utf-8"),
@@ -80,6 +86,11 @@ class UniversalTerminalNetworkBoundaryTests(unittest.TestCase):
         self.assertIn("initial-post-readback-checks.log", workflow)
         self.assertIn("restart-post-readback-checks.log", workflow)
         self.assertEqual(workflow.count("CHECK_NAME=stable_paired_readback"), 2)
+        self.assertEqual(
+            workflow.count("QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION=1"),
+            2,
+        )
+        self.assertIn("CHECK_NAME=reference_extension_signature_mode", workflow)
         self.assertIn("CHECK_NAME=profile_extension", workflow)
         self.assertIn("CHECK_NAME=initial_runtime_state_copy", workflow)
 
