@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
-# One-shot development carrier. Removed from the prepared candidate tree.
+# One-shot development transport. Never copied into the target PR tree/history.
 name: QIKVRT PR1071 root closure regression preparation
 on:
   push:
@@ -14,107 +14,119 @@ jobs:
   prepare:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 20
     env:
       TARGET_PARENT: 9360d39b8688fb6ffd8b083893f68473fc705a2d
+      TARGET_TREE: 0bd058f68464c499d34dfd3416a55473a8011303
       PYTHONDONTWRITEBYTECODE: '1'
       PYTHONNOUSERSITE: '1'
       PYTHONPATH: .
     steps:
-      - name: Checkout exact proposal transport
+      - name: Checkout exact development subject without Git credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
-      - name: Reproduce missing consumer before integration and bind existing workflow only
+      - name: Materialize exact existing-workflow consumer and negative tests
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/repair-closure"
-          git merge-base --is-ancestor "$TARGET_PARENT" HEAD
-          set +e
-          python3 -B tools/qikvrt_repair_effectiveness_guard.py --source-check > "$RUNNER_TEMP/repair-closure/red-missing-consumer.log" 2>&1
-          red=$?
-          set -e
-          test "$red" -eq 2
-          grep -F 'REPAIR_TEST_NOT_IN_FULL_SUITE' "$RUNNER_TEMP/repair-closure/red-missing-consumer.log"
-          python3 -B - <<'PY'
-          from pathlib import Path
-          make = Path('Makefile')
-          text = make.read_text()
-          assert 'repair-effectiveness-contract:' not in text
-          text += '\n.PHONY: repair-effectiveness-contract\ntest: repair-effectiveness-contract\nrepair-effectiveness-contract:\n\tPYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_repair_effectiveness_guard\n\tPYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tools/qikvrt_repair_effectiveness_guard.py --source-check\n'
-          make.write_text(text)
-          path = Path('.github/workflows/qikvrt_zero_bug_continuous.yml')
-          text = path.read_text()
-          assert '  repair-effectiveness:' not in text
-          block = '''
-            repair-effectiveness:
-              needs: verify
-              if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-              runs-on: ubuntu-24.04
-              timeout-minutes: 20
-              permissions:
-                contents: read
-                pull-requests: read
-              env:
-                GH_TOKEN: @@{{ github.token }}
-                PYTHONDONTWRITEBYTECODE: '1'
-                PYTHONNOUSERSITE: '1'
-                PYTHONPATH: .
-              steps:
-                - name: Checkout exact Main for operational closure, never a PR merge gate
-                  uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-                  with:
-                    ref: @@{{ github.sha }}
-                    fetch-depth: 0
-                    persist-credentials: false
-                - name: Reobserve adopted repair and execute fresh Main regression probes
-                  run: >-
-                    python3 -B tools/qikvrt_repair_effectiveness_guard.py
-                    --observe-main --expected-main '@@{{ github.sha }}'
-                    --out "$RUNNER_TEMP/repair-effectiveness"
-                - name: Preserve operational HOLD or exact-Main repair closure
-                  if: always()
-                  uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-                  with:
-                    name: qikvrt-repair-effectiveness-@@{{ github.sha }}-@@{{ github.run_id }}-@@{{ github.run_attempt }}
-                    path: @@{{ runner.temp }}/repair-effectiveness
-                    if-no-files-found: error
-                    retention-days: 90
-          '''
-          # Remove the Python heredoc's presentation indent, preserving YAML
-          # job indentation. No Actions expression is expanded by this carrier.
-          lines = block.splitlines()
-          text += '\n' + '\n'.join(line[10:] if line.startswith('          ') else line for line in lines).replace('@@', chr(36)) + '\n'
-          path.write_text(text)
-          PY
-          git rm -- .github/workflows/qikvrt_pr1071_closure_regression_once.yml
-      - name: Prove the observed empty-admin bootstrap regression is rejected
-        shell: bash
-        run: |
-          set -euo pipefail
           python3 -B - <<'PY'
           from pathlib import Path
           import os, subprocess, sys
-          path=Path('.github/workflows/qikvrt_autonomous_ruleset_effect_loop.yml')
-          old=path.read_text()
-          good='GH_TOKEN: ' + chr(36) + '{{ github.token }}'
-          bad='GH_TOKEN: ' + chr(36) + '{{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}'
-          assert good in old
+          out=Path(os.environ['RUNNER_TEMP'])/'repair-closure'
+          p=subprocess.run([sys.executable,'-B','tools/qikvrt_repair_effectiveness_guard.py','--source-check'],capture_output=True)
+          (out/'red-missing-consumer.log').write_bytes(p.stdout+p.stderr)
+          assert p.returncode==2 and b'REPAIR_TEST_NOT_IN_FULL_SUITE' in p.stderr
+          make=Path('Makefile'); text=make.read_text()
+          assert 'repair-effectiveness-contract:' not in text
+          text+='\n.PHONY: repair-effectiveness-contract\ntest: repair-effectiveness-contract\nrepair-effectiveness-contract:\n\tPYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_repair_effectiveness_guard\n\tPYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tools/qikvrt_repair_effectiveness_guard.py --source-check\n'
+          make.write_text(text)
+          path=Path('.github/workflows/qikvrt_zero_bug_continuous.yml')
+          text=path.read_text(); assert '  repair-effectiveness:' not in text
+          # Python string escapes define the final indentation. No double dedent.
+          lines=[
+            '  repair-effectiveness:',
+            '    needs: verify',
+            "    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'",
+            '    runs-on: ubuntu-24.04',
+            '    timeout-minutes: 20',
+            '    permissions:', '      contents: read', '      pull-requests: read',
+            '    env:', '      GH_TOKEN: @@{{ github.token }}',
+            "      PYTHONDONTWRITEBYTECODE: '1'", "      PYTHONNOUSERSITE: '1'", '      PYTHONPATH: .',
+            '    steps:',
+            '      - name: Checkout exact Main for operational closure, never a PR merge gate',
+            '        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
+            '        with:', '          ref: @@{{ github.sha }}', '          fetch-depth: 0', '          persist-credentials: false',
+            '      - name: Reobserve adopted repair and execute fresh Main regression probes',
+            '        run: >-', '          python3 -B tools/qikvrt_repair_effectiveness_guard.py',
+            "          --observe-main --expected-main '@@{{ github.sha }}'",
+            '          --out "$RUNNER_TEMP/repair-effectiveness"',
+            '      - name: Preserve operational HOLD or exact-Main repair closure',
+            '        if: always()',
+            '        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
+            '        with:',
+            '          name: qikvrt-repair-effectiveness-@@{{ github.sha }}-@@{{ github.run_id }}-@@{{ github.run_attempt }}',
+            '          path: @@{{ runner.temp }}/repair-effectiveness',
+            '          if-no-files-found: error', '          retention-days: 90']
+          text+='\n'+'\n'.join(lines).replace('@@',chr(36))+'\n';path.write_text(text)
+          tool=Path('tools/qikvrt_repair_effectiveness_guard.py'); text=tool.read_text()
+          old="require(type(probe.get('tests_run')) is int and probe['tests_run'] > 0, 'ZERO_TEST_PROBE:' + module)"
+          assert old in text
+          text=text.replace(old,old+"\n            require(type(probe.get('tests_skipped')) is int and probe['tests_skipped'] == 0, 'SKIPPED_REQUIRED_PROBE:' + module)")
+          old="p = {'status': 'EXECUTED', 'exit_code': proc.returncode, 'tests_run': int(counts[-1]) if len(counts) == 1 else 0}"
+          assert old in text
+          new="skips = re.findall(rb'(?:skipped=)([0-9]+)', raw)\n                p = {'status': 'EXECUTED', 'exit_code': proc.returncode, 'tests_run': int(counts[-1]) if len(counts) == 1 else 0, 'tests_skipped': sum(int(n) for n in skips)}"
+          text=text.replace(old,new)
+          old="p = {'status': 'TIMEOUT', 'exit_code': None, 'tests_run': 0}"
+          text=text.replace(old,"p = {'status': 'TIMEOUT', 'exit_code': None, 'tests_run': 0, 'tests_skipped': None}")
+          # Drop observation credential from local regression subprocesses.
+          text=text.replace("env=dict(os.environ, PYTHONDONTWRITEBYTECODE='1', PYTHONNOUSERSITE='1')", "env=dict({k:v for k,v in os.environ.items() if k not in {'GH_TOKEN','GITHUB_TOKEN'}}, PYTHONDONTWRITEBYTECODE='1', PYTHONNOUSERSITE='1')")
+          tool.write_text(text)
+          tests=Path('tests/test_qikvrt_repair_effectiveness_guard.py');text=tests.read_text()
+          text=text.replace("'tests_run':1,'log_sha256'", "'tests_run':1,'tests_skipped':0,'log_sha256'")
+          text=text.replace("{'tests_run':0},{'tests_run':True},", "{'tests_run':0},{'tests_run':True},{'tests_skipped':1},{'tests_skipped':None},{'tests_skipped':False},")
+          extra='''
+              def test_main_consumer_nested_indentation_is_not_lost(self):
+                  text=(ROOT/'.github/workflows/qikvrt_zero_bug_continuous.yml').read_text()
+                  block=text.split('  repair-effectiveness:',1)[1]
+                  for line in ('        with:', '          fetch-depth: 0', '          persist-credentials: false', '          if-no-files-found: error'):
+                      self.assertIn(line,block.splitlines())
+                  for line in block.splitlines():
+                      if line.strip(): self.assertTrue(line.startswith('    '),repr(line))
+          '''
+          text=text.replace("if __name__=='__main__': unittest.main()",extra+"\nif __name__=='__main__': unittest.main()")
+          tests.write_text(text)
+          workflow=Path('.github/workflows/qikvrt_autonomous_ruleset_effect_loop.yml');text=workflow.read_text()
+          good='GH_TOKEN: '+chr(36)+'{{ github.token }}';bad='GH_TOKEN: '+chr(36)+'{{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}'
+          assert good in text
           try:
-              path.write_text(old.replace(good,bad))
+              workflow.write_text(text.replace(good,bad))
               p=subprocess.run([sys.executable,'-B','tools/qikvrt_repair_effectiveness_guard.py','--source-check'],capture_output=True)
-              (Path(os.environ['RUNNER_TEMP'])/'repair-closure'/'red-bootstrap-regression.log').write_bytes(p.stdout+p.stderr)
+              (out/'red-bootstrap-regression.log').write_bytes(p.stdout+p.stderr)
               assert p.returncode==2 and b'READ_BOOTSTRAP_DEPENDS_ON_ADMIN' in p.stderr
-          finally:
-              path.write_text(old)
+          finally: workflow.write_text(text)
           PY
-      - name: Execute new regression matrix and complete repository suite
+          git rm -- .github/workflows/qikvrt_pr1071_closure_regression_once.yml
+      - name: Parse complete YAML and verify structural Main consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby -r yaml -r json -e '
+            doc=YAML.safe_load(File.read(ARGV[0]), aliases: true)
+            job=doc.fetch("jobs").fetch("repair-effectiveness")
+            abort "bad dependency" unless job.fetch("needs")=="verify"
+            abort "bad steps" unless job.fetch("steps").length==3
+            checkout=job.fetch("steps")[0].fetch("with")
+            abort "bad checkout" unless checkout.fetch("fetch-depth")==0 && checkout.fetch("persist-credentials")==false
+            puts JSON.generate({yaml_parsed:true, consumer_job:"repair-effectiveness", steps:job.fetch("steps").length})
+          ' .github/workflows/qikvrt_zero_bug_continuous.yml > "$RUNNER_TEMP/repair-closure/yaml-structure.json"
+      - name: Execute full suite and export all productive bytes BEFORE remote persistence
         shell: bash
         run: |
           set -euo pipefail
@@ -122,42 +134,65 @@ jobs:
           python3 -B tools/qikvrt_repair_effectiveness_guard.py --source-check | tee "$RUNNER_TEMP/repair-closure/source-contract.json"
           python3 -B tools/qikvrt_integrity.py generate
           python3 -B tools/qikvrt_integrity.py verify
-          make test > "$RUNNER_TEMP/repair-closure/make-test.log" 2>&1 || { tail -n 160 "$RUNNER_TEMP/repair-closure/make-test.log"; exit 1; }
+          make test > "$RUNNER_TEMP/repair-closure/make-test.log" 2>&1 || { tail -n 120 "$RUNNER_TEMP/repair-closure/make-test.log"; exit 1; }
           python3 -B tools/qikvrt_integrity.py verify
-      - name: Preserve only tested delta in the development carrier, never Main or PR head
+          git add --all
+          python3 -B - <<'PY'
+          import hashlib,json,os,pathlib,subprocess
+          out=pathlib.Path(os.environ['RUNNER_TEMP'])/'repair-closure'
+          allowed=['.github/workflows/qikvrt_zero_bug_continuous.yml','Makefile','docs/operations/GITHUB_RULESET_ADMIN_APP.md','policy/REPAIR_EFFECTIVENESS_CLOSURE_V1.json','tools/qikvrt_repair_effectiveness_guard.py','tests/test_qikvrt_repair_effectiveness_guard.py','REPOSITORY_FILE_MANIFEST.json','REPOSITORY_FILE_MANIFEST.json.sha256','SHA256SUMS.txt']
+          tree=subprocess.check_output(['git','write-tree'],text=True).strip()
+          files=[]
+          for rel in allowed:
+              path=pathlib.Path(rel);data=path.read_bytes();target=out/'files'/rel
+              target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(data)
+              blob=subprocess.check_output(['git','hash-object','--',rel],text=True).strip()
+              files.append({'path':rel,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest(),'git_blob':blob})
+          r={'schema':'qikvrt_root_repair_preparation_v2','target_pr':1071,'target_parent':os.environ['TARGET_PARENT'],'base_tree':os.environ['TARGET_TREE'],'development_head':os.environ['GITHUB_SHA'],'prepared_tree':tree,'run_id':os.environ['GITHUB_RUN_ID'],'files':files,'negative_regressions_reproduced':True,'make_test':True,'candidate_ref_updated':False,'main_updated':False,'ruleset_updated':False,'closed':False,'scope':'DEVELOPMENT_WORKTREE_ONLY_NEW_HEAD_REQUIRES_FRESH_P2'}
+          raw=(json.dumps(r,indent=2)+'\n').encode();(out/'PREPARATION.json').write_bytes(raw)
+          (out/'PREPARATION.json.sha256').write_text(hashlib.sha256(raw).hexdigest()+'  PREPARATION.json\n')
+          print(json.dumps(r,indent=2))
+          PY
+      - name: Publish immutable Git objects only with bounded GitHub API calls
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           python3 -B - <<'PY'
-          import os, subprocess
-          allowed={'.github/workflows/qikvrt_zero_bug_continuous.yml','Makefile','docs/operations/GITHUB_RULESET_ADMIN_APP.md','policy/REPAIR_EFFECTIVENESS_CLOSURE_V1.json','tools/qikvrt_repair_effectiveness_guard.py','tests/test_qikvrt_repair_effectiveness_guard.py','REPOSITORY_FILE_MANIFEST.json','REPOSITORY_FILE_MANIFEST.json.sha256','SHA256SUMS.txt'}
-          changed=set(subprocess.check_output(['git','diff','--name-only',os.environ['TARGET_PARENT']]).decode().splitlines())
-          assert changed==allowed, repr(changed)
-          assert not subprocess.check_output(['git','ls-files','--others','--exclude-standard'])
-          PY
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add --all
-          git commit -m 'repair: prepare tested PR1071 operational-closure regressions and canonical integrity'
-          branch='repair/pr1071-effectiveness-regressions-v1'
-          remote="$(git ls-remote origin "refs/heads/$branch" | cut -f1)"
-          test "$remote" = "$GITHUB_SHA" || { echo 'HOLD: development carrier moved'; exit 2; }
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: bearer $GH_TOKEN" push origin "HEAD:refs/heads/$branch"
-          test "$(git ls-remote origin "refs/heads/$branch" | cut -f1)" = "$(git rev-parse HEAD)"
-          git diff --binary "$TARGET_PARENT" HEAD > "$RUNNER_TEMP/repair-closure/source.patch"
-          python3 -B - <<'PY'
-          import hashlib,json,os,pathlib,subprocess
+          import base64,hashlib,json,os,pathlib,subprocess
           out=pathlib.Path(os.environ['RUNNER_TEMP'])/'repair-closure'
-          git=lambda *a:subprocess.check_output(['git',*a],text=True).strip()
-          r={'schema':'qikvrt_root_repair_preparation_v1','target_pr':1071,'target_parent':os.environ['TARGET_PARENT'],'prepared_head':git('rev-parse','HEAD'),'prepared_tree':git('rev-parse','HEAD^{tree}'),'run_id':os.environ['GITHUB_RUN_ID'],'changed_paths':git('diff','--name-only',os.environ['TARGET_PARENT'],'HEAD').splitlines(),'negative_regressions_reproduced':True,'make_test':True,'scope':'DEVELOPMENT_WORKTREE_ONLY_NEW_CANDIDATE_REQUIRES_FRESH_P2','candidate_ref_updated':False,'main_updated':False,'ruleset_updated':False,'native_review':False,'closed':False}
-          r['files']=[{'path':p.name,'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'bytes':p.stat().st_size} for p in sorted(out.iterdir()) if p.is_file()]
-          raw=(json.dumps(r,indent=2)+'\n').encode();(out/'PREPARATION.json').write_bytes(raw)
-          (out/'PREPARATION.json.sha256').write_text(hashlib.sha256(raw).hexdigest()+'  PREPARATION.json\n')
-          print(json.dumps(r,indent=2))
+          r=json.loads((out/'PREPARATION.json').read_text())
+          receipt={'schema':'qikvrt_git_object_persistence_v1','ref_mutation':False,'state':'HOLD_UNVERIFIED','objects':[]}
+          def api(method,path,payload=None):
+              args=['gh','api','--method',method,'repos/Goldkelch/qik-vrt/'+path]
+              if payload is not None:args+=['--input','-']
+              p=subprocess.run(args,input=json.dumps(payload) if payload is not None else None,text=True,capture_output=True,timeout=45)
+              if p.returncode:raise RuntimeError('API_'+method+'_FAILED_exit_'+str(p.returncode))
+              return json.loads(p.stdout)
+          try:
+              base=api('GET','git/commits/'+r['target_parent'])
+              assert base['tree']['sha']==r['base_tree']
+              entries=[]
+              for f in r['files']:
+                  raw=(out/'files'/f['path']).read_bytes()
+                  assert hashlib.sha256(raw).hexdigest()==f['sha256']
+                  b=api('POST','git/blobs',{'content':base64.b64encode(raw).decode(),'encoding':'base64'})
+                  assert b['sha']==f['git_blob']
+                  entries.append({'path':f['path'],'mode':'100644','type':'blob','sha':b['sha']})
+                  receipt['objects'].append({'path':f['path'],'sha':b['sha']})
+              tree=api('POST','git/trees',{'base_tree':r['base_tree'],'tree':entries})
+              assert tree['sha']==r['prepared_tree'], 'EXACT_PREPARED_TREE_MISMATCH'
+              observed=api('GET','git/trees/'+tree['sha'])
+              assert observed['sha']==tree['sha']
+              receipt.update(state='OBJECTS_PERSISTED_AND_REOBSERVED',tree=tree['sha'])
+          finally:
+              raw=(json.dumps(receipt,indent=2)+'\n').encode()
+              (out/'OBJECT_PERSISTENCE.json').write_bytes(raw)
+              (out/'OBJECT_PERSISTENCE.json.sha256').write_text(hashlib.sha256(raw).hexdigest()+'  OBJECT_PERSISTENCE.json\n')
+              print(json.dumps(receipt,indent=2))
           PY
-      - name: Retain development evidence including deterministic failure
+      - name: Retain source bytes and diagnostics even on persistence failure
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
