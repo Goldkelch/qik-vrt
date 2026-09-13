@@ -23,22 +23,20 @@ jobs:
       PYTHONNOUSERSITE: '1'
       PYTHONPATH: .
     steps:
-      - name: Verify target has not moved and check out literal P1 subject
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Verify exact public refs without consuming GitHub REST budget
         shell: bash
         run: |
           set -euo pipefail
-          remote="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$TARGET_REF" --jq .object.sha)"
+          remote="$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/heads/$TARGET_REF" | awk 'NR==1{print $1}')"
           test "$remote" = "$EXPECTED_HEAD" || { echo "HOLD: target moved to $remote"; exit 2; }
-          main="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)"
+          main="$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" refs/heads/main | awk 'NR==1{print $1}')"
           test "$main" = "$BASE_MAIN" || { echo "HOLD: Main moved to $main"; exit 2; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ env.EXPECTED_HEAD }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      - uses: actions/setup-python@a26af69be951213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
       - name: Render deterministic PDF twice and require byte identity
@@ -68,13 +66,13 @@ jobs:
           make test > "$RUNNER_TEMP/make-test.log" 2>&1 || { tail -n 160 "$RUNNER_TEMP/make-test.log"; exit 1; }
           python3 -B tools/qikvrt_integrity.py verify
           git diff --check
-      - name: Persist only productive publication/index/integrity delta and open bot-authored PR
+      - name: Persist productive delta with Git transport; create PR only if API budget permits
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          remote="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$TARGET_REF" --jq .object.sha)"
+          remote="$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/heads/$TARGET_REF" | awk 'NR==1{print $1}')"
           test "$remote" = "$EXPECTED_HEAD" || { echo 'HOLD: target moved before persistence'; exit 2; }
           python3 -B - <<'PY'
           import subprocess
@@ -96,8 +94,17 @@ jobs:
           successor="$(git rev-parse HEAD)"
           tree="$(git rev-parse HEAD^{tree})"
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: bearer $GH_TOKEN" push origin "HEAD:refs/heads/$TARGET_REF"
-          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$TARGET_REF" --jq .object.sha)" = "$successor"
-          existing="$(gh pr list --head "$TARGET_REF" --base main --state open --json number --jq '.[0].number // empty')"
+          observed="$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/heads/$TARGET_REF" | awk 'NR==1{print $1}')"
+          test "$observed" = "$successor" || { echo 'HOLD: persisted ref readback mismatch'; exit 2; }
+          printf '{"head":"%s","tree":"%s","ref":"%s","ref_readback":true}\n' "$successor" "$tree" "$TARGET_REF" | tee "$RUNNER_TEMP/persistence-readback.json"
+          set +e
+          existing="$(gh pr list --head "$TARGET_REF" --base main --state open --json number --jq '.[0].number // empty' 2>"$RUNNER_TEMP/pr-api.stderr")"
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo 'HOLD: branch persisted; PR API unavailable. Do not repeat persistence.'
+            exit 2
+          fi
           if [ -z "$existing" ]; then
             gh pr create --base main --head "$TARGET_REF" --title 'publication: future message needs a present receiver' --body "Owner-authorized evidence carrier. Exact head: $successor / tree: $tree. New subject: fresh P2 required; no predecessor evidence transfer. Scientific scope: delayed-choice correlations, QIK-VRT time/semantic/evidence architecture, and a falsifiable intervention criterion for an operational backward channel. Zenodo is in scope under standing owner authorization only after P0-P7. Existing arXiv/Wikipedia deferrals remain unchanged; IETF obligations are independent. No physical backward channel, peer review, Zenodo effect, PASS, FINAL_PASS or EFFECT_ACK_DONE is claimed." --reviewer ingolf-lohmann
           fi
@@ -113,6 +120,8 @@ jobs:
             ${{ runner.temp }}/pdf-runtime.freeze
             ${{ runner.temp }}/publication-overview.json
             ${{ runner.temp }}/make-test.log
+            ${{ runner.temp }}/persistence-readback.json
             ${{ runner.temp }}/pr-readback.json
+            ${{ runner.temp }}/pr-api.stderr
           if-no-files-found: warn
           retention-days: 30
