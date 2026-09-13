@@ -1,70 +1,80 @@
 # Scoped GitHub App route for main-ruleset reconciliation
 
-`QIKVRT autonomous ruleset effect loop` is the sole repository workflow that
-may invoke the ruleset reconciler with write authority. Its unprivileged
-`QIKVRT ruleset effect dispatch bridge` is the sole automated PR ingress: it
-binds the canonical required-review subject and dispatches that one writer.
-The writer makes no explicit workflow-dispatch call—especially not to the
-required-review gate—so it cannot re-enter that gate through a hybrid
-`workflow_dispatch` edge. The five-minute reflexive watchdog can also dispatch
-the distinct exact-`MAIN` reobservation subject. Neither dispatcher receives
-the App token or invokes
-`--apply`. This is an installation contract, not evidence that an App,
-permission, secret, ruleset change, review, merge, release, or other effect
-already exists.
+The selected implementation is the source in this same Git tree, not an older
+issue recipe. `QIKVRT autonomous ruleset effect loop` is the sole ruleset writer.
+Its native ingress is completion of `QIKVRT required code-owner review`;
+selection reobserves the exact upstream workflow, artifact, PR head and Main.
+The removed standalone reconciler and removed dispatch bridge are not endpoints
+that can be invoked. This contract is not evidence of configuration or effect.
 
 ## One repository, one narrow permission
 
-Install a dedicated GitHub App only on `Goldkelch/qik-vrt`. Its repository
-permission is **Administration: read/write** plus GitHub's implicit metadata
-read. Do not give this App contents, issues, pull-request, status, Actions,
-organization, or foreign-repository permissions. The regular job token keeps
-those ordinary control-plane calls; the App token is passed only as
-`QIKVRT_RULESET_ADMIN_TOKEN` to `tools/qikvrt_ruleset_reconcile.py`. The mint
-action explicitly requests only `permission-administration: write`; it does
-not inherit a broad App permission set.
+Install a dedicated GitHub App only on `Goldkelch/qik-vrt`. Grant repository
+**Administration: read/write** and implicit metadata read, without contents,
+issues, pull-request, status, Actions, organization or other-repository access.
+The job's ordinary `GH_TOKEN` is `${{ github.token }}`. Only the scoped effect
+step receives the minted token as `QIKVRT_RULESET_ADMIN_TOKEN`.
 
-Repository configuration names are deliberately non-secret identifiers:
+The exact selected implementation consumes:
 
-- Repository variable: `QIKVRT_RULESET_APP_ID`
-- Repository Action secret: `QIKVRT_RULESET_APP_PRIVATE_KEY`
+- Repository variable: `QIKVRT_RULESET_APP_ID` (the App ID; action input `app-id`).
+- Actions secret: `QIKVRT_RULESET_APP_PRIVATE_KEY`.
+- Minted token: `steps.app-token.outputs.token`; never a stored admin fallback.
 
-`QIKVRT_RULESET_ADMIN_TOKEN` is intentionally not configured as a fallback.
-A missing App configuration is a `REQUEST_AUTHORITY`; a failed token mint,
-failed or indeterminate configuration check, rejected permission, API failure,
-ETag change, or mismatching readback is a failing `HOLD`. Neither outcome may silently fall through to a legacy
-long-lived credential. A durable exact-PR/head/policy receipt is written only
-after a same-run `CURRENT` post-effect readback, is bound to the bot author,
-full PR/base/head tuple, policy and reconciliation-receipt SHA, and never
-suppresses a fresh App-token API readback. A `REQUEST_AUTHORITY` continuation
-uses a separate exact-subject-and-blocker marker: it is posted only if absent,
-then read back as the bot author, and it contains no explicit workflow-dispatch
-call.
-`REQUEST_AUTHORITY` and `HOLD` are failing workflow states; the PR continuation
-comment is a separately guarded nonterminal control-plane record.
+Do not configure a legacy `QIKVRT_RULESET_ADMIN_TOKEN` secret to fix ordinary
+reads. No credential value belongs in Git, issues, PRs, artifacts or chat.
+Source validation checks these names against the actual workflow. Historical
+issue recipes remain provenance and must not override this selected contract.
 
-The scheduled `MAIN` subject is bound immediately before dispatch and again
-before `--apply` to the exact `main` SHA and policy SHA-256. The watchdog does
-not call the ruleset API and does not carry App authority. It dispatches no
-second main-mode run while one is queued or active, and Main mode emits only a
-post-`CURRENT` workflow artifact receipt—no PR comment, review, or status.
+The mint action requests only `permission-administration: write`, explicitly
+scoped to the current repository owner and `qik-vrt`. The App token is not a
+Goldkelch user-review credential and cannot substitute for that identity.
 
-## Required effect proof
+## Missing authority and technical failures
 
-After the installation is present, trusted `main` must produce this exact
-sequence:
+Missing App configuration is `REQUEST_AUTHORITY`. A failed configuration check,
+failed token mint, rejected permission, API failure, ETag conflict or mismatching
+readback is failing `HOLD`. Neither condition falls through to a broad or
+long-lived credential, becomes a green closure, or permits repeated PUTs.
+The precise missing capability is preserved independently of Owner consent.
+Another general authorization message does not create an App installation.
 
-1. Mint a short-lived installation token scoped to `Goldkelch/qik-vrt`.
-2. Authenticated GET of ruleset `19344903`.
-3. Compare against `policy/GITHUB_MAIN_RULESET_V1.json`.
-4. If drift exists, conditionally PUT with the observed ETag.
-5. Authenticated GET readback that proves the exact desired state.
+The surviving native writer performs: ordinary-token exact-subject observation;
+scoped token mint; authenticated ruleset GET; canonical-policy comparison;
+a single conditional PUT only on drift; authenticated exact GET readback.
+A transport response alone is not the readback. A durable current-receipt marker
+never suppresses a fresh ruleset read. The writer does not submit or impersonate
+a native review, dispatch the review gate to itself, merge or publish.
 
-Only missing App configuration or an unavailable dedicated credential is
-`REQUEST_AUTHORITY`. Rejected credentials, HTTP/API failures, ETag changes,
-and mismatching readback remain a failing `HOLD`; none of these can be
-converted to a green workflow outcome.
+## Bootstrap and operational closure
 
-No step in this route creates a release, merges a pull request, approves a
-review, bypasses a ruleset, or claims `PASS`, `FINAL_PASS`, or
-`EFFECT_ACK_DONE`.
+The ordinary-read bootstrap must work without the administrative secret.
+Candidate verification proves implementation scope only. Repair closure is a
+separate post-promotion predicate: native adoption in exact Main history,
+unchanged exact Main before/after observation, actual current ruleset readback,
+and newly executed nonempty regression probes on that Main.
+
+`policy/REPAIR_EFFECTIVENESS_CLOSURE_V1.json` registers these failure classes.
+`make repair-effectiveness-contract` runs candidate-local regressions, including
+mutated-bootstrap and configuration-recipe counterexamples. The existing
+`QIKVRT zero-bug continuous invariant` workflow has a separate Main-only
+`repair-effectiveness` job. It never requires a candidate to be deployed before
+its own merge. There is no second polling or dispatch controller and no pending
+pre-merge status that creates a self-blocking promotion dependency.
+
+An unmerged repair remains VERIFIED_NOT_EFFECTIVE. A missing/failed probe,
+zero tests, stale head, unverifiable adoption or non-current ruleset cannot
+produce a closed receipt. A workflow failure preserves the structured receipt
+when available; it is not hidden by an unconditional success conclusion.
+The receipt is written outside the immutable source checkout. Manual issue
+closure, PR closure and narrative reports are not operational closure evidence.
+
+Ruleset administration and review are two separate capabilities. The delegated
+native-review contract remains in
+`docs/DELEGATED_NATIVE_ACCOUNT_REVIEW_AUTOMATION.md`; its activation and selected
+user credential must be verified by the signer itself. Their presence is not
+inferred from this document or from an empty review inventory.
+
+A repair is only effective once the exact-Main receipt actually exists. This
+contract cannot grant credentials, undo an external effect, certify future
+immunity, or establish publication, PASS, FINAL_PASS or EFFECT_ACK_DONE.
