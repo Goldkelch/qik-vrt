@@ -58,7 +58,7 @@ jobs:
               back=api('repos/'+os.environ['GITHUB_REPOSITORY']+'/git/blobs/'+oid)
               assert base64.b64decode(back['content'])==raw
               files[path]={'blob_sha':oid,'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw)}
-          receipt={'schema':'qikvrt_cloud_transputer_integrity_objects_v1','source_head':os.environ['GITHUB_SHA'],'source_tree':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip(),'files':files,'ref_mutation':False,'candidate_validation_transferred':False,'general_effect_ack_done':False}
+          receipt={'schema':'qikvrt_cloud_transputer_integrity_objects_v1','source_head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'source_tree':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip(),'files':files,'ref_mutation':False,'candidate_validation_transferred':False,'general_effect_ack_done':False}
           pathlib.Path('/tmp/qikvrt-integrity-objects/RECEIPT.json').write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
           print(json.dumps(receipt,sort_keys=True))
           PY
