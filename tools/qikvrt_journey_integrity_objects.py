@@ -19,6 +19,7 @@ REPOSITORY = "Goldkelch/qik-vrt"
 BRANCH = "publication/self-explanation-47-homepage-v1"
 PR_NUMBER = 1080
 PUBLIC_PATH = "docs/reise/index.html"
+DELIVERY_REQUEST_PATH = "state/delivery/requests/JOURNEY_47_HOMEPAGE_TO_PAGES_V1.json"
 ALLOWED = (
     "REPOSITORY_FILE_MANIFEST.json",
     "REPOSITORY_FILE_MANIFEST.json.sha256",
@@ -160,6 +161,12 @@ def rendered_delivery_manifest(root: Path, raw: bytes, *, head: str, tree: str) 
     """Bind candidate HTML and its DOM text; no HTTP or authority claim."""
     if any(len(v) != 40 or any(c not in "0123456789abcdef" for c in v) for v in (head, tree)):
         raise ValueError("HOLD: delivery subject must be exact head/tree")
+    repository_root = root.parent.parent
+    request_raw = (root / "REQUEST.json").read_bytes()
+    delivery_raw = (repository_root / DELIVERY_REQUEST_PATH).read_bytes()
+    delivery_request = json.loads(delivery_raw)
+    if delivery_request.get("source_request") != {"path": "docs/reise/REQUEST.json", **content_binding(request_raw)}:
+        raise ValueError("HOLD: delivery request source binding mismatch")
     report, editions, codes = journey_site.inspect(root)
     if report["available_count"] != 47 or not report["all_47_texts_present"]:
         raise ValueError("HOLD: delivery requires all 47 source-bound editions")
@@ -215,7 +222,9 @@ def rendered_delivery_manifest(root: Path, raw: bytes, *, head: str, tree: str) 
         "subject": {"head": head, "tree": tree, "role": "CANDIDATE"},
         "target_url": "https://goldkelch.github.io/qik-vrt/reise/",
         "homepage": {"path": PUBLIC_PATH, **content_binding(raw)},
-        "request": {"path": "docs/reise/REQUEST.json", **content_binding((root / "REQUEST.json").read_bytes())},
+        "request": {"path": "docs/reise/REQUEST.json", **content_binding(request_raw)},
+        "delivery_request": {"path": DELIVERY_REQUEST_PATH, **content_binding(delivery_raw)},
+        "delivery_ledger": {"path": "state/delivery/ACTIVE_DELIVERY_OBLIGATIONS_V1.json", **content_binding((repository_root / "state/delivery/ACTIVE_DELIVERY_OBLIGATIONS_V1.json").read_bytes())},
         "language_scope": {"path": "docs/reise/WIKIPEDIA_47_LANGUAGE_SOURCE.json", **content_binding((root / "WIKIPEDIA_47_LANGUAGE_SOURCE.json").read_bytes())},
         "language_chooser": {"edition_order": wanted, "native_names": journey_site.NATIVE,
                              "script_sha256": hashlib.sha256(journey_site.JS.encode()).hexdigest(),

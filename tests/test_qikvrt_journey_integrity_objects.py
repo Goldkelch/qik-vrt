@@ -116,7 +116,22 @@ class IntegrityObjectsTest(unittest.TestCase):
         self.assertIn("mobile_browser_receipt", row["delivery"]["authoritative_readback"])
         self.assertIn("deployment_source_sha", row["delivery"]["authoritative_readback"])
         request = json.loads((root / row["delivery"]["request"]).read_text())
-        self.assertEqual(request["delivery"]["binding_manifest"]["obligation_id"], row["id"])
+        self.assertEqual(request["schema"], "qikvrt_external_delivery_request_v1")
+        self.assertEqual(request["id"], row["id"])
+        source_raw = (root / request["source_request"]["path"]).read_bytes()
+        self.assertEqual(request["source_request"]["git_blob_sha1"], subject.blob_id(source_raw))
+        source_request = json.loads(source_raw)
+        self.assertEqual(source_request["delivery"]["binding_manifest"]["obligation_id"], row["id"])
+
+    def test_every_delivery_request_is_in_the_native_request_inventory(self):
+        import json
+        root = Path(__file__).resolve().parents[1]
+        ledger = json.loads((root / "state/delivery/ACTIVE_DELIVERY_OBLIGATIONS_V1.json").read_text())
+        requests = {p.relative_to(root).as_posix() for p in (root / "state/delivery/requests").glob("*.json")}
+        for obligation in ledger["obligations"]:
+            self.assertIn(obligation["delivery"]["request"], requests)
+            self.assertIs(obligation["delivery"]["effect_ack_required"], True)
+            self.assertIs(obligation["main_reobservation"]["required"], True)
 
     def test_workflow_is_event_bound_and_has_no_ref_writer(self):
         root = Path(__file__).resolve().parents[1]
