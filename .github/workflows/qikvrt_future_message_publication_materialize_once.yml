@@ -78,7 +78,7 @@ jobs:
           import subprocess
           allowed={
             'docs/publications/2026-09-13-future-message-present-receiver/Eine_Nachricht_aus_der_Zukunft_QIK-VRT_Lohmann_2026-09-13.pdf',
-            'docs/publications/index.md',
+            'docs/publications/index.json','docs/publications/index.html',
             'REPOSITORY_FILE_MANIFEST.json','REPOSITORY_FILE_MANIFEST.json.sha256','SHA256SUMS.txt'}
           raw=subprocess.check_output(['git','status','--porcelain=v1','-z']).decode().strip('\0')
           paths=set()
@@ -89,7 +89,7 @@ jobs:
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- docs/publications/2026-09-13-future-message-present-receiver/Eine_Nachricht_aus_der_Zukunft_QIK-VRT_Lohmann_2026-09-13.pdf docs/publications/index.md REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git add -- docs/publications/2026-09-13-future-message-present-receiver/Eine_Nachricht_aus_der_Zukunft_QIK-VRT_Lohmann_2026-09-13.pdf docs/publications/index.json docs/publications/index.html REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
           git commit -m 'publication: persist deterministic future-message evidence PDF and indexes'
           successor="$(git rev-parse HEAD)"
           tree="$(git rev-parse HEAD^{tree})"
