@@ -101,16 +101,25 @@ class AphorismCorpusV2Tests(unittest.TestCase):
     def test_repository_writer_serializes_and_fails_closed_on_ref_drift(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(
-            "group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}",
+            "group: qikvrt-repository-evidence-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}",
             workflow,
         )
-        self.assertNotIn(
-            "qikvrt-repository-evidence-${{ github.event_name }}-",
-            workflow,
+        writer_job = workflow[workflow.index("  materialize:\n"):]
+        self.assertIn("github.event_name == 'workflow_dispatch' ||", writer_job)
+        self.assertIn(
+            "(github.event_name == 'push' && github.actor != 'github-actions[bot]')",
+            writer_job,
         )
         commit_step = workflow.index("- name: Commit materialized repository evidence")
         block = workflow[commit_step:]
         self.assertIn("if: github.event_name != 'pull_request'", block)
+        self.assertNotIn('if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then', block)
+        for integrity_path in (
+            "REPOSITORY_FILE_MANIFEST.json",
+            "REPOSITORY_FILE_MANIFEST.json.sha256",
+            "SHA256SUMS.txt",
+        ):
+            self.assertIn(integrity_path, block)
         for token in (
             'source_head="$(git rev-parse --verify HEAD^{commit})"',
             'git ls-remote --heads origin "refs/heads/$TARGET_REF"',

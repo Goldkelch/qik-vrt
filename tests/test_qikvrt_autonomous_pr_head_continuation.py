@@ -24,7 +24,7 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
         cls.abi = json.loads(ABI.read_text(encoding="utf-8"))
 
     def test_is_event_driven_without_a_scheduled_recovery_path(self) -> None:
-        self.assertIn("workflow_dispatch:", self.text)
+        self.assertNotIn("workflow_dispatch:", self.text)
         self.assertIn("pull_request_target:", self.text)
         self.assertIn("workflow_run:", self.text)
         self.assertNotIn("schedule:", self.text)
@@ -70,8 +70,8 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
         self.assertIn('effect_ack:"NOT_REQUIRED"', self.text)
 
     def test_authority_is_minimal_and_does_not_merge_or_review(self) -> None:
-        self.assertIn("actions: write", self.text)
-        self.assertIn("contents: write", self.text)
+        self.assertIn("actions: read", self.text)
+        self.assertIn("contents: read", self.text)
         self.assertIn("pull-requests: read", self.text)
         self.assertIn("statuses: write", self.text)
         self.assertNotIn("pull-requests: write", self.text)
@@ -79,11 +79,10 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
         self.assertNotIn("/reviews", self.text)
         self.assertIn("persist-credentials: false", self.text)
 
-    def test_repository_dispatch_permission_is_explicit_and_bounded(self) -> None:
-        self.assertIn('"repos/${GITHUB_REPOSITORY}/dispatches"', self.text)
-        self.assertIn("create-repository-dispatch endpoint requires Contents: write", self.text)
-        self.assertIn("used only to emit the exact bound dispatch", self.text)
-        self.assertNotIn("contents: write\n  pull-requests: write", self.text)
+    def test_continuation_has_no_synthetic_dispatch_authority(self) -> None:
+        self.assertNotIn("/dispatches", self.text)
+        self.assertNotIn("actions: write", self.text)
+        self.assertNotIn("contents: write", self.text)
         self.assertNotIn("git push", self.text)
         self.assertNotIn("gh api --method PUT", self.text)
         self.assertNotIn("gh api --method PATCH", self.text)
@@ -179,49 +178,30 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
         self.assertIn("TRUSTED_EXACT_HEAD_VERIFICATION_PENDING", self.recovery_text)
         self.assertIn("TRUSTED_EXACT_HEAD_VERIFICATION_FAILED", self.recovery_text)
 
-    def test_dispatch_failure_cannot_leave_a_permanent_pending_status(self) -> None:
-        self.assertIn("publish_dispatch_error", self.text)
-        self.assertIn("trap publish_dispatch_error EXIT", self.text)
-        self.assertIn("dispatch_status_published=true", self.text)
+    def test_exact_head_reobservation_holds_for_the_next_native_event(self) -> None:
         self.assertIn("state=error", self.text)
-        self.assertIn("Exact-head recovery dispatch failed", self.text)
-        self.assertIn("trap - EXIT", self.text)
+        self.assertIn("HOLD: await next native PR or workflow-run event", self.text)
+        self.assertIn("NATIVE_EVENT_REOBSERVATION_REQUIRED", self.text)
 
-    def test_named_exact_head_gate_surface_is_restored(self) -> None:
-        self.assertIn("qikvrt_batch04_integrity.yml", self.text)
-        self.assertIn("qikvrt_ci.yml", self.text)
-        self.assertIn("qikvrt_collective_review.yml", self.text)
-        self.assertIn("qikvrt_global_completion.yml", self.text)
-        self.assertIn("qikvrt_requested_review_contract.yml", self.text)
-        self.assertIn('-f ref="$HEAD_REF"', self.text)
+    def test_no_named_gate_is_manually_dispatched(self) -> None:
+        self.assertNotIn("qikvrt_batch04_integrity.yml", self.text)
+        self.assertNotIn("qikvrt_ci.yml", self.text)
+        self.assertNotIn("qikvrt_collective_review.yml", self.text)
+        self.assertNotIn("qikvrt_global_completion.yml", self.text)
+        self.assertNotIn("qikvrt_requested_review_contract.yml", self.text)
 
     def test_continuation_is_exact_head_bound_and_never_dispatches_review(self) -> None:
-        self.assertIn('event_type:"qikvrt_autonomous_exact_head_verify"', self.text)
-        self.assertIn("head_sha:$head", self.text)
-        self.assertIn("base_sha:$base", self.text)
-        self.assertIn("causal_state:\"REOBSERVE\"", self.text)
-        self.assertIn("Requested review has no autonomous dispatch route", self.text)
+        self.assertIn('test "$live_ref" = "$HEAD_SHA"', self.text)
+        self.assertIn("EXACT_EVENT_SUCCESSOR_REOBSERVATION_REQUIRED", self.text)
         self.assertNotIn("qikvrt_requested_review_executor.yml/dispatches", self.text)
         self.assertNotIn("inputs[pr]", self.text)
 
-    def test_exact_head_success_routes_one_exact_review_subject(self) -> None:
-        self.assertIn("actions: write", self.exact_head_text)
-        self.assertIn(
-            "Dispatch exact-head requested-review continuation",
-            self.exact_head_text,
-        )
-        self.assertIn(
-            "qikvrt_requested_review_executor.yml/dispatches",
-            self.exact_head_text,
-        )
-        self.assertIn(
-            'current="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TARGET_PR}"',
-            self.exact_head_text,
-        )
-        self.assertIn('test "$current" = "$TARGET_SHA"', self.exact_head_text)
-        self.assertIn("-f ref=main", self.exact_head_text)
-        self.assertIn('-f "inputs[pr]=$TARGET_PR"', self.exact_head_text)
-        self.assertIn('-f "inputs[head]=$TARGET_SHA"', self.exact_head_text)
+    def test_exact_head_verifier_accepts_only_native_events(self) -> None:
+        self.assertIn("pull_request_target:", self.exact_head_text)
+        self.assertIn("workflow_run:", self.exact_head_text)
+        self.assertNotIn("repository_dispatch:", self.exact_head_text)
+        self.assertNotIn("workflow_dispatch:", self.exact_head_text)
+        self.assertNotIn("qikvrt_requested_review_executor.yml/dispatches", self.exact_head_text)
 
     def test_exact_head_qce_verification_cannot_mutate_frozen_package_inventory(self) -> None:
         self.assertIn('qce_tmpdir="$(mktemp -d "${RUNNER_TEMP}/qikvrt-qce-exact-head.XXXXXX")"', self.exact_head_text)

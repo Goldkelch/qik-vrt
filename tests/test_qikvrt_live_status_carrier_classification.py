@@ -33,6 +33,14 @@ class LiveStatusCarrierClassificationTests(unittest.TestCase):
         self.assertIn("pull_request:", self.text)
         self.assertNotIn("schedule:", self.text)
 
+    def test_direct_review_executor_successor_cannot_project_a_merge_execution_head(self) -> None:
+        self.assertIn("source_event=", self.text)
+        self.assertIn("QIKVRT requested review executor", self.text)
+        self.assertIn('"$source_event" = pull_request_review', self.text)
+        self.assertIn('"$source_event" = pull_request_review_comment', self.text)
+        self.assertIn("workflow-run head is an execution SHA", self.text)
+        self.assertIn("exit 0", self.text)
+
 
 if __name__ == "__main__":
     unittest.main()

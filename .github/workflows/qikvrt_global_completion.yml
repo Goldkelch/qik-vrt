@@ -97,6 +97,13 @@ jobs:
             echo 'Global completion outputs are already materialized.'
             exit 0
           fi
+          case "$GITHUB_REF_NAME" in
+            agent/global-completion-v1|agent/global-completion-finalize-v1) ;;
+            *)
+              echo "HOLD_UNVERIFIED: global-completion push target is not an authorized non-main branch" >&2
+              exit 2
+              ;;
+          esac
           git commit -m 'Materialize scoped global claim completion ledger'
           git push origin "HEAD:${GITHUB_REF_NAME}"
 

@@ -4,8 +4,6 @@ on:
   pull_request:
   push:
     branches: [main]
-  schedule:
-    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -115,3 +113,37 @@ jobs:
             /tmp/qikvrt-bit-inventory.jsonl
           if-no-files-found: error
           retention-days: 14
+
+  repair-effectiveness:
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONNOUSERSITE: '1'
+      PYTHONPATH: .
+    steps:
+      - name: Checkout exact Main for operational closure, never a PR merge gate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Reobserve adopted repair and execute fresh Main regression probes
+        run: >-
+          python3 -B tools/qikvrt_repair_effectiveness_guard.py
+          --observe-main --expected-main '${{ github.sha }}'
+          --out "$RUNNER_TEMP/repair-effectiveness"
+      - name: Preserve operational HOLD or exact-Main repair closure
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-repair-effectiveness-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/repair-effectiveness
+          if-no-files-found: error
+          retention-days: 90

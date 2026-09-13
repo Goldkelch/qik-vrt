@@ -13,6 +13,7 @@ import pathlib
 import re
 import subprocess
 import tempfile
+import textwrap
 import unittest
 from unittest import mock
 
@@ -21,6 +22,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 RESERVE = ROOT / ".github/workflows/qikvrt_zenodo_reserve.yml"
 FINALIZE = ROOT / ".github/workflows/qikvrt_effect_ack_finalize.yml"
 GENERAL_CI = ROOT / ".github/workflows/qikvrt_ci.yml"
+VHDL_CONTRACT_CI = ROOT / ".github/workflows/qikvrt_quantum_causal_neutron_star_vhdl.yml"
+TOOLCHAIN_LOCK = ROOT / "runtime/toolchains/TOOLCHAIN.lock.tsv"
+CACHE_REGISTRY = ROOT / "runtime/toolchains/CACHE_REGISTRY.json"
 ADAPTIVE_RUNTIME = ROOT / ".github/workflows/qikvrt_adaptive_runtime.yml"
 MARKER = ROOT / "release/effect-ack-universality-request.json"
 SCHEMA = ROOT / "policy/qikvrt-effect-ack-release-request.schema.json"
@@ -53,6 +57,17 @@ def embedded_python_for_step(workflow: str, step_name: str) -> str:
     return "\n".join(
         line[indentation:] if line.strip() else "" for line in lines
     )
+
+
+def shell_for_step(workflow: str, step_name: str) -> str:
+    """Return the exact shell body of a named workflow step."""
+    start = workflow.index(f"      - name: {step_name}")
+    end = workflow.find("\n      - name:", start + 1)
+    block = workflow[start:] if end == -1 else workflow[start:end]
+    marker = "        run: |\n"
+    if marker not in block:
+        raise AssertionError(f"workflow step has no shell body: {step_name}")
+    return textwrap.dedent(block.split(marker, 1)[1])
 
 
 class EffectAckReleaseWorkflowTests(unittest.TestCase):
@@ -91,6 +106,215 @@ class EffectAckReleaseWorkflowTests(unittest.TestCase):
         general_ci = GENERAL_CI.read_text(encoding="utf-8")
         self.assertIn(f"      - {RESERVE_BRANCH}\n", general_ci)
         self.assertIn(f"      - {FINALIZE_BRANCH}\n", general_ci)
+
+    def test_vhdl_provision_retries_transient_apt_indexes_and_keeps_evidence(self) -> None:
+        """Every VHDL carrier bounds transient APT faults and retains evidence."""
+        cases = (
+            (GENERAL_CI, "Provision and bind GHDL", "Validate analyze elaborate"),
+            (
+                VHDL_CONTRACT_CI,
+                "Provision and bind VHDL analyzer",
+                "Analyze elaborate and execute VHDL",
+            ),
+        )
+        for workflow_path, step_name, following_step in cases:
+            ci = workflow_path.read_text(encoding="utf-8")
+            start = ci.index(f"      - name: {step_name}")
+            end = ci.index(f"      - name: {following_step}", start)
+            provision = ci[start:end]
+
+            self.assertIn('mkdir -p "$EVIDENCE_ROOT"', provision)
+            self.assertIn("command -v jq", provision)
+            self.assertIn("jq --version", provision)
+            self.assertIn("ghdl-provision-receipt.json", provision)
+            self.assertIn("for delay in 0 15 45", provision)
+            self.assertIn("sudo apt-get update -o Acquire::Retries=3", provision)
+            self.assertIn("sudo rm -rf /var/lib/apt/lists/partial", provision)
+            self.assertIn("sudo install -d -m 0755 /var/lib/apt/lists/partial", provision)
+            self.assertEqual(provision.count("sudo apt-get update"), 1)
+            self.assertRegex(
+                provision,
+                r"if sudo apt-get update[\s\S]*?; then[\s\S]*?break\s+else\s+"
+                r"last_apt_update_exit_code=\$\?\s+fi",
+                workflow_path.name,
+            )
+            self.assertIn("apt_update_last_exit_code", provision)
+            self.assertIn("workflow_exit_code", provision)
+            self.assertIn("write_provision_receipt PENDING GHDL_PROVISION_PENDING 0", provision)
+            self.assertIn("write_provision_receipt HOLD GHDL_APT_UPDATE_UNCONFIRMED 2", provision)
+            self.assertIn("write_provision_receipt CURRENT \"\" 0", provision)
+            self.assertIn("dpkg-query -W", provision)
+            self.assertIn("provision_error_trap()", provision)
+            self.assertIn("if-no-files-found: error", ci)
+
+    def test_vhdl_provision_tools_have_declared_cache_strategies(self) -> None:
+        locked = {
+            row.split("\t", 1)[0]
+            for row in TOOLCHAIN_LOCK.read_text(encoding="utf-8").splitlines()
+            if row and not row.startswith("#")
+        }
+        registry = json.loads(CACHE_REGISTRY.read_text(encoding="utf-8"))["components"]
+        for component in ("ghdl", "jq"):
+            self.assertIn(component, locked)
+            self.assertIn(component, registry)
+            self.assertEqual(registry[component]["cache_class"], "runner-image-layer")
+
+    def _run_vhdl_provision_harness(
+        self,
+        workflow_path: pathlib.Path,
+        step_name: str,
+        apt_failures: int,
+    ) -> tuple[subprocess.CompletedProcess[str], dict[str, object], pathlib.Path]:
+        """Run the committed provisioner against fake APT/GHDL commands only."""
+        workflow = workflow_path.read_text(encoding="utf-8")
+        script = shell_for_step(workflow, step_name)
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        root = pathlib.Path(tempdir.name)
+        evidence = root / "evidence"
+        fakebin = root / "fakebin"
+        state = root / "state"
+        fakebin.mkdir()
+        state.mkdir()
+
+        def write_fake(name: str, source: str) -> None:
+            path = fakebin / name
+            path.write_text(textwrap.dedent(source).lstrip(), encoding="utf-8")
+            path.chmod(0o755)
+
+        write_fake(
+            "sudo",
+            r"""
+            #!/usr/bin/env bash
+            set -euo pipefail
+            while [[ "${1:-}" == *=* ]]; do
+              shift
+            done
+            case "${1:-}" in
+              apt-get)
+                case "${2:-}" in
+                  update)
+                    count_file="$MOCK_STATE/update-count"
+                    count=0
+                    if [[ -f "$count_file" ]]; then count="$(cat "$count_file")"; fi
+                    count=$((count + 1))
+                    printf '%s\n' "$count" > "$count_file"
+                    printf 'apt-get update %s\n' "$count" >> "$MOCK_STATE/calls.log"
+                    if [[ "$count" -le "$MOCK_APT_FAILURES" ]]; then
+                      printf 'Hash Sum mismatch on attempt %s\n' "$count" >&2
+                      exit 100
+                    fi
+                    exit 0
+                    ;;
+                  install)
+                    printf 'apt-get install\n' >> "$MOCK_STATE/calls.log"
+                    printf '%s\n' '#!/usr/bin/env bash' "printf 'GHDL mock 1.0\\n'" \
+                      > "$MOCK_BIN/ghdl"
+                    chmod +x "$MOCK_BIN/ghdl"
+                    exit 0
+                    ;;
+                esac
+                ;;
+              rm|install)
+                printf '%s\n' "$1" >> "$MOCK_STATE/calls.log"
+                exit 0
+                ;;
+            esac
+            printf 'unexpected sudo command: %s\n' "$*" >&2
+            exit 97
+            """,
+        )
+        write_fake(
+            "apt-cache",
+            r"""
+            #!/usr/bin/env bash
+            printf '  Candidate: 1.0-mock\n'
+            """,
+        )
+        write_fake(
+            "dpkg-query",
+            r"""
+            #!/usr/bin/env bash
+            printf 'INSTALLED_PACKAGE=ghdl=1.0-mock\n'
+            """,
+        )
+        write_fake(
+            "sleep",
+            r"""
+            #!/usr/bin/env bash
+            set -euo pipefail
+            printf '%s\n' "$1" >> "$MOCK_STATE/sleeps.log"
+            """,
+        )
+
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "EVIDENCE_ROOT": os.fspath(evidence),
+                "GITHUB_RUN_ID": "424242",
+                "MOCK_APT_FAILURES": str(apt_failures),
+                "MOCK_BIN": os.fspath(fakebin),
+                "MOCK_STATE": os.fspath(state),
+                "PATH": os.pathsep.join((os.fspath(fakebin), "/usr/bin", "/bin")),
+            }
+        )
+        completed = subprocess.run(
+            ["bash", "-c", script],
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        receipt = json.loads(
+            (evidence / "ghdl-provision-receipt.json").read_text(encoding="utf-8")
+        )
+        return completed, receipt, root
+
+    def test_vhdl_provision_recovers_after_two_transient_apt_failures(self) -> None:
+        cases = (
+            (GENERAL_CI, "Provision and bind GHDL"),
+            (VHDL_CONTRACT_CI, "Provision and bind VHDL analyzer"),
+        )
+        for workflow_path, step_name in cases:
+            with self.subTest(workflow=workflow_path.name):
+                completed, receipt, root = self._run_vhdl_provision_harness(
+                    workflow_path, step_name, apt_failures=2
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual((root / "state/update-count").read_text().strip(), "3")
+                self.assertEqual((root / "state/sleeps.log").read_text(), "15\n45\n")
+                self.assertEqual(receipt["state"], "CURRENT")
+                self.assertEqual(receipt["apt_update_attempts"], 3)
+                self.assertEqual(receipt["apt_update_last_exit_code"], 0)
+                self.assertEqual(receipt["workflow_exit_code"], 0)
+                for attempt in range(1, 4):
+                    self.assertTrue(
+                        (root / "evidence" / f"apt-update-attempt-{attempt}.log").is_file()
+                    )
+
+    def test_vhdl_provision_holds_after_three_apt_failures_with_evidence(self) -> None:
+        cases = (
+            (GENERAL_CI, "Provision and bind GHDL"),
+            (VHDL_CONTRACT_CI, "Provision and bind VHDL analyzer"),
+        )
+        for workflow_path, step_name in cases:
+            with self.subTest(workflow=workflow_path.name):
+                completed, receipt, root = self._run_vhdl_provision_harness(
+                    workflow_path, step_name, apt_failures=3
+                )
+                self.assertEqual(completed.returncode, 2)
+                self.assertEqual((root / "state/update-count").read_text().strip(), "3")
+                self.assertEqual((root / "state/sleeps.log").read_text(), "15\n45\n")
+                self.assertEqual(receipt["state"], "HOLD")
+                self.assertEqual(receipt["first_blocker"], "GHDL_APT_UPDATE_UNCONFIRMED")
+                self.assertEqual(receipt["apt_update_attempts"], 3)
+                self.assertEqual(receipt["apt_update_last_exit_code"], 100)
+                self.assertEqual(receipt["workflow_exit_code"], 2)
+                for attempt in range(1, 4):
+                    log = root / "evidence" / f"apt-update-attempt-{attempt}.log"
+                    self.assertIn("Hash Sum mismatch", log.read_text(encoding="utf-8"))
 
     def test_effect_boundaries_and_secret_wiring(self) -> None:
         for path in (RESERVE, FINALIZE):

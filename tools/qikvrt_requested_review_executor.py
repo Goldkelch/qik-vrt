@@ -28,8 +28,22 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
 REVIEW_DIFF_CHUNK_BYTES = 1024 * 1024
+REVIEW_DIFF_MAX_PACKETS = 4
+REVIEW_DIFF_MAX_BYTES = REVIEW_DIFF_CHUNK_BYTES * REVIEW_DIFF_MAX_PACKETS
 REVIEW_DIFF_TRANSPORT_SCHEMA = "qikvrt_mesh_review_diff_transport_v1"
 REVIEW_DIFF_TRANSPORT_DELIVERY = "SEQUENTIAL_EXACT_PACKET_ORDER"
+REVIEW_DIFF_TRANSPORT_FIELDS = frozenset({
+    "schema",
+    "packet_bytes",
+    "packet_count",
+    "total_bytes",
+    "sha256",
+    "manifest_path",
+    "packets",
+    "delivery",
+    "manifest_sha256",
+})
+REVIEW_DIFF_PACKET_FIELDS = frozenset({"index", "offset", "bytes", "sha256", "path"})
 SUCCESS = {"success"}
 NON_ADVERSE = {"success", "skipped"}
 NON_GATE_OBSERVER_PATHS = {
@@ -37,16 +51,37 @@ NON_GATE_OBSERVER_PATHS = {
 }
 LEDGER_REF = "refs/heads/qikvrt/mesh-review-ledger-v1"
 LEDGER_ROOT = "state/mesh/reviews"
-REVIEW_QUEUE_ROOT = "state/mesh/review-queue"
-REVIEW_QUEUE_ACK_ROOT = "state/mesh/review-queue-acks"
 TRUSTED_EVALUATOR_PATH = "tools/qikvrt_requested_review_executor.py"
 TRUSTED_WORKFLOW_PATH = ".github/workflows/qikvrt_requested_review_executor.yml"
 REVIEW_MARKER = "qikvrt-mesh-review:v1"
+DELEGATED_ACCOUNT_REVIEW_MARKER = "qikvrt-delegated-native-account-review:v1"
 LIVE_STATUS_MARKER = "qikvrt-live-status-watch"
+UNIVERSAL_LIVE_SURFACE_MARKER = "qikvrt-universal-terminal-live-surface-v1"
+DELEGATED_ACCOUNT_REVIEWERS = frozenset({"goldkelch", "ingolf-lohmann"})
+DELEGATED_ACCOUNT_REVIEW_STATES = {
+    "APPROVE": "approved",
+    "REQUEST_CHANGES": "changes_requested",
+    "COMMENT": "commented",
+}
 TRUSTED_AUTOMATION_DISCUSSION_PREFIXES = (
     f"<!-- {REVIEW_MARKER} ",
     f"<!-- {LIVE_STATUS_MARKER} -->",
+    # This surface is a mutable GitHub Actions journal of workflow lifecycle
+    # events.  It is not reviewer input, and its updates must not turn an
+    # otherwise identical exact subject into causal evidence drift.
+    f"<!-- {UNIVERSAL_LIVE_SURFACE_MARKER} -->",
 )
+# Canonical allowlist identity is the trusted workflow path, never run-name.
+ACTIVE_WRITER_WORKFLOW_PATHS = {
+    "Autonomous issue processing": ".github/workflows/issue-autonomous-processing.yml",
+    "QIK-VRT autonomous bounded self-heal": ".github/workflows/qikvrt_autonomous_self_heal.yml",
+    "QIK-VRT autonomous draft-PR continuation": ".github/workflows/qikvrt_autonomous_pr_continuation.yml",
+    "QIK-VRT expected-head promotion executor": ".github/workflows/qikvrt_expected_head_promotion.yml",
+    "QIKVRT Batch-003 remaining subject disposition": ".github/workflows/qikvrt_batch003_remaining_disposition.yml",
+    "QIKVRT repository evidence materialization": ".github/workflows/qikvrt_batch04_integrity.yml",
+    "QIKVRT universal terminal materialization": ".github/workflows/qikvrt_universal_terminal_materialize.yml",
+    "QIKVRT requested review executor": ".github/workflows/qikvrt_requested_review_executor.yml",
+}
 ACTIVE_WRITER_STATES = ("queued", "in_progress", "waiting", "requested", "pending")
 REVIEW_SELECTION_SCHEMA = "qikvrt_requested_review_selection_v1"
 REVIEW_INTAKE_SCHEMA = "qikvrt_review_intake_v1"
@@ -83,6 +118,7 @@ REOBSERVATION_PROGRESS_FIELDS = frozenset({
     "latest_workflows",
     "active_writers_observed",
     "derived_action",
+    "persistence_eligible",
     "receipt_payload_sha256",
 })
 REPOSITORY_FEEDBACK_PROGRESS_FIELDS = frozenset({
@@ -153,88 +189,87 @@ def _historical_receipt_binding(receipt: Mapping[str, Any]) -> dict[str, Any]:
     return result
 
 
-def review_queue_intent(
-    receipt: Mapping[str, Any],
-    predecessor_fingerprint: str,
-) -> tuple[str, dict[str, Any]]:
-    """Create one immutable, content-addressed recursive review work unit."""
-    predecessor = _sha256(predecessor_fingerprint, "predecessor fingerprint")
-    repository = receipt.get("repository")
-    pr_number = receipt.get("pr_number")
-    head = _sha(receipt.get("head_sha"), "queue head_sha")
-    tree = _sha(receipt.get("tree_sha"), "queue tree_sha")
-    base = _sha(receipt.get("base_sha"), "queue base_sha")
-    fingerprint = _sha256(
-        receipt.get("evidence_fingerprint"),
-        "queue successor fingerprint",
-    )
-    receipt_path = receipt.get("ledger_path")
-    diff_path = receipt.get("ledger_diff_path")
-    if not isinstance(repository, str) or repository.count("/") != 1:
-        raise ReviewSnapshotError("queue repository is invalid")
-    if isinstance(pr_number, bool) or not isinstance(pr_number, int) or pr_number < 1:
-        raise ReviewSnapshotError("queue pull request number is invalid")
-    if not isinstance(receipt_path, str) or not isinstance(diff_path, str):
-        raise ReviewSnapshotError("queue evidence paths are invalid")
-    path = f"{REVIEW_QUEUE_ROOT}/pr-{pr_number}/{head}/{fingerprint}.json"
-    return path, {
-        "schema": "qikvrt_mesh_review_queue_intent_v1",
-        "work_unit_id": f"pr-{pr_number}/{head}/{fingerprint}",
-        "repository": repository,
-        "pr_number": pr_number,
-        "head_sha": head,
-        "tree_sha": tree,
-        "base_sha": base,
-        "predecessor_fingerprint": predecessor,
-        "successor_fingerprint": fingerprint,
-        "receipt_path": receipt_path,
-        "diff_path": diff_path,
-        "state": "QUEUED_RECURSIVE_REOBSERVATION",
-        "completion_claims": {
-            "PASS": False,
-            "FINAL_PASS": False,
-            "EFFECT_ACK_DONE": False,
-            "MERGE": False,
-        },
-    }
-
-
-def review_queue_ack(
-    repository: str,
-    pr_number: int,
-    head_sha: str,
-    predecessor_fingerprint: str,
-    successor_fingerprint: str,
-) -> tuple[str, dict[str, Any]]:
-    """Bind completion of one work unit to the observed successor receipt."""
-    head = _sha(head_sha, "queue acknowledgement head_sha")
-    predecessor = _sha256(predecessor_fingerprint, "ack predecessor fingerprint")
-    successor = _sha256(successor_fingerprint, "ack successor fingerprint")
-    if not isinstance(repository, str) or repository.count("/") != 1:
-        raise ReviewSnapshotError("queue acknowledgement repository is invalid")
-    if isinstance(pr_number, bool) or not isinstance(pr_number, int) or pr_number < 1:
-        raise ReviewSnapshotError("queue acknowledgement PR number is invalid")
-    path = f"{REVIEW_QUEUE_ACK_ROOT}/pr-{pr_number}/{head}/{predecessor}.json"
-    return path, {
-        "schema": "qikvrt_mesh_review_queue_ack_v1",
-        "work_unit_id": f"pr-{pr_number}/{head}/{predecessor}",
-        "repository": repository,
-        "pr_number": pr_number,
-        "head_sha": head,
-        "predecessor_fingerprint": predecessor,
-        "successor_fingerprint": successor,
-        "state": "SUPERSEDED_BY_CAUSAL_REOBSERVATION",
-        "completion_claims": {
-            "PASS": False,
-            "FINAL_PASS": False,
-            "EFFECT_ACK_DONE": False,
-            "MERGE": False,
-        },
-    }
-
-
 def _pretty_json_bytes(value: Any) -> bytes:
     return (json.dumps(value, sort_keys=True, indent=2) + "\n").encode("utf-8")
+
+
+def validate_diff_transport_budget(transport: Mapping[str, Any]) -> None:
+    """Preflight a complete diff manifest before any ledger packet I/O.
+
+    The exact diff remains local review evidence, but a ledger transport with
+    unbounded packets would turn one native event into unbounded GitHub blob
+    writes and readbacks.  The complete packet declaration and its canonical
+    manifest seal are checked here, rather than after a reader has followed
+    any packet path.  This is shared by every ledger writer and reader.
+    """
+    if not isinstance(transport, Mapping):
+        raise ReviewSnapshotError("diff transport budget envelope is invalid")
+    if transport.get("schema") != REVIEW_DIFF_TRANSPORT_SCHEMA:
+        raise ReviewSnapshotError("diff transport schema is invalid")
+    if set(transport) != REVIEW_DIFF_TRANSPORT_FIELDS:
+        raise ReviewSnapshotError("diff transport manifest fields are invalid")
+    if transport.get("packet_bytes") != REVIEW_DIFF_CHUNK_BYTES:
+        raise ReviewSnapshotError("diff transport packet bound is invalid")
+    if transport.get("delivery") != REVIEW_DIFF_TRANSPORT_DELIVERY:
+        raise ReviewSnapshotError("diff transport delivery contract is invalid")
+    total_bytes = transport.get("total_bytes")
+    packet_count = transport.get("packet_count")
+    packets = transport.get("packets")
+    if (
+        isinstance(total_bytes, bool)
+        or not isinstance(total_bytes, int)
+        or total_bytes < 1
+        or isinstance(packet_count, bool)
+        or not isinstance(packet_count, int)
+        or packet_count < 1
+    ):
+        raise ReviewSnapshotError("diff transport size declaration is invalid")
+    if (
+        total_bytes > REVIEW_DIFF_MAX_BYTES
+        or packet_count > REVIEW_DIFF_MAX_PACKETS
+    ):
+        raise ReviewSnapshotError("diff transport exceeds ledger I/O budget")
+    # This runs before ledger packet I/O.  A bounded ``packet_count`` is not
+    # sufficient if an untrusted manifest can name an arbitrary-length list.
+    if not isinstance(packets, list) or len(packets) != packet_count:
+        raise ReviewSnapshotError("diff transport packet count is invalid")
+    _sha256(transport.get("sha256"), "diff transport digest")
+    manifest_path = transport.get("manifest_path")
+    if not isinstance(manifest_path, str) or not manifest_path.endswith(".chunks.json"):
+        raise ReviewSnapshotError("diff transport manifest path is invalid")
+    manifest_projection = dict(transport)
+    manifest_sha256 = manifest_projection.pop("manifest_sha256")
+    if (
+        not isinstance(manifest_sha256, str)
+        or manifest_sha256 != _canonical_sha256(manifest_projection)
+    ):
+        raise ReviewSnapshotError("diff transport manifest digest mismatch")
+    base_path = manifest_path[: -len(".chunks.json")]
+    declared_bytes = 0
+    for index, packet in enumerate(packets):
+        if not isinstance(packet, Mapping) or set(packet) != REVIEW_DIFF_PACKET_FIELDS:
+            raise ReviewSnapshotError("diff transport packet is invalid")
+        packet_index = packet.get("index")
+        offset = packet.get("offset")
+        size = packet.get("bytes")
+        if (
+            isinstance(packet_index, bool)
+            or not isinstance(packet_index, int)
+            or packet_index != index
+            or isinstance(offset, bool)
+            or not isinstance(offset, int)
+            or offset != declared_bytes
+            or isinstance(size, bool)
+            or not isinstance(size, int)
+            or size < 1
+            or size != min(REVIEW_DIFF_CHUNK_BYTES, total_bytes - declared_bytes)
+            or packet.get("path") != f"{base_path}.chunks/{index:08d}.bin"
+        ):
+            raise ReviewSnapshotError("diff transport packet order is invalid")
+        _sha256(packet.get("sha256"), "diff transport packet digest")
+        declared_bytes += size
+    if declared_bytes != total_bytes:
+        raise ReviewSnapshotError("diff transport total bytes are invalid")
 
 
 def build_diff_transport(diff: bytes, base_path: str) -> dict[str, Any]:
@@ -248,6 +283,8 @@ def build_diff_transport(diff: bytes, base_path: str) -> dict[str, Any]:
         raise ReviewSnapshotError("diff transport requires non-empty bytes")
     if not isinstance(base_path, str) or not base_path:
         raise ReviewSnapshotError("diff transport base path is missing")
+    if len(diff) > REVIEW_DIFF_MAX_BYTES:
+        raise ReviewSnapshotError("diff transport exceeds ledger I/O budget")
     chunks = []
     for index, offset in enumerate(range(0, len(diff), REVIEW_DIFF_CHUNK_BYTES)):
         packet = diff[offset : offset + REVIEW_DIFF_CHUNK_BYTES]
@@ -297,17 +334,11 @@ def reassemble_diff_transport(transport: Mapping[str, Any], packets: Sequence[by
         raise ReviewSnapshotError("diff transport packet bound is invalid")
     if transport.get("delivery") != REVIEW_DIFF_TRANSPORT_DELIVERY:
         raise ReviewSnapshotError("diff transport delivery contract is invalid")
+    validate_diff_transport_budget(transport)
     total_bytes = transport.get("total_bytes")
     packet_count = transport.get("packet_count")
-    if (
-        isinstance(total_bytes, bool)
-        or not isinstance(total_bytes, int)
-        or total_bytes < 1
-        or isinstance(packet_count, bool)
-        or not isinstance(packet_count, int)
-        or packet_count < 1
-    ):
-        raise ReviewSnapshotError("diff transport size declaration is invalid")
+    assert isinstance(total_bytes, int)
+    assert isinstance(packet_count, int)
     _sha256(transport.get("sha256"), "diff transport digest")
     manifest_path = transport.get("manifest_path")
     if not isinstance(manifest_path, str) or not manifest_path.endswith(".chunks.json"):
@@ -370,10 +401,13 @@ def prepare_diff_transport_ledger_entries(
     """
     if not isinstance(diff, bytes) or not diff:
         raise ReviewSnapshotError("ledger diff bytes are unavailable")
+    if len(diff) > REVIEW_DIFF_MAX_BYTES:
+        raise ReviewSnapshotError("diff transport exceeds ledger I/O budget")
     if not isinstance(ledger_manifest_path, str) or not ledger_manifest_path:
         raise ReviewSnapshotError("ledger manifest path is invalid")
     if not isinstance(transport, Mapping):
         raise ReviewSnapshotError("ledger diff transport is invalid")
+    validate_diff_transport_budget(transport)
     if transport.get("manifest_path") != ledger_manifest_path:
         raise ReviewSnapshotError("diff transport manifest path does not bind the ledger path")
     declared = transport.get("packets")
@@ -405,13 +439,24 @@ def latest_status_matches_projection(
     context: str,
     state: str,
     evidence_fingerprint: str,
+    execution_run_id: str | int,
 ) -> bool:
-    """Return true only when the latest status in a context is the projection."""
+    """Return true only when the latest status is this exact run projection."""
     if not isinstance(context, str) or not context:
         raise ReviewSnapshotError("status context is missing")
     if not isinstance(state, str) or not state:
         raise ReviewSnapshotError("status state is missing")
     _sha256(evidence_fingerprint, "status evidence fingerprint")
+    if isinstance(execution_run_id, bool):
+        raise ReviewSnapshotError("status executor run id is invalid")
+    if isinstance(execution_run_id, int):
+        if execution_run_id < 1:
+            raise ReviewSnapshotError("status executor run id is invalid")
+        expected_run_id = str(execution_run_id)
+    elif isinstance(execution_run_id, str) and re.fullmatch(r"[1-9][0-9]*", execution_run_id):
+        expected_run_id = execution_run_id
+    else:
+        raise ReviewSnapshotError("status executor run id is invalid")
     matching: list[Mapping[str, Any]] = []
     for status in statuses:
         if not isinstance(status, Mapping):
@@ -432,10 +477,13 @@ def latest_status_matches_projection(
 
     latest = max(matching, key=key)
     match = re.search(r"\bfp=([0-9a-f]{64})\b", latest.get("description") or "")
+    run_match = re.search(r"\brun=([1-9][0-9]*)\b", latest.get("description") or "")
     return (
         latest.get("state") == state
         and match is not None
         and match.group(1) == evidence_fingerprint
+        and run_match is not None
+        and run_match.group(1) == expected_run_id
     )
 
 
@@ -1617,6 +1665,13 @@ def _result(
                 "QIK-VRT expected-head promotion executor",
             ],
         },
+        # A workflow-progress observation is useful evidence, but not an
+        # immutable ledger candidate.  Persist only a terminal technical
+        # disposition; native completion events will reobserve a WAIT state.
+        "persistence_eligible": (
+            state in {"APPROVE", "REQUEST_CHANGES", "COMMENT_WITH_BLOCKER"}
+            and isinstance(diff_transport, Mapping)
+        ),
         "derived_action": _derived_action(state, blocker),
         "verification_state": "HOLD_UNVERIFIED",
         "ordinary_release": False,
@@ -1734,16 +1789,21 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
         writers,
         required_gate_paths,
     )
+    diff_transport_over_ledger_budget = len(diff) > REVIEW_DIFF_MAX_BYTES
     common = {
         "scope": scope,
         "scope_sha256": observed_scope_digest,
         "diff_sha256": actual_diff_sha256,
         "diff_bytes": len(diff),
         "fingerprint": fingerprint,
-        "diff_transport": build_diff_transport(
-            diff,
-            f"{LEDGER_ROOT}/pr-{snapshot['pr_number']}/{snapshot['head_sha']}/{fingerprint}",
-        ) if diff else None,
+        "diff_transport": (
+            build_diff_transport(
+                diff,
+                f"{LEDGER_ROOT}/pr-{snapshot['pr_number']}/{snapshot['head_sha']}/{fingerprint}",
+            )
+            if diff and not diff_transport_over_ledger_budget
+            else None
+        ),
         "latest": latest,
     }
     if intake["reason_state"] == "AMBIGUOUS_FAIL_CLOSED":
@@ -1780,6 +1840,26 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
             "REVIEW_BYTES_UNAVAILABLE",
             "exact diff is empty for a declared review scope",
             findings=[_finding("REVIEW_BYTES_UNAVAILABLE", "BLOCK", "exact diff is empty")],
+            **common,
+        )
+    if diff_transport_over_ledger_budget:
+        detail=(
+            f"exact diff contains {len(diff)} bytes, exceeding the versioned "
+            f"ledger transport ceiling of {REVIEW_DIFF_MAX_BYTES} bytes "
+            f"({REVIEW_DIFF_MAX_PACKETS} packet(s))"
+        )
+        return _result(
+            snapshot,
+            "COMMENT_WITH_BLOCKER",
+            "DIFF_LEDGER_TRANSPORT_LIMIT_EXCEEDED",
+            detail,
+            findings=[
+                _finding(
+                    "DIFF_LEDGER_TRANSPORT_LIMIT_EXCEEDED",
+                    "HOLD",
+                    detail,
+                )
+            ],
             **common,
         )
     positive_findings = [
@@ -2053,18 +2133,26 @@ def _gh_one(path: str) -> Any:
     return _run_json(("gh", "api", path))
 
 
-def _gh_pages(path: str) -> list[Mapping[str, Any]]:
-    pages = _run_json(("gh", "api", "--paginate", "--slurp", path))
-    if not isinstance(pages, list):
-        raise ReviewObservationError("paginated GitHub response is not a list")
+def _gh_bounded_page(path: str, kind: str) -> list[Mapping[str, Any]]:
+    """Read one complete-or-fail-closed REST list page.
+
+    The requested-review executor must never turn one native delivery into an
+    unbounded sequence of installation-token reads.  The callers all request
+    ``per_page=100``.  A full page cannot prove that a next page is absent, so
+    it is deliberately a HOLD rather than a best-effort partial review.
+    """
+    page = _run_json(("gh", "api", path))
+    if not isinstance(page, list):
+        raise ReviewObservationError(f"{kind} GitHub response is not a list")
+    if len(page) >= 100:
+        raise ReviewObservationError(
+            f"{kind} observation reaches the one-page safety bound"
+        )
     result: list[Mapping[str, Any]] = []
-    for page in pages:
-        if not isinstance(page, list):
-            raise ReviewObservationError("paginated GitHub page is not a list")
-        for item in page:
-            if not isinstance(item, Mapping):
-                raise ReviewObservationError("paginated GitHub item is not an object")
-            result.append(item)
+    for item in page:
+        if not isinstance(item, Mapping):
+            raise ReviewObservationError(f"{kind} item is not an object")
+        result.append(item)
     return result
 
 
@@ -2183,7 +2271,11 @@ def event_payload_pull_request(
     main base and expected head. Other event classes, malformed
     objects and any drift fail closed.
     """
-    if event_name not in {"pull_request_target", "pull_request_review"}:
+    if event_name not in {
+        "pull_request_target",
+        "pull_request_review",
+        "pull_request_review_comment",
+    }:
         return None
     if not isinstance(payload, Mapping):
         return None
@@ -2202,6 +2294,221 @@ def event_payload_pull_request(
     if reasons or subject["head_sha"] != expected_head:
         return None
     return pull_request
+
+
+def _is_own_mesh_review_comment_event(
+    payload: Any,
+    repository: str,
+    event_pr: str,
+    expected_head: str,
+    event_name: str,
+) -> bool:
+    """Recognize only this executor's exact technical COMMENT delivery.
+
+    The check is deliberately narrower than a marker search.  It admits no
+    guessed actor, malformed review, other bot, human comment, decisive review
+    state, foreign PR, or wrong-head event.  Suppressing this exact feedback
+    delivery before the live PR GET prevents a COMMENT made with another
+    credential model from recursively becoming a new review intake.
+    """
+    if event_name != "pull_request_review" or not isinstance(payload, Mapping):
+        return False
+    number = _positive_integer(event_pr)
+    head = expected_head.strip()
+    if number is None or _git_sha1(head) is None:
+        return False
+    if payload.get("action") != "submitted":
+        return False
+    embedded_pr = event_payload_pull_request(
+        payload, repository, number, head, event_name
+    )
+    if embedded_pr is None:
+        return False
+    sender = payload.get("sender")
+    review = payload.get("review")
+    if not isinstance(sender, Mapping) or not isinstance(review, Mapping):
+        return False
+    sender_login = sender.get("login")
+    reviewer = review.get("user")
+    reviewer_login = reviewer.get("login") if isinstance(reviewer, Mapping) else None
+    if not (
+        isinstance(sender_login, str)
+        and sender_login.casefold() == "github-actions[bot]"
+        and isinstance(reviewer_login, str)
+        and reviewer_login.casefold() == "github-actions[bot]"
+    ):
+        return False
+    state = review.get("state")
+    body = review.get("body")
+    if (
+        not isinstance(state, str)
+        or state.casefold() != "commented"
+        or review.get("commit_id") != head
+        or not isinstance(body, str)
+    ):
+        return False
+    header = re.compile(
+        rf"\A<!-- {re.escape(REVIEW_MARKER)} head={re.escape(head)} "
+        r"tree=[0-9a-f]{40} fingerprint=[0-9a-f]{64} "
+        r"disposition=(?:APPROVE|WAIT|REQUEST_CHANGES|COMMENT_WITH_BLOCKER) -->"
+    )
+    return header.match(body) is not None
+
+
+def _is_own_delegated_account_review_event(
+    payload: Any,
+    repository: str,
+    event_pr: str,
+    expected_head: str,
+    event_name: str,
+) -> bool:
+    """Recognize only an exact delegated native-account review delivery.
+
+    A native account review is a separately authorized GitHub review effect;
+    it is not new technical Mesh-review input.  Its resulting native event
+    must therefore be excluded before any live observation can bind that
+    effect as a new receipt.  This remains deliberately fail closed: a human
+    review, a near-miss marker, an edited or dismissed review, a foreign
+    subject, a non-User actor, or an actor/body/state/head/tree mismatch
+    remains ordinary external intake.
+    """
+    if event_name != "pull_request_review" or not isinstance(payload, Mapping):
+        return False
+    number = _positive_integer(event_pr)
+    head = expected_head.strip()
+    if number is None or _git_sha1(head) is None or payload.get("action") != "submitted":
+        return False
+    event_repository = payload.get("repository")
+    if (
+        not isinstance(event_repository, Mapping)
+        or event_repository.get("full_name") != repository
+    ):
+        return False
+    embedded_pr = event_payload_pull_request(
+        payload, repository, number, head, event_name
+    )
+    if embedded_pr is None:
+        return False
+    base = embedded_pr.get("base")
+    base_repository = base.get("repo") if isinstance(base, Mapping) else None
+    if (
+        not isinstance(base_repository, Mapping)
+        or base_repository.get("full_name") != repository
+    ):
+        return False
+    sender = payload.get("sender")
+    review = payload.get("review")
+    reviewer = review.get("user") if isinstance(review, Mapping) else None
+    author = embedded_pr.get("user")
+    if not (
+        isinstance(sender, Mapping)
+        and isinstance(review, Mapping)
+        and isinstance(reviewer, Mapping)
+        and isinstance(author, Mapping)
+        and sender.get("type") == "User"
+        and reviewer.get("type") == "User"
+        and author.get("type") == "User"
+    ):
+        return False
+    sender_login = sender.get("login")
+    reviewer_login = reviewer.get("login")
+    author_login = author.get("login")
+    if not all(isinstance(login, str) and login.strip() for login in (
+        sender_login,
+        reviewer_login,
+        author_login,
+    )):
+        return False
+    sender_account = sender_login.casefold()
+    reviewer_account = reviewer_login.casefold()
+    author_account = author_login.casefold()
+    if (
+        sender_account not in DELEGATED_ACCOUNT_REVIEWERS
+        or reviewer_account not in DELEGATED_ACCOUNT_REVIEWERS
+        or author_account not in DELEGATED_ACCOUNT_REVIEWERS
+        or sender_account != reviewer_account
+        or author_account == reviewer_account
+    ):
+        return False
+    state = review.get("state")
+    body = review.get("body")
+    if (
+        not isinstance(state, str)
+        or review.get("commit_id") != head
+        or not isinstance(body, str)
+    ):
+        return False
+    header = re.compile(
+        rf"\A<!-- {re.escape(DELEGATED_ACCOUNT_REVIEW_MARKER)} "
+        r"fingerprint=[0-9a-f]{64} "
+        rf"head={re.escape(head)} tree=[0-9a-f]{{40}} "
+        r"event=(APPROVE|REQUEST_CHANGES|COMMENT) -->"
+    )
+    marker = header.match(body)
+    return (
+        marker is not None
+        and state.casefold() == DELEGATED_ACCOUNT_REVIEW_STATES[marker.group(1)]
+    )
+
+
+def _is_trusted_live_surface_issue_comment_event(
+    payload: Any,
+    repository: str,
+    event_pr: str,
+    event_name: str,
+) -> bool:
+    """Recognize only the executor-irrelevant live terminal journal event.
+
+    ``QIKVRT live status watch`` writes this mutable journal to an issue
+    comment after native PR/review/workflow events.  The review observation
+    deliberately excludes the journal from causal discussion evidence, so the
+    journal's own ``issue_comment`` delivery must not start another complete
+    review observation.  This check is deliberately narrow: a human, another
+    bot, an embedded marker, a foreign PR URL, a mismatched number, or a
+    malformed payload remains ordinary review intake.
+    """
+    if event_name != "issue_comment" or not isinstance(payload, Mapping):
+        return False
+    number = _positive_integer(event_pr)
+    if number is None or payload.get("action") not in {"created", "edited", "deleted"}:
+        return False
+    issue = payload.get("issue")
+    comment = payload.get("comment")
+    sender = payload.get("sender")
+    if (
+        not isinstance(issue, Mapping)
+        or not isinstance(comment, Mapping)
+        or not isinstance(sender, Mapping)
+        or _positive_integer(issue.get("number")) != number
+    ):
+        return False
+    pull_request = issue.get("pull_request")
+    if not isinstance(pull_request, Mapping):
+        return False
+    # The issue-comment payload's ``pull_request`` relation supplies the
+    # canonical URL but not necessarily a redundant number.  Bind that URL to
+    # the independently delivered issue number through the same strict parser
+    # used for workflow-run PR associations.
+    bound_number, blocker = _workflow_run_pr_number(
+        {"number": number, "url": pull_request.get("url")}, repository
+    )
+    if blocker is not None or bound_number != number:
+        return False
+    sender_login = sender.get("login")
+    author = comment.get("user")
+    author_login = author.get("login") if isinstance(author, Mapping) else None
+    if not (
+        isinstance(sender_login, str)
+        and sender_login.casefold() == "github-actions[bot]"
+        and isinstance(author_login, str)
+        and author_login.casefold() == "github-actions[bot]"
+    ):
+        return False
+    body = comment.get("body")
+    return (
+        isinstance(body, str)
+        and body.startswith(f"<!-- {UNIVERSAL_LIVE_SURFACE_MARKER} -->")
+    )
 
 
 def _workflow_run_pr_number(
@@ -2226,13 +2533,14 @@ def _workflow_run_pr_number(
 def select_review_subject(
     *,
     repository: str,
-    requested_pr: str,
     event_pr: str,
     event_name: str,
     expected_head: str,
     workflow_event: str,
     workflow_prs: Any,
     fetch_pull_request: Callable[[int], Mapping[str, Any]],
+    requested_pr: str = "",
+    event_payload: Any = None,
 ) -> dict[str, Any]:
     """Select one exact, eligible review subject without a fallback scan.
 
@@ -2246,11 +2554,84 @@ def select_review_subject(
     if not isinstance(repository, str) or repository.count("/") != 1:
         raise ReviewSnapshotError("selector repository is invalid")
 
+    if requested_pr.strip():
+        return _selection_result(
+            "INELIGIBLE_EVENT_TARGET",
+            "EXACT_EVENT",
+            first_blocker="MANUAL_EXECUTOR_DISPATCH_FORBIDDEN",
+            event_source="MANUAL_INPUT_FORBIDDEN",
+            eligibility_reasons=["MANUAL_EXECUTOR_DISPATCH_FORBIDDEN"],
+        )
+
+    if _is_own_mesh_review_comment_event(
+        event_payload, repository, event_pr, expected_head, event_name
+    ):
+        number = _positive_integer(event_pr)
+        assert number is not None
+        embedded_pr = event_payload_pull_request(
+            event_payload, repository, number, expected_head.strip(), event_name
+        )
+        assert embedded_pr is not None
+        return _selection_result(
+            "INELIGIBLE_EVENT_TARGET",
+            "EXACT_EVENT",
+            first_blocker="SELF_MESH_REVIEW_COMMENT_EVENT",
+            pr_number=number,
+            event_source="TRUSTED_EXECUTOR_REVIEW_EVENT",
+            expected_head=expected_head.strip(),
+            subject=_selection_subject(embedded_pr),
+            eligibility_reasons=["SELF_MESH_REVIEW_COMMENT_EVENT"],
+            subject_count=1,
+            detail="the executor's own exact technical COMMENT is not new review input",
+        )
+
+    if _is_own_delegated_account_review_event(
+        event_payload, repository, event_pr, expected_head, event_name
+    ):
+        number = _positive_integer(event_pr)
+        assert number is not None
+        embedded_pr = event_payload_pull_request(
+            event_payload, repository, number, expected_head.strip(), event_name
+        )
+        assert embedded_pr is not None
+        return _selection_result(
+            "INELIGIBLE_EVENT_TARGET",
+            "EXACT_EVENT",
+            first_blocker="SELF_DELEGATED_ACCOUNT_REVIEW_EVENT",
+            pr_number=number,
+            event_source="TRUSTED_DELEGATED_ACCOUNT_REVIEW_EVENT",
+            expected_head=expected_head.strip(),
+            subject=_selection_subject(embedded_pr),
+            eligibility_reasons=["SELF_DELEGATED_ACCOUNT_REVIEW_EVENT"],
+            subject_count=1,
+            detail=(
+                "the exact delegated native-account review is not new technical review input"
+            ),
+        )
+
+    if _is_trusted_live_surface_issue_comment_event(
+        event_payload, repository, event_pr, event_name
+    ):
+        number = _positive_integer(event_pr)
+        assert number is not None
+        return _selection_result(
+            "INELIGIBLE_EVENT_TARGET",
+            "EXACT_EVENT",
+            first_blocker="SELF_LIVE_SURFACE_ISSUE_COMMENT_EVENT",
+            pr_number=number,
+            event_source="TRUSTED_LIVE_SURFACE_ISSUE_COMMENT",
+            eligibility_reasons=["SELF_LIVE_SURFACE_ISSUE_COMMENT_EVENT"],
+            subject_count=1,
+            detail=(
+                "the trusted mutable live terminal journal is not new review input"
+            ),
+        )
+
     bound_head = expected_head.strip()
     if bound_head and _git_sha1(bound_head) is None:
         return _selection_result(
             "REOBSERVE_EXACT_EVENT_TARGET",
-            "EXACT_EVENT_OR_DISPATCH",
+            "EXACT_EVENT",
             first_blocker="INVALID_EVENT_EXPECTED_HEAD",
             event_source="EVENT_HEAD",
             expected_head=bound_head,
@@ -2268,7 +2649,7 @@ def select_review_subject(
         if number is None:
             return _selection_result(
                 "INELIGIBLE_EVENT_TARGET",
-                "EXACT_EVENT_OR_DISPATCH",
+                "EXACT_EVENT",
                 first_blocker="INVALID_EXACT_PULL_REQUEST_NUMBER",
                 event_source=source,
                 eligibility_reasons=["INVALID_EXACT_PULL_REQUEST_NUMBER"],
@@ -2276,7 +2657,7 @@ def select_review_subject(
         if require_bound_head and not bound_head:
             return _selection_result(
                 "REOBSERVE_EXACT_EVENT_TARGET",
-                "EXACT_EVENT_OR_DISPATCH",
+                "EXACT_EVENT",
                 first_blocker=missing_head_blocker,
                 pr_number=number,
                 event_source=source,
@@ -2288,7 +2669,7 @@ def select_review_subject(
         except (OSError, ValueError, ReviewObservationError) as exc:
             return _selection_result(
                 "REOBSERVE_EXACT_EVENT_TARGET",
-                "EXACT_EVENT_OR_DISPATCH",
+                "EXACT_EVENT",
                 first_blocker="PULL_REQUEST_OBSERVATION_UNAVAILABLE",
                 pr_number=number,
                 event_source=source,
@@ -2300,7 +2681,7 @@ def select_review_subject(
         if not isinstance(observed, Mapping):
             return _selection_result(
                 "INELIGIBLE_EVENT_TARGET",
-                "EXACT_EVENT_OR_DISPATCH",
+                "EXACT_EVENT",
                 first_blocker="PULL_REQUEST_OBSERVATION_MALFORMED",
                 pr_number=number,
                 event_source=source,
@@ -2310,7 +2691,7 @@ def select_review_subject(
         if reasons:
             return _selection_result(
                 "INELIGIBLE_EVENT_TARGET",
-                "EXACT_EVENT_OR_DISPATCH",
+                "EXACT_EVENT",
                 first_blocker=reasons[0],
                 pr_number=number,
                 event_source=source,
@@ -2322,7 +2703,7 @@ def select_review_subject(
         if bound_head and subject["head_sha"] != bound_head:
             return _selection_result(
                 "REOBSERVE_EXACT_EVENT_TARGET",
-                "EXACT_EVENT_OR_DISPATCH",
+                "EXACT_EVENT",
                 first_blocker="EVENT_TARGET_HEAD_DRIFT",
                 pr_number=number,
                 event_source=source,
@@ -2333,7 +2714,7 @@ def select_review_subject(
             )
         return _selection_result(
             "CANDIDATE",
-            "EXACT_EVENT_OR_DISPATCH",
+            "EXACT_EVENT",
             pr_number=number,
             event_source=source,
             expected_head=bound_head or None,
@@ -2341,31 +2722,12 @@ def select_review_subject(
             subject_count=1,
         )
 
-    if requested_pr.strip() and event_pr.strip():
-        requested_number = _positive_integer(requested_pr)
-        event_number = _positive_integer(event_pr)
-        if (
-            requested_number is not None
-            and event_number is not None
-            and requested_number != event_number
-        ):
-            return _selection_result(
-                "AMBIGUOUS_EVENT_SUBJECT",
-                "EXACT_EVENT_OR_DISPATCH",
-                first_blocker="CONFLICTING_EXACT_PULL_REQUEST_SUBJECTS",
-                event_source="WORKFLOW_DISPATCH_AND_PULL_REQUEST_EVENT",
-                subject_count=2,
-            )
-
-    if requested_pr.strip():
-        return exact_number(
-            requested_pr,
-            "WORKFLOW_DISPATCH_PR",
-            require_bound_head=True,
-            missing_head_blocker="WORKFLOW_DISPATCH_HEAD_MISSING",
-        )
     if event_pr.strip():
-        if event_name in {"pull_request_target", "pull_request_review"}:
+        if event_name in {
+            "pull_request_target",
+            "pull_request_review",
+            "pull_request_review_comment",
+        }:
             return exact_number(
                 event_pr,
                 "PULL_REQUEST_EVENT",
@@ -2381,7 +2743,7 @@ def select_review_subject(
             )
         return _selection_result(
             "INELIGIBLE_EVENT_TARGET",
-            "EXACT_EVENT_OR_DISPATCH",
+            "EXACT_EVENT",
             first_blocker="UNSUPPORTED_EXACT_EVENT_SOURCE",
             event_source=event_name or "UNKNOWN",
             eligibility_reasons=["UNSUPPORTED_EXACT_EVENT_SOURCE"],
@@ -2391,7 +2753,7 @@ def select_review_subject(
         return _selection_result(
             "NO_EVENT_SUBJECT",
             "NO_EVENT_SUBJECT",
-            first_blocker="NO_EXACT_EVENT_OR_DISPATCH_SUBJECT",
+            first_blocker="NO_EXACT_EVENT_SUBJECT",
             event_source="NONE",
             expected_head=bound_head or None,
         )
@@ -2400,7 +2762,7 @@ def select_review_subject(
         if workflow_event in {"schedule", "workflow_dispatch"}:
             return _selection_result(
                 "INELIGIBLE_EVENT_TARGET",
-                "EXACT_EVENT_OR_DISPATCH",
+                "EXACT_EVENT",
                 first_blocker="SCHEDULED_OR_MANUAL_WORKFLOW_RUN_FORBIDDEN",
                 event_source="WORKFLOW_RUN",
                 expected_head=bound_head or None,
@@ -2409,7 +2771,7 @@ def select_review_subject(
         if not workflow_prs:
             return _selection_result(
                 "NO_EVENT_SUBJECT",
-                "EXACT_EVENT_OR_DISPATCH",
+                "EXACT_EVENT",
                 first_blocker="NO_EXACT_WORKFLOW_RUN_PULL_REQUEST",
                 event_source="WORKFLOW_RUN",
                 expected_head=bound_head or None,
@@ -2417,7 +2779,7 @@ def select_review_subject(
         if not isinstance(workflow_prs, Sequence) or isinstance(workflow_prs, (str, bytes)):
             return _selection_result(
                 "INELIGIBLE_EVENT_TARGET",
-                "EXACT_EVENT_OR_DISPATCH",
+                "EXACT_EVENT",
                 first_blocker="MALFORMED_WORKFLOW_RUN_PULL_REQUESTS",
                 event_source="WORKFLOW_RUN_PULL_REQUESTS",
                 expected_head=bound_head or None,
@@ -2428,7 +2790,7 @@ def select_review_subject(
             if not isinstance(item, Mapping):
                 return _selection_result(
                     "INELIGIBLE_EVENT_TARGET",
-                    "EXACT_EVENT_OR_DISPATCH",
+                    "EXACT_EVENT",
                     first_blocker="MALFORMED_WORKFLOW_RUN_PULL_REQUESTS",
                     event_source="WORKFLOW_RUN_PULL_REQUESTS",
                     expected_head=bound_head or None,
@@ -2438,7 +2800,7 @@ def select_review_subject(
             if blocker is not None:
                 return _selection_result(
                     "INELIGIBLE_EVENT_TARGET",
-                    "EXACT_EVENT_OR_DISPATCH",
+                    "EXACT_EVENT",
                     first_blocker=blocker,
                     event_source="WORKFLOW_RUN_PULL_REQUESTS",
                     expected_head=bound_head or None,
@@ -2449,7 +2811,7 @@ def select_review_subject(
         if len(numbers) != 1:
             return _selection_result(
                 "AMBIGUOUS_EVENT_SUBJECT",
-                "EXACT_EVENT_OR_DISPATCH",
+                "EXACT_EVENT",
                 first_blocker="WORKFLOW_RUN_MULTIPLE_PULL_REQUESTS",
                 event_source="WORKFLOW_RUN_PULL_REQUESTS",
                 expected_head=bound_head or None,
@@ -2465,51 +2827,56 @@ def select_review_subject(
     return _selection_result(
         "NO_EVENT_SUBJECT",
         "NO_EVENT_SUBJECT",
-        first_blocker="NO_EXACT_EVENT_OR_DISPATCH_SUBJECT",
+        first_blocker="NO_EXACT_EVENT_SUBJECT",
         event_source="NONE",
     )
 
 
 def _gh_runs(path: str) -> list[Mapping[str, Any]]:
-    pages = _run_json(("gh", "api", "--paginate", "--slurp", path))
-    if not isinstance(pages, list):
-        raise ReviewObservationError("workflow-run response is not a list")
+    page = _run_json(("gh", "api", path))
+    if not isinstance(page, Mapping):
+        raise ReviewObservationError("workflow-run response is not an object")
+    total = page.get("total_count")
+    raw_runs = page.get("workflow_runs")
+    if (
+        isinstance(total, bool)
+        or not isinstance(total, int)
+        or total < 0
+        or not isinstance(raw_runs, list)
+        or len(raw_runs) > 100
+        or total != len(raw_runs)
+    ):
+        raise ReviewObservationError("workflow-run projection is incomplete")
     result: list[Mapping[str, Any]] = []
-    for page in pages:
-        if not isinstance(page, Mapping) or not isinstance(page.get("workflow_runs"), list):
-            raise ReviewObservationError("workflow-run page is malformed")
-        for item in page["workflow_runs"]:
-            if not isinstance(item, Mapping):
-                raise ReviewObservationError("workflow run is not an object")
-            result.append(item)
+    for item in raw_runs:
+        if not isinstance(item, Mapping):
+            raise ReviewObservationError("workflow run is not an object")
+        result.append(item)
     return result
 
 
 def _gh_jobs(path: str) -> list[Mapping[str, Any]]:
-    """Read and completeness-check every paginated job for one workflow run."""
-    pages = _run_json(("gh", "api", "--paginate", "--slurp", path))
-    if not isinstance(pages, list) or not pages:
-        raise ReviewObservationError("workflow-job response is not a non-empty list")
-    result: list[Mapping[str, Any]] = []
-    declared_total: int | None = None
-    for page in pages:
-        if not isinstance(page, Mapping) or not isinstance(page.get("jobs"), list):
-            raise ReviewObservationError("workflow-job page is malformed")
-        total = page.get("total_count")
-        if isinstance(total, bool) or not isinstance(total, int) or total < 0:
-            raise ReviewObservationError("workflow-job total_count is invalid")
-        if declared_total is None:
-            declared_total = total
-        elif declared_total != total:
-            raise ReviewObservationError("workflow-job total_count changed across pages")
-        for item in page["jobs"]:
-            if not isinstance(item, Mapping):
-                raise ReviewObservationError("workflow job is not an object")
-            result.append(item)
-    if declared_total != len(result):
+    """Read one complete-or-fail-closed job page for one workflow run."""
+    page = _run_json(("gh", "api", path))
+    if not isinstance(page, Mapping) or not isinstance(page.get("jobs"), list):
+        raise ReviewObservationError("workflow-job response is malformed")
+    total = page.get("total_count")
+    jobs = page["jobs"]
+    if (
+        isinstance(total, bool)
+        or not isinstance(total, int)
+        or total < 0
+        or len(jobs) > 100
+        or total != len(jobs)
+    ):
         raise ReviewObservationError(
-            f"workflow-job projection is incomplete: {len(result)} != {declared_total}"
+            f"workflow-job projection is incomplete: {len(jobs)} != {total}"
         )
+    result: list[Mapping[str, Any]] = []
+    for item in jobs:
+        if not isinstance(item, Mapping):
+            raise ReviewObservationError("workflow job is not an object")
+        result.append(item)
     return result
 
 
@@ -2635,35 +3002,30 @@ def _git_scope(base: str, head: str) -> list[dict[str, Any]]:
 def _thread_observation(repository: str, number: int) -> list[dict[str, Any]]:
     owner, name = repository.split("/", 1)
     query = """query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{id isResolved}}}}}"""
-    after: str | None = None
+    command = [
+        "gh", "api", "graphql", "-f", f"query={query}",
+        "-F", f"owner={owner}", "-F", f"name={name}", "-F", f"number={number}",
+    ]
+    graph = _run_json(command)
+    try:
+        connection = graph["data"]["repository"]["pullRequest"]["reviewThreads"]
+        nodes = connection["nodes"]
+        page_info = connection["pageInfo"]
+    except (KeyError, TypeError) as exc:
+        raise ReviewObservationError("review-thread response is malformed") from exc
+    if not isinstance(nodes, list) or page_info.get("hasNextPage") is not False:
+        raise ReviewObservationError("review-thread observation reaches the one-page safety bound")
     threads: list[dict[str, Any]] = []
-    while True:
-        command = [
-            "gh", "api", "graphql", "-f", f"query={query}",
-            "-F", f"owner={owner}", "-F", f"name={name}", "-F", f"number={number}",
-        ]
-        if after is not None:
-            command.extend(("-F", f"after={after}"))
-        graph = _run_json(command)
-        try:
-            connection = graph["data"]["repository"]["pullRequest"]["reviewThreads"]
-            nodes = connection["nodes"]
-            page_info = connection["pageInfo"]
-        except (KeyError, TypeError) as exc:
-            raise ReviewObservationError("review-thread response is malformed") from exc
-        for node in nodes:
-            threads.append(
-                {
-                    "id": str(node["id"]),
-                    "is_resolved": bool(node["isResolved"]),
-                    "body_sha256": None,
-                }
-            )
-        if not page_info.get("hasNextPage"):
-            break
-        after = page_info.get("endCursor")
-        if not isinstance(after, str) or not after:
-            raise ReviewObservationError("review-thread pagination cursor is missing")
+    for node in nodes:
+        if not isinstance(node, Mapping):
+            raise ReviewObservationError("review-thread item is malformed")
+        threads.append(
+            {
+                "id": str(node["id"]),
+                "is_resolved": bool(node["isResolved"]),
+                "body_sha256": None,
+            }
+        )
     return threads
 
 
@@ -2675,7 +3037,7 @@ def _discussion_observation(repository: str, number: int) -> list[dict[str, Any]
     )
     result: list[dict[str, Any]] = []
     for kind, endpoint in endpoints:
-        for item in _gh_pages(endpoint):
+        for item in _gh_bounded_page(endpoint, kind):
             body = item.get("body") or ""
             author = (item.get("user") or {}).get("login")
             if (
@@ -2712,6 +3074,7 @@ def _discussion_observation(repository: str, number: int) -> list[dict[str, Any]
 def _workflow_observation(
     repository: str,
     head: str,
+    required_workflow_ids: set[int] | None = None,
 ) -> list[dict[str, Any]]:
     encoded_head = urllib.parse.quote(head, safe="")
     raw_runs = _gh_runs(
@@ -2735,6 +3098,22 @@ def _workflow_observation(
         for item in raw_runs
     ]
     latest = collapse_latest(runs)
+    if required_workflow_ids is not None:
+        if (
+            not required_workflow_ids
+            or any(
+                isinstance(identifier, bool)
+                or not isinstance(identifier, int)
+                or identifier < 1
+                for identifier in required_workflow_ids
+            )
+        ):
+            raise ReviewObservationError("required workflow identifiers are invalid")
+        latest = {
+            identity: run
+            for identity, run in latest.items()
+            if run.get("workflow_id") in required_workflow_ids
+        }
     for run in latest.values():
         run_id = run.get("id")
         if isinstance(run_id, bool) or not isinstance(run_id, int) or run_id < 1:
@@ -2766,39 +3145,115 @@ def _active_writer_observation(
     writer_names: set[str],
     relevant_heads: set[str],
 ) -> list[dict[str, Any]]:
-    """Observe only writers that can still mutate this exact subject.
+    """Observe active writer projections without enumerating completed history.
 
-    Repository-wide Actions queries can retain queued admission ghosts
-    on immutable predecessor heads. They are not leases on the current
-    review. Main-driven writers remain relevant at the exact observed
-    main head; candidate writers remain relevant at the exact PR head.
-    Malformed relevant-head bindings fail closed.
+    At most two literal heads (candidate and trusted main), five active states,
+    and one complete page per head/state: at most ten serial reads. A partial
+    page, escaped binding, duplicate run, or API/quota error fails closed; no
+    history fallback, pagination, retry, or predecessor evidence is permitted.
+    This observation is not a writer lock. Existing pre-effect exact-subject
+    reobservation and writer admission boundaries remain mandatory.
     """
     if (
+        not isinstance(repository, str)
+        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*", repository)
+        is None
+    ):
+        raise ReviewObservationError("active writer repository binding is invalid")
+    if (
+        isinstance(current_run_id, bool)
+        or not isinstance(current_run_id, int)
+        or current_run_id < 1
+    ):
+        raise ReviewObservationError("active writer current run binding is invalid")
+    if (
+        not isinstance(writer_names, set)
+        or not writer_names
+        or any(not isinstance(name, str) or not name for name in writer_names)
+    ):
+        raise ReviewObservationError("active writer workflow binding is invalid")
+    if (
         not isinstance(relevant_heads, set)
-        or not relevant_heads
+        or not 1 <= len(relevant_heads) <= 2
         or any(_git_sha1(value) is None for value in relevant_heads)
     ):
-        raise ReviewObservationError(
-            "active writer relevant-head binding is invalid"
-        )
+        raise ReviewObservationError("active writer relevant-head binding is invalid")
+
+    if not writer_names <= ACTIVE_WRITER_WORKFLOW_PATHS.keys():
+        raise ReviewObservationError("active writer workflow path binding is unknown")
+    writer_paths = {ACTIVE_WRITER_WORKFLOW_PATHS[name]: name for name in writer_names}
+
     observed: dict[int, dict[str, Any]] = {}
-    for status in ACTIVE_WRITER_STATES:
-        for run in _gh_runs(
-            f"repos/{repository}/actions/runs?status={status}&per_page=100"
-        ):
-            run_id = run.get("id")
+    seen: set[int] = set()
+    for head in sorted(relevant_heads):
+        encoded_head = urllib.parse.quote(head, safe="")
+        for status in ACTIVE_WRITER_STATES:
+            # Filter before applying the cardinality/completeness bound.
+            # Completed historical runs must never consume this page budget.
+            response = _gh_one(
+                f"repos/{repository}/actions/runs?head_sha={encoded_head}"
+                f"&status={status}&per_page=100&page=1"
+            )
+            if not isinstance(response, Mapping):
+                raise ReviewObservationError("active writer workflow-run response is malformed")
+            total = response.get("total_count")
+            raw_runs = response.get("workflow_runs")
             if (
-                isinstance(run_id, int)
-                and run_id != current_run_id
-                and run.get("name") in writer_names
-                and run.get("head_sha") in relevant_heads
+                isinstance(total, bool)
+                or not isinstance(total, int)
+                or total < 0
+                or not isinstance(raw_runs, list)
+                or len(raw_runs) > 100
+                or total != len(raw_runs)
             ):
+                raise ReviewObservationError(
+                    "active writer exact-head workflow-run page is incomplete"
+                    f" (status={status})"
+                )
+            for run in raw_runs:
+                if not isinstance(run, Mapping):
+                    raise ReviewObservationError("active writer workflow run is malformed")
+                if run.get("head_sha") != head:
+                    raise ReviewObservationError(
+                        "active writer workflow run escaped exact-head binding"
+                    )
+                if run.get("status") != status:
+                    raise ReviewObservationError(
+                        "active writer workflow run escaped active-state binding"
+                    )
+                run_id = run.get("id")
+                name = run.get("name")
+                if (
+                    isinstance(run_id, bool)
+                    or not isinstance(run_id, int)
+                    or run_id < 1
+                ):
+                    raise ReviewObservationError("active writer run id is invalid")
+                if not isinstance(name, str) or not name:
+                    raise ReviewObservationError("active writer workflow name is invalid")
+                workflow_id = run.get("workflow_id")
+                path = run.get("path")
+                if (
+                    isinstance(workflow_id, bool)
+                    or not isinstance(workflow_id, int)
+                    or workflow_id < 1
+                    or not isinstance(path, str)
+                    or re.fullmatch(r"\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml", path) is None
+                ):
+                    raise ReviewObservationError("active writer workflow identity is invalid")
+                if run_id in seen:
+                    # A duplicate cannot prove page completeness. Across
+                    # states it also exposes observation-time state drift.
+                    raise ReviewObservationError("active writer duplicate run observation")
+                seen.add(run_id)
+                # Validate all rows before excluding self or non-writers.
+                if run_id == current_run_id or path not in writer_paths:
+                    continue
                 observed[run_id] = {
                     "id": run_id,
-                    "name": run.get("name"),
-                    "status": run.get("status"),
-                    "head_sha": run.get("head_sha"),
+                    "name": writer_paths[path],
+                    "status": status,
+                    "head_sha": head,
                     "workflow_id": run.get("workflow_id"),
                     "path": run.get("path"),
                     "event": run.get("event"),
@@ -2879,7 +3334,7 @@ def observe_repository(
 
     threads = _thread_observation(repository, pr_number)
     discussion = _discussion_observation(repository, pr_number)
-    runs = _workflow_observation(repository, head)
+    runs = _workflow_observation(repository, head, set(gate_ids.values()))
     writers = _active_writer_observation(
         repository,
         current_run_id,

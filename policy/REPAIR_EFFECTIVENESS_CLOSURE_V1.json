@@ -1,0 +1,37 @@
+{
+  "schema": "qikvrt_repair_effectiveness_closure_v1",
+  "version": 1,
+  "revision": 2,
+  "repository": "Goldkelch/qik-vrt",
+  "integration_pr": 1071,
+  "provenance": {"historical_design_prs": [770, 781, 785, 787], "historical_head": "e92804b4d62b84c7a82ab1c93d2a36eb1d720b87", "evidence_transfer": false},
+  "invariants": [
+    "FIXED_ON_PR != EFFECTIVE_ON_MAIN",
+    "VERIFIED_IMPLEMENTATION != AUTHORITY_EFFECT",
+    "REPAIR_CLOSED_REQUIRES_NATIVE_ADOPTION_IN_CURRENT_MAIN_HISTORY",
+    "REPAIR_CLOSED_REQUIRES_FRESH_EXACT_MAIN_PROBES_WITH_NONZERO_TEST_COUNT",
+    "REPAIR_CLOSED_REQUIRES_FRESH_PLATFORM_RULESET_READBACK",
+    "HEAD_MUTATION_INVALIDATES_PREDECESSOR_VALIDATION",
+    "MISSING_CAPABILITY_IS_NOT_A_RETRYABLE_CODE_FAILURE",
+    "CANDIDATE_VALIDATION_MUST_NOT_REQUIRE_ITS_OWN_FUTURE_MAIN_EFFECT"
+  ],
+  "source_gate": "make repair-effectiveness-contract",
+  "main_effect_consumer": ".github/workflows/qikvrt_zero_bug_continuous.yml",
+  "main_effect_job": "repair-effectiveness",
+  "closure_receipt": "REPAIR_EFFECTIVENESS.json",
+  "closure_scope": "Registered classes on the exact freshly observed Main only. Not universal immunity, approval, promotion permission, publication, or empirical confirmation.",
+  "main_mutation": "FORBIDDEN",
+  "review_mutation": "FORBIDDEN",
+  "external_mutation": "FORBIDDEN",
+  "new_polling_or_dispatch_controller": false,
+  "failure_classes": {
+    "BOT_AUTHORED_ZERO_JOB_HEAD_FALSE_NOOP": {"regression_modules": ["tests.test_qikvrt_pr_head_recovery", "tests.test_qikvrt_autonomous_pr_head_continuation"]},
+    "AUTONOMOUS_EXACT_HEAD_RECOVERY_DISPATCH_FORBIDDEN": {"regression_modules": ["tests.test_qikvrt_autonomous_pr_head_continuation"]},
+    "PROMOTION_READINESS_REVIEW_STATE_MACHINE_DEADLOCK": {"regression_modules": ["tests.test_qikvrt_expected_head_promotion", "tests.test_qikvrt_requested_review_executor"]},
+    "REQUIRED_REVIEW_STATUS_FIXED_POINT_DUPLICATION": {"regression_modules": ["tests.test_qikvrt_required_review_gate"]},
+    "REPAIRED_FAILURE_CLASS_RECURS_BECAUSE_TRUSTED_RUNTIME_IS_STALE": {"regression_modules": ["tests.test_qikvrt_repair_effectiveness_guard"]},
+    "READ_BOOTSTRAP_DEPENDS_ON_ADMIN": {"regression_modules": ["tests.test_qikvrt_autonomous_ruleset_effect_loop", "tests.test_qikvrt_repair_effectiveness_guard"]},
+    "CONFIGURATION_RECIPE_DRIFT": {"regression_modules": ["tests.test_qikvrt_repair_effectiveness_guard"]},
+    "RULESET_EFFECT_CONFUSED_WITH_TRANSPORT_SUCCESS": {"regression_modules": ["tests.test_qikvrt_ruleset_reconcile", "tests.test_qikvrt_native_account_review", "tests.test_qikvrt_repair_effectiveness_guard"]}
+  }
+}

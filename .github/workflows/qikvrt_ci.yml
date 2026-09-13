@@ -125,8 +125,69 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$EVIDENCE_ROOT"
+          command -v jq | tee "$EVIDENCE_ROOT/jq-package.txt"
+          jq --version | tee -a "$EVIDENCE_ROOT/jq-package.txt"
+          provision_attempts=0
+          last_apt_update_exit_code=null
+          write_provision_receipt() {
+            local state="$1" blocker="$2" workflow_exit_code="$3"
+            jq -n \
+              --arg state "$state" \
+              --arg blocker "$blocker" \
+              --arg run "$GITHUB_RUN_ID" \
+              --argjson attempts "$provision_attempts" \
+              --argjson apt_update_last_exit_code "$last_apt_update_exit_code" \
+              --argjson workflow_exit_code "$workflow_exit_code" \
+              '{
+                schema:"qikvrt_ghdl_provision_receipt_v1",
+                state:$state,
+                first_blocker:(if $blocker == "" then null else $blocker end),
+                workflow_run_id:($run|tonumber),
+                apt_update_attempts:$attempts,
+                apt_update_last_exit_code:$apt_update_last_exit_code,
+                workflow_exit_code:$workflow_exit_code,
+                retry_policy:{delays_seconds:[0,15,45],apt_acquire_retries:3},
+                external_effect:false,
+                completion_claims:{PASS:false,FINAL_PASS:false,EFFECT_ACK_DONE:false}
+              }' > "$EVIDENCE_ROOT/ghdl-provision-receipt.json"
+          }
+          provision_error_trap() {
+            local status=$?
+            trap - ERR
+            write_provision_receipt HOLD GHDL_PROVISION_EXECUTION_FAILED "$status"
+            exit "$status"
+          }
+          trap provision_error_trap ERR
+          write_provision_receipt PENDING GHDL_PROVISION_PENDING 0
           if ! command -v ghdl >/dev/null 2>&1; then
-            sudo apt-get update
+            apt_updated=false
+            for delay in 0 15 45; do
+              if [ "$delay" -gt 0 ]; then
+                sleep "$delay"
+              fi
+              provision_attempts=$((provision_attempts + 1))
+              update_log="$EVIDENCE_ROOT/apt-update-attempt-${provision_attempts}.log"
+              if sudo apt-get update -o Acquire::Retries=3 > "$update_log" 2>&1; then
+                apt_updated=true
+                last_apt_update_exit_code=0
+                break
+              else
+                last_apt_update_exit_code=$?
+              fi
+              # An interrupted mirror response may leave only partial index
+              # bytes.  Clear that exact ephemeral partial-list directory
+              # before the bounded next attempt; never classify it as a
+              # candidate or VHDL failure.
+              sudo rm -rf /var/lib/apt/lists/partial
+              sudo install -d -m 0755 /var/lib/apt/lists/partial
+            done
+            if [ "$apt_updated" != true ]; then
+              # Preserve both the last apt transport failure above and the
+              # deliberately nonzero workflow HOLD below in the receipt.
+              write_provision_receipt HOLD GHDL_APT_UPDATE_UNCONFIRMED 2
+              cat "$EVIDENCE_ROOT"/apt-update-attempt-*.log >&2 || true
+              exit 2
+            fi
             candidate="$(apt-cache policy ghdl | awk '/Candidate:/ {print $2}')"
             test -n "$candidate"
             test "$candidate" != '(none)'
@@ -136,7 +197,11 @@ jobs:
               --no-install-recommends "ghdl=$candidate"
           fi
           command -v ghdl | tee -a "$EVIDENCE_ROOT/ghdl-package.txt"
+          dpkg-query -W -f='INSTALLED_PACKAGE=${Package}=${Version}\n' ghdl \
+            | tee -a "$EVIDENCE_ROOT/ghdl-package.txt"
           ghdl --version | tee "$EVIDENCE_ROOT/ghdl-version.txt"
+          write_provision_receipt CURRENT "" 0
+          trap - ERR
       - name: Validate analyze elaborate and execute inside-out VHDL
         if: steps.detect.outputs.present == 'true'
         shell: bash

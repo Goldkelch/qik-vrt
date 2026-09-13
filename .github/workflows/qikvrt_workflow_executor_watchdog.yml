@@ -1,9 +1,23 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
 name: QIKVRT workflow executor watchdog
+run-name: QIKVRT workflow executor watchdog main=${{ inputs.expected_main || github.event.pull_request.head.sha || github.sha }} tree=${{ inputs.expected_tree || 'manual' }} carrier=${{ inputs.carrier_run_id || 'manual' }}
 
 on:
   workflow_dispatch:
+    inputs:
+      expected_main:
+        description: Exact trusted main commit selected by the executor carrier.
+        required: false
+        type: string
+      expected_tree:
+        description: Exact Git tree bound to the selected trusted main commit.
+        required: false
+        type: string
+      carrier_run_id:
+        description: Immutable executor carrier run identifier for this exact dispatch.
+        required: false
+        type: string
   pull_request:
     paths:
       - "AI"
@@ -29,18 +43,18 @@ permissions:
   contents: read
 
 concurrency:
-  group: qikvrt-workflow-executor-watchdog-${{ github.repository }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: true
+  group: qikvrt-workflow-executor-watchdog-${{ github.repository }}-${{ inputs.expected_main || github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
 
 jobs:
   exact-head-watchdog:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - name: Check out the event's exact head
+      - name: Check out the exact event or executor-bound head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.expected_main || github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -51,12 +65,35 @@ jobs:
 
       - name: Materialize an exact-head watchdog snapshot
         env:
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          EXPECTED_HEAD: ${{ inputs.expected_main || github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_MAIN_INPUT: ${{ inputs.expected_main || '' }}
+          EXPECTED_TREE_INPUT: ${{ inputs.expected_tree || '' }}
+          CARRIER_RUN_ID_INPUT: ${{ inputs.carrier_run_id || '' }}
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .qikvrt/workflow-executor-watchdog
           head="$(git rev-parse --verify HEAD^{commit})"
+          tree="$(git rev-parse --verify HEAD^{tree})"
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            supplied_inputs=0
+            for value in "$EXPECTED_MAIN_INPUT" "$EXPECTED_TREE_INPUT" "$CARRIER_RUN_ID_INPUT"; do
+              if [ -n "$value" ]; then
+                supplied_inputs=$((supplied_inputs + 1))
+              fi
+            done
+            if [ "$supplied_inputs" -ne 0 ]; then
+              test "$supplied_inputs" -eq 3
+              [[ "$EXPECTED_MAIN_INPUT" =~ ^[0-9a-f]{40}$ ]]
+              [[ "$EXPECTED_TREE_INPUT" =~ ^[0-9a-f]{40}$ ]]
+              [[ "$CARRIER_RUN_ID_INPUT" =~ ^[1-9][0-9]*$ ]]
+              test "$GITHUB_REF" = refs/heads/main
+              test "$EXPECTED_HEAD" = "$EXPECTED_MAIN_INPUT"
+              test "$head" = "$EXPECTED_MAIN_INPUT"
+              test "$tree" = "$EXPECTED_TREE_INPUT"
+            fi
+          fi
           test "$head" = "$EXPECTED_HEAD"
           python3 -B tools/qikvrt_workflow_executor.py snapshot --expect-head "$EXPECTED_HEAD" --json \
             > .qikvrt/workflow-executor-watchdog/exact-head-snapshot.json
@@ -68,6 +105,8 @@ jobs:
           PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v \
             tests.test_qikvrt_workflow_executor_mesh_contract \
             tests.test_qikvrt_reflexive_repository_watchdog \
+            tests.test_qikvrt_workflow_event_graph \
+            tests.test_qikvrt_writer_inventory \
             tests.test_seed_workflows
 
       - name: Preserve watchdog evidence

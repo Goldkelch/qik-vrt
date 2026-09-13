@@ -12,7 +12,8 @@
     "watchdog_workflow_path": ".github/workflows/qikvrt_workflow_executor_watchdog.yml",
     "monitor_workflow_path": ".github/workflows/qikvrt_live_status_watch.yml",
     "observation_mode": "REPOSITORY_NATIVE_EXACT_HEAD_BOUND",
-    "stateful_writes": "ACTION_ARTIFACTS_ONLY",
+    "stateful_writes": "EXECUTOR_ACTION_ARTIFACTS_ONLY",
+    "repository_writer_inventory": "dispatch_policy.writer_workflow_names",
     "single_writer_order": [
       "AUTHORITY",
       "MIRROR",
@@ -42,17 +43,16 @@
       "workflow_path": ".github/workflows/qikvrt_requested_review_executor.yml",
       "decision_core_path": "tools/qikvrt_requested_review_executor.py",
       "human_review_request_prerequisite": false,
-      "eligible_subjects": "SAME_REPOSITORY_PULL_REQUESTS_WITH_OBSERVABLE_BYTES_FROM_EXACT_EVENT_OR_EXPLICIT_DISPATCH",
+      "eligible_subjects": "SAME_REPOSITORY_PULL_REQUESTS_WITH_OBSERVABLE_BYTES_FROM_EXACT_NATIVE_EVENT",
       "selection": {
         "allowed_sources": [
           "EXACT_PULL_REQUEST_OR_ISSUE_EVENT",
-          "EXACT_ROLE_LOCAL_WORKFLOW_RUN_PULL_REQUEST",
-          "EXPLICIT_WORKFLOW_DISPATCH_PULL_REQUEST_AND_HEAD"
+          "EXACT_ROLE_LOCAL_WORKFLOW_RUN_PULL_REQUEST"
         ],
         "eventless_repository_scan": "FORBIDDEN",
         "scheduled_or_manual_workflow_run_source": "FORBIDDEN",
         "workflow_run_requires_role_local_url_and_matching_head": true,
-        "manual_dispatch_requires_matching_exact_head": true,
+        "manual_dispatch": "FORBIDDEN",
         "review_intake_priority_policy": "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json#/review_intake_priority",
         "github_actions_cross_event_priority_guarantee": "NOT_AVAILABLE",
         "github_app_event_broker_required_for_cross_event_priority": true,
@@ -83,6 +83,9 @@
       "review_fingerprint_algorithm": "SHA256",
       "review_fingerprint_input": "CANONICAL_JSON_OF_EXACT_SUBJECT_AND_CAUSAL_EVIDENCE_BINDING",
       "complete_diff_transport_packet_max_bytes": 1048576,
+      "complete_diff_transport_packet_max_count": 4,
+      "complete_diff_transport_total_max_bytes": 4194304,
+      "complete_diff_transport_over_budget": "HOLD_UNVERIFIED_NONPERSISTENT_NO_LEDGER_PACKET_IO",
       "complete_diff_transport_acceptance": "SEQUENTIAL_EXACT_PACKET_ORDER_EXPLICIT_COUNT_PER_PACKET_AND_TOTAL_SHA256_CANONICAL_MANIFEST_SHA256_AND_EXACT_LEDGER_MANIFEST_READBACK_REQUIRED",
       "same_fingerprint_requires": "BYTE_IDENTICAL_RECEIPT_AND_REASSEMBLED_DIFF_AND_TRANSPORT_MANIFEST",
       "subject_drift_disposition": "HOLD_UNVERIFIED",
@@ -113,7 +116,7 @@
       "actions_artifact": "EXACT_RECEIPT_AND_DIFF_PROJECTION",
       "actions_artifact_includes_hidden_evidence_root": true,
       "status_context": "QIKVRT requested review execution",
-      "status_deduplication": "LATEST_CONTEXT_STATUS_ONLY",
+      "status_deduplication": "LATEST_CONTEXT_STATUS_AND_EXECUTOR_RUN_ID",
       "pull_request_review_event": "COMMENT",
       "platform_review_state": "COMMENTED",
       "automation_signer": "github-actions[bot]",
@@ -186,9 +189,12 @@
     "terminal_or_active_exact_run_suppresses_duplicate_dispatch": true,
     "rerun": "ONLY_REPOSITORY_DECLARED_TRANSIENT_FAILURE",
     "writer_workflow_names": [
+      "Autonomous issue processing",
       "QIK-VRT autonomous bounded self-heal",
       "QIK-VRT autonomous draft-PR continuation",
-      "QIK-VRT expected-head promotion executor",
+      "QIKVRT Batch-003 remaining subject disposition",
+      "QIKVRT repository evidence materialization",
+      "QIKVRT universal terminal materialization",
       "QIKVRT requested review executor"
     ],
     "authorized_workflows": [
@@ -203,7 +209,29 @@
         "is_writer": false,
         "required_artifact_prefix": "qikvrt-workflow-executor-watchdog-"
       }
-    ]
+    ],
+    "operator_dispatch_only_workflows": {
+      "outside_self_heal_and_gatewatch": true,
+      "reason": "READ_ONLY_ON_DEMAND_ARTIFACT_BUILDERS_NOT_REPAIR_WORK_UNITS",
+      "workflows": [
+        {
+          "workflow_path": ".github/workflows/qikvrt_seed_mesh_audit_export.yml",
+          "workflow_name": "QIKVRT Seed Mesh Audit Build"
+        },
+        {
+          "workflow_path": ".github/workflows/qikvrt_seed_mesh_maintenance.yml",
+          "workflow_name": "QIKVRT Seed Mesh Maintenance"
+        },
+        {
+          "workflow_path": ".github/workflows/qikvrt_seed_node_revalidation.yml",
+          "workflow_name": "QIKVRT Seed Node Revalidation"
+        },
+        {
+          "workflow_path": ".github/workflows/qikvrt_seed_registry_acceptance.yml",
+          "workflow_name": "QIKVRT Seed Registry Acceptance"
+        }
+      ]
+    }
   },
   "reflexive_deadlock_prevention": {
     "enabled": true,
@@ -221,8 +249,6 @@
     "platform_minimum_schedule": "GITHUB_ACTIONS_FIVE_MINUTES",
     "event_triggers": [
       "SCHEDULE",
-      "WORKFLOW_RUN_REQUESTED",
-      "WORKFLOW_RUN_IN_PROGRESS",
       "WORKFLOW_RUN_COMPLETED",
       "PUSH_MAIN",
       "PULL_REQUEST",
@@ -238,10 +264,7 @@
         "QIKVRT Collective Proposal Review",
         "QIK-VRT global claim completion",
         "QIKVRT Batch-003 remaining subject disposition",
-        "QIKVRT adaptive runtime",
-        "QIKVRT Seed Dashboard Build",
-        "QIKVRT Seed Mesh Maintenance",
-        "QIKVRT Seed Node Revalidation"
+        "QIKVRT adaptive runtime"
       ],
       "required_workflow_names_by_scope": {
         "MAIN": [],
@@ -275,6 +298,38 @@
         "authority_head_mismatch_disposition": "HOLD",
         "artifact_only_materialization": true
       }
+    },
+    "ruleset_main_reconciliation_dispatch": {
+      "enabled": true,
+      "trigger": "SCHEDULE_ONLY",
+      "dispatcher_job": "dispatch-main-ruleset-reconciliation",
+      "effect_workflow_path": ".github/workflows/qikvrt_autonomous_ruleset_effect_loop.yml",
+      "subject_mode": "MAIN",
+      "job_permissions": [
+        "actions:write",
+        "contents:read"
+      ],
+      "app_authority": "FORBIDDEN_IN_WATCHDOG",
+      "ruleset_api": "FORBIDDEN_IN_WATCHDOG",
+      "effect_transport": "WORKFLOW_DISPATCH_ONLY",
+      "required_inputs": [
+        "mode=MAIN",
+        "expected_main",
+        "expected_policy_sha",
+        "main_carrier_run_id"
+      ],
+      "pre_dispatch_rebind": [
+        "CHECKOUT_MAIN_SHA",
+        "GITHUB_MAIN_GET",
+        "POLICY_SHA256",
+        "CURRENT_EFFECT_PAGE_ACTIVE_WRITER_CHECK",
+        "NEWEST_EXACT_MAIN_TERMINAL_RUN_ARTIFACT_RECEIPT"
+      ],
+      "schedule_concurrency_lane": "NON_PREEMPTIVE_SEPARATE_FROM_EVENT_OBSERVERS",
+      "maximum_scheduled_runs": "ONE_RUNNING_PLUS_NEWEST_PENDING",
+      "boundedness": "ONE_CURRENT_100_RUN_PAGE_FOR_ACTIVE_WRITERS_AND_NEWEST_EXACT_TERMINAL_RUN_ONLY;_TERMINAL_PROOF_IS_RUN_BOUND_ARTIFACT_NOT_HISTORY_ABSENCE",
+      "cancel_effect_run": false,
+      "receipt": "qikvrt_ruleset_main_dispatch_receipt_v1"
     },
     "observer_workflow_names": [
       "QIKVRT reflexive repository watchdog",
@@ -341,6 +396,7 @@
   },
   "boundaries": {
     "direct_repository_mutation": "FORBIDDEN",
+    "watchdog_ruleset_main_dispatch": "ALLOWLISTED_ACTIONS_WORKFLOW_DISPATCH_ONLY_NO_RULESET_API_NO_APP_TOKEN",
     "review_receipt_candidate_branch_mutation": "FORBIDDEN",
     "review_receipt_main_branch_mutation": "FORBIDDEN",
     "role_local_review_ledger_write": "ALLOWLISTED_FAST_FORWARD_COMPARE_AND_SWAP_ONLY",

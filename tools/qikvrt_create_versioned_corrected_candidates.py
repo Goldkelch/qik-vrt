@@ -21,6 +21,7 @@ import pathlib
 import re
 import shutil
 import stat
+import tempfile
 import urllib.parse
 import zipfile
 from collections import defaultdict
@@ -35,8 +36,12 @@ BATCH = UNION / "content-disposition-batch-003"
 OUTPUT = UNION / "versioned-corrected-candidates"
 WORK_UNIT = ROOT / "work-units/CREATE_VERSIONED_CORRECTED_CANDIDATES_REMAINING_CORPUS_SUBJECTS.json"
 OWNER_WORK_UNIT = ROOT / "work-units/OWNER_DECISION_VERSIONED_CORRECTED_CANDIDATES.json"
+ACCEPTANCE_RECEIPT = OUTPUT / "OWNER_ACCEPTANCE_RECEIPT.json"
+PROMOTION_WORK_UNIT = ROOT / "work-units/VERIFY_AND_PROMOTE_ACCEPTED_VERSIONED_CORRECTED_CANDIDATES_TO_AUTHORITY.json"
 OBSERVED_AT = "2026-07-30T06:15:00Z"
 CANDIDATE_VERSION = "v1"
+RECOVERY_SCHEMA = "qikvrt_versioned_corrected_candidates_recovery_v1"
+REPOSITORY = "Goldkelch/qik-vrt"
 
 LICENSE = {
     "classification": "machine_readable_versioned_corrected_candidate",
@@ -81,6 +86,24 @@ COMPRESSED_EXTENSIONS = {
 
 class CorrectionError(RuntimeError):
     pass
+
+
+class CandidateStateError(CorrectionError):
+    pass
+
+
+RECOVERABLE_ERRORS = (
+    CorrectionError,
+    remaining_probe.E,
+    subject_172_probe.ProbeError,
+    OSError,
+    UnicodeError,
+    ValueError,
+    KeyError,
+    TypeError,
+    IndexError,
+    AttributeError,
+)
 
 
 def fail(message: str) -> None:
@@ -970,13 +993,17 @@ def materialize_subject(config: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def materialize() -> dict[str, Any]:
+    if classify_candidate_state() != "READY":
+        raise CandidateStateError(
+            "live candidate materialization is forbidden after owner-return, acceptance, or state inconsistency"
+        )
     work_unit = read_json(WORK_UNIT)
-    if work_unit.get("state") not in {"READY", "RETURNED_TO_OWNER"}:
+    if work_unit.get("state") != "READY":
         fail(f"correction work unit is not executable: {work_unit.get('state')}")
     if work_unit.get("subject_ids") != EXPECTED_SUBJECT_IDS:
         fail("correction work-unit subject order drift")
     if OUTPUT.exists():
-        shutil.rmtree(OUTPUT)
+        raise CandidateStateError("candidate output exists outside the eligible READY state")
     OUTPUT.mkdir(parents=True)
     candidates = [materialize_subject(config) for config in SUBJECTS]
     owner_package = {
@@ -1070,7 +1097,7 @@ def materialize() -> dict[str, Any]:
     return owner_package
 
 
-def check() -> dict[str, Any]:
+def verify_candidate_artifacts() -> dict[str, Any]:
     package_path = OUTPUT / "OWNER_RETURN_PACKAGE.json"
     if not package_path.is_file():
         fail("owner return package is missing")
@@ -1086,10 +1113,12 @@ def check() -> dict[str, Any]:
         receipt_path = ROOT / candidate["candidate_receipt"]["path"]
         changeset_path = ROOT / candidate["candidate_changeset"]["path"]
         archive_path = ROOT / candidate["candidate_archive"]["path"]
+        review_path = ROOT / candidate["owner_review"]["path"]
         for path, expected in (
             (receipt_path, candidate["candidate_receipt"]),
             (changeset_path, candidate["candidate_changeset"]),
             (archive_path, candidate["candidate_archive"]),
+            (review_path, candidate["owner_review"]),
         ):
             if not path.is_file() or binding(path) != expected:
                 fail(f"candidate binding drift: {subject_id}:{path}")
@@ -1109,6 +1138,122 @@ def check() -> dict[str, Any]:
         notice_value = json.loads(notice["data"].decode("utf-8"))
         if notice_value["owner_boundary"]["zenodo_mutation_authorized"] is not False:
             fail(f"candidate mutation boundary inflated: {subject_id}")
+    return package
+
+
+def _matching_path_sha(value: Any, expected: Mapping[str, Any], label: str) -> None:
+    if not isinstance(value, Mapping):
+        fail(f"{label} is not a binding")
+    for key in ("path", "sha256"):
+        if value.get(key) != expected.get(key):
+            fail(f"{label} drift: {key}")
+
+
+def _accepted_candidate_map(rows: Any, label: str) -> dict[str, str]:
+    if not isinstance(rows, list):
+        fail(f"{label} is not a candidate list")
+    result: dict[str, str] = {}
+    for row in rows:
+        if not isinstance(row, Mapping):
+            fail(f"{label} contains a non-object candidate")
+        subject_id = row.get("subject_id")
+        candidate_sha256 = row.get("candidate_sha256")
+        if not isinstance(subject_id, str) or not isinstance(candidate_sha256, str):
+            fail(f"{label} candidate identity is invalid")
+        if subject_id in result:
+            fail(f"{label} duplicates {subject_id}")
+        result[subject_id] = candidate_sha256
+    return result
+
+
+def verify_accepted_current(package: Mapping[str, Any]) -> dict[str, Any]:
+    if not ACCEPTANCE_RECEIPT.is_file():
+        fail("accepted candidate state lacks owner acceptance receipt")
+    package_path = OUTPUT / "OWNER_RETURN_PACKAGE.json"
+    package_binding = binding(package_path)
+    acceptance = read_json(ACCEPTANCE_RECEIPT)
+    if acceptance.get("state") != "ACCEPTED" or acceptance.get("decision") != "ACCEPT":
+        fail("owner acceptance receipt state drift")
+    acceptance_binding = acceptance.get("candidate_binding")
+    if not isinstance(acceptance_binding, Mapping):
+        fail("owner acceptance candidate binding missing")
+    for key in ("owner_return_package_path", "owner_return_package_sha256", "owner_return_package_git_blob_sha1"):
+        expected_key = key.removeprefix("owner_return_package_")
+        if acceptance_binding.get(key) != package_binding.get(expected_key):
+            fail(f"owner acceptance package binding drift: {key}")
+    expected_candidates = {
+        str(candidate["subject_id"]): str(candidate["candidate_archive"]["sha256"])
+        for candidate in package["candidates"]
+    }
+    decisions = _accepted_candidate_map(acceptance.get("decisions"), "owner acceptance decisions")
+    if decisions != expected_candidates:
+        fail("owner acceptance decisions do not bind the exact candidate set")
+    if any(row.get("decision") != "ACCEPT" for row in acceptance.get("decisions", [])):
+        fail("owner acceptance contains a non-ACCEPT decision")
+    claims = acceptance.get("completion_claims")
+    if not isinstance(claims, Mapping) or claims.get("all_six_corrected_candidates_accepted") is not True:
+        fail("owner acceptance completion claim drift")
+    if any(claims.get(key) is not False for key in ("pass", "final_pass", "effect_ack_done", "zenodo_mutation_authorized")):
+        fail("owner acceptance completion boundary inflated")
+
+    owner_work = read_json(OWNER_WORK_UNIT)
+    if owner_work.get("state") != "ACCEPTED_ALL_SIX":
+        fail("owner decision work unit is not accepted")
+    _matching_path_sha(owner_work.get("decision_receipt"), binding(ACCEPTANCE_RECEIPT), "owner decision receipt")
+    if owner_work.get("owner_return_package") != package_binding:
+        fail("owner decision package binding drift")
+    owner_claims = owner_work.get("completion_claims")
+    if not isinstance(owner_claims, Mapping) or owner_claims.get("all_owner_decisions_received") is not True:
+        fail("owner decision completion claim drift")
+    if any(owner_claims.get(key) is not False for key in ("pass", "final_pass", "effect_ack_done", "zenodo_mutation_authorized")):
+        fail("owner decision completion boundary inflated")
+
+    promotion = read_json(PROMOTION_WORK_UNIT)
+    if promotion.get("state") != "READY":
+        fail("accepted candidate promotion work unit is not ready")
+    _matching_path_sha(promotion.get("acceptance_receipt"), binding(ACCEPTANCE_RECEIPT), "promotion acceptance receipt")
+    if _accepted_candidate_map(promotion.get("accepted_candidates"), "promotion candidates") != expected_candidates:
+        fail("promotion candidate binding drift")
+    promotion_claims = promotion.get("completion_claims")
+    if not isinstance(promotion_claims, Mapping) or any(promotion_claims.get(key) is not False for key in ("pass", "final_pass", "effect_ack_done", "zenodo_mutation_authorized")):
+        fail("promotion completion boundary inflated")
+    return {
+        "candidate_count": len(expected_candidates),
+        "subject_ids": EXPECTED_SUBJECT_IDS,
+        "state": "ACCEPTED_ALL_SIX_OFFLINE_VERIFIED",
+        "zenodo_mutation_authorized": False,
+        "pass": False,
+        "final_pass": False,
+        "effect_ack_done": False,
+    }
+
+
+def owner_boundary_state_from_presence() -> str | None:
+    """Treat any owner-bound artifact as a no-rebuild boundary before parsing it."""
+    if ACCEPTANCE_RECEIPT.is_file() or PROMOTION_WORK_UNIT.is_file():
+        return "ACCEPTED"
+    if OWNER_WORK_UNIT.is_file() or OUTPUT.exists():
+        return "RETURNED"
+    return None
+
+
+def classify_candidate_state() -> str:
+    boundary = owner_boundary_state_from_presence()
+    if boundary is not None:
+        return boundary
+    work = read_json(WORK_UNIT)
+    if work.get("state") == "READY":
+        return "READY"
+    return "INCONSISTENT"
+
+
+def check() -> dict[str, Any]:
+    package = verify_candidate_artifacts()
+    state = classify_candidate_state()
+    if state == "ACCEPTED":
+        return verify_accepted_current(package)
+    if state != "RETURNED":
+        fail(f"candidate state is not an offline-verifiable return: {state}")
     work_unit = read_json(WORK_UNIT)
     if work_unit.get("state") != "RETURNED_TO_OWNER":
         fail("correction work unit was not returned to owner")
@@ -1126,24 +1271,339 @@ def check() -> dict[str, Any]:
     }
 
 
-def main() -> int:
+def _snapshot_path(path: pathlib.Path, root: pathlib.Path, ordinal: int) -> tuple[pathlib.Path, pathlib.Path | None, str | None]:
+    if path.is_symlink() or (path.exists() and not (path.is_file() or path.is_dir())):
+        raise CandidateStateError(f"unsafe materialization state path: {path}")
+    if not path.exists():
+        return path, None, None
+    snapshot = root / str(ordinal)
+    if path.is_dir():
+        shutil.copytree(path, snapshot)
+        return path, snapshot, "directory"
+    shutil.copy2(path, snapshot)
+    return path, snapshot, "file"
+
+
+def snapshot_materialization_state(root: pathlib.Path) -> list[tuple[pathlib.Path, pathlib.Path | None, str | None]]:
+    return [
+        _snapshot_path(path, root, ordinal)
+        for ordinal, path in enumerate((OUTPUT, WORK_UNIT, OWNER_WORK_UNIT), 1)
+    ]
+
+
+def restore_materialization_state(snapshot: Iterable[tuple[pathlib.Path, pathlib.Path | None, str | None]]) -> None:
+    for path, saved, kind in snapshot:
+        if path.is_symlink() or (path.exists() and not (path.is_file() or path.is_dir())):
+            raise CandidateStateError(f"unsafe materialization restore path: {path}")
+        if path.is_dir():
+            shutil.rmtree(path)
+        elif path.exists():
+            path.unlink()
+        if saved is None:
+            continue
+        if kind == "directory":
+            shutil.copytree(saved, path)
+        elif kind == "file":
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(saved, path)
+        else:
+            raise CandidateStateError(f"invalid materialization snapshot kind: {kind}")
+
+
+def materialize_atomically() -> dict[str, Any]:
+    if classify_candidate_state() != "READY":
+        raise CandidateStateError("live candidate materialization is not eligible for this state")
+    with tempfile.TemporaryDirectory(prefix="qikvrt-versioned-candidate-recovery-") as directory:
+        snapshot = snapshot_materialization_state(pathlib.Path(directory))
+        try:
+            materialize()
+            return check()
+        except BaseException:
+            restore_materialization_state(snapshot)
+            raise
+
+
+def _safe_check() -> dict[str, Any]:
+    try:
+        return check()
+    except (KeyError, TypeError, IndexError, AttributeError) as exc:
+        raise CandidateStateError(
+            f"versioned candidate evidence schema drift: {type(exc).__name__}: {exc}"
+        ) from exc
+
+
+def external_reobservation_policy(error: BaseException) -> dict[str, Any] | None:
+    if isinstance(error, remaining_probe.TransientObservationError):
+        return {
+            "source": "qikvrt_batch003_remaining_archive_probe",
+            "attempts": remaining_probe.GET_ATTEMPTS,
+            "backoff_seconds": list(remaining_probe.GET_BACKOFF_SECONDS),
+            "timeout_seconds": remaining_probe.GET_TIMEOUT_SECONDS,
+        }
+    if isinstance(error, subject_172_probe.TransientObservationError):
+        return {
+            "source": "qikvrt_batch003_subject_172dd_public_probe",
+            "attempts": subject_172_probe.GET_ATTEMPTS,
+            "backoff_seconds": list(subject_172_probe.GET_BACKOFF_SECONDS),
+            "timeout_seconds": subject_172_probe.GET_TIMEOUT_SECONDS,
+        }
+    return None
+
+
+def candidate_recovery_receipt(
+    state: str,
+    blocker: str | None,
+    detail: str,
+    *,
+    candidate_state: str,
+    offline_verified: bool,
+    live_repair_invoked: bool,
+    live_reobservation_attempted: bool,
+    offline_failure: str | None = None,
+    external_policy: Mapping[str, Any] | None = None,
+    d0: int | None = None,
+    next_action: str | None = None,
+) -> dict[str, Any]:
+    effective_d0 = (0 if offline_verified else 2) if d0 is None else d0
+    effective_next_action = next_action or (
+        "RETAIN_ACCEPTED_CANDIDATE_BYTES_OFFLINE"
+        if offline_verified
+        else "REOBSERVE_EXACT_PUBLIC_ZENODO_RECORDS_ON_A_FUTURE_CARRIER"
+    )
+    value: dict[str, Any] = {
+        "schema": RECOVERY_SCHEMA,
+        "state": state,
+        "verification_state": "OFFLINE_CURRENT" if offline_verified else ("HOLD_UNVERIFIED" if state == "HOLD" else "BLOCK"),
+        "candidate_state": candidate_state,
+        "failure_class": blocker,
+        "first_blocker": blocker,
+        "detail": detail,
+        "offline_candidate_evidence_verified": offline_verified,
+        "live_repair_invoked": live_repair_invoked,
+        "live_reobservation_attempted": live_reobservation_attempted,
+        "external_reobservation_policy": dict(external_policy) if external_policy else None,
+        "offline_validation_failure": offline_failure,
+        "external_effect": False,
+        "zenodo_mutation_attempted": False,
+        "d0": effective_d0,
+        "continuation_required": not offline_verified,
+        "next_action": effective_next_action,
+        "completion_claims": {
+            "pass": False,
+            "final_pass": False,
+            "effect_ack_done": False,
+            "candidate_promotion_authorized": False,
+            "zenodo_mutation_authorized": False,
+        },
+    }
+    if state == "HOLD" and blocker is not None:
+        value["hold_reason"] = {
+            "reason_code": blocker,
+            "reason": detail,
+            "subject": {
+                "repository": REPOSITORY,
+                "kind": "versioned_corrected_candidate_set",
+                "identifier": "remaining-corpus-six-candidates",
+                "head_sha": None,
+            },
+            "evidence_refs": [
+                "release/zenodo-corpus-proof-2026-07-28/canonical-union/versioned-corrected-candidates/OWNER_RETURN_PACKAGE.json",
+                "release/zenodo-corpus-proof-2026-07-28/canonical-union/versioned-corrected-candidates/OWNER_ACCEPTANCE_RECEIPT.json",
+            ],
+            "owner": {
+                "role": "REQUIRED_AUTHORITY" if effective_d0 == 3 else "EXACT_SUBJECT_OBSERVER",
+                "actor": "Ingolf Lohmann" if effective_d0 == 3 else "qikvrt-versioned-candidate-recovery",
+            },
+            "retry_condition": {
+                "event": "EXPLICIT_OWNER_AUTHORIZATION" if effective_d0 == 3 else "FUTURE_FRESH_VERSIONED_CANDIDATE_CARRIER",
+                "predicate": "the owner authorizes repair of the exact owner-bound candidate evidence scope" if effective_d0 == 3 else "the exact candidate state is eligible and the immutable public source can be reobserved without a transport failure",
+            },
+            "next_action": value["next_action"],
+            "d0": effective_d0,
+        }
+    return value
+
+
+def failed_recovery(
+    error: BaseException,
+    *,
+    candidate_state: str,
+    offline_failure: str | None = None,
+    live_repair_invoked: bool = False,
+) -> dict[str, Any]:
+    policy = external_reobservation_policy(error)
+    if policy is not None:
+        return candidate_recovery_receipt(
+            "HOLD",
+            "ZENODO_PUBLIC_REOBSERVATION_UNCONFIRMED",
+            str(error),
+            candidate_state=candidate_state,
+            offline_verified=False,
+            live_repair_invoked=live_repair_invoked,
+            live_reobservation_attempted=True,
+            offline_failure=offline_failure,
+            external_policy=policy,
+        )
+    if isinstance(error, (remaining_probe.E, subject_172_probe.ProbeError)):
+        return candidate_recovery_receipt(
+            "BLOCK",
+            "ZENODO_PUBLIC_EVIDENCE_VALIDATION_FAILED",
+            str(error),
+            candidate_state=candidate_state,
+            offline_verified=False,
+            live_repair_invoked=live_repair_invoked,
+            live_reobservation_attempted=True,
+            offline_failure=offline_failure,
+        )
+    return candidate_recovery_receipt(
+        "BLOCK",
+        "VERSIONED_CANDIDATE_MATERIALIZATION_FAILED",
+        str(error),
+        candidate_state=candidate_state,
+        offline_verified=False,
+        live_repair_invoked=live_repair_invoked,
+        live_reobservation_attempted=False,
+        offline_failure=offline_failure,
+    )
+
+
+def owner_boundary_hold(
+    candidate_state: str,
+    offline_failure: str,
+) -> dict[str, Any]:
+    return candidate_recovery_receipt(
+        "HOLD",
+        "VERSIONED_CANDIDATE_EVIDENCE_DRIFT_AFTER_OWNER_BOUNDARY",
+        offline_failure,
+        candidate_state=candidate_state,
+        offline_verified=False,
+        live_repair_invoked=False,
+        live_reobservation_attempted=False,
+        offline_failure=offline_failure,
+        d0=3,
+        next_action="REQUEST_OWNER_AUTHORIZATION_FOR_VERSIONED_CANDIDATE_EVIDENCE_REPAIR",
+    )
+
+
+def verify_current_offline() -> tuple[dict[str, Any], int]:
+    """Verify the exact candidate state without invoking a live repair."""
+    candidate_state = classify_candidate_state()
+    try:
+        result = _safe_check()
+    except RECOVERABLE_ERRORS as offline_error:
+        detail = str(offline_error)
+        if candidate_state in {"RETURNED", "ACCEPTED", "INCONSISTENT"}:
+            return owner_boundary_hold(candidate_state, detail), 2
+        return candidate_recovery_receipt(
+            "HOLD",
+            "VERSIONED_CANDIDATE_EVIDENCE_DRIFT_REQUIRES_EXPLICIT_REPAIR_CARRIER",
+            detail,
+            candidate_state=candidate_state,
+            offline_verified=False,
+            live_repair_invoked=False,
+            live_reobservation_attempted=False,
+            offline_failure=detail,
+            d0=2,
+            next_action="REOBSERVE_EXACT_PUBLIC_ZENODO_RECORDS_ON_A_FUTURE_CARRIER",
+        ), 2
+    result["recovery"] = candidate_recovery_receipt(
+        "CURRENT_OFFLINE_CANDIDATE_EVIDENCE",
+        None,
+        "Existing versioned candidate evidence verified without a live Zenodo read.",
+        candidate_state=candidate_state,
+        offline_verified=True,
+        live_repair_invoked=False,
+        live_reobservation_attempted=False,
+    )
+    return result, 0
+
+
+def ensure_current() -> tuple[dict[str, Any], int]:
+    candidate_state = classify_candidate_state()
+    try:
+        result = _safe_check()
+    except RECOVERABLE_ERRORS as offline_error:
+        offline_failure = str(offline_error)
+    else:
+        result["recovery"] = candidate_recovery_receipt(
+            "CURRENT_OFFLINE_CANDIDATE_EVIDENCE",
+            None,
+            "Existing versioned candidate evidence verified without a live Zenodo read.",
+            candidate_state=candidate_state,
+            offline_verified=True,
+            live_repair_invoked=False,
+            live_reobservation_attempted=False,
+        )
+        return result, 0
+    if candidate_state != "READY":
+        return owner_boundary_hold(candidate_state, offline_failure), 2
+    try:
+        result = materialize_atomically()
+    except RECOVERABLE_ERRORS as live_error:
+        return failed_recovery(
+            live_error,
+            candidate_state=candidate_state,
+            offline_failure=offline_failure,
+            live_repair_invoked=True,
+        ), 2
+    result["recovery"] = candidate_recovery_receipt(
+        "CURRENT_LIVE_REPAIRED",
+        None,
+        "Offline candidate evidence drift was repaired by one bounded read-only live materialization.",
+        candidate_state="RETURNED",
+        offline_verified=True,
+        live_repair_invoked=True,
+        live_reobservation_attempted=True,
+        offline_failure=offline_failure,
+    )
+    return result, 0
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--materialize", action="store_true")
     group.add_argument("--check", action="store_true")
-    args = parser.parse_args()
-    result = materialize() if args.materialize else check()
+    group.add_argument("--ensure-current", action="store_true")
+    group.add_argument("--verify-current", action="store_true")
+    parser.add_argument("--receipt", type=pathlib.Path)
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args(argv)
+    candidate_state = "UNCLASSIFIED"
+    exit_code = 0
+    try:
+        candidate_state = classify_candidate_state()
+        if args.ensure_current:
+            result, exit_code = ensure_current()
+        elif args.verify_current:
+            result, exit_code = verify_current_offline()
+        elif args.materialize:
+            if candidate_state in {"RETURNED", "ACCEPTED", "INCONSISTENT"}:
+                result = owner_boundary_hold(
+                    candidate_state,
+                    "live candidate materialization is forbidden after the owner boundary",
+                )
+                exit_code = 2
+            else:
+                result = materialize_atomically()
+        else:
+            result = _safe_check()
+    except RECOVERABLE_ERRORS as exc:
+        result = failed_recovery(
+            exc,
+            candidate_state=candidate_state,
+            live_repair_invoked=args.materialize,
+        )
+        exit_code = 2
+    if args.receipt:
+        write_json(args.receipt, result)
     print(pretty(result), end="")
     print("PASS=false")
     print("FINAL_PASS=false")
     print("EFFECT_ACK_DONE=false")
     print("ZENODO_MUTATION=false")
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except CorrectionError as exc:
-        print(f"BLOCK: {exc}")
-        raise SystemExit(2)
+    raise SystemExit(main())

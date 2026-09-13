@@ -29,18 +29,35 @@ class RequestedReviewControlPlaneRootFixTests(unittest.TestCase):
                          evidence_fingerprint="7"*64, receipt_payload_sha256="8"*64)
         self.assertEqual(MODULE._historical_receipt_binding(receipt), MODULE._historical_receipt_binding(successor))
 
-    def test_recursive_queue_is_subject_scoped(self):
+    def test_executor_uses_only_native_event_ingress_and_never_synthesizes_a_successor(self):
         text=(ROOT/".github/workflows/qikvrt_requested_review_executor.yml").read_text()
-        self.assertIn("SUBJECT_PR_NUMBER: ${{ steps.select.outputs.pr }}", text)
-        self.assertIn("SUBJECT_HEAD_SHA: ${{ steps.decision.outputs.head }}", text)
-        self.assertIn("str(intent.get('pr_number')) != os.environ['SUBJECT_PR_NUMBER']", text)
-        self.assertIn("intent.get('head_sha') != os.environ['SUBJECT_HEAD_SHA']", text)
+        self.assertIn("pull_request_target:", text)
+        self.assertIn("pull_request_review:", text)
+        self.assertIn("pull_request_review_comment:", text)
+        self.assertIn("EXACT_EVENT_SUCCESSOR_REOBSERVATION_REQUIRED_", text)
+        self.assertNotIn("workflow_dispatch:", text)
+        self.assertNotIn("review_queue_intent", text)
+        self.assertNotIn("review_queue_ack", text)
+        self.assertNotIn("SUBJECT_PR_NUMBER:", text)
+        self.assertNotIn("SUBJECT_HEAD_SHA:", text)
 
     def test_transport_does_not_bind_moving_base_tip(self):
-        text=(ROOT/".github/workflows/qikvrt_requested_review_executor.yml").read_text()
-        self.assertNotIn("'base_sha':pr.get('base',{}).get('sha') == os.environ['EXPECTED_BASE']", text)
-        self.assertIn("'base_ref':pr.get('base',{}).get('ref') == 'main'", text)
-        self.assertIn("'full_causal_binding'", text)
+        core=(ROOT/"tools/qikvrt_requested_review_executor.py").read_text()
+        # The selector binds only the stable main base *ref*.  The exact base
+        # SHA is then an observed causal fact: a moving main tip yields the
+        # explicit BASE_DRIFT hold, rather than retroactively changing the
+        # historical receipt's subject identity.
+        self.assertIn('if subject["base_ref"] != "main":', core)
+        self.assertIn('base = _sha(snapshot.get("base_sha"), "base_sha")', core)
+        self.assertIn('if base != current_main:', core)
+
+    def test_canonical_writer_contract_executes_protected_main_receipt_regressions(self):
+        makefile = (ROOT / "Makefile").read_text()
+        marker = "repository-writer-contract:"
+        self.assertIn(marker, makefile)
+        contract = makefile.split(marker, 1)[1].split("\n\n", 1)[0]
+        self.assertIn("tests.test_qikvrt_protected_main_materialization", contract)
+        self.assertIn("tests.test_qikvrt_candidate_pr_receipt", contract)
 
 if __name__ == "__main__":
     unittest.main()

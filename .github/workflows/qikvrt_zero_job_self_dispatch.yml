@@ -1,16 +1,14 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
-name: QIKVRT zero-job self-dispatch
+name: QIKVRT zero-job native-event hold
 
-# Repository-native wakeup edge for PR workflows that GitHub records as
-# completed/action_required with zero jobs. The workflow_run event is emitted
-# independently of the candidate PR workflow's job admission, so recovery does
-# not depend on a human or an external observer re-triggering the candidate.
+# Repository-native observation edge for PR workflows that GitHub records as
+# completed/action_required with zero jobs. A zero-job run is held until a
+# separate native PR or workflow-run event provides a new exact observation.
 on:
   workflow_run:
     workflows:
       - "QIKVRT repository evidence materialization"
-      - "QIKVRT adaptive stacked successor integrity materialization"
       - "QIKVRT CI"
       - "QIKVRT Collective Proposal Review"
       - "QIK-VRT global claim completion"
@@ -24,7 +22,7 @@ on:
 
 permissions:
   actions: read
-  contents: write
+  contents: read
   pull-requests: read
   statuses: write
 
@@ -33,7 +31,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  classify-and-dispatch:
+  classify-and-hold:
     # This trusted-main workflow only handles pull-request runs and never treats
     # action_required alone as a defect. Zero jobs is the recovery predicate.
     if: >-
@@ -42,7 +40,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Classify exact zero-job subject and dispatch D0=2
+      - name: Classify exact zero-job subject and hold D0=1
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.event.workflow_run.id }}
@@ -86,28 +84,18 @@ jobs:
           test "$base_ref" = main || { echo "HOLD_UNVERIFIED: non-main target" >&2; exit 2; }
           test "$live_head" = "$HEAD_SHA" || { echo "HOLD_UNVERIFIED: PR head drifted" >&2; exit 2; }
 
-          # Deduplicate by exact-head status. pending means another trusted
-          # invocation already exposed this REOBSERVE edge.
+          # Deduplicate by exact-head status. A non-success status already
+          # records the fail-closed native-event hold for this exact head.
           state="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/status" --jq '[.statuses[] | select(.context == "QIKVRT autonomous exact-head verification")][0].state // "missing"')"
-          if [ "$state" = pending ]; then
-            echo "HOLD: exact-head verifier already pending"
+          if [ "$state" != missing ] && [ "$state" != success ]; then
+            echo "HOLD: exact-head native-event reobservation already recorded"
             exit 0
           fi
 
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
-            -f state=pending \
+            -f state=error \
             -f context='QIKVRT autonomous exact-head verification' \
-            -f description='Repository-native zero-job D0=2 REOBSERVE dispatched' \
+            -f description='HOLD: zero-job recovery awaits next native event' \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
-          jq -n \
-            --arg repository "$GITHUB_REPOSITORY" \
-            --arg pr "$pr" \
-            --arg ref "$head_ref" \
-            --arg head "$HEAD_SHA" \
-            --arg base "$base_sha" \
-            --arg source_run "$RUN_ID" \
-            '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base,d0:2,causal_state:"REOBSERVE",source_run_id:($source_run|tonumber),reason:"ZERO_JOB_ACTION_REQUIRED"}}' \
-            | gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input -
-
-          echo "REOBSERVE/D0=2 dispatched for PR #${pr} exact head ${HEAD_SHA}"
+          echo "HOLD/D0=1: PR #${pr} exact head ${HEAD_SHA} awaits a native event"

@@ -1,6 +1,6 @@
 # Reflexive repository Gatewatch and pre-deadlock admission
 
-The adaptive repository monitor is extended by a read-only watchdog that observes its own repository instance every five minutes and at relevant workflow transitions. Its purpose is not to wait for a deadlock and then diagnose it. It models writer leases, runner pressure, exact-head execution evidence, and unchanged progress topology early enough to issue a deterministic `HOLD` before a second writer or replacement writer is admitted.
+The adaptive repository monitor is extended by a watchdog that observes its own repository instance every five minutes and at relevant workflow transitions. Its purpose is not to wait for a deadlock and then diagnose it. It models writer leases, runner pressure, exact-head execution evidence, and unchanged progress topology early enough to issue a deterministic `HOLD` before a second writer or replacement writer is admitted. Its observer path is read-only; a separate schedule-only job has one narrow permission to dispatch the already-declared ruleset effect workflow for an exact `MAIN` subject.
 
 ## Operational model
 
@@ -58,10 +58,31 @@ coalesced only when a later exact-head receipt remains within that bound;
 otherwise it is a deterministic observation-cadence `HOLD`, not a claim of
 pipeline quiescence.
 
-The workflow remains five-minute, exact-head-bound, and read-only. It fetches
-the current Authority head only for comparison, materializes Action artifacts
-only, and never writes a repository liveness record, dispatches a productive
-workflow, or treats its own terminality as gate success.
+The observer path remains five-minute, exact-head-bound, and read-only. It
+fetches the current Authority head only for comparison, materializes Action
+artifacts only, never writes a repository liveness record, and never treats
+its own terminality as gate success.
+
+On a scheduled `main` observation only, the narrow dispatcher rebinds the
+checked-out `main` SHA, GitHub's current `main` SHA, and the SHA-256 of
+`policy/GITHUB_MAIN_RULESET_V1.json`. It then transports exactly those values
+as `mode=MAIN`, `expected_main`, and `expected_policy_sha` to the sole ruleset
+effect workflow. It has `actions: write` only for that dispatch: it carries no
+App token, does not call the ruleset API, and cannot invoke the reconciler.
+Before transport it reobserves one current, bounded page only to find an active
+effect writer and the newest exact Main terminal run. A terminal decision is
+then taken exclusively from that run's immutable artifact receipt: a verified
+`CURRENT` is a no-op, while a complete D0=2 receipt permits only a fresh
+read-before-conditional-apply reobservation by the sole effect workflow. It
+never infers terminal absence from historical pagination, so an unchanged
+`main` cannot become permanently blocked after more than 100 historical runs.
+It never cancels an effect run. Its receipt records either a bounded no-op,
+structured `HOLD`, or accepted transport; it never claims that the downstream
+effect occurred. Scheduled observations use their own non-preemptive
+concurrency lane (one running plus at most the newest pending run), so the
+five-minute cadence cannot repeatedly cancel the slower pre-observation before
+this bounded dispatch path can run; event and pull-request observer coalescing
+remain separate.
 
 ## Reflexivity
 
