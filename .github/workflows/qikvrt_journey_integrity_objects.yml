@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT journey integrity objects
+
+on:
+  push:
+    branches: [publication/self-explanation-47-homepage-v1]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: qikvrt-repository-evidence-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  record-integrity-objects:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      EXPECTED_HEAD: ${{ github.sha }}
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: Check out literal source head without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Bind clean exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'SOURCE_HEAD=%s\nSOURCE_TREE=%s\n' "$EXPECTED_HEAD" "$(git rev-parse 'HEAD^{tree}')"
+      - name: Validate source-bound drafts and object boundary regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v tests.test_qikvrt_journey_site tests.test_qikvrt_journey_integrity_objects
+          python3 -B tools/qikvrt_journey_site.py coverage-check
+      - name: Regenerate exact integrity outputs and run repository gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+      - name: Store and independently read back only the three integrity blobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_journey_integrity_objects.py
+      - name: Preserve candidate-only exact object receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-journey-integrity-objects-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qikvrt-journey-integrity-objects.json
+          if-no-files-found: error
+          retention-days: 30

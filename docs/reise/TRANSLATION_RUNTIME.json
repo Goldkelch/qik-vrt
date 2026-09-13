@@ -1,0 +1,32 @@
+{
+  "schema": "qikvrt_journey_optional_translation_runtime_v1",
+  "version": "1.0.0",
+  "scope": "NONCOMMERCIAL_PERSONAL_ESSAY_TRANSLATION_DRAFTS_ONLY",
+  "python": "3.12.13",
+  "python_packages": {
+    "torch": "2.8.0+cpu",
+    "transformers": "4.57.6",
+    "sentencepiece": "0.2.1"
+  },
+  "dependency_providers": ["https://download.pytorch.org/whl/cpu", "https://pypi.org/simple"],
+  "dependency_boundary": "Top-level tool versions are exact. Transitive resolved versions are recorded with pip freeze; bitwise model-output reproducibility across machines is not claimed.",
+  "model": "facebook/nllb-200-distilled-600M",
+  "model_revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d",
+  "model_license": "CC-BY-NC-4.0",
+  "model_card": "https://huggingface.co/facebook/nllb-200-distilled-600M/blob/f8d333a098d19b4fd9a8b18f94170487ad3f821d/README.md",
+  "model_scope_notice": "Research model, not released for production model deployment or certified translations. Its model card does not recommend document translation. Here each bounded paragraph is independently translated to a visibly unreviewed research draft; semantic and literary quality still require review.",
+  "maximum_source_tokens_per_block": 512,
+  "input_truncation": false,
+  "segmentation_contract": "HIERARCHICAL_EOS_RECURSIVE_V2",
+  "runtime_execution": "CPU dynamic-int8 linear quantization; greedy decoding; monolithic block first, then deterministic hierarchical segmentation after output nontermination: sentence/clause boundaries are preferred, bounded whitespace word boundaries are used only when a clause cannot be safely reduced otherwise, nonterminal child segments are recursively subdivided, and generated EOS is required for every accepted leaf before fail-closed reassembly; no model-supplied remote Python code; weights_only loading",
+  "network": "Download fixed public model files and package distributions. Inference stays on GitHub's runner; the essay is not submitted to an external translation API.",
+  "cache": "Single exact-execution-head model payload, hashes verified in every matrix job. No authentication state in payload.",
+  "unsupported_editions": ["sh", "simple", "wuu"],
+  "unsupported_handling": "Separate direct editorial AI translation required; no silent mapping to another language.",
+  "public_site_model_dependency": false,
+  "human_language_review": false,
+  "certified_translation": false,
+  "EFFECT_ACK_DONE": false,
+  "copyright": "Copyright 2026 Ingolf Lohmann",
+  "license": "CC-BY-NC-ND-4.0"
+}
