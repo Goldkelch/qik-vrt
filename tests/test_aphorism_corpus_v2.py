@@ -108,9 +108,13 @@ class AphorismCorpusV2Tests(unittest.TestCase):
             "qikvrt-repository-evidence-${{ github.event_name }}-",
             workflow,
         )
+        self.assertIn(
+            "github.event.pull_request.head.repo.full_name == github.repository",
+            workflow,
+        )
         commit_step = workflow.index("- name: Commit materialized repository evidence")
         block = workflow[commit_step:]
-        self.assertIn("if: github.event_name != 'pull_request'", block)
+        self.assertNotIn("if: github.event_name != 'pull_request'", block)
         for token in (
             'source_head="$(git rev-parse --verify HEAD^{commit})"',
             'git ls-remote --heads origin "refs/heads/$TARGET_REF"',
@@ -120,10 +124,6 @@ class AphorismCorpusV2Tests(unittest.TestCase):
             'git push origin "HEAD:$TARGET_REF"',
         ):
             self.assertIn(token, block)
-        self.assertLess(
-            block.index("if: github.event_name != 'pull_request'"),
-            block.index("git commit -m \"ci: materialize repository evidence\""),
-        )
         self.assertLess(
             block.index("BLOCK: target ref advanced before repository evidence persistence"),
             block.index("git commit -m \"ci: materialize repository evidence\""),
