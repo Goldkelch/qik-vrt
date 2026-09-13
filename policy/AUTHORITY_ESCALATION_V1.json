@@ -1,0 +1,46 @@
+{
+  "schema": "qikvrt_authority_escalation_v1",
+  "repository": "Goldkelch/qik-vrt",
+  "purpose": "Prevent optional privileged credentials from becoming prerequisites for observation, diagnosis, validation, review routing, or other read-only control-plane work.",
+  "rules": {
+    "default_authority": "LEAST_PRIVILEGE_NATIVE_CARRIER",
+    "observation": {
+      "credential_policy": "USE_EXISTING_NATIVE_READ_AUTHORITY",
+      "github_actions_default": "github.token",
+      "must_not_depend_on_optional_admin_secret": true
+    },
+    "classification": {
+      "missing_optional_admin_secret": "NOT_A_BLOCKER_UNTIL_A_PROVEN_PRIVILEGED_MUTATION_IS_REQUIRED",
+      "read_failure_caused_by_optional_admin_secret_override": "IMPLEMENTATION_DEFECT",
+      "transport_failure": "NOT_AUTHORITY_FAILURE_WITHOUT_PRIVILEGED_OPERATION_PROOF"
+    },
+    "escalation": {
+      "allowed_only_after": [
+        "exact subject reobserved",
+        "read-only preflight completed",
+        "desired-vs-observed drift established",
+        "specific privileged mutation identified",
+        "native lower-authority carrier proven insufficient for that mutation"
+      ],
+      "scope": "ONLY_THE_PRIVILEGED_MUTATION_AND_ITS_EXACT_READBACK",
+      "must_not_rebind_unrelated_reads": true
+    },
+    "fail_closed": {
+      "credential_absence_does_not_imply_effect_absence": true,
+      "credential_presence_does_not_imply_authority_effect": true,
+      "workflow_success_does_not_imply_native_review": true,
+      "predecessor_evidence_transfer": false
+    }
+  },
+  "procedure": [
+    "OBSERVE_WITH_NATIVE_READ_AUTHORITY",
+    "CLASSIFY_OPERATION_AS_READ_OR_WRITE",
+    "PROVE_WRITE_IS_ACTUALLY_REQUIRED",
+    "ESCALATE_ONLY_THE_WRITE_IF_NEEDED",
+    "READ_BACK_EFFECT_WITH_NATIVE_READ_AUTHORITY",
+    "DROP_PRIVILEGED_AUTHORITY",
+    "CONTINUE_ON_THE_EXACT_REOBSERVED_SUBJECT"
+  ],
+  "anti_pattern": "Do not set a job-global GH_TOKEN to an optional administrative secret when ordinary GET operations can use github.token. An empty optional secret must never shadow the native read token.",
+  "origin": "Root cause isolated from qikvrt_autonomous_ruleset_effect_loop run 34721166944: job-global GH_TOKEN was rebound to an empty QIKVRT_RULESET_ADMIN_TOKEN, causing the first ordinary GET to fail before any ruleset mutation was attempted."
+}

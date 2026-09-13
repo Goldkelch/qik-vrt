@@ -1,0 +1,93 @@
+{
+  "schema": "qikvrt_autokognitive_autodidactic_loop_v1",
+  "repository": "Goldkelch/qik-vrt",
+  "terminology": {
+    "autokognitive": "The repository observes and reasons about its own execution, evidence, assumptions, failures, blockers, authority boundaries and repair effectiveness without treating self-description as independent proof.",
+    "autodidactic": "The repository converts a reproduced failure and its causal repair into a generalized, regression-tested rule that constrains later executions and can itself be refined by new counterexamples."
+  },
+  "purpose": "Make causal debugging and learned prevention a permanent repository invariant for the Zero-Bug direction while preserving fail-closed evidence, authority and publication boundaries.",
+  "loop": [
+    "OBSERVE_EXACT_SUBJECT",
+    "REPRODUCE_FAILURE_OR_BLOCKER",
+    "CORRECT_IMMEDIATE_FAILURE",
+    "IDENTIFY_CAUSAL_ROOT",
+    "CORRECT_CAUSAL_ROOT",
+    "GENERALIZE_LESSON",
+    "ADD_NEGATIVE_REGRESSION",
+    "REEXECUTE_ON_EXACT_SUCCESSOR",
+    "READ_BACK_EFFECT",
+    "CLASSIFY_REMAINING_BLOCKERS",
+    "LEARN_AND_REPEAT_UNTIL_NO_KNOWN_DETERMINISTIC_BLOCKERS"
+  ],
+  "mandatory_learning_record": {
+    "required_fields": [
+      "observed_subject",
+      "failure_signature",
+      "first_causal_blocker",
+      "immediate_repair",
+      "root_cause",
+      "root_cause_repair",
+      "generalized_rule",
+      "negative_regression",
+      "scope_limit",
+      "exact_successor_readback"
+    ],
+    "no_claim_without_bound_evidence": true
+  },
+  "optimization": {
+    "direction": "MONOTONE_PREVENTION_KNOWLEDGE",
+    "objectives": [
+      "reduce recurrence of already diagnosed deterministic failure classes",
+      "reduce blind retry and false authority or credential escalation",
+      "reduce time from symptom observation to first causal blocker",
+      "increase exact-subject readback coverage",
+      "increase regression coverage for previously observed counterexamples"
+    ],
+    "must_preserve": [
+      "fail_closed_behavior",
+      "QIKVRT_EXECUTION_PRECEDENCE_V1",
+      "exact_subject_binding",
+      "PREDECESSOR_EVIDENCE_TRANSFER=false",
+      "TRANSPORT_ACK != EFFECT_ACK",
+      "automation != native review",
+      "candidate validation != Main effectiveness",
+      "self-description != independent confirmation"
+    ],
+    "forbidden_optimizations": [
+      "weaken a gate merely to obtain green status",
+      "invent or transfer evidence",
+      "self-grant review or authority",
+      "replace a failed privileged operation with identity substitution",
+      "silently delete a learned counterexample",
+      "blindly retry a deterministic failure without a changed causal premise"
+    ]
+  },
+  "recursion": {
+    "applies_to_its_own_rules": true,
+    "counterexample_policy": "A new counterexample to an existing learned rule must reopen that rule as incomplete, preserve the earlier evidence as historical, add the new failure class or narrower scope, and rerun the same loop.",
+    "supersession_policy": "A learned rule may be superseded only by an explicitly versioned successor that retains provenance and demonstrates the old counterexamples plus the new one.",
+    "universal_bug_freedom_claimed": false
+  },
+  "initial_lessons": [
+    {
+      "id": "PHANTOM_CREDENTIAL_ESCALATION_V1",
+      "source_policy": "policy/AUTHORITY_ESCALATION_V1.json",
+      "failure_signature": "optional privileged credential shadows existing native read authority",
+      "generalized_rule": "Prove that a specific privileged mutation is necessary and that the native carrier is insufficient before escalating authority; optional privileged credentials must never become prerequisites for unrelated reads.",
+      "scope_limit": "Authority selection and credential routing; does not imply that every privileged mutation can be completed without additional authority."
+    }
+  ],
+  "done_semantics": {
+    "local_zero_bug_claim": "ZERO_KNOWN_DETERMINISTIC_BUGS under the exact declared and executed evidence boundary",
+    "not_equivalent_to": [
+      "universal absence of unknown bugs",
+      "native approval",
+      "Main promotion",
+      "external publication",
+      "empirical confirmation",
+      "PASS",
+      "FINAL_PASS",
+      "general EFFECT_ACK_DONE"
+    ]
+  }
+}
