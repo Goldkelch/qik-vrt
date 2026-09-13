@@ -137,6 +137,7 @@ def classify(snapshot, value):
             require(probe.get('head') == head and probe.get('tree') == tree, 'STALE_PROBE:' + module)
             require(probe.get('status') == 'EXECUTED' and type(probe.get('exit_code')) is int and probe['exit_code'] == 0, 'PROBE_FAILED_OR_NOT_EXECUTED:' + module)
             require(type(probe.get('tests_run')) is int and probe['tests_run'] > 0, 'ZERO_TEST_PROBE:' + module)
+            require(type(probe.get('tests_skipped')) is int and probe['tests_skipped'] == 0, 'SKIPPED_REQUIRED_PROBE:' + module)
             require(isinstance(probe.get('log_sha256'), str) and DIGEST.fullmatch(probe['log_sha256']), 'PROBE_LOG_UNBOUND:' + module)
         return {'schema': SCHEMA, 'state': 'EFFECTIVE_ON_EXACT_MAIN', 'closed': True,
                 'head': head, 'tree': tree, 'policy_sha256': snapshot['policy_sha256'],
@@ -211,13 +212,14 @@ def observe_main(expected, out, root=ROOT):
             log = out / (module + '.log')
             try:
                 proc = subprocess.run([sys.executable, '-B', '-m', 'unittest', '-v', module], cwd=root,
-                    capture_output=True, timeout=120, env=dict(os.environ, PYTHONDONTWRITEBYTECODE='1', PYTHONNOUSERSITE='1'))
+                    capture_output=True, timeout=120, env=dict({k:v for k,v in os.environ.items() if k not in {'GH_TOKEN','GITHUB_TOKEN'}}, PYTHONDONTWRITEBYTECODE='1', PYTHONNOUSERSITE='1'))
                 raw = proc.stdout + proc.stderr
                 counts = re.findall(rb'\bRan ([0-9]+) tests? in ', raw)
-                p = {'status': 'EXECUTED', 'exit_code': proc.returncode, 'tests_run': int(counts[-1]) if len(counts) == 1 else 0}
+                skips = re.findall(rb'(?:skipped=)([0-9]+)', raw)
+                p = {'status': 'EXECUTED', 'exit_code': proc.returncode, 'tests_run': int(counts[-1]) if len(counts) == 1 else 0, 'tests_skipped': sum(int(n) for n in skips)}
             except subprocess.TimeoutExpired as exc:
                 raw = (exc.stdout or b'') + (exc.stderr or b'')
-                p = {'status': 'TIMEOUT', 'exit_code': None, 'tests_run': 0}
+                p = {'status': 'TIMEOUT', 'exit_code': None, 'tests_run': 0, 'tests_skipped': None}
             log.write_bytes(raw)
             p.update(head=s['head'], tree=s['tree'], log_sha256=sha256(raw))
             s['probes'][module] = p

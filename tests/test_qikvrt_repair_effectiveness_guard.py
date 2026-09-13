@@ -20,7 +20,7 @@ def fixture():
          'adoption_review':{'id':1,'author':'Goldkelch','state':'APPROVED','commit_id':'3'*40},
          'ruleset':{'state':'CURRENT','mutation':'NONE','repository':REPO,'ruleset_id':19344903,
                     'pre_state_sha256':'5'*64, 'desired_state_sha256':'5'*64},
-         'probes':{m:{'head':h,'tree':t,'status':'EXECUTED','exit_code':0,'tests_run':1,'log_sha256':'6'*64} for m in modules_for(p)}}
+         'probes':{m:{'head':h,'tree':t,'status':'EXECUTED','exit_code':0,'tests_run':1,'tests_skipped':0,'log_sha256':'6'*64} for m in modules_for(p)}}
     return p, s
 
 
@@ -62,7 +62,7 @@ class RepairEffectivenessTests(unittest.TestCase):
     def test_zero_jobs_skipped_action_required_and_zero_tests_fail_closed(self):
         p,s=fixture(); name=next(iter(s['probes']))
         for patch in ({'status':'SKIPPED'},{'status':'ACTION_REQUIRED'},{'status':'TIMEOUT'},
-                      {'status':'SUCCESS'},{'tests_run':0},{'tests_run':True},
+                      {'status':'SUCCESS'},{'tests_run':0},{'tests_run':True},{'tests_skipped':1},{'tests_skipped':None},{'tests_skipped':False},
                       {'exit_code':False},{'exit_code':1},{'exit_code':None},{'log_sha256':None}):
             c=copy.deepcopy(s); c['probes'][name].update(patch)
             with self.subTest(patch=patch): self.assertIs(classify(c,p)['closed'],False)
@@ -126,5 +126,14 @@ class RepairEffectivenessTests(unittest.TestCase):
         self.assertNotIn('pull-requests: write',block)
         self.assertNotIn('gh pr merge',block)
         self.assertNotIn('workflow_dispatch:',block)
+
+
+    def test_main_consumer_nested_indentation_is_not_lost(self):
+        text=(ROOT/'.github/workflows/qikvrt_zero_bug_continuous.yml').read_text()
+        block=text.split('  repair-effectiveness:',1)[1]
+        for line in ('        with:', '          fetch-depth: 0', '          persist-credentials: false', '          if-no-files-found: error'):
+            self.assertIn(line,block.splitlines())
+        for line in block.splitlines():
+            if line.strip(): self.assertTrue(line.startswith('    '),repr(line))
 
 if __name__=='__main__': unittest.main()
