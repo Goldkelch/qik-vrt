@@ -1,0 +1,69 @@
+name: QIKVRT Cloud Transputer integrity objects v1
+on:
+  pull_request:
+    paths:
+      - 'src/cloud_transputer/qikvrt_wire_v1.*'
+      - 'src/cloud_transputer/qikvrt_sha256_v1.c'
+      - 'src/cloud_transputer/m68k_wire_roundtrip.c'
+      - 'policy/QIKVRT_CLOUD_TRANSPUTER_V1.json'
+      - '.github/workflows/qikvrt_wire_roundtrip_v1.yml'
+      - '.github/workflows/qikvrt_cloud_transputer_integrity_objects_v1.yml'
+permissions:
+  contents: write
+concurrency:
+  group: qikvrt-cloud-transputer-integrity-objects-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+jobs:
+  objects:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Bind exact subject and derive canonical projection
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          python3 tools/qikvrt_integrity.py generate
+          python3 tools/qikvrt_integrity.py verify
+          python3 - <<'PY'
+          import subprocess
+          got=set(subprocess.check_output(['git','diff','--name-only'],text=True).splitlines())
+          want={'REPOSITORY_FILE_MANIFEST.json','REPOSITORY_FILE_MANIFEST.json.sha256','SHA256SUMS.txt'}
+          assert got==want,(got,want)
+          PY
+      - name: Store only canonical integrity blobs and read bytes back
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qikvrt-integrity-objects
+          python3 - <<'PY'
+          import base64,hashlib,json,os,pathlib,subprocess
+          paths=['REPOSITORY_FILE_MANIFEST.json','REPOSITORY_FILE_MANIFEST.json.sha256','SHA256SUMS.txt']
+          def api(path,payload=None):
+              args=['gh','api',path]
+              if payload is not None: args += ['--method','POST','--input','-']
+              return json.loads(subprocess.check_output(args,input=None if payload is None else json.dumps(payload).encode()))
+          files={}
+          for path in paths:
+              raw=pathlib.Path(path).read_bytes()
+              oid=hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
+              stored=api('repos/'+os.environ['GITHUB_REPOSITORY']+'/git/blobs',{'encoding':'base64','content':base64.b64encode(raw).decode()})
+              assert stored['sha']==oid
+              back=api('repos/'+os.environ['GITHUB_REPOSITORY']+'/git/blobs/'+oid)
+              assert base64.b64decode(back['content'])==raw
+              files[path]={'blob_sha':oid,'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw)}
+          receipt={'schema':'qikvrt_cloud_transputer_integrity_objects_v1','source_head':os.environ['GITHUB_SHA'],'source_tree':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip(),'files':files,'ref_mutation':False,'candidate_validation_transferred':False,'general_effect_ack_done':False}
+          pathlib.Path('/tmp/qikvrt-integrity-objects/RECEIPT.json').write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
+          print(json.dumps(receipt,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-cloud-transputer-integrity-objects-${{ github.event.pull_request.head.sha }}
+          path: /tmp/qikvrt-integrity-objects/RECEIPT.json
+          retention-days: 30
