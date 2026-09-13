@@ -2,6 +2,27 @@
 
 This file is an ordinary human/machine entrypoint into the QIK-VRT evidence model.
 
+## Fastest safe orientation path
+
+The repository must explain the same canonical state to human cognition and artificial cognition without requiring either reader to reconstruct meaning from chat history.
+
+For a human reader, the shortest safe path is:
+
+1. `README.md` — what QIK-VRT is, what it does, and the primary evidence boundary;
+2. this document — how claims, uncertainty, authorization and effects are separated;
+3. `STATUS.md` / `docs/CURRENT_AUTHORITY.md` — what is currently established and what remains bounded.
+
+For artificial cognition, the shortest safe path is:
+
+1. `AI` — repository-native bootstrap and authority rules;
+2. `AI_CONTEXT.json` — deterministic machine context;
+3. `.well-known/qik-vrt-self-disclosure.json` — capabilities and canonical bindings;
+4. `policy/MESH_SELF_EXPLANATION_V1.json` — normative dual-cognition and maintenance contract.
+
+These surfaces are redundant for discovery but not independent sources of truth. They must preserve the same semantics. A conflict or unreviewed semantic drift between them is `BLOCK`; a stale exact binding is `REOBSERVE`; an unknown required field is `HOLD`.
+
+The optimization objective is the fastest verified path with minimum cognitive hops and minimum repetition while preserving correctness, provenance, uncertainty, exact-subject binding, authorization and effect readback. No optimization may weaken a gate, manufacture evidence, self-grant authority or hide uncertainty. "Perfect" is therefore treated as a continuously approached engineering objective, not as an unbounded completion claim.
+
 ## Start here
 
 QIK-VRT preserves distinctions that must not be collapsed:
@@ -66,6 +87,10 @@ No material doubt may be hidden. "Doubt removed" means either evidence resolved 
 
 Normative machine-readable policy: `policy/MESH_SELF_EXPLANATION_V1.json`.
 
+## Maintenance rule
+
+A material semantic change is incomplete until the normative policy and every affected human, artificial-cognitive and machine-readable surface agree again and the self-explanation regression has passed on the exact successor. Partial updates are fail-closed. This is how the Mesh keeps self-explanation as a maintained property rather than a one-time documentation exercise.
+
 ## Adaptation contract
 
 Downstream Mesh nodes and adapters may add stronger checks, richer metadata, domain-specific schemas and local execution logic. They may not weaken the core semantic distinctions above. At minimum they must preserve:
@@ -75,7 +100,8 @@ Downstream Mesh nodes and adapters may add stronger checks, richer metadata, dom
 - claim/evidence class;
 - uncertainty;
 - authorization boundary;
-- effect readback.
+- effect readback;
+- human/machine semantic parity.
 
 A missing mandatory field or stale binding is fail-closed, not implicit success.
 
