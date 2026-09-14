@@ -38,10 +38,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - name: Install live-build toolchain
+      - name: Install live-build and boot-test toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y cpio curl debootstrap xorriso squashfs-tools
+          sudo apt-get install -y cpio curl debootstrap xorriso squashfs-tools qemu-system-x86
           curl -fsSLo /tmp/debian-archive-keyring.deb \
             https://deb.debian.org/debian/pool/main/d/debian-archive-keyring/debian-archive-keyring_2025.1_all.deb
           printf '%s  %s\n' \
@@ -55,6 +55,7 @@ jobs:
             /tmp/live-build.deb | sha256sum -c -
           sudo dpkg -i /tmp/live-build.deb
           lb --version
+          qemu-system-x86_64 --version
       - name: Build exact-subject ISO
         env:
           QIKVRT_EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -65,6 +66,48 @@ jobs:
           (cd out && sha256sum -c qikvrt-megast-amd64.iso.sha256)
           grep -F '"source_sha": "${{ github.event.pull_request.head.sha || github.sha }}"' out/qikvrt-megast-build-receipt.json
           grep -F '"effect_ack_done": false' out/qikvrt-megast-build-receipt.json
+      - name: Mount exact ISO and inspect live filesystem
+        run: |
+          set -eu
+          sudo mkdir -p /mnt/qikvrt-megast
+          trap 'sudo umount /mnt/qikvrt-megast >/dev/null 2>&1 || true' EXIT
+          sudo mount -o loop,ro out/qikvrt-megast-amd64.iso /mnt/qikvrt-megast
+          test -s /mnt/qikvrt-megast/live/filesystem.squashfs
+          find /mnt/qikvrt-megast/live -maxdepth 1 -type f -name 'vmlinuz*' | grep -q .
+          find /mnt/qikvrt-megast/live -maxdepth 1 -type f -name 'initrd*' | grep -q .
+          printf 'QIKVRT_MEGAST_MOUNT_OK source_sha=%s\n' '${{ github.event.pull_request.head.sha || github.sha }}'
+      - name: Boot exact ISO and reobserve guest witness
+        run: |
+          set -eu
+          log=out/qikvrt-megast-qemu-serial.log
+          : > "$log"
+          qemu-system-x86_64 \
+            -accel tcg \
+            -m 1536 \
+            -smp 2 \
+            -cdrom out/qikvrt-megast-amd64.iso \
+            -boot d \
+            -display none \
+            -serial "file:$log" \
+            -no-reboot \
+            -no-shutdown &
+          pid=$!
+          ok=0
+          for _ in $(seq 1 180); do
+            if grep -Fq 'QIKVRT_MEGAST_BOOT_OK source_sha=${{ github.event.pull_request.head.sha || github.sha }}' "$log"; then
+              ok=1
+              break
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          cat "$log"
+          test "$ok" -eq 1
+          printf 'QIKVRT_MEGAST_BOOT_REOBSERVED source_sha=%s\n' '${{ github.event.pull_request.head.sha || github.sha }}'
       - uses: actions/upload-artifact@v4
         with:
           name: qikvrt-megast-${{ github.event.pull_request.head.sha || github.sha }}
@@ -72,6 +115,7 @@ jobs:
             out/qikvrt-megast-amd64.iso
             out/qikvrt-megast-amd64.iso.sha256
             out/qikvrt-megast-build-receipt.json
+            out/qikvrt-megast-qemu-serial.log
           if-no-files-found: error
           retention-days: 30
 
@@ -89,6 +133,7 @@ jobs:
           cd out
           sha256sum -c qikvrt-megast-amd64.iso.sha256
           grep -F '"source_sha": "${{ github.sha }}"' qikvrt-megast-build-receipt.json
+          grep -F 'QIKVRT_MEGAST_BOOT_OK source_sha=${{ github.sha }}' qikvrt-megast-qemu-serial.log
       - name: Publish exact-Main release asset
         env:
           GH_TOKEN: ${{ github.token }}
@@ -99,6 +144,7 @@ jobs:
             out/qikvrt-megast-amd64.iso \
             out/qikvrt-megast-amd64.iso.sha256 \
             out/qikvrt-megast-build-receipt.json \
+            out/qikvrt-megast-qemu-serial.log \
             --repo '${{ github.repository }}' \
             --target '${{ github.sha }}' \
             --title "QIK-VRT Mega ST ${short}" \
@@ -112,4 +158,4 @@ jobs:
           gh release view "$tag" --repo '${{ github.repository }}' --json tagName,targetCommitish,assets > out/release-readback.json
           grep -F "\"tagName\":\"$tag\"" out/release-readback.json
           grep -F 'qikvrt-megast-amd64.iso' out/release-readback.json
-          echo 'P7 transport/readback established; boot/runtime/download checksum reobservation remains required for EFFECT_ACK_DONE.'
+          echo 'P7 transport/readback established; independent public download checksum and full acceptance corpus remain required for EFFECT_ACK_DONE.'
