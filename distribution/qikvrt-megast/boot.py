@@ -180,6 +180,13 @@ def guest_memory_mib(manifest: dict) -> int:
     return max(4096, ((2 * root_mib + 1024 + 255) // 256) * 256)
 
 
+def qemu_acceleration() -> str:
+    # Hosted runners may expose hardware virtualization only after the workflow
+    # grants its unprivileged job user access to /dev/kvm.  Preserve a portable
+    # multi-threaded TCG fallback for local and non-KVM execution.
+    return "kvm" if os.access("/dev/kvm", os.R_OK | os.W_OK) else "tcg,thread=multi"
+
+
 def capture_display(directory: Path, screenshot: Path) -> None:
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as qmp:
         qmp.settimeout(10)
@@ -212,7 +219,7 @@ def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bo
     threading.Thread(target=server.serve_forever, daemon=True).start()
     port = server.server_address[1]
     logfile = directory / "qikvrt-netboot-serial.log"
-    command = [qemu, "-accel", "tcg", "-m", str(guest_memory_mib(manifest)), "-smp", "2", "-display", "none" if verify_only or not os.environ.get("DISPLAY") else "gtk", "-serial", "stdio",
+    command = [qemu, "-accel", qemu_acceleration(), "-m", str(guest_memory_mib(manifest)), "-smp", "2", "-display", "none" if verify_only or not os.environ.get("DISPLAY") else "gtk", "-serial", "stdio",
                "-qmp", "unix:" + str(directory / "qikvrt-qmp.sock") + ",server=on,wait=off",
                "-netdev", "user,id=network", "-device", "e1000,netdev=network",
                "-kernel", str(directory / FILES["kernel"]), "-initrd", str(directory / FILES["initrd"]),

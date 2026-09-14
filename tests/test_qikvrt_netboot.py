@@ -116,6 +116,14 @@ class NetbootTests(unittest.TestCase):
             memory = boot.guest_memory_mib({"files": {"rootfs": {"bytes": size}}}) * 1024**2
             self.assertGreaterEqual(memory, 2 * size + 1024**3)
 
+    def test_hardware_acceleration_is_preferred_with_multithreaded_fallback(self):
+        with patch.object(boot.os, "access", return_value=True):
+            self.assertEqual(boot.qemu_acceleration(), "kvm")
+        with patch.object(boot.os, "access", return_value=False):
+            self.assertEqual(boot.qemu_acceleration(), "tcg,thread=multi")
+        workflow = (ROOT / ".github/workflows/qikvrt_megast_distribution_v1.yml").read_text()
+        self.assertIn('sudo chown "$(id -u):$(id -g)" /dev/kvm', workflow)
+
     def test_early_boot_marker_never_substitutes_for_runtime_and_failure_is_retained(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

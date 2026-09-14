@@ -134,6 +134,7 @@ jobs:
       - name: Build network-boot manifest and execute receiving client
         run: |
           sudo chown -R "$(id -u):$(id -g)" out
+          test ! -e /dev/kvm || sudo chown "$(id -u):$(id -g)" /dev/kvm
           python3 -B distribution/qikvrt-megast/boot.py manifest out '${{ github.event.pull_request.head.sha || github.sha }}'
           python3 -m http.server 17331 --bind 127.0.0.1 --directory out > /tmp/qikvrt-download.log 2>&1 &
           server=$!
