@@ -39,7 +39,11 @@ class MegaSTDistributionContract(unittest.TestCase):
     def test_publication_waits_for_exact_main(self):
         text = WORKFLOW.read_text()
         self.assertIn("github.ref == 'refs/heads/main'", text)
-        self.assertIn('sha256sum -c', text)
+        self.assertEqual(
+            text.count('(cd out && sha256sum -c qikvrt-megast-amd64.iso.sha256)'),
+            1,
+        )
+        self.assertIn('cd out\n          sha256sum -c qikvrt-megast-amd64.iso.sha256', text)
         self.assertIn('Read back published release metadata', text)
 
     def test_workflow_pins_trixie_live_build_toolchain(self):

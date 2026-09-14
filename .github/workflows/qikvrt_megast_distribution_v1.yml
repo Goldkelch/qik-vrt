@@ -58,7 +58,7 @@ jobs:
       - name: Reobserve artifact binding
         run: |
           test -s out/qikvrt-megast-amd64.iso
-          sha256sum -c out/qikvrt-megast-amd64.iso.sha256
+          (cd out && sha256sum -c qikvrt-megast-amd64.iso.sha256)
           grep -F '"source_sha": "${{ github.sha }}"' out/qikvrt-megast-build-receipt.json
           grep -F '"effect_ack_done": false' out/qikvrt-megast-build-receipt.json
       - uses: actions/upload-artifact@v4
