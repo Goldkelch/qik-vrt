@@ -43,9 +43,11 @@ TRUSTED_EVALUATOR_PATH = "tools/qikvrt_requested_review_executor.py"
 TRUSTED_WORKFLOW_PATH = ".github/workflows/qikvrt_requested_review_executor.yml"
 REVIEW_MARKER = "qikvrt-mesh-review:v1"
 LIVE_STATUS_MARKER = "qikvrt-live-status-watch"
+LIVE_SURFACE_MARKER = "qikvrt-universal-terminal-live-surface-v1"
 TRUSTED_AUTOMATION_DISCUSSION_PREFIXES = (
     f"<!-- {REVIEW_MARKER} ",
     f"<!-- {LIVE_STATUS_MARKER} -->",
+    f"<!-- {LIVE_SURFACE_MARKER} -->",
 )
 ACTIVE_WRITER_STATES = ("queued", "in_progress", "waiting", "requested", "pending")
 REVIEW_SELECTION_SCHEMA = "qikvrt_requested_review_selection_v1"

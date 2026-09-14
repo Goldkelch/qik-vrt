@@ -207,5 +207,51 @@
     "MAIN_QR_DELIVERED": false,
     "AUTHORITY_MIRROR_EQUALITY": false,
     "PHYSICAL_CONFIRMATION": false
+  },
+  "review_projection_repair": {
+    "date": "2026-09-14",
+    "human_directive": "Continue the existing overall implementation until evidence-bound EFFECT_ACK_DONE.",
+    "artificial_cognitive_contribution": "Codex implementation and regression tests in the existing review reader; no new workflow or runtime.",
+    "predecessor_commit": "c6f8314aa12fae0bf3ee9c305dcbbddda90915e9",
+    "predecessor_tree": "5e665c6b31b30d3ab770c45281a5d9125a41184d",
+    "problem": "The trusted live-status writer emits qikvrt-universal-terminal-live-surface-v1 but the discussion reader recognizes only its older marker. Projection edits therefore invalidate the discussion binding.",
+    "repair": "Recognize the exact current marker only for github-actions[bot], retaining legacy markers and all human, unrelated bot and unknown marker evidence.",
+    "outputs": [
+      {
+        "path": "tools/qikvrt_requested_review_executor.py",
+        "bytes": 134838,
+        "sha256": "a6dbff22b29a271c2bf2f72301534a772fd39263d71438ed71fb434bd61b32cd",
+        "git_blob_sha1": "6b80b105b9cb0dec7f7615040ea1680a5ad7cc82"
+      },
+      {
+        "path": "tests/test_qikvrt_requested_review_executor.py",
+        "bytes": 103477,
+        "sha256": "b6852a8cf15299b33beac874be60da01cf54f6cea7b36f86f746a94508462d9f",
+        "git_blob_sha1": "6603f6093a846ac6f70c43948c88048432b978a2"
+      }
+    ],
+    "verification": {
+      "before_fix": {
+        "tests": 76,
+        "expected_failures": 2,
+        "exit_code": 1
+      },
+      "after_fix": {
+        "tests": 131,
+        "exit_code": 0
+      },
+      "scope": "Local implementation and regression bytes before work-unit/integrity regeneration. Final containing-commit results must be read from the PR."
+    },
+    "negative_controls": [
+      "human marker",
+      "owner marker",
+      "unrelated bot",
+      "embedded marker",
+      "unknown marker version",
+      "ordinary bot comment"
+    ],
+    "authority_boundary": "The pull_request_target evaluator remains bound to trusted main. Candidate tests do not deploy the fixed evaluator or replace native independent review and enforced policy.",
+    "predecessor_evidence_transfer": false,
+    "EFFECT_ACK_DONE": false
   }
 }
