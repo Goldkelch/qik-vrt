@@ -322,5 +322,17 @@ class ValidateIssueAgentBundleTest(unittest.TestCase):
         self.assertIn("workflow_dispatch:", workflow)
 
 
+    def test_deterministic_controller_tests_are_full_suite_gates(self):
+        text = (ROOT / "Makefile").read_text(encoding="utf-8")
+        block = text.split("evidence-contract-test:" + chr(10), 1)[1].split(chr(10) + "m68000-kernel-contract:", 1)[0]
+        recipes = [line for line in block.splitlines() if line.startswith(chr(9)) and "-m unittest -v" in line]
+        self.assertEqual(len(recipes), 1)
+        for module in ("tests.issue_agent.test_compile", "tests.issue_agent.test_deterministic_workflow", "tests.issue_agent.test_validate"):
+            self.assertIn(module, recipes[0].split())
+        targets = [line for line in text.splitlines() if line.startswith("test: compile ")]
+        self.assertEqual(len(targets), 1)
+        self.assertIn("evidence-contract-test", targets[0].split())
+
+
 if __name__ == "__main__":
     unittest.main()
