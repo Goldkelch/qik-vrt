@@ -1,6 +1,26 @@
 {
   "schema": "qik-vrt-cloud-transputer-v1",
   "architecture": "MC68000",
+  "framework_principle": {
+    "name": "STAY_FAIL_CLOSED_KEEP_FUTURE_OPEN",
+    "statement": "Stay fail closed and keep future open!",
+    "scope": "QIK-VRT Tested Event Model Driven Development",
+    "temdd_cycle": ["REQUEST", "EXECUTE", "FOLLOW", "LEARN", "REPEAT_UNTIL_DONE"],
+    "fail_closed": "Missing, stale, contradictory, unbound, or insufficient evidence never becomes authority, release, completion, or effect.",
+    "future_open": "A fail-closed state preserves every admissible future continuation; it must not erase evidence, obligations, provenance, alternatives, or the possibility of a later freshly evidenced transition.",
+    "eye_in_the_storm": "Every effect-producing path retains an independent reobservation boundary: act without self-certifying the effect; reobserve from the declared evidence boundary before claiming completion.",
+    "return_path_closure": "The reverse path returns the original bound request plus every material descendant, produced artifact, observed effect, failure, repair, successor, and still-open obligation. Returned predecessor evidence remains provenance and is never transferred as proof for a mutated subject.",
+    "terminal_rule": "D.o.D. and EFFECT_ACK_DONE are admissible only after exact post-effect reobservation of every predicate in the declared completion scope.",
+    "invariants": [
+      "TRANSPORT_ACK != EFFECT_ACK",
+      "VERIFIED_IMPLEMENTATION != AUTHORITY_EFFECT",
+      "CAUSALITY != SEQUENCE",
+      "PREDECESSOR_EVIDENCE_TRANSFER=false",
+      "MUTATION_RESETS_DEPENDENT_EVIDENCE=true",
+      "FAIL_CLOSED_DOES_NOT_MEAN_FUTURE_CLOSED",
+      "RETURN_PATH_MUST_PRESERVE_MATERIAL_DESCENDANTS_AND_OPEN_OBLIGATIONS"
+    ]
+  },
   "boundary_contract": {
     "d0_width_bits": 2,
     "d0_mask": 3,
