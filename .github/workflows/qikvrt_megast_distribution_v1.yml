@@ -143,11 +143,16 @@ jobs:
             sleep 1
           done
           manifest_sha=$(sha256sum out/qikvrt-netboot.json | cut -d' ' -f1)
+          result=0
           python3 -B distribution/qikvrt-megast/boot.py receive \
-            http://127.0.0.1:17331/qikvrt-netboot.json "$manifest_sha" /tmp/qikvrt-received --boot --verify-only
-          cp /tmp/qikvrt-received/qikvrt-netboot-serial.log /tmp/qikvrt-received/qikvrt-netboot-receipt.json /tmp/qikvrt-received/qikvrt-netboot.ppm out/
+            http://127.0.0.1:17331/qikvrt-netboot.json "$manifest_sha" /tmp/qikvrt-received --boot --verify-only || result=$?
+          for evidence in /tmp/qikvrt-received/qikvrt-netboot*; do
+            test ! -f "$evidence" || cp "$evidence" out/
+          done
           cp distribution/qikvrt-megast/boot.py out/qikvrt-netboot-client.py
+          exit "$result"
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: qikvrt-megast-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
@@ -161,6 +166,7 @@ jobs:
             out/QIKVRT_BOOT.BIN
             out/qikvrt-netboot*
           if-no-files-found: error
+          compression-level: 0
           retention-days: 30
 
   publish:

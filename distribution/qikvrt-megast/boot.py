@@ -173,6 +173,29 @@ def receive(url: str, expected: str, directory: Path) -> dict:
     return manifest
 
 
+def guest_memory_mib(manifest: dict) -> int:
+    # fetch= retains the compressed filesystem in RAM. The default live-boot
+    # tmpfs limit is half of guest RAM; leave at least another GiB for the GUI.
+    root_mib = (manifest["files"]["rootfs"]["bytes"] + 1024**2 - 1) // 1024**2
+    return max(4096, ((2 * root_mib + 1024 + 255) // 256) * 256)
+
+
+def capture_display(directory: Path, screenshot: Path) -> None:
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as qmp:
+        qmp.settimeout(10)
+        qmp.connect(str(directory / "qikvrt-qmp.sock"))
+        with qmp.makefile("rwb") as stream:
+            json.loads(stream.readline())
+            for request in ({"execute": "qmp_capabilities"}, {"execute": "screendump", "arguments": {"filename": str(screenshot)}}):
+                stream.write(json.dumps(request).encode() + b"\n"); stream.flush()
+                while True:
+                    result = json.loads(stream.readline())
+                    if "error" in result:
+                        raise ValueError("QMP screenshot failed")
+                    if "return" in result:
+                        break
+
+
 def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bool = False) -> dict:
     validate_manifest(manifest)
     if platform.machine() not in ("x86_64", "AMD64"):
@@ -189,7 +212,7 @@ def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bo
     threading.Thread(target=server.serve_forever, daemon=True).start()
     port = server.server_address[1]
     logfile = directory / "qikvrt-netboot-serial.log"
-    command = [qemu, "-accel", "tcg", "-m", "3072", "-smp", "2", "-display", "none" if verify_only or not os.environ.get("DISPLAY") else "gtk", "-serial", "stdio",
+    command = [qemu, "-accel", "tcg", "-m", str(guest_memory_mib(manifest)), "-smp", "2", "-display", "none" if verify_only or not os.environ.get("DISPLAY") else "gtk", "-serial", "stdio",
                "-qmp", "unix:" + str(directory / "qikvrt-qmp.sock") + ",server=on,wait=off",
                "-netdev", "user,id=network", "-device", "e1000,netdev=network",
                "-kernel", str(directory / FILES["kernel"]), "-initrd", str(directory / FILES["initrd"]),
@@ -206,21 +229,19 @@ def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bo
                         break
                     time.sleep(1)
                 if marker not in logfile.read_text(errors="replace"):
-                    raise ValueError("no exact-source runtime evidence from network-booted guest; serial_tail:\n" + logfile.read_text(errors="replace")[-16384:])
+                    try:
+                        capture_display(directory, directory / "qikvrt-netboot-failure.ppm")
+                    except (OSError, ValueError):
+                        pass
+                    serial = logfile.read_text(errors="replace")
+                    (directory / "qikvrt-netboot-failure.json").write_text(json.dumps({
+                        "source_sha": manifest["source_sha"], "guest_memory_mib": guest_memory_mib(manifest),
+                        "guest_runtime_reobserved": False, "serial_sha256": sha256(logfile),
+                        "effect_ack_done": False, "reason": "NO_EXACT_RUNTIME_WITNESS"}, indent=2) + "\n")
+                    print(serial[-65536:], flush=True)
+                    raise ValueError("no exact-source runtime evidence from network-booted guest; serial_tail:\n" + serial[-16384:])
                 screenshot = directory / "qikvrt-netboot.ppm"
-                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as qmp:
-                    qmp.settimeout(10)
-                    qmp.connect(str(directory / "qikvrt-qmp.sock"))
-                    with qmp.makefile("rwb") as stream:
-                        json.loads(stream.readline())
-                        for request in ({"execute": "qmp_capabilities"}, {"execute": "screendump", "arguments": {"filename": str(screenshot)}}):
-                            stream.write(json.dumps(request).encode() + b"\n"); stream.flush()
-                            while True:
-                                result = json.loads(stream.readline())
-                                if "error" in result:
-                                    raise ValueError("QMP screenshot failed")
-                                if "return" in result:
-                                    break
+                capture_display(directory, screenshot)
                 pixels = screenshot.read_bytes().split(b"\n", 3)
                 if len(pixels) != 4 or pixels[0] != b"P6" or pixels[2] != b"255":
                     raise ValueError("invalid graphical screenshot")
@@ -230,7 +251,7 @@ def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bo
                 receipt = {"schema": "qikvrt_netboot_receipt_v1", "source_sha": manifest["source_sha"],
                            "manifest_sha256": sha256(directory / "qikvrt-netboot.json"), "serial_sha256": sha256(logfile),
                            "screenshot_sha256": sha256(screenshot), "observed_colors": len(colors),
-                           "boot_method": "linux-live-http", "cdrom_attached": False, "guest_runtime_reobserved": True,
+                           "boot_method": "linux-live-http", "guest_memory_mib": guest_memory_mib(manifest), "cdrom_attached": False, "guest_runtime_reobserved": True,
                            "physical_atari_boot": False, "effect_ack_done": False}
                 (directory / "qikvrt-netboot-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
                 print("QIKVRT_NETWORK_BOOT_REOBSERVED source_sha=" + manifest["source_sha"], flush=True)

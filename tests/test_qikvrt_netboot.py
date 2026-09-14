@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("qikvrt_netboot", ROOT / "distribution/qikvrt-megast/boot.py")
@@ -110,8 +111,27 @@ class NetbootTests(unittest.TestCase):
         self.assertIn("timeout: int = 900", source)
         self.assertIn("serial_tail:", source)
 
-    def test_done_datagram_never_implies_executed_image(self):
-        self.assertNotIn("effect_ack_done\": True", (ROOT / "distribution/qikvrt-megast/boot.py").read_text())
+    def test_large_rootfs_fits_half_ram_with_runtime_headroom(self):
+        for size in (1, 1488416768, 2 * 1024**3):
+            memory = boot.guest_memory_mib({"files": {"rootfs": {"bytes": size}}}) * 1024**2
+            self.assertGreaterEqual(memory, 2 * size + 1024**3)
+
+    def test_early_boot_marker_never_substitutes_for_runtime_and_failure_is_retained(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in boot.FILES.values(): (root / name).write_bytes(b"image")
+            manifest = boot.make_manifest(root, "a" * 40)
+            fake = root / "qemu-stub"
+            fake.write_text("#!/bin/sh\necho QIKVRT_MEGAST_BOOT_OK source_sha=" + "a" * 40 + "\n")
+            fake.chmod(0o700)
+            with patch.object(boot.shutil, "which", return_value=str(fake)):
+                with self.assertRaisesRegex(ValueError, "no exact-source runtime evidence"):
+                    boot.boot(root, manifest, timeout=2, verify_only=True)
+            failure = json.loads((root / "qikvrt-netboot-failure.json").read_text())
+            self.assertFalse(failure["guest_runtime_reobserved"])
+            self.assertFalse(failure["effect_ack_done"])
+            self.assertFalse((root / "qikvrt-netboot-receipt.json").exists())
+            self.assertIn("QIKVRT_MEGAST_BOOT_OK", (root / "qikvrt-netboot-serial.log").read_text())
 
 
 if __name__ == "__main__":
