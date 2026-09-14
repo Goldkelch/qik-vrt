@@ -21,6 +21,12 @@ class MegaSTDistributionContract(unittest.TestCase):
         for token in ('hatari', 'firefox-esr', 'flatpak', 'podman', 'xfce4'):
             self.assertIn(token, text)
 
+    def test_live_build_uses_supported_security_and_updates_switches(self):
+        text = BUILD.read_text()
+        self.assertIn('--security true', text)
+        self.assertIn('--updates true', text)
+        self.assertNotIn('--security-suite', text)
+
     def test_visual_shell_does_not_claim_atari_identity(self):
         text = SESSION.read_text()
         self.assertIn('Mega-ST/GEM-inspired', text)
