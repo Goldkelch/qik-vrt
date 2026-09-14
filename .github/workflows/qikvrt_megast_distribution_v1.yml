@@ -1,0 +1,98 @@
+name: QIKVRT Mega ST Distribution
+
+on:
+  pull_request:
+    paths:
+      - 'distribution/qikvrt-megast/**'
+      - '.github/workflows/qikvrt_megast_distribution_v1.yml'
+      - 'tests/test_qikvrt_megast_distribution.py'
+  push:
+    branches: [ main ]
+    paths:
+      - 'distribution/qikvrt-megast/**'
+      - '.github/workflows/qikvrt_megast_distribution_v1.yml'
+      - 'tests/test_qikvrt_megast_distribution.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Verify distribution contract
+        run: python -m unittest tests.test_qikvrt_megast_distribution -v
+
+  build:
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install live-build toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y live-build debootstrap xorriso squashfs-tools
+      - name: Build exact-subject ISO
+        env:
+          QIKVRT_EXACT_SHA: ${{ github.sha }}
+        run: sudo -E ./distribution/qikvrt-megast/build.sh
+      - name: Reobserve artifact binding
+        run: |
+          test -s out/qikvrt-megast-amd64.iso
+          sha256sum -c out/qikvrt-megast-amd64.iso.sha256
+          grep -F '"source_sha": "${{ github.sha }}"' out/qikvrt-megast-build-receipt.json
+          grep -F '"effect_ack_done": false' out/qikvrt-megast-build-receipt.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qikvrt-megast-${{ github.sha }}
+          path: |
+            out/qikvrt-megast-amd64.iso
+            out/qikvrt-megast-amd64.iso.sha256
+            out/qikvrt-megast-build-receipt.json
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: qikvrt-megast-${{ github.sha }}
+          path: out
+      - name: Verify before publication
+        run: |
+          cd out
+          sha256sum -c qikvrt-megast-amd64.iso.sha256
+          grep -F '"source_sha": "${{ github.sha }}"' qikvrt-megast-build-receipt.json
+      - name: Publish exact-Main release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          short=$(printf '%s' '${{ github.sha }}' | cut -c1-12)
+          tag="qikvrt-megast-${short}"
+          gh release create "$tag" \
+            out/qikvrt-megast-amd64.iso \
+            out/qikvrt-megast-amd64.iso.sha256 \
+            out/qikvrt-megast-build-receipt.json \
+            --repo '${{ github.repository }}' \
+            --target '${{ github.sha }}' \
+            --title "QIK-VRT Mega ST ${short}" \
+            --notes "Exact-Main QIK-VRT Mega ST distribution. Publication transport does not imply EFFECT_ACK_DONE."
+      - name: Read back published release metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          short=$(printf '%s' '${{ github.sha }}' | cut -c1-12)
+          tag="qikvrt-megast-${short}"
+          gh release view "$tag" --repo '${{ github.repository }}' --json tagName,targetCommitish,assets > out/release-readback.json
+          grep -F "\"tagName\":\"$tag\"" out/release-readback.json
+          grep -F 'qikvrt-megast-amd64.iso' out/release-readback.json
+          echo 'P7 transport/readback established; boot/runtime/download checksum reobservation remains required for EFFECT_ACK_DONE.'
