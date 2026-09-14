@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,6 +29,13 @@ WAITING_STATUSES = frozenset({"queued", "waiting", "requested", "pending"})
 UNTRUSTED_CONCLUSIONS = frozenset({"action_required", "startup_failure"})
 EXECUTED_FAILURE_CONCLUSIONS = frozenset({"failure", "timed_out"})
 GATEWATCH_SCOPES = frozenset({"MAIN", "PULL_REQUEST_MAIN", "PULL_REQUEST_STACKED"})
+FEEDBACK_OBSERVER_NAMES = frozenset(
+    {"QIKVRT reflexive repository watchdog", "QIKVRT live status watch"}
+)
+FEEDBACK_OBSERVER_PATHS = (
+    ".github/workflows/qikvrt_reflexive_repository_watchdog.yml",
+    ".github/workflows/qikvrt_live_status_watch.yml",
+)
 GATEWATCH_STATES = frozenset(
     {
         "SUCCESS",
@@ -195,6 +203,37 @@ def _runs(value: Mapping[str, Any] | Sequence[Any]) -> list[Mapping[str, Any]]:
     if not isinstance(raw, list):
         raise ReflexiveWatchdogBlock("workflow run observation must contain workflow_runs")
     return [item for item in raw if isinstance(item, Mapping)]
+
+
+def _observation_coverage(value: Mapping[str, Any] | Sequence[Any]) -> dict[str, Any]:
+    """Describe whether the exact-head run observation is complete.
+
+    GitHub's list response contains ``total_count``.  The workflow deliberately
+    bounds the returned page to protect the installation rate budget; a page
+    that does not cover that count cannot be used to infer quiescence or a gate
+    result.  Sequence inputs and legacy fixtures lack pagination metadata and
+    are treated as complete only because their caller supplies the whole list.
+    """
+
+    runs = _runs(value)
+    if not isinstance(value, Mapping) or "total_count" not in value:
+        return {
+            "complete": True,
+            "source": "CALLER_COMPLETE_SEQUENCE",
+            "returned_run_count": len(runs),
+            "total_run_count": len(runs),
+        }
+    total = value.get("total_count")
+    if not isinstance(total, int) or isinstance(total, bool) or total < 0:
+        raise ReflexiveWatchdogBlock("workflow run observation total_count is invalid")
+    if total < len(runs):
+        raise ReflexiveWatchdogBlock("workflow run observation total_count is smaller than its run page")
+    return {
+        "complete": total == len(runs),
+        "source": "GITHUB_LIST_TOTAL_COUNT",
+        "returned_run_count": len(runs),
+        "total_run_count": total,
+    }
 
 
 def _jobs_by_run(value: Mapping[str, Any] | None) -> dict[str, list[Mapping[str, Any]]]:
@@ -602,14 +641,103 @@ def _node_liveness_observation(
     }
 
 
+def _observer_feedback_graph(
+    root: Path, head: str, tree: str, active_runs: Sequence[Mapping[str, Any]]
+) -> dict[str, Any]:
+    """Inspect the configured two-observer graph, not inferred run causality.
+
+    Git blobs bind topology to the subject even if the worktree is modified.
+    Branch/job conditions may further restrict a configured edge. A cycle here
+    is a potential admission feedback path, never proof of an executed loop.
+    """
+    result: dict[str, Any] = {
+        "scope": "CONFIGURED_TWO_OBSERVER_ADMISSION_GRAPH",
+        "head_sha": head, "tree_sha": tree, "state": "NOT_OBSERVED",
+        "nodes": [], "edges": [], "cycle_detected": False,
+        "executed_cycle_proven": False,
+    }
+    candidates = [r for r in active_runs if r.get("event") == "workflow_run" and (
+        r.get("path") in FEEDBACK_OBSERVER_PATHS
+        or r.get("name") in FEEDBACK_OBSERVER_NAMES
+    )]
+    if not candidates:
+        return result
+
+    def git(*args: str) -> bytes:
+        return subprocess.run(
+            ["git", "-C", str(root), *args], check=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10,
+        ).stdout
+
+    try:
+        import yaml
+
+        _head_sha(head, "topology head")
+        _head_sha(tree, "topology tree")
+        if git("rev-parse", head + "^{tree}").decode().strip() != tree:
+            raise ValueError("topology tree binding drift")
+        ids: dict[str, int] = {}
+        for run in candidates:
+            path = run.get("path")
+            if path not in FEEDBACK_OBSERVER_PATHS:
+                raise ValueError("observer workflow path missing or ambiguous")
+            identifier = _positive_int(run.get("workflow_id"), "observer workflow ID")
+            if path in ids and ids[path] != identifier:
+                raise ValueError("observer workflow ID drift")
+            ids[path] = identifier
+        if len(set(ids.values())) != len(ids):
+            raise ValueError("workflow ID aliases distinct observer paths")
+        documents = {}
+        for path in FEEDBACK_OBSERVER_PATHS:
+            raw = git("show", head + ":" + path)
+            document = _mapping(yaml.load(raw, Loader=yaml.BaseLoader), "workflow")
+            name = _string(document.get("name"), "workflow name")
+            documents[path] = document
+            result["nodes"].append({
+                "path": path, "workflow_id": ids.get(path), "name": name,
+                "blob_sha": hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest(),
+            })
+        names = {node["name"]: node["path"] for node in result["nodes"]}
+        if len(names) != len(documents):
+            raise ValueError("duplicate observer workflow names")
+        for target, document in documents.items():
+            events = _mapping(document.get("on"), "workflow events")
+            if "workflow_run" not in events:
+                continue
+            trigger = _mapping(events["workflow_run"], "workflow_run trigger")
+            sources = _string_list(trigger.get("workflows"), "workflow_run sources")
+            if any(any(c in source for c in "*?[") for source in sources):
+                raise ValueError("wildcard source needs a complete workflow inventory")
+            types = trigger.get("types", ["completed", "requested", "in_progress"])
+            _string_list(types, "workflow_run types")
+            if set(types) - {"completed", "requested", "in_progress"}:
+                raise ValueError("unknown workflow_run activity type")
+            for source in sources:
+                if source in names:
+                    result["edges"].append({"source": names[source], "target": target, "types": types})
+        edges = {(e["source"], e["target"]) for e in result["edges"]}
+        result["cycle_detected"] = any(a == b or (b, a) in edges for a, b in edges)
+        result["state"] = "BOUND"
+    except (ImportError, OSError, subprocess.SubprocessError, ValueError, ReflexiveWatchdogBlock) as exc:
+        result.update(state="UNKNOWN", cycle_detected=False, detail=str(exc))
+    except yaml.YAMLError as exc:
+        result.update(state="UNKNOWN", cycle_detected=False, detail=str(exc))
+    return result
+
+
 def _resource_graph(
     active_writers: Sequence[Mapping[str, Any]],
     waiting_productive: Sequence[Mapping[str, Any]],
     active_productive: Sequence[Mapping[str, Any]],
+    active_observers: Sequence[Mapping[str, Any]],
+    waiting_observers: Sequence[Mapping[str, Any]],
+    observer_feedback_cycle_detected: bool,
 ) -> dict[str, Any]:
     writer_ids = [_run_id(run) for run in active_writers]
     waiting_ids = [_run_id(run) for run in waiting_productive]
     running_ids = [_run_id(run) for run in active_productive if run.get("status") == "in_progress"]
+    observer_holders = [_run_id(run) for run in active_observers if run.get("status") == "in_progress"]
+    observer_waiters = [_run_id(run) for run in waiting_observers]
     return {
         "schema": "qikvrt_repository_resource_graph_v1",
         "resources": [
@@ -625,8 +753,19 @@ def _resource_graph(
                 "observed_holders": running_ids,
                 "observed_waiters": waiting_ids,
             },
+            {
+                "resource": "OBSERVER_ADMISSION",
+                "capacity": 1,
+                "observed_holders": observer_holders,
+                "observed_waiters": observer_waiters,
+            },
         ],
-        "cycle_detected": False,
+        "cycle_detected": observer_feedback_cycle_detected,
+        "cycle_evidence": (
+            "EXACT_HEAD_CONFIGURED_OBSERVER_TRIGGER_CYCLE"
+            if observer_feedback_cycle_detected
+            else "NONE"
+        ),
         "pre_cycle_conflict_detected": len(writer_ids) > 1,
     }
 
@@ -658,18 +797,30 @@ def analyze(
     if any(not isinstance(item, str) or not item for item in observer_names):
         raise ReflexiveWatchdogBlock("observer workflow names are invalid")
 
+    coverage = _observation_coverage(runs_value)
     runs = [run for run in _runs(runs_value) if run.get("head_sha") == expected_head]
     jobs_by_run = _jobs_by_run(jobs_value)
     normalized = [
         _normalize_run(run, jobs_by_run.get(_run_id(run), []))
         for run in sorted(runs, key=lambda item: (_run_created_time(item), _run_id(item)))
     ]
-    productive = [run for run in runs if run.get("name") not in observer_names]
+    def is_observer(run: Mapping[str, Any]) -> bool:
+        return run.get("name") in observer_names or run.get("path") in FEEDBACK_OBSERVER_PATHS
+
+    productive = [run for run in runs if not is_observer(run)]
     active_productive = [run for run in productive if run.get("status") in ACTIVE_STATUSES]
     waiting_productive = [run for run in productive if run.get("status") in WAITING_STATUSES]
     active_writers = [
         run for run in runs if run.get("name") in writer_names and run.get("status") in ACTIVE_STATUSES
     ]
+    active_observers = [
+        run for run in runs if is_observer(run) and run.get("status") in ACTIVE_STATUSES
+    ]
+    waiting_observers = [
+        run for run in active_observers if run.get("status") in WAITING_STATUSES
+    ]
+    observer_graph = _observer_feedback_graph(root, expected_head, expected_tree, active_observers)
+    observer_feedback_cycle_detected = observer_graph["cycle_detected"]
 
     writer_lease = _positive_int(prevention["writer_lease_seconds"], "writer lease")
     queue_lease = _positive_int(prevention["queue_lease_seconds"], "queue lease")
@@ -757,7 +908,31 @@ def analyze(
     productive_edge = "CONTINUE_REFLEXIVE_OBSERVATION"
     safe_continuation = "Preserve one writer, exact-head evidence, and the five-minute observer cadence."
 
-    if len(active_writers) > max_writers:
+    if not coverage["complete"]:
+        state = "OBSERVATION_INCOMPLETE"
+        blocker = "EXACT_HEAD_WORKFLOW_OBSERVATION_INCOMPLETE"
+        disposition = "HOLD"
+        productive_edge = "REOBSERVE_WITH_COMPLETE_EXACT_HEAD_RUN_PAGINATION"
+        safe_continuation = "Do not classify a bounded run page as complete exact-head evidence."
+    elif observer_graph["state"] == "UNKNOWN":
+        state = "OBSERVATION_INCOMPLETE"
+        blocker = "OBSERVER_TRIGGER_TOPOLOGY_UNVERIFIED"
+        disposition = "HOLD"
+        productive_edge = "REOBSERVE_EXACT_HEAD_OBSERVER_TRIGGER_TOPOLOGY"
+        safe_continuation = "Bind observer paths, workflow IDs and source blobs before classifying a cycle."
+    elif observer_feedback_cycle_detected:
+        state = "PREEMPTIVE_HOLD_OBSERVER_FEEDBACK_CYCLE"
+        blocker = "CONFIGURED_WORKFLOW_RUN_OBSERVER_FEEDBACK_CYCLE"
+        disposition = "HOLD"
+        productive_edge = "REMOVE_RECIPROCAL_WORKFLOW_RUN_EDGE_AND_REOBSERVE"
+        safe_continuation = "Remove the configured feedback path; this is not proof of an executed run cycle."
+    elif len(waiting_observers) > max_queued:
+        state = "PREEMPTIVE_HOLD_OBSERVER_QUEUE_PRESSURE"
+        blocker = "OBSERVER_QUEUE_EXCEEDED_PREVENTION_THRESHOLD"
+        disposition = "HOLD"
+        productive_edge = "COALESCE_OBSERVERS_WITHOUT_ADMITTING_ANOTHER_WAVE"
+        safe_continuation = "Do not report quiescence while observer admissions remain queued."
+    elif len(active_writers) > max_writers:
         state = "PREEMPTIVE_HOLD_COMPETING_WRITERS"
         blocker = "MORE_THAN_ONE_ACTIVE_REPOSITORY_WRITER"
         disposition = "HOLD"
@@ -821,12 +996,24 @@ def analyze(
         disposition = "HOLD"
         productive_edge = "OBTAIN_TRUSTED_EXACT_HEAD_JOB_EVIDENCE"
         safe_continuation = "Use a repository-declared trusted exact-head verification path; do not infer success."
+    elif active_observers and not active_productive:
+        state = "OBSERVER_ACTIVITY_OBSERVED"
+        productive_edge = "CONTINUE_REFLEXIVE_OBSERVATION"
+        safe_continuation = "Observer activity is present; it is neither quiescence nor an executed-cycle proof."
     elif not active_productive:
         state = "QUIESCENT_OBSERVATION"
         productive_edge = "KEEP_REFLEXIVE_OBSERVER_FRESH"
         safe_continuation = "Continue periodic observation; quiescence is not a PIPELINE_EMPTY claim."
 
-    resource_graph = _resource_graph(active_writers, waiting_productive, active_productive)
+    resource_graph = _resource_graph(
+        active_writers,
+        waiting_productive,
+        active_productive,
+        active_observers,
+        waiting_observers,
+        observer_feedback_cycle_detected,
+    )
+    resource_graph["observer_trigger_graph"] = observer_graph
     observed_at = _iso(now)
     receipt = {
         "schema": "qikvrt_reflexive_repository_watchdog_receipt_v1",
@@ -854,11 +1041,14 @@ def analyze(
             "progress_lease_seconds": progress_lease,
         },
         "observations": {
+            "coverage": coverage,
             "exact_head_run_count": len(runs),
             "active_productive_runs": [_run_id(run) for run in active_productive],
             "active_writers": [_run_id(run) for run in active_writers],
             "stale_writers": stale_writers,
             "waiting_productive_runs": queue_ages,
+            "active_observer_runs": [_run_id(run) for run in active_observers],
+            "waiting_observer_runs": [_run_id(run) for run in waiting_observers],
             "untrusted_terminal_runs": untrusted,
             "runs": normalized,
         },

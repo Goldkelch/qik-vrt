@@ -63,9 +63,45 @@ the current Authority head only for comparison, materializes Action artifacts
 only, and never writes a repository liveness record, dispatches a productive
 workflow, or treats its own terminality as gate success.
 
+The exact-head workflow-run read is deliberately budgeted to one page of 20
+runs.  The response's `total_count` is binding: if it exceeds the returned
+page, the controller emits `OBSERVATION_INCOMPLETE` with a `HOLD` rather than
+classifying the subset as quiescent, terminal, or exhaustive.  In that case it
+does not begin the per-run job reads.  If a required API read itself fails, the
+workflow writes an artifact-only `observation-failure.json` before failing;
+this pre-receipt records `EXACT_HEAD_OBSERVATION_UNAVAILABLE` without
+pretending that a transport acknowledgement is business evidence.
+
 ## Reflexivity
 
-The watchdog observes the workflows that create and verify repository state, while its own executions are classified as observers rather than productive writers. Observer executions use a coalescing concurrency group so newer observations replace obsolete observations without consuming the repository write lease. A scheduled observation prevents unchanged heads from becoming permanently invisible merely because no new event occurs.
+The watchdog observes terminal source workflow results and its own executions
+are classified as observers rather than productive writers. Observer executions
+use a coalescing concurrency group so newer observations replace obsolete
+observations without consuming the repository write lease. The Live Status
+workflow may project a completed watchdog result, but the watchdog does not
+observe Live Status; this removes the reciprocal `workflow_run` admission
+edge. A scheduled observation prevents unchanged heads from becoming
+permanently invisible merely because no new event occurs.
+
+Concurrent `workflow_run` observers do not prove a cycle. The controller reads
+the two observer workflow blobs from the exact subject commit, verifies its
+root tree, and binds observed workflow IDs to their file paths. It constructs
+the configured source-to-target edges, preserving their activity types and blob
+identities in `resource_graph.observer_trigger_graph`. A self-edge or reciprocal
+edges cause `CONFIGURED_WORKFLOW_RUN_OBSERVER_FEEDBACK_CYCLE` / `HOLD`.
+Two observers triggered by the same CI completion do not form a cycle.
+
+This is a bounded check of the two configured observer paths, not a global
+workflow graph or proof that a run-level loop executed. Branch and job conditions
+can further restrict these potential edges; `executed_cycle_proven` remains
+false. Missing or inconsistent workflow IDs/paths, tree drift, unreadable YAML,
+or wildcard sources requiring a wider inventory produce
+`OBSERVER_TRIGGER_TOPOLOGY_UNVERIFIED` / `HOLD`, never a fabricated cycle.
+The parser reuses PyYAML from the existing hash-locked runtime requirements.
+Dirty worktree bytes cannot replace the committed topology. Active observers
+without a productive run yield `OBSERVER_ACTIVITY_OBSERVED`, not quiescence.
+Known observer paths remain observers when their API display name changes;
+they cannot manufacture productive activity by changing a label.
 
 ## Database comparison boundary
 

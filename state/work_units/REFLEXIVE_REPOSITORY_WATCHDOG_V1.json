@@ -65,5 +65,148 @@
     "EFFECT_ACK_DONE": false,
     "AUTHORITY_MIRROR_EQUALITY": false,
     "DEADLOCK_FREEDOM_PROVED": false
+  },
+  "repair_2026_09_14": {
+    "scope": "PR_1086_CONFIGURED_OBSERVER_TRIGGER_GRAPH",
+    "source_repository": "Goldkelch/qik-vrt",
+    "source_ref": "fix/watchdog-feedback-budget-v1",
+    "source_commit": "a7412e66432eae8ba920cc163dfe54d7066a86b6",
+    "source_tree": "83602c00aa8bc724152e7a37679a3dad7b9087d9",
+    "main_at_preparation": "a86054139b49c13c5cd344753b248b46b5daf66f",
+    "local_preparation_commit": "a7b047b162ef2e056c991dde0998e0a47c946bbd",
+    "local_preparation_tree": "268a350c75f1b7b8d8aca3d29b5bc89e92b8680c",
+    "human_actor": "Ingolf Lohmann",
+    "artificial_cognitive_actor": {
+      "provider": "OpenAI",
+      "system_family": "Codex",
+      "model_or_build": "UNAVAILABLE",
+      "identity_limit": "Tool/account identity is not native human review."
+    },
+    "human_contributions": [
+      "Require active repair of the existing continuation instead of waiting or reporting individual failures.",
+      "Preserve exact-state, independent-review and effect boundaries."
+    ],
+    "artificial_cognitive_contributions": [
+      "Read current PR/base/review/run state and compare the existing integration lane.",
+      "Bind the two-observer admission graph to committed workflow blobs, stable observed workflow IDs and source tree.",
+      "Distinguish concurrent observer activity, configured cycles and unknown topology.",
+      "Preserve observer classification when the API display name changes.",
+      "Add counterexample regressions and reuse the existing hash-locked YAML parser."
+    ],
+    "joint_components": [],
+    "unresolved_origin": [],
+    "inputs": [
+      {
+        "repository": "Goldkelch/qik-vrt",
+        "pr": 1086,
+        "commit": "a7412e66432eae8ba920cc163dfe54d7066a86b6"
+      },
+      {
+        "repository": "Goldkelch/qik-vrt",
+        "pr": 1071,
+        "commit": "9726239f9a59c1170740bb9ef609d6ef856fc964",
+        "comparison": "Its observer-admission repair does not contain this configured trigger graph; do not substitute or overwrite the integration candidate."
+      }
+    ],
+    "outputs": [
+      {
+        "path": "tools/qikvrt_reflexive_repository_watchdog.py",
+        "bytes": 51295,
+        "sha256": "98566bb1c2c312e3026082ab4741e100017374271020596d28d0ff7d23ad1bf3",
+        "git_blob_sha1": "adb0de8fa19dcda89d4b38bae16747d6925f115e"
+      },
+      {
+        "path": "tests/test_qikvrt_reflexive_repository_watchdog.py",
+        "bytes": 26179,
+        "sha256": "03a3900928448dbe77f65f0c0653202bfa5569ac5527971647f3fb68a7d1fa07",
+        "git_blob_sha1": "a0d944ae0e27877ad763b43be6ad8eeb7a3a34d2"
+      },
+      {
+        "path": ".github/workflows/qikvrt_reflexive_repository_watchdog.yml",
+        "bytes": 13162,
+        "sha256": "64229e5eb9528876bb9303d9c13035d9d0facccba13e8efd077e657ec4134fb9",
+        "git_blob_sha1": "b298c17156b3a99826bf387fc416e896fc072217"
+      },
+      {
+        "path": "docs/REFLEXIVE_REPOSITORY_WATCHDOG.md",
+        "bytes": 7744,
+        "sha256": "9699e76b79376b566bcb2b429867398cece955bbbdaafd4816f07fc5ac11f7a1",
+        "git_blob_sha1": "537209296b5a6f55c306c29d43cbff09262df0a6"
+      }
+    ],
+    "git_history": {
+      "remote_update": "FAST_FORWARD_ONLY_FROM_FRESHLY_REOBSERVED_SOURCE_COMMIT",
+      "containing_commit_and_tree": "Bound by Git after persistence; no in-file self-hash or future commit is asserted."
+    },
+    "verification": {
+      "development_focused_tests": {
+        "command": "python3 -B -m unittest -v tests.test_qikvrt_reflexive_repository_watchdog tests.test_qikvrt_workflow_executor_mesh_contract tests.test_seed_workflows",
+        "count": 50,
+        "exit_code": 0,
+        "scope": "Prepared source bytes; not final remote-commit evidence."
+      },
+      "required_before_remote_update": [
+        "full make test",
+        "canonical integrity regeneration and verification",
+        "YAML and shell syntax validation",
+        "fresh PR/base/ref reobservation"
+      ],
+      "final_exact_remote_evidence": "Read the current PR #1086 continuation receipt and current-head GitHub checks; predecessor results are not transferable."
+    },
+    "human_decision": "REPAIR_AUTHORIZED_NATIVE_REVIEW_PENDING",
+    "external_effects": {
+      "intended": "Existing draft PR branch update only",
+      "merge": false,
+      "ruleset_write": false,
+      "review_submission": false,
+      "publication": false,
+      "deployment": false,
+      "mirror_mutation": false
+    },
+    "release_claims": {
+      "PASS": false,
+      "FINAL_PASS": false,
+      "EFFECT_ACK_DONE": false,
+      "DEADLOCK_FREEDOM_PROVED": false
+    },
+    "resume": {
+      "pr": "https://github.com/Goldkelch/qik-vrt/pull/1086",
+      "next": "Reobserve the literal final remote commit, validate the graph and all applicable gates, then apply the existing independent-review and promotion contract.",
+      "configured_cycle_is_executed_cycle": false,
+      "observer_success_is_subject_success": false
+    },
+    "runtime_followup": {
+      "source_commit": "f9a043c468f8a5d6dfc9cd4c9f76e65e1717fc81",
+      "source_tree": "45d96879b3190aec238ad59d6ec426fa158d1cfa",
+      "trigger_evidence": {
+        "workflow_id": 330589267,
+        "workflow_path": ".github/workflows/qikvrt_workflow_executor_watchdog.yml",
+        "event": "pull_request",
+        "run_id": 34869943225,
+        "job_id": 104063066747,
+        "conclusion": "failure",
+        "finding": "The second workflow invoking the graph tests did not provision PyYAML. Clean-runtime reproduction returned UNKNOWN / No module named yaml."
+      },
+      "repair": "Provision the same existing hash-locked PyYAML requirement before the executor watchdog tests.",
+      "output": {
+        "path": ".github/workflows/qikvrt_workflow_executor_watchdog.yml",
+        "bytes": 3691,
+        "sha256": "d04a9845767c761de82882d9cca4984d91e8dd089971d68ffe1593a1d83c9a9b",
+        "git_blob_sha1": "53f16fcc93998169847abb186066afc4888460c8"
+      },
+      "development_verification": {
+        "environment": "Fresh CPython 3.12.14 virtual environment without system site packages",
+        "provisioning": "Executed the workflow step using the committed --require-hashes --no-deps lock; installed PyYAML 6.0.3.",
+        "focused_tests": 50,
+        "exit_code": 0,
+        "final_remote_commit_evidence": "PENDING_NEW_EXACT_HEAD_REOBSERVATION"
+      },
+      "transport_observation": "Separate repository API rate limiting is not repaired or relabeled as successful source validation.",
+      "completion_claims": {
+        "PASS": false,
+        "FINAL_PASS": false,
+        "EFFECT_ACK_DONE": false
+      }
+    }
   }
 }

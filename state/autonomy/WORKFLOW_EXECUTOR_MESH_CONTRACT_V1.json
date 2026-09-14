@@ -221,8 +221,6 @@
     "platform_minimum_schedule": "GITHUB_ACTIONS_FIVE_MINUTES",
     "event_triggers": [
       "SCHEDULE",
-      "WORKFLOW_RUN_REQUESTED",
-      "WORKFLOW_RUN_IN_PROGRESS",
       "WORKFLOW_RUN_COMPLETED",
       "PUSH_MAIN",
       "PULL_REQUEST",
@@ -276,6 +274,13 @@
         "artifact_only_materialization": true
       }
     },
+    "exact_head_observation": {
+      "mode": "ONE_PAGE_FAIL_CLOSED",
+      "max_runs_per_observation": 20,
+      "when_total_exceeds_page": "OBSERVATION_INCOMPLETE_HOLD",
+      "when_api_read_fails": "OBSERVATION_UNAVAILABLE_HOLD_WITH_PRE_RECEIPT",
+      "per_run_job_reads": "ONLY_AFTER_COMPLETE_EXACT_HEAD_RUN_OBSERVATION"
+    },
     "observer_workflow_names": [
       "QIKVRT reflexive repository watchdog",
       "QIKVRT workflow executor watchdog",
@@ -308,7 +313,10 @@
       "PREEMPTIVE_HOLD_NODE_LIVENESS",
       "PREEMPTIVE_HOLD_REQUIRED_GATE_EVIDENCE",
       "PREEMPTIVE_HOLD_OBSERVATION_CADENCE_BREACH",
+      "PREEMPTIVE_HOLD_OBSERVER_FEEDBACK_CYCLE",
+      "PREEMPTIVE_HOLD_OBSERVER_QUEUE_PRESSURE",
       "UNTRUSTED_EXECUTION_GAP",
+      "OBSERVATION_INCOMPLETE",
       "SAFE_PROGRESS",
       "QUIESCENT_OBSERVATION"
     ],
