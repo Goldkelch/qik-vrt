@@ -8,7 +8,6 @@ from pathlib import Path
 import sys
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from scripts.issue_agent.infer import SYSTEM_PROMPT
 from scripts.issue_agent.promote import promote
 from scripts.issue_agent.validate import validate
 
@@ -210,7 +209,9 @@ class ValidateIssueAgentBundleTest(unittest.TestCase):
             continuation["related_delegations"],
         )
 
-    def test_issue_agent_prompt_requires_one_lifecycle_disposition(self):
+    def test_issue_policy_requires_one_lifecycle_disposition(self):
+        policy = json.loads((ROOT / "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json").read_text(encoding="utf-8"))
+        allowed = policy["issue_lifecycle"]["allowed_dispositions"]
         for token in (
             "EXECUTE_NOW",
             "CLARIFICATION_REQUIRED",
@@ -219,8 +220,8 @@ class ValidateIssueAgentBundleTest(unittest.TestCase):
             "CLOSE_NOT_PLANNED",
             "CLOSE_INVALID_OR_UNSUPPORTED",
         ):
-            self.assertIn(token, SYSTEM_PROMPT)
-        self.assertIn("Do not leave an issue in an unclassified waiting state", SYSTEM_PROMPT)
+            self.assertIn(token, allowed)
+        self.assertEqual(policy["issue_lifecycle"]["unclassified_open_issue"], "FORBIDDEN")
 
     def test_failed_inference_materialization_is_idempotent(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -319,6 +320,18 @@ class ValidateIssueAgentBundleTest(unittest.TestCase):
         self.assertNotIn("minimum_age_seconds", workflow)
         self.assertNotIn("generated_at", workflow)
         self.assertIn("workflow_dispatch:", workflow)
+
+
+    def test_deterministic_controller_tests_are_full_suite_gates(self):
+        text = (ROOT / "Makefile").read_text(encoding="utf-8")
+        block = text.split("evidence-contract-test:" + chr(10), 1)[1].split(chr(10) + "m68000-kernel-contract:", 1)[0]
+        recipes = [line for line in block.splitlines() if line.startswith(chr(9)) and "-m unittest -v" in line]
+        self.assertEqual(len(recipes), 1)
+        for module in ("tests.issue_agent.test_compile", "tests.issue_agent.test_deterministic_workflow", "tests.issue_agent.test_validate"):
+            self.assertIn(module, recipes[0].split())
+        targets = [line for line in text.splitlines() if line.startswith("test: compile ")]
+        self.assertEqual(len(targets), 1)
+        self.assertIn("evidence-contract-test", targets[0].split())
 
 
 if __name__ == "__main__":

@@ -25,5 +25,14 @@ class DeterministicIssueWorkflowTest(unittest.TestCase):
         self.assertNotIn("git push --force-with-lease", text)
 
 
+    def test_legacy_model_client_is_absent(self):
+        self.assertFalse((ROOT / "scripts/issue_agent/infer.py").exists())
+
+    def test_validation_is_independent_of_model_prompt(self):
+        text = (ROOT / "tests/issue_agent/test_validate.py").read_text(encoding="utf-8")
+        self.assertNotIn("scripts.issue_agent.infer", text)
+        self.assertNotIn("SYSTEM_PROMPT", text)
+
+
 if __name__ == "__main__":
     unittest.main()
