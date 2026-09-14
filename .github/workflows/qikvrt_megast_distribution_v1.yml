@@ -38,6 +38,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cpio curl debootstrap xorriso squashfs-tools
+          curl -fsSLo /tmp/debian-archive-keyring.deb \
+            https://deb.debian.org/debian/pool/main/d/debian-archive-keyring/debian-archive-keyring_2025.1_all.deb
+          printf '%s  %s\n' \
+            '9ea7778e443144ca490668737a8ab22dd3e748bb99e805e22ec055abeb3c7fac' \
+            /tmp/debian-archive-keyring.deb | sha256sum -c -
+          sudo dpkg -i /tmp/debian-archive-keyring.deb
           curl -fsSLo /tmp/live-build.deb \
             https://deb.debian.org/debian/pool/main/l/live-build/live-build_20250505+deb13u1_all.deb
           printf '%s  %s\n' \

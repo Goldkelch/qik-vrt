@@ -52,6 +52,13 @@ class MegaSTDistributionContract(unittest.TestCase):
         )
         self.assertIn('/tmp/live-build.deb | sha256sum -c -', text)
         self.assertIn('sudo dpkg -i /tmp/live-build.deb', text)
+        self.assertIn('debian-archive-keyring_2025.1_all.deb', text)
+        self.assertIn(
+            '9ea7778e443144ca490668737a8ab22dd3e748bb99e805e22ec055abeb3c7fac',
+            text,
+        )
+        self.assertIn('/tmp/debian-archive-keyring.deb | sha256sum -c -', text)
+        self.assertIn('sudo dpkg -i /tmp/debian-archive-keyring.deb', text)
 
     def test_terminal_definition_requires_download_readback(self):
         text = README.read_text()
