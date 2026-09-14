@@ -8,6 +8,7 @@ import socket
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -140,6 +141,24 @@ class NetbootTests(unittest.TestCase):
             self.assertFalse(failure["effect_ack_done"])
             self.assertFalse((root / "qikvrt-netboot-receipt.json").exists())
             self.assertIn("QIKVRT_MEGAST_BOOT_OK", (root / "qikvrt-netboot-serial.log").read_text())
+
+    def test_explicit_guest_failure_stops_waiting_without_creating_success_receipt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in boot.FILES.values(): (root / name).write_bytes(b"image")
+            manifest = boot.make_manifest(root, "a" * 40)
+            fake = root / "qemu-stub"
+            fake.write_text("#!/usr/bin/env python3\nimport time\nprint('QIKVRT_RUNTIME_BLOCK graphical session failed', flush=True)\ntime.sleep(30)\n")
+            fake.chmod(0o700)
+            started = time.monotonic()
+            with patch.object(boot.shutil, "which", return_value=str(fake)):
+                with self.assertRaisesRegex(ValueError, "graphical session failed"):
+                    boot.boot(root, manifest, timeout=10, verify_only=True)
+            self.assertLess(time.monotonic() - started, 8)
+            failure = json.loads((root / "qikvrt-netboot-failure.json").read_text())
+            self.assertEqual(failure["reason"], "GUEST_RUNTIME_BLOCKED")
+            self.assertFalse(failure["effect_ack_done"])
+            self.assertFalse((root / "qikvrt-netboot-receipt.json").exists())
 
 
 if __name__ == "__main__":

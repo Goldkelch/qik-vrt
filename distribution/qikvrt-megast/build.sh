@@ -27,7 +27,8 @@ EOF
 # Compile the real C90 corpus and the CPU-family bootstrap program into the guest.
 GUEST="$WORK/config/includes.chroot"
 mkdir -p "$GUEST/opt/qikvrt/runtime" "$GUEST/opt/qikvrt/smalltalk" \
-         "$GUEST/etc/rsyslog.d"
+         "$GUEST/etc/rsyslog.d" "$GUEST/etc/lightdm/lightdm.conf.d" \
+         "$GUEST/etc/systemd/system/lightdm.service.d"
 cc -std=c90 -pedantic -Wall -Wextra -Werror -O2 -I"$ROOT/include" \
   "$ROOT/src/effect_ack_core.c" "$ROOT/tests/test_effect_ack_core.c" \
   -o "$GUEST/usr/local/bin/qikvrt-c90-selftest"
@@ -62,6 +63,35 @@ ln -s ../qikvrt-effect-ack-http.service "$GUEST/etc/systemd/system/multi-user.ta
 cat > "$GUEST/etc/rsyslog.d/30-qikvrt-runtime.conf" <<'EOF'
 if $programname == 'qikvrt-runtime' then /dev/ttyS0
 EOF
+
+# This appliance must start the actual Xfce session without a greeter action.
+# A virtual display remains usable when logind has not marked its seat graphical.
+cat > "$GUEST/etc/lightdm/lightdm.conf.d/90-qikvrt-live.conf" <<'EOF'
+[LightDM]
+logind-check-graphical=false
+[Seat:*]
+autologin-user=qikvrt
+autologin-user-timeout=0
+autologin-session=xfce
+user-session=xfce
+allow-guest=false
+EOF
+cat > "$GUEST/etc/systemd/system/lightdm.service.d/10-qikvrt-live.conf" <<'EOF'
+[Unit]
+Wants=live-config.service
+After=live-config.service
+EOF
+cat > "$GUEST/etc/systemd/system/qikvrt-graphics-diagnostics.service" <<'EOF'
+[Unit]
+Description=Bounded QIK-VRT graphical startup diagnostics
+After=live-config.service
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -B /opt/qikvrt/runtime-witness.py --diagnostics
+[Install]
+WantedBy=multi-user.target
+EOF
+ln -s ../qikvrt-graphics-diagnostics.service "$GUEST/etc/systemd/system/multi-user.target.wants/qikvrt-graphics-diagnostics.service"
 
 install -m 0755 "$ROOT/distribution/qikvrt-megast/qikvrt-megast-session.sh" \
   "$WORK/config/includes.chroot/usr/local/bin/qikvrt-megast-session"

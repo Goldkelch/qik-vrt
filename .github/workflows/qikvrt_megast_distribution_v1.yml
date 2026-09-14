@@ -152,6 +152,19 @@ jobs:
           done
           cp distribution/qikvrt-megast/boot.py out/qikvrt-netboot-client.py
           exit "$result"
+      - name: Preserve inspectable startup evidence separately from the image
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qikvrt-megast-evidence-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            out/qikvrt-megast-amd64.iso.sha256
+            out/qikvrt-megast-build-receipt.json
+            out/qikvrt-megast-qemu-serial.log
+            out/QIKVRT_BOOT.BIN
+            out/qikvrt-netboot*
+          if-no-files-found: error
+          retention-days: 30
       - uses: actions/upload-artifact@v4
         if: always()
         with:

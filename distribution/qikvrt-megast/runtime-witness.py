@@ -9,6 +9,7 @@ from pathlib import Path
 import secrets
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -27,6 +28,39 @@ def stage(name):
 
 def run(command):
     return subprocess.run(command, capture_output=True, text=True, check=True, timeout=90).stdout
+
+
+def diagnostics():
+    """Observe startup even when no user session exists to run the witness."""
+    source = json.loads(Path("/etc/qikvrt/distribution.json").read_text())["source_sha"]
+    commands = {
+        "display_manager": ["systemctl", "show", "lightdm.service", "-p", "ActiveState", "-p", "SubState", "-p", "Result"],
+        "seat": ["loginctl", "show-seat", "seat0", "-p", "CanGraphical", "-p", "Sessions"],
+        "live_user": ["getent", "passwd", "qikvrt"],
+        "journal": ["journalctl", "-b", "-u", "lightdm.service", "--no-pager", "-n", "40"],
+    }
+    files = ("/var/log/lightdm/lightdm.log", "/var/log/lightdm/x-0.log", "/var/log/Xorg.0.log",
+             "/home/qikvrt/.xsession-errors", "/home/qikvrt/.config/qikvrt/runtime-witness.log",
+             "/home/qikvrt/.config/qikvrt/firefox.log")
+    for attempt in range(1, 5):
+        time.sleep(45)
+        observation = {"source_sha": source, "attempt": attempt, "effect_ack_done": False}
+        for name, command in commands.items():
+            try:
+                result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+                observation[name] = (result.stdout + result.stderr)[-4000:]
+            except (OSError, subprocess.TimeoutExpired) as error:
+                observation[name] = str(error)
+        for name in files:
+            path = Path(name)
+            if path.is_file():
+                observation[name] = path.read_text(errors="replace")[-6000:]
+        message = "QIKVRT_GRAPHICS_DIAGNOSTICS " + json.dumps(observation, sort_keys=True) + "\n"
+        try:
+            with open("/dev/ttyS0", "w") as serial:
+                serial.write(message)
+        except OSError:
+            print(message, flush=True)
 
 
 def main():
@@ -96,7 +130,10 @@ def main():
 
 if __name__ == "__main__":
     try:
-        main()
+        if sys.argv[1:] == ["--diagnostics"]:
+            diagnostics()
+        else:
+            main()
     except Exception as error:
         traceback.print_exc()
         detail = str(error) + " " + str(getattr(error, "stderr", ""))

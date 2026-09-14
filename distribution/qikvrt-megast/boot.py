@@ -232,7 +232,8 @@ def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bo
             try:
                 deadline = time.monotonic() + timeout
                 while process.poll() is None and time.monotonic() < deadline:
-                    if marker in logfile.read_text(errors="replace"):
+                    observed = logfile.read_text(errors="replace")
+                    if marker in observed or "QIKVRT_RUNTIME_BLOCK" in observed:
                         break
                     time.sleep(1)
                 if marker not in logfile.read_text(errors="replace"):
@@ -244,7 +245,7 @@ def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bo
                     (directory / "qikvrt-netboot-failure.json").write_text(json.dumps({
                         "source_sha": manifest["source_sha"], "guest_memory_mib": guest_memory_mib(manifest),
                         "guest_runtime_reobserved": False, "serial_sha256": sha256(logfile),
-                        "effect_ack_done": False, "reason": "NO_EXACT_RUNTIME_WITNESS"}, indent=2) + "\n")
+                        "effect_ack_done": False, "reason": "GUEST_RUNTIME_BLOCKED" if "QIKVRT_RUNTIME_BLOCK" in serial else "NO_EXACT_RUNTIME_WITNESS"}, indent=2) + "\n")
                     print(serial[-65536:], flush=True)
                     raise ValueError("no exact-source runtime evidence from network-booted guest; serial_tail:\n" + serial[-16384:])
                 screenshot = directory / "qikvrt-netboot.ppm"

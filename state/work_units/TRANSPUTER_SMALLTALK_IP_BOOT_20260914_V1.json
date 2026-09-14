@@ -63,7 +63,15 @@
       "iso_boot_observed": true,
       "network_rootfs_downloaded_and_mounted": true,
       "network_runtime_observed": false,
-      "disposition": "The exact network guest downloaded and mounted the root filesystem, but 900 host seconds of single-threaded TCG advanced only to roughly 48 guest seconds in live-config. Prefer accessible KVM and retain a multi-threaded TCG fallback; no predecessor boot evidence transfers."
+      "disposition": "The network guest mounted the root filesystem and reached the early boot marker, but no graphical runtime witness arrived within 900 host seconds. LightDM was starting in the serial trace. The successor preserves the KVM/multithreaded TCG improvement and explicitly configures appliance autologin; bounded root-side diagnostics observe display startup even without a user session. These are candidate repairs pending a fresh boot, not a transferred success."
     }
-  ]
+  ],
+  "candidate_repairs": {
+    "integrated_parent": "d0459d1382cc0d8c61be7c96ae3ada58592d8af6",
+    "integrity": "Parent d0459d1382cc0d8c61be7c96ae3ada58592d8af6 repaired the predecessor manifest transport corruption. Regenerate and verify the canonical trio for these additional changes.",
+    "graphical_startup": "Explicit LightDM appliance autologin after live-config, with virtual seat detection disabled and bounded service/session diagnostics on the serial channel.",
+    "observability": "Preserve a separate small startup-evidence artifact alongside the complete image bundle.",
+    "client": "Stop promptly on an explicit guest runtime failure; never create a success receipt from it.",
+    "verification": "20 targeted distribution/client tests and full repository make test passed locally; exact candidate image build and network boot remain required."
+  }
 }
