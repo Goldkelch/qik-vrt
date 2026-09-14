@@ -79,6 +79,17 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Provision the existing hash-locked YAML parser
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_tool_cache.py verify
+          awk '/^pyyaml==/ {emit=1} emit {print; if ($0 !~ /\\$/) exit}' \
+            runtime/toolchains/requirements-xml2rfc-3.34.0.txt > "$RUNNER_TEMP/watchdog-yaml.txt"
+          test -s "$RUNNER_TEMP/watchdog-yaml.txt"
+          python3 -m pip install --disable-pip-version-check --require-hashes --no-deps \
+            -r "$RUNNER_TEMP/watchdog-yaml.txt"
+
       - name: Reobserve exact head, tree, runs, jobs, and previous reflexive receipt
         env:
           GH_TOKEN: ${{ github.token }}

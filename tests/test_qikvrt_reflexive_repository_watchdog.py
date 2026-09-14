@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import pathlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -221,13 +222,102 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
             ),
         ]
         value = self.analyze(runs, {"jobs_by_run": {}})
-        self.assertEqual(value["state"], "PREEMPTIVE_HOLD_OBSERVER_FEEDBACK_CYCLE")
-        self.assertEqual(value["first_blocker"], "WORKFLOW_RUN_OBSERVER_FEEDBACK_CYCLE_DETECTED")
-        self.assertTrue(value["resource_graph"]["cycle_detected"])
-        self.assertEqual(
-            value["resource_graph"]["cycle_evidence"],
-            "EXACT_HEAD_WORKFLOW_RUN_FEEDBACK_PAIR",
+        self.assertEqual(value["state"], "OBSERVATION_INCOMPLETE")
+        self.assertEqual(value["first_blocker"], "OBSERVER_TRIGGER_TOPOLOGY_UNVERIFIED")
+        self.assertFalse(value["resource_graph"]["cycle_detected"])
+
+    def feedback_fixture(self, *, reciprocal=False, self_loop=False):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = pathlib.Path(directory.name)
+        for source in (CONTRACT, NODE_POLICY, WORKFLOW, LIVE_STATUS_WORKFLOW):
+            target = root / source.relative_to(ROOT)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(source.read_bytes())
+        target = root / WORKFLOW.relative_to(ROOT)
+        if reciprocal or self_loop:
+            source_name = "QIKVRT reflexive repository watchdog" if self_loop else "QIKVRT live status watch"
+            target.write_text(target.read_text().replace(
+                "    workflows:\n", '    workflows:\n      - "' + source_name + '"\n', 1
+            ))
+        def git(*args):
+            return subprocess.check_output(["git", "-C", str(root), *args], stderr=subprocess.DEVNULL).decode().strip()
+        git("init", "-q")
+        git("add", ".")
+        git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "observer topology fixture")
+        head, tree = git("rev-parse", "HEAD"), git("rev-parse", "HEAD^{tree}")
+        runs = []
+        for index, path in enumerate(MODULE.FEEDBACK_OBSERVER_PATHS):
+            item = run(index + 1, ["QIKVRT reflexive repository watchdog", "QIKVRT live status watch"][index],
+                       "in_progress", "2026-08-10T17:59:00Z", "2026-08-10T17:59:00Z", event="workflow_run")
+            item.update(head_sha=head, path=path, workflow_id=100 + index)
+            runs.append(item)
+        return root, head, tree, runs
+
+    def feedback_analyze(self, root, head, tree, runs):
+        return MODULE.analyze(
+            {"total_count": len(runs), "workflow_runs": runs}, jobs(1, 2),
+            root=root, expected_head=head, expected_tree=tree, repository="example/qik-vrt",
+            now=datetime(2026, 8, 10, 18, tzinfo=timezone.utc),
         )
+
+    def test_common_ci_source_does_not_form_a_feedback_cycle(self):
+        value = self.feedback_analyze(*self.feedback_fixture())
+        graph = value["resource_graph"]["observer_trigger_graph"]
+        self.assertEqual(graph["state"], "BOUND")
+        self.assertEqual(len(graph["edges"]), 1)
+        self.assertFalse(value["resource_graph"]["cycle_detected"])
+        self.assertEqual(value["state"], "OBSERVER_ACTIVITY_OBSERVED")
+        self.assertFalse(graph["executed_cycle_proven"])
+
+    def test_reciprocal_committed_edges_hold_without_claiming_execution(self):
+        value = self.feedback_analyze(*self.feedback_fixture(reciprocal=True))
+        graph = value["resource_graph"]["observer_trigger_graph"]
+        self.assertEqual(len(graph["edges"]), 2)
+        self.assertTrue(graph["cycle_detected"])
+        self.assertFalse(graph["executed_cycle_proven"])
+        self.assertEqual(value["first_blocker"], "CONFIGURED_WORKFLOW_RUN_OBSERVER_FEEDBACK_CYCLE")
+
+    def test_observer_display_name_does_not_create_productive_work(self):
+        root, head, tree, runs = self.feedback_fixture()
+        for item in runs:
+            item["name"] = "projection for subject " + head
+        value = self.feedback_analyze(root, head, tree, runs)
+        self.assertEqual(value["resource_graph"]["observer_trigger_graph"]["state"], "BOUND")
+        self.assertEqual(value["observations"]["active_productive_runs"], [])
+        self.assertEqual(value["observations"]["active_observer_runs"], ["1", "2"])
+        self.assertEqual(value["state"], "OBSERVER_ACTIVITY_OBSERVED")
+
+    def test_self_trigger_is_a_configured_cycle(self):
+        value = self.feedback_analyze(*self.feedback_fixture(self_loop=True))
+        self.assertTrue(value["resource_graph"]["cycle_detected"])
+
+    def test_dirty_worktree_cannot_replace_committed_topology(self):
+        root, head, tree, runs = self.feedback_fixture()
+        (root / MODULE.FEEDBACK_OBSERVER_PATHS[0]).write_text("invalid: [")
+        value = self.feedback_analyze(root, head, tree, runs)
+        self.assertEqual(value["resource_graph"]["observer_trigger_graph"]["state"], "BOUND")
+        self.assertFalse(value["resource_graph"]["cycle_detected"])
+
+    def test_missing_or_aliased_stable_id_holds_without_cycle_claim(self):
+        for defect in ("missing", "alias", "path"):
+            with self.subTest(defect=defect):
+                root, head, tree, runs = self.feedback_fixture()
+                if defect == "missing":
+                    runs[0].pop("workflow_id")
+                elif defect == "alias":
+                    runs[0]["workflow_id"] = runs[1]["workflow_id"]
+                else:
+                    runs[0]["path"] = ".github/workflows/other.yml"
+                value = self.feedback_analyze(root, head, tree, runs)
+                self.assertEqual(value["first_blocker"], "OBSERVER_TRIGGER_TOPOLOGY_UNVERIFIED")
+                self.assertFalse(value["resource_graph"]["cycle_detected"])
+
+    def test_tree_drift_holds_without_cycle_claim(self):
+        root, head, tree, runs = self.feedback_fixture()
+        value = self.feedback_analyze(root, head, "f" * 40, runs)
+        self.assertEqual(value["first_blocker"], "OBSERVER_TRIGGER_TOPOLOGY_UNVERIFIED")
+        self.assertFalse(value["resource_graph"]["cycle_detected"])
 
     def test_stale_writer_lease_is_blocked_before_a_replacement_writer(self) -> None:
         value = self.analyze(

@@ -83,10 +83,25 @@ observe Live Status; this removes the reciprocal `workflow_run` admission
 edge. A scheduled observation prevents unchanged heads from becoming
 permanently invisible merely because no new event occurs.
 
-If both members of the former feedback pair are active on an exact head as
-`workflow_run` events, the controller records an explicit observer-feedback
-cycle `HOLD`; it does not hide the pair merely because observers are not
-productive writers.
+Concurrent `workflow_run` observers do not prove a cycle. The controller reads
+the two observer workflow blobs from the exact subject commit, verifies its
+root tree, and binds observed workflow IDs to their file paths. It constructs
+the configured source-to-target edges, preserving their activity types and blob
+identities in `resource_graph.observer_trigger_graph`. A self-edge or reciprocal
+edges cause `CONFIGURED_WORKFLOW_RUN_OBSERVER_FEEDBACK_CYCLE` / `HOLD`.
+Two observers triggered by the same CI completion do not form a cycle.
+
+This is a bounded check of the two configured observer paths, not a global
+workflow graph or proof that a run-level loop executed. Branch and job conditions
+can further restrict these potential edges; `executed_cycle_proven` remains
+false. Missing or inconsistent workflow IDs/paths, tree drift, unreadable YAML,
+or wildcard sources requiring a wider inventory produce
+`OBSERVER_TRIGGER_TOPOLOGY_UNVERIFIED` / `HOLD`, never a fabricated cycle.
+The parser reuses PyYAML from the existing hash-locked runtime requirements.
+Dirty worktree bytes cannot replace the committed topology. Active observers
+without a productive run yield `OBSERVER_ACTIVITY_OBSERVED`, not quiescence.
+Known observer paths remain observers when their API display name changes;
+they cannot manufacture productive activity by changing a label.
 
 ## Database comparison boundary
 
