@@ -61,3 +61,9 @@ cat > "$HOME/.config/qikvrt/session-receipt.json" <<EOF
   "reason":"session_materialization_is_not_terminal_effect"
 }
 EOF
+
+# Start the actual client in the graphical session, then observe its window and
+# the locally executed C90/Smalltalk/MC68000 paths before reporting runtime ready.
+firefox-esr --new-window http://127.0.0.1:8771/.well-known/effect-ack \
+  > "$HOME/.config/qikvrt/firefox.log" 2>&1 &
+python3 -B /opt/qikvrt/runtime-witness.py > "$HOME/.config/qikvrt/runtime-witness.log" 2>&1 &

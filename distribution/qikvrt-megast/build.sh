@@ -21,7 +21,46 @@ linux-image-amd64 live-boot systemd-sysv sudo ca-certificates curl git jq
 xorg lightdm xfce4 xfce4-terminal dbus-x11
 hatari firefox-esr flatpak podman xterm
 python3 python3-venv nginx openssh-client
-fonts-dejavu-core
+fonts-dejavu-core rsyslog qemu-user x11-utils procps
+EOF
+
+# Compile the real C90 corpus and the CPU-family bootstrap program into the guest.
+GUEST="$WORK/config/includes.chroot"
+mkdir -p "$GUEST/opt/qikvrt/runtime" "$GUEST/opt/qikvrt/smalltalk" \
+         "$GUEST/etc/rsyslog.d"
+cc -std=c90 -pedantic -Wall -Wextra -Werror -O2 -I"$ROOT/include" \
+  "$ROOT/src/effect_ack_core.c" "$ROOT/tests/test_effect_ack_core.c" \
+  -o "$GUEST/usr/local/bin/qikvrt-c90-selftest"
+cc -std=c90 -pedantic -Wall -Wextra -Werror -O2 -I"$ROOT/src/cloud_transputer" \
+  "$ROOT/src/cloud_transputer/qikvrt_boot_receive.c" \
+  "$ROOT/src/cloud_transputer/qikvrt_wire_v1.c" "$ROOT/src/cloud_transputer/qikvrt_sha256_v1.c" \
+  -o "$GUEST/usr/local/bin/qikvrt-boot-receive"
+m68k-linux-gnu-gcc -m68000 -static -std=c90 -pedantic -Wall -Wextra -Werror -O2 \
+  "$ROOT/src/cloud_transputer/m68k_contract_probe.c" -o "$GUEST/opt/qikvrt/runtime/QIKVRT_BOOT.BIN"
+cp "$GUEST/opt/qikvrt/runtime/QIKVRT_BOOT.BIN" "$OUT/QIKVRT_BOOT.BIN"
+python3 -B "$ROOT/tools/qikvrt_smalltalk.py" install
+python3 -B "$ROOT/tools/qikvrt_smalltalk.py" build --output "$GUEST/opt/qikvrt/smalltalk"
+cp -a "${QIKVRT_TOOLCHAIN_CACHE:-$ROOT/.qikvrt/toolchains}/pharo/13.1-4f7563dfe5-vm33501fd6/vm" "$GUEST/opt/qikvrt/pharo-vm"
+cp "$ROOT/src/smalltalk/smoke.st" "$GUEST/opt/qikvrt/smalltalk/"
+cp "$ROOT/runtime/toolchains/"pharo-*-LICENSE.txt "$GUEST/opt/qikvrt/smalltalk/"
+cp "$ROOT/distribution/qikvrt-megast/boot.py" "$GUEST/opt/qikvrt/boot.py"
+cp "$ROOT/distribution/qikvrt-megast/runtime-witness.py" "$GUEST/opt/qikvrt/runtime-witness.py"
+cp "$ROOT/src/qikvrt_effect_ack_http_terminal.py" "$GUEST/opt/qikvrt/effect-ack-http.py"
+cat > "$GUEST/etc/systemd/system/qikvrt-effect-ack-http.service" <<'EOF'
+[Unit]
+Description=QIK-VRT loopback Effect-Ack terminal
+After=network.target
+[Service]
+ExecStart=/usr/bin/python3 -B /opt/qikvrt/effect-ack-http.py --host 127.0.0.1 --port 8771
+DynamicUser=yes
+NoNewPrivileges=yes
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target
+EOF
+ln -s ../qikvrt-effect-ack-http.service "$GUEST/etc/systemd/system/multi-user.target.wants/qikvrt-effect-ack-http.service"
+cat > "$GUEST/etc/rsyslog.d/30-qikvrt-runtime.conf" <<'EOF'
+if $programname == 'qikvrt-runtime' then /dev/ttyS0
 EOF
 
 install -m 0755 "$ROOT/distribution/qikvrt-megast/qikvrt-megast-session.sh" \

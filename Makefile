@@ -104,7 +104,7 @@ seed:
 e2e:
 	$(PYTHON) tests/test_tcpip_e2e.py
 
-test: compile integrity effect-ack-core-test scientific-bundle-test adaptive-cognition-test anticipation-contract runtime-contract ai-runtime-contract interaction-archive-test release-automation evidence-contract-test workflow-executor-mesh-contract repository-writer-contract repository-terminal-test mesh-authority-mirror-instance-test real-mesh-test real-mesh-system-verification launcher conformance unit security license seed e2e
+test: compile integrity netboot-test effect-ack-core-test scientific-bundle-test adaptive-cognition-test anticipation-contract runtime-contract ai-runtime-contract interaction-archive-test release-automation evidence-contract-test workflow-executor-mesh-contract repository-writer-contract repository-terminal-test mesh-authority-mirror-instance-test real-mesh-test real-mesh-system-verification launcher conformance unit security license seed e2e
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tools/qikvrt_integrity.py verify
 
 run-api:
@@ -116,3 +116,11 @@ run-api:
 
 clean:
 	rm -rf unit_state e2e_state .qikvrt/runtime .qikvrt/evidence .qikvrt/api .qikvrt/cache .qikvrt/release .qikvrt/interactions .qikvrt/real-mesh logs __pycache__ src/__pycache__ scripts/__pycache__ tests/__pycache__ tools/__pycache__
+
+.PHONY: smalltalk-test
+smalltalk-test: tool-cache-contract effect-ack-core-test
+	$(PYTHON) -B tools/qikvrt_smalltalk.py test
+
+.PHONY: netboot-test
+netboot-test:
+	$(PYTHON) -B -m unittest tests.test_qikvrt_netboot -v
