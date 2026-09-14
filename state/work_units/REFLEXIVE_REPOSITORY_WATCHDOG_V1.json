@@ -174,6 +174,39 @@
       "next": "Reobserve the literal final remote commit, validate the graph and all applicable gates, then apply the existing independent-review and promotion contract.",
       "configured_cycle_is_executed_cycle": false,
       "observer_success_is_subject_success": false
+    },
+    "runtime_followup": {
+      "source_commit": "f9a043c468f8a5d6dfc9cd4c9f76e65e1717fc81",
+      "source_tree": "45d96879b3190aec238ad59d6ec426fa158d1cfa",
+      "trigger_evidence": {
+        "workflow_id": 330589267,
+        "workflow_path": ".github/workflows/qikvrt_workflow_executor_watchdog.yml",
+        "event": "pull_request",
+        "run_id": 34869943225,
+        "job_id": 104063066747,
+        "conclusion": "failure",
+        "finding": "The second workflow invoking the graph tests did not provision PyYAML. Clean-runtime reproduction returned UNKNOWN / No module named yaml."
+      },
+      "repair": "Provision the same existing hash-locked PyYAML requirement before the executor watchdog tests.",
+      "output": {
+        "path": ".github/workflows/qikvrt_workflow_executor_watchdog.yml",
+        "bytes": 3691,
+        "sha256": "d04a9845767c761de82882d9cca4984d91e8dd089971d68ffe1593a1d83c9a9b",
+        "git_blob_sha1": "53f16fcc93998169847abb186066afc4888460c8"
+      },
+      "development_verification": {
+        "environment": "Fresh CPython 3.12.14 virtual environment without system site packages",
+        "provisioning": "Executed the workflow step using the committed --require-hashes --no-deps lock; installed PyYAML 6.0.3.",
+        "focused_tests": 50,
+        "exit_code": 0,
+        "final_remote_commit_evidence": "PENDING_NEW_EXACT_HEAD_REOBSERVATION"
+      },
+      "transport_observation": "Separate repository API rate limiting is not repaired or relabeled as successful source validation.",
+      "completion_claims": {
+        "PASS": false,
+        "FINAL_PASS": false,
+        "EFFECT_ACK_DONE": false
+      }
     }
   }
 }
