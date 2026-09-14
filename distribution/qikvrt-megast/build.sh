@@ -52,6 +52,9 @@ lb config \
   --architectures amd64 \
   --binary-images iso-hybrid \
   --archive-areas "main contrib non-free-firmware" \
+  --security true \
+  --security-suite trixie-security \
+  --updates true \
   --bootappend-live "boot=live components username=qikvrt hostname=qikvrt-megast"
 
 lb build
