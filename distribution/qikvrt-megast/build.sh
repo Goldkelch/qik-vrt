@@ -21,13 +21,13 @@ linux-image-amd64 live-boot systemd-sysv sudo ca-certificates curl git jq
 xorg lightdm xfce4 xfce4-terminal dbus-x11
 hatari firefox-esr flatpak podman xterm
 python3 python3-venv nginx openssh-client
-fonts-dejavu-core rsyslog qemu-user x11-utils procps
+fonts-dejavu-core qemu-user x11-utils procps
 EOF
 
 # Compile the real C90 corpus and the CPU-family bootstrap program into the guest.
 GUEST="$WORK/config/includes.chroot"
 mkdir -p "$GUEST/opt/qikvrt/runtime" "$GUEST/opt/qikvrt/smalltalk" \
-         "$GUEST/etc/rsyslog.d" "$GUEST/etc/lightdm/lightdm.conf.d" \
+         "$GUEST/etc/lightdm/lightdm.conf.d" \
          "$GUEST/etc/systemd/system/lightdm.service.d"
 cc -std=c90 -pedantic -Wall -Wextra -Werror -O2 -I"$ROOT/include" \
   "$ROOT/src/effect_ack_core.c" "$ROOT/tests/test_effect_ack_core.c" \
@@ -60,9 +60,26 @@ Restart=on-failure
 WantedBy=multi-user.target
 EOF
 ln -s ../qikvrt-effect-ack-http.service "$GUEST/etc/systemd/system/multi-user.target.wants/qikvrt-effect-ack-http.service"
-cat > "$GUEST/etc/rsyslog.d/30-qikvrt-runtime.conf" <<'EOF'
-if $programname == 'qikvrt-runtime' then /dev/ttyS0
+# Follow only this boot's runtime witness. logger accepting a message proves
+# journal transport, not console delivery. A separate root-owned reader writes
+# the serial device without granting the desktop user additional device access
+# or blocking journald on synchronous forwarding of all system messages.
+cat > "$GUEST/etc/systemd/system/qikvrt-runtime-serial.service" <<'EOF'
+[Unit]
+Description=QIK-VRT runtime witness serial return channel
+After=systemd-journald.service
+Before=lightdm.service
+[Service]
+Type=simple
+ExecStart=/usr/bin/journalctl --boot --follow --lines=all --no-pager --output=cat --identifier=qikvrt-runtime
+StandardOutput=tty
+StandardError=journal
+TTYPath=/dev/ttyS0
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target
 EOF
+ln -s ../qikvrt-runtime-serial.service "$GUEST/etc/systemd/system/multi-user.target.wants/qikvrt-runtime-serial.service"
 
 # This appliance must start the actual Xfce session without a greeter action.
 # A virtual display remains usable when logind has not marked its seat graphical.

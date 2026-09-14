@@ -131,6 +131,16 @@ class NetbootTests(unittest.TestCase):
         self.assertIn("emit_serial(marker)", witness)
         self.assertLess(witness.index("emit_serial(marker)"), witness.index('subprocess.run(["logger", "-t", "qikvrt-runtime", marker]'))
 
+    def test_terminal_protocol_rejects_quoted_and_foreign_head_markers(self):
+        marker = "QIKVRT_MEGAST_RUNTIME_OK source_sha=" + "a" * 40
+        quoted = "QIKVRT_GRAPHICS_DIAGNOSTICS " + json.dumps({"runtime-witness.log": marker + "\n"})
+        self.assertIsNone(boot.runtime_result(quoted, "a" * 40))
+        self.assertIsNone(boot.runtime_result(marker, "a" * 40))
+        self.assertIsNone(boot.runtime_result(marker + "x\n", "a" * 40))
+        self.assertIsNone(boot.runtime_result(marker + "\n", "b" * 40))
+        self.assertEqual(boot.runtime_result(marker + "\r\n", "a" * 40), "success")
+        self.assertEqual(boot.runtime_result(marker + "\nQIKVRT_RUNTIME_BLOCK return failed\n", "a" * 40), "failure")
+
     def test_early_boot_marker_never_substitutes_for_runtime_and_failure_is_retained(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -134,7 +134,7 @@ def main():
                "received_mc68000_executed": True, "smalltalk_image_restored": True,
                "physical_atari_boot": False, "effect_ack_done": False}
     Path.home().joinpath(".config/qikvrt/runtime-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
-    # Journal stream is forwarded to ttyS0 by the distribution's rsyslog rule.
+    # The root-owned boot-scoped journal reader also covers user device denial.
     marker = "QIKVRT_MEGAST_RUNTIME_OK source_sha=" + source
     emit_serial(marker)
     subprocess.run(["logger", "-t", "qikvrt-runtime", marker], check=True)

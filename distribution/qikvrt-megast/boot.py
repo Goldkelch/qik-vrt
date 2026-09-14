@@ -203,6 +203,22 @@ def capture_display(directory: Path, screenshot: Path) -> None:
                         break
 
 
+def runtime_result(serial: str, source_sha: str) -> str | None:
+    """Accept complete protocol lines, never quoted markers in diagnostics."""
+    marker = f"QIKVRT_MEGAST_RUNTIME_OK source_sha={source_sha}"
+    result = None
+    for record in serial.splitlines(keepends=True):
+        if not record.endswith(("\n", "\r")):
+            continue
+        line = record.rstrip("\r\n")
+        if line == marker:
+            result = "success"
+        elif line.startswith("QIKVRT_RUNTIME_BLOCK "):
+            # A failure must not be hidden by an earlier or later success line.
+            return "failure"
+    return result
+
+
 def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bool = False) -> dict:
     validate_manifest(manifest)
     if platform.machine() not in ("x86_64", "AMD64"):
@@ -225,7 +241,6 @@ def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bo
                "-kernel", str(directory / FILES["kernel"]), "-initrd", str(directory / FILES["initrd"]),
                "-append", f"boot=live components username=qikvrt hostname=qikvrt-megast ip=dhcp fetch=http://10.0.2.2:{port}/{FILES['rootfs']} console=tty0 console=ttyS0,115200n8",
                "-no-reboot"]
-    marker = f"QIKVRT_MEGAST_RUNTIME_OK source_sha={manifest['source_sha']}"
     try:
         with logfile.open("wb") as output:
             process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT)
@@ -233,10 +248,10 @@ def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bo
                 deadline = time.monotonic() + timeout
                 while process.poll() is None and time.monotonic() < deadline:
                     observed = logfile.read_text(errors="replace")
-                    if marker in observed or "QIKVRT_RUNTIME_BLOCK" in observed:
+                    if runtime_result(observed, manifest["source_sha"]) is not None:
                         break
                     time.sleep(1)
-                if marker not in logfile.read_text(errors="replace"):
+                if runtime_result(logfile.read_text(errors="replace"), manifest["source_sha"]) != "success":
                     try:
                         capture_display(directory, directory / "qikvrt-netboot-failure.ppm")
                     except (OSError, ValueError):
@@ -245,7 +260,7 @@ def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bo
                     (directory / "qikvrt-netboot-failure.json").write_text(json.dumps({
                         "source_sha": manifest["source_sha"], "guest_memory_mib": guest_memory_mib(manifest),
                         "guest_runtime_reobserved": False, "serial_sha256": sha256(logfile),
-                        "effect_ack_done": False, "reason": "GUEST_RUNTIME_BLOCKED" if "QIKVRT_RUNTIME_BLOCK" in serial else "NO_EXACT_RUNTIME_WITNESS"}, indent=2) + "\n")
+                        "effect_ack_done": False, "reason": "GUEST_RUNTIME_BLOCKED" if runtime_result(serial, manifest["source_sha"]) == "failure" else "NO_EXACT_RUNTIME_WITNESS"}, indent=2) + "\n")
                     print(serial[-65536:], flush=True)
                     raise ValueError("no exact-source runtime evidence from network-booted guest; serial_tail:\n" + serial[-16384:])
                 screenshot = directory / "qikvrt-netboot.ppm"
