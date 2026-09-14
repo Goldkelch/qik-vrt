@@ -3,6 +3,16 @@
   "service": "QIK-VRT repository capability self-disclosure",
   "state": "AVAILABLE",
   "discovery_path": ".well-known/qik-vrt-self-disclosure.json",
+  "ai_entrypoint": {
+    "path": "AI",
+    "context": "AI_CONTEXT.json",
+    "contract_field": "entrypoint_contract",
+    "read_only_boot": "python3 -B tools/ai_runtime_bootloader.py --profile core --json",
+    "expected_head_argument": "--expect-head",
+    "receipt_scope": "LOCAL_BOOTSTRAP_ONLY",
+    "http_get_executes_task": false,
+    "ordinary_release": false
+  },
   "cli": "python3 tools/qikvrt_self_disclosure.py {show|capabilities|status}",
   "capabilities": [
     {"id":"repository_state_read","machine_readable":true},
