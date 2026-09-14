@@ -29,6 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
           fetch-depth: 1
       - name: Validate, accept, maintain, and revalidate
@@ -39,7 +40,31 @@ jobs:
           {
             sh tools/qikvrt_seed_registry_acceptance.sh
             sh tools/qikvrt_seed_mesh_maintenance.sh
-            sh tools/qikvrt_seed_node_revalidation.sh
+            # This observer accepts a persisted CONTINUE result. Keep the
+            # shared CLI and the dashboard/audit PASS gates unchanged.
+            python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+          from tools.qikvrt_seed_common import DEFAULT_SEED_REPOSITORY, run_revalidation
+
+          run_id = os.environ["QIKVRT_RUN_ID"]
+          result = run_revalidation(
+              Path("."), run_id,
+              seed_repository=os.environ.get("QIKVRT_SEED_REPOSITORY", DEFAULT_SEED_REPOSITORY),
+          )
+          status = result.get("status")
+          print(f"QIKVRT_SEED_REVALIDATE {status} run_id={run_id}")
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as summary:
+              summary.write(
+                  f"Seed registry revalidation: **{status}**\n\n"
+                  f"Source: `{os.environ['GITHUB_SHA']}`; run: `{run_id}`.\n\n"
+                  f"Active: {result['active_count']}; stale: {result['stale_count']}; "
+                  f"errors: {result['error_count']}.\n\n"
+              )
+              if status == "CONTINUE":
+                  summary.write("Node liveness remains open; resume with fresh node evidence.\n")
+          raise SystemExit(0 if status in ("PASS", "CONTINUE") else 10)
+          PY
           } 2>&1 | tee .qikvrt/seed-workflow/registry-acceptance.log
       - name: Preserve local evidence without mutating the repository
         if: always()

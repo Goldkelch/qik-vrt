@@ -7,7 +7,9 @@ import datetime as dt
 import hashlib
 import json
 import os
+import subprocess
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -357,6 +359,103 @@ class SeedWorkflowTests(unittest.TestCase):
         self.assertIn('"source_head": os.environ["EXPECTED_HEAD"]', workflow)
         self.assertIn('"source_tree": os.environ["ACTUAL_TREE"]', workflow)
         self.assertIn("qikvrt_seed_dashboard_exact_head_binding_v1", workflow)
+
+    def registry_workflow(self, *, stale: bool = False, empty: bool = False,
+                          tampered: bool = False, acceptance_exit: int = 0,
+                          maintenance_exit: int = 0) -> subprocess.CompletedProcess[str]:
+        self.accept()
+        documents = remote_documents()
+        if stale:
+            health_url = next(url for url in documents if url.endswith("NODE_HEALTH.json"))
+            documents[health_url]["heartbeat_utc"] = "2026-07-18T11:50:00Z"
+            documents[health_url]["expires_utc"] = "2026-07-19T12:00:00Z"
+        run_maintenance(self.root, "registry-cli-1", FakeFetcher(documents), now=NOW)
+        if empty:
+            for filename in ("NODEMESH_INDEX.json", "NODEMESH_STATUS.json"):
+                path = self.root / "registry" / filename
+                aggregate = read_json(path)
+                aggregate["nodes"] = []
+                for key in ("node_count", "active_count", "stale_count", "unknown_count",
+                            "suspended_count", "revoked_count", "error_count"):
+                    aggregate[key] = 0
+                path.write_bytes(canonical_json_bytes(aggregate))
+        if tampered:
+            status_path = self.root / "registry/NODEMESH_STATUS.json"
+            status = read_json(status_path)
+            status["active_count"] = 999
+            status_path.write_bytes(canonical_json_bytes(status))
+        scripts = self.root / "tools"
+        scripts.mkdir(exist_ok=True)
+        for operation, code in (("registry_acceptance", acceptance_exit),
+                                ("mesh_maintenance", maintenance_exit)):
+            (scripts / f"qikvrt_seed_{operation}.sh").write_text(
+                f"echo {operation} >> phases.log\nexit {code}\n", encoding="utf-8",
+            )
+        repository = Path(__file__).resolve().parents[1]
+        workflow = (repository / ".github/workflows/qikvrt_seed_registry_acceptance.yml").read_text()
+        block = workflow.split("      - name: Validate, accept, maintain, and revalidate\n", 1)[1]
+        block = textwrap.dedent(block.split("        run: |\n", 1)[1].split("      - name:", 1)[0])
+        env = {
+            **os.environ, "PYTHONPATH": str(repository), "QIKVRT_RUN_ID": "registry-cli-1",
+            "QIKVRT_SEED_REPOSITORY": SEED, "GITHUB_SHA": "a" * 40,
+            "GITHUB_STEP_SUMMARY": str(self.root / "summary.md"),
+        }
+        return subprocess.run(["bash", "-c", block], cwd=self.root, env=env,
+                              text=True, capture_output=True, timeout=30, check=False)
+
+    def test_registry_workflow_preserves_stale_continue_as_successful_observation(self) -> None:
+        result = self.registry_workflow(stale=True)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn("QIKVRT_SEED_REVALIDATE CONTINUE", result.stdout)
+        receipt = read_json(self.root / "evidence/seed_node_revalidation/runs/registry-cli-1.json")
+        self.assertEqual("CONTINUE", receipt["status"])
+        self.assertEqual(1, receipt["stale_count"])
+        self.assertEqual(0, receipt["active_count"])
+        self.assertEqual(0, receipt["error_count"])
+        self.assertEqual(receipt, read_json(self.root / "registry/NODEMESH_REVALIDATION.json"))
+        self.assertIn("**CONTINUE**", (self.root / "summary.md").read_text())
+        for exporter in (run_dashboard, run_audit_export):
+            with self.assertRaisesRegex(SeedError, "not PASS"):
+                exporter(self.root, "still-held", now=NOW)
+
+    def test_registry_workflow_preserves_fresh_pass(self) -> None:
+        result = self.registry_workflow()
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn("QIKVRT_SEED_REVALIDATE PASS", result.stdout)
+        self.assertEqual("PASS", read_json(self.root / "registry/NODEMESH_REVALIDATION.json")["status"])
+
+    def test_registry_workflow_keeps_block_result_failing(self) -> None:
+        result = self.registry_workflow(empty=True)
+        self.assertEqual(10, result.returncode, result.stdout + result.stderr)
+        self.assertIn("QIKVRT_SEED_REVALIDATE BLOCK", result.stdout)
+        self.assertEqual("BLOCK", read_json(self.root / "registry/NODEMESH_REVALIDATION.json")["status"])
+
+    def test_registry_workflow_keeps_receipt_write_failure_failing(self) -> None:
+        blocked = self.root / "evidence/seed_node_revalidation/runs"
+        blocked.parent.mkdir(parents=True)
+        blocked.write_text("not a directory\n", encoding="utf-8")
+        result = self.registry_workflow(stale=True)
+        self.assertNotEqual(0, result.returncode)
+        self.assertFalse((self.root / "summary.md").exists())
+
+    def test_registry_workflow_rejects_tampered_aggregate(self) -> None:
+        result = self.registry_workflow(tampered=True)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("active_count", result.stdout + result.stderr)
+        self.assertFalse((self.root / "registry/NODEMESH_REVALIDATION.json").exists())
+
+    def test_registry_workflow_preserves_upstream_failures(self) -> None:
+        for acceptance_exit, maintenance_exit, phases in (
+            (23, 0, ["registry_acceptance"]),
+            (0, 37, ["registry_acceptance", "mesh_maintenance"]),
+        ):
+            with self.subTest(acceptance_exit=acceptance_exit, maintenance_exit=maintenance_exit):
+                result = self.registry_workflow(acceptance_exit=acceptance_exit,
+                                                maintenance_exit=maintenance_exit)
+                self.assertEqual(acceptance_exit or maintenance_exit, result.returncode)
+                self.assertEqual(phases, (self.root / "phases.log").read_text().splitlines())
+                self.assertFalse((self.root / "registry/NODEMESH_REVALIDATION.json").exists())
+                (self.root / "phases.log").unlink()
 
     def test_seed_workflows_are_pinned_read_only_and_do_not_push(self) -> None:
         repository = Path(__file__).resolve().parents[1]

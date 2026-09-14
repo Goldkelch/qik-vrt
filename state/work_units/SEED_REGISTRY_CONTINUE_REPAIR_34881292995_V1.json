@@ -1,0 +1,62 @@
+{
+  "schema": "qikvrt_work_unit_v1",
+  "work_unit_id": "SEED_REGISTRY_CONTINUE_REPAIR_34881292995_V1",
+  "repository": "Goldkelch/qik-vrt",
+  "base_head": "a86054139b49c13c5cd344753b248b46b5daf66f",
+  "base_tree": "feff1cae2401a3df83febc3b9458de70d79b818e",
+  "human_contribution": {
+    "actor": "Ingolf Lohmann",
+    "contribution": "Supplied the failing GitHub Actions job for diagnosis and repair."
+  },
+  "artificial_cognitive_contribution": {
+    "actor": "OpenAI Codex",
+    "contribution": "Job and artifact inspection, scoped workflow adaptation, executable regressions and integrity materialization."
+  },
+  "third_party_source_added": false,
+  "observation": {
+    "job_url": "https://github.com/Goldkelch/qik-vrt/actions/runs/34881292995/job/104100948604",
+    "workflow": ".github/workflows/qikvrt_seed_registry_acceptance.yml",
+    "run_id": 34881292995,
+    "run_attempt": 1,
+    "artifact_id": 10362498354,
+    "artifact_sha256": "0f4f3d43ec36418adf688436b5b6b11c516be241623df4ba8c12a0e5ea81668c",
+    "receipt_path": "evidence/seed_node_revalidation/runs/34881292995-1.json",
+    "acceptance_status": "PASS",
+    "maintenance_status": "PASS",
+    "revalidation_status": "CONTINUE",
+    "node_count": 1,
+    "active_count": 0,
+    "stale_count": 1,
+    "error_count": 0,
+    "process_exit_code": 10
+  },
+  "causal_defect": "The registry observation job routes the valid typed CONTINUE result through the shared PASS-only CLI exit contract and a fail-fast pipeline, turning nonterminal liveness evidence into a failed Actions job.",
+  "reuse_assessment": {
+    "reused_implementation": "tools/qikvrt_seed_common.py::run_revalidation",
+    "reused_test_module": "tests/test_seed_workflows.py",
+    "related_pull_requests": [982, 1041, 924, 887],
+    "decision": "Reuse the existing typed operation at the registry observer boundary. PRs 982 and 1041 globally redefine the shared CLI result code; that broader change interacts with the dashboard HOLD adapter in PR 924 and its current repair. Preserve shared CLI, dashboard and audit gate semantics. No new controller or workflow is required."
+  },
+  "repair_scope": [
+    "Pin the existing checkout to github.sha.",
+    "Use the existing typed revalidation operation after acceptance and maintenance succeed.",
+    "Treat persisted PASS and CONTINUE as completed registry observations, preserving the literal semantic result and node counters in evidence and the Actions summary.",
+    "Retain hard failures for BLOCK, unknown states, invalid input, upstream phase failures and receipt or summary write errors.",
+    "Keep dashboard and audit exports subject to their existing PASS-only validation gate."
+  ],
+  "verification_commands": [
+    "python3 -B -m unittest -v tests.test_seed_workflows tests.test_qikvrt_workflow_executor_mesh_contract",
+    "python3 -B tools/qikvrt_integrity.py generate",
+    "python3 -B tools/qikvrt_integrity.py verify",
+    "make test"
+  ],
+  "next_admissible_action": "Validate the exact candidate commit, obtain native Code Owner review and fresh post-review reobservation before legitimate Main adoption. Then observe a newly admitted run on the adopted Main commit. Node liveness requires separate fresh node evidence.",
+  "evidence_transfer": "DENY",
+  "completion_claims": {
+    "native_code_owner_approval": false,
+    "main_adoption": false,
+    "fresh_node_liveness": false,
+    "authority_mirror_equality": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
