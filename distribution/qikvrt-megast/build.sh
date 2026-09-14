@@ -8,6 +8,7 @@ SHA=${QIKVRT_EXACT_SHA:-$(git -C "$ROOT" rev-parse HEAD)}
 
 rm -rf "$WORK"
 mkdir -p "$WORK/config/package-lists" \
+         "$WORK/config/archives" \
          "$WORK/config/includes.chroot/usr/local/bin" \
          "$WORK/config/includes.chroot/etc/qikvrt" \
          "$WORK/config/includes.chroot/etc/xdg/autostart" \
@@ -51,8 +52,15 @@ set -- lb config \
   --distribution trixie \
   --architectures amd64 \
   --binary-images iso-hybrid \
-  --archive-areas "main contrib non-free-firmware" \
-  --security true
+  --archive-areas "main contrib non-free-firmware"
+if lb config --help 2>&1 | grep -q -- '--security-suite'; then
+  set -- "$@" --security true --security-suite trixie-security
+else
+  printf '%s\n' \
+    'deb http://security.debian.org/debian-security trixie-security main contrib non-free-firmware' \
+    > "$WORK/config/archives/qikvrt-security.list.chroot"
+  set -- "$@" --security false
+fi
 if lb config --help 2>&1 | grep -q -- '--updates'; then
   set -- "$@" --updates true
 fi
