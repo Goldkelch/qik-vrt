@@ -7,6 +7,28 @@ case "$mode" in
   terminal) exec /usr/local/bin/qikvrt-universal-terminal ;;
   gateway)
     mkdir -p /tmp/nginx-client-body /tmp/nginx-proxy /tmp/nginx-fastcgi /tmp/nginx-uwsgi /tmp/nginx-scgi
+    # Compose shares the terminal network namespace, not its filesystem. Bind
+    # gateway health to observed terminal endpoints before nginx publishes it;
+    # the remaining Mesh roles stay separately bound by the exact-head workflow.
+    ready=0
+    attempt=0
+    while [ "$attempt" -lt 60 ]; do
+      if curl --max-time 2 -fsS http://127.0.0.1:8771/.well-known/effect-ack >/dev/null 2>&1 \
+        && curl --max-time 2 -fsS http://127.0.0.1:6080/vnc.html >/dev/null 2>&1; then
+        ready=1
+        break
+      fi
+      attempt=$((attempt + 1))
+      sleep 1
+    done
+    [ "$ready" = 1 ] || {
+      echo 'BLOCK: Compose gateway terminal endpoints did not become ready' >&2
+      exit 1
+    }
+    cat > /tmp/qikvrt-mesh-health.json.tmp <<'EOF'
+{"schema":"qikvrt_compose_mesh_gateway_health_v1","state":"READY","roles":{"terminal":"OBSERVED","gateway":"READY","m68k":"SEPARATELY_REOBSERVED","smtp":"SEPARATELY_REOBSERVED","dns":"SEPARATELY_REOBSERVED","snmp":"SEPARATELY_REOBSERVED"},"effect_ack":"NOT_IMPLIED"}
+EOF
+    mv /tmp/qikvrt-mesh-health.json.tmp /tmp/qikvrt-mesh-health.json
     exec nginx -c /opt/qikvrt/deploy/universal-terminal/nginx.conf -g 'daemon off;'
     ;;
   smtpd)

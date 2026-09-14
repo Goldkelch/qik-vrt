@@ -18,3 +18,12 @@ def test_mesh_health_is_a_runtime_readback_not_static_success():
     assert "location = /qik-vrt/mesh/v1/healthz" in nginx
     assert "location = /qik-vrt/mesh/v1/topology" in nginx
     assert "return 200" not in nginx.split("location = /qik-vrt/mesh/v1/healthz", 1)[1].split("}", 1)[0]
+
+def test_compose_gateway_health_waits_for_real_terminal_endpoints():
+    service = (ROOT / "deploy/universal-terminal/service-entrypoint.sh").read_text()
+    assert "qikvrt_compose_mesh_gateway_health_v1" in service
+    assert "http://127.0.0.1:8771/.well-known/effect-ack" in service
+    assert "http://127.0.0.1:6080/vnc.html" in service
+    assert '"terminal":"OBSERVED"' in service
+    assert '"m68k":"SEPARATELY_REOBSERVED"' in service
+    assert '"effect_ack":"NOT_IMPLIED"' in service
