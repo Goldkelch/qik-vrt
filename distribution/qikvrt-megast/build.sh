@@ -12,6 +12,8 @@ mkdir -p "$WORK/config/package-lists" \
          "$WORK/config/includes.chroot/usr/local/bin" \
          "$WORK/config/includes.chroot/etc/qikvrt" \
          "$WORK/config/includes.chroot/etc/xdg/autostart" \
+         "$WORK/config/includes.chroot/etc/systemd/system/multi-user.target.wants" \
+         "$WORK/config/includes.chroot/etc/systemd/system" \
          "$OUT"
 
 cat > "$WORK/config/package-lists/qikvrt-megast.list.chroot" <<'EOF'
@@ -33,6 +35,33 @@ Exec=/usr/local/bin/qikvrt-megast-session
 OnlyShowIn=XFCE;
 X-GNOME-Autostart-enabled=true
 EOF
+
+cat > "$WORK/config/includes.chroot/usr/local/bin/qikvrt-megast-boot-witness" <<EOF
+#!/bin/sh
+set -eu
+receipt=/run/qikvrt-megast-boot-receipt.json
+cat > "\$receipt" <<JSON
+{"schema":"qikvrt_megast_boot_receipt_v1","source_sha":"$SHA","booted":true,"effect_ack_done":false}
+JSON
+printf 'QIKVRT_MEGAST_BOOT_OK source_sha=%s\n' '$SHA' >/dev/ttyS0 2>/dev/null || true
+EOF
+chmod 0755 "$WORK/config/includes.chroot/usr/local/bin/qikvrt-megast-boot-witness"
+
+cat > "$WORK/config/includes.chroot/etc/systemd/system/qikvrt-megast-boot-witness.service" <<'EOF'
+[Unit]
+Description=QIK-VRT Mega ST exact-subject boot witness
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/qikvrt-megast-boot-witness
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+ln -s ../qikvrt-megast-boot-witness.service \
+  "$WORK/config/includes.chroot/etc/systemd/system/multi-user.target.wants/qikvrt-megast-boot-witness.service"
 
 cat > "$WORK/config/includes.chroot/etc/qikvrt/distribution.json" <<EOF
 {
@@ -65,7 +94,7 @@ if lb config --help 2>&1 | grep -q -- '--updates'; then
   set -- "$@" --updates true
 fi
 set -- "$@" \
-  --bootappend-live "boot=live components username=qikvrt hostname=qikvrt-megast"
+  --bootappend-live "boot=live components username=qikvrt hostname=qikvrt-megast console=tty0 console=ttyS0,115200n8"
 "$@"
 
 lb build
@@ -89,7 +118,7 @@ cat > "$OUT/qikvrt-megast-build-receipt.json" <<EOF
   "bytes": $ISO_BYTES,
   "transport_ack": true,
   "effect_ack_done": false,
-  "next_required_effect": "boot_and_runtime_reobservation_then_public_download_readback"
+  "next_required_effect": "mount_boot_runtime_reobservation_then_public_download_readback"
 }
 EOF
 
