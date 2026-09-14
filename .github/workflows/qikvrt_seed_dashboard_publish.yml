@@ -66,27 +66,92 @@ jobs:
           )
           PY
       - name: Refresh, revalidate, and build dashboard
+        id: dashboard
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .qikvrt/seed-workflow
+          sh tools/qikvrt_seed_mesh_maintenance.sh 2>&1 | tee .qikvrt/seed-workflow/dashboard.log
+          set +e
+          sh tools/qikvrt_seed_node_revalidation.sh 2>&1 | tee -a .qikvrt/seed-workflow/dashboard.log
+          revalidation_status=("${PIPESTATUS[@]}")
+          set -e
+          # Preserve both process and log-write failures. Exit 10 alone cannot
+          # distinguish a semantic CONTINUE from BLOCK or an unknown status.
+          test "${revalidation_status[1]}" = 0
+          if [ "${revalidation_status[0]}" = 10 ]; then
+            python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+          from tools.qikvrt_seed_common import read_json, validate_aggregate_pair, write_json
+          root = Path(".")
+          run_id = os.environ["QIKVRT_RUN_ID"]
+          repository = os.environ["GITHUB_REPOSITORY"]
+          binding = read_json(root / ".qikvrt/seed-workflow/dashboard-exact-head-binding.json")
+          expected_binding = {
+              "schema": "qikvrt_seed_dashboard_exact_head_binding_v1",
+              "repository": repository,
+              "source_head": os.environ["GITHUB_SHA"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+          }
+          _, source = validate_aggregate_pair(root, repository)
+          result = read_json(root / "registry/NODEMESH_REVALIDATION.json")
+          receipt = read_json(root / f"evidence/seed_node_revalidation/runs/{run_id}.json")
+          expected_result = {
+              "schema": "qikvrt_nodemesh_revalidation_v2",
+              "status": "CONTINUE",
+              "seed_repository": repository,
+              "run_id": run_id,
+              "source_status_run_id": run_id,
+              "source_index_run_id": run_id,
+          }
+          if (any(binding.get(key) != value for key, value in expected_binding.items())
+                  or any(result.get(key) != value for key, value in expected_result.items())
+                  or result != receipt or source["run_id"] != run_id
+                  or any(result.get(key) != source[key] for key in (
+                      "node_count", "active_count", "stale_count", "suspended_count",
+                      "revoked_count", "unknown_count", "error_count"))):
+              raise SystemExit("BLOCK: revalidation is not a current-run CONTINUE receipt")
+          write_json(root / ".qikvrt/seed-workflow/dashboard-nonterminal-boundary.json", {
+              **binding,
+              "schema": "qikvrt_seed_dashboard_nonterminal_boundary_v1",
+              "status": "HOLD",
+              "reason": "NODE_REVALIDATION_CONTINUE",
+              "resume_input": "FRESH_NODE_REVALIDATION",
+              "qikvrt_run_id": run_id,
+              "source_revalidation_run_id": result["run_id"],
+          })
+          PY
+            echo "HOLD QIKVRT_SEED_DASHBOARD NODE_REVALIDATION_CONTINUE" | tee -a .qikvrt/seed-workflow/dashboard.log
+            exit 0
+          fi
+          if [ "${revalidation_status[0]}" != 0 ]; then
+            exit "${revalidation_status[0]}"
+          fi
+          sh tools/qikvrt_seed_dashboard_publish.sh 2>&1 | tee -a .qikvrt/seed-workflow/dashboard.log
+          # Advertise only exports freshly produced after PASS revalidation.
           {
-            sh tools/qikvrt_seed_mesh_maintenance.sh
-            sh tools/qikvrt_seed_node_revalidation.sh
-            sh tools/qikvrt_seed_dashboard_publish.sh
-          } 2>&1 | tee .qikvrt/seed-workflow/dashboard.log
+            echo 'export_paths<<QIKVRT_DASHBOARD_EXPORTS'
+            echo 'docs/qikvrt_mesh_dashboard.html'
+            echo 'docs/QIKVRT_MESH_DASHBOARD.md'
+            echo 'evidence/seed_dashboard/LATEST.json'
+            echo "evidence/seed_dashboard/runs/${QIKVRT_RUN_ID}.json"
+            echo 'QIKVRT_DASHBOARD_EXPORTS'
+          } >> "$GITHUB_OUTPUT"
       - name: Preserve local dashboard evidence without mutating the repository
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: qikvrt-seed-dashboard-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 30
           path: |
             .qikvrt/seed-workflow/dashboard.log
             .qikvrt/seed-workflow/dashboard-exact-head-binding.json
-            docs/qikvrt_mesh_dashboard.html
-            docs/QIKVRT_MESH_DASHBOARD.md
+            .qikvrt/seed-workflow/dashboard-nonterminal-boundary.json
+            ${{ steps.dashboard.outputs.export_paths }}
             registry/NODEMESH_INDEX.json
             registry/NODEMESH_STATUS.json
             registry/NODEMESH_REVALIDATION.json
@@ -94,5 +159,3 @@ jobs:
             evidence/seed_mesh_maintenance/runs/${{ env.QIKVRT_RUN_ID }}.json
             evidence/seed_node_revalidation/LATEST.json
             evidence/seed_node_revalidation/runs/${{ env.QIKVRT_RUN_ID }}.json
-            evidence/seed_dashboard/LATEST.json
-            evidence/seed_dashboard/runs/${{ env.QIKVRT_RUN_ID }}.json

@@ -7,7 +7,11 @@ import datetime as dt
 import hashlib
 import json
 import os
+import shlex
+import subprocess
+import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -342,6 +346,138 @@ class SeedWorkflowTests(unittest.TestCase):
             "qikvrt_seed_mesh_audit_export_v2",
             read_json(self.root / "audit/QIKVRT_MESH_AUDIT_SUMMARY.json")["schema"],
         )
+
+    def dashboard_workflow(self, *, stale: bool, revalidation_script: str | None = None,
+                           maintenance_exit: int = 0) -> subprocess.CompletedProcess[str]:
+        """Execute the actual Actions Bash block against offline Seed fixtures."""
+        repository = Path(__file__).resolve().parents[1]
+        self.accept()
+        run_maintenance(
+            self.root, "dashboard-test", FakeFetcher(remote_documents()),
+            now=NOW + dt.timedelta(days=2) if stale else NOW,
+        )
+        scripts = self.root / "tools"
+        scripts.mkdir(exist_ok=True)
+        (scripts / "qikvrt_seed_mesh_maintenance.sh").write_text(
+            f"exit {maintenance_exit}\n", encoding="utf-8",
+        )
+        cli = f"{shlex.quote(sys.executable)} -B {shlex.quote(str(repository / 'tools/qikvrt_seed_common.py'))}"
+        (scripts / "qikvrt_seed_node_revalidation.sh").write_text(
+            revalidation_script or f"exec {cli} revalidate --root .\n", encoding="utf-8",
+        )
+        (scripts / "qikvrt_seed_dashboard_publish.sh").write_text(
+            f"exec {cli} dashboard --root .\n", encoding="utf-8",
+        )
+        # A checkout contains old exports; HOLD must not advertise those bytes
+        # as the current run's successfully built dashboard.
+        old_paths = [
+            "docs/qikvrt_mesh_dashboard.html", "docs/QIKVRT_MESH_DASHBOARD.md",
+            "evidence/seed_dashboard/LATEST.json",
+        ]
+        for path in old_paths:
+            destination = self.root / path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text("previous dashboard\n", encoding="utf-8")
+        evidence = self.root / ".qikvrt/seed-workflow"
+        evidence.mkdir(parents=True, exist_ok=True)
+        binding = {
+            "schema": "qikvrt_seed_dashboard_exact_head_binding_v1",
+            "repository": SEED, "source_head": "a" * 40, "source_tree": "b" * 40,
+            "event": "schedule", "run_id": "34880403356", "run_attempt": "2",
+        }
+        (evidence / "dashboard-exact-head-binding.json").write_bytes(canonical_json_bytes(binding))
+        output_path = self.root / "github-output"
+        output_path.write_text("", encoding="utf-8")
+        workflow = (repository / ".github/workflows/qikvrt_seed_dashboard_publish.yml").read_text(encoding="utf-8")
+        step = workflow.split("      - name: Refresh, revalidate, and build dashboard\n", 1)[1].split("      - name:", 1)[0]
+        script = textwrap.dedent(step.split("        run: |\n", 1)[1])
+        return subprocess.run(
+            ["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", script],
+            cwd=self.root, capture_output=True, text=True, timeout=30,
+            env={**os.environ, "PYTHONPATH": str(repository), "QIKVRT_RUN_ID": "dashboard-test",
+                 "GITHUB_REPOSITORY": SEED, "GITHUB_SHA": "a" * 40,
+                 "GITHUB_RUN_ID": "34880403356", "GITHUB_RUN_ATTEMPT": "2",
+                 "GITHUB_OUTPUT": str(output_path)},
+        )
+
+    def test_dashboard_workflow_holds_stale_nodes_without_exporting_previous_dashboard(self) -> None:
+        result = self.dashboard_workflow(stale=True)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn("QIKVRT_SEED_REVALIDATE CONTINUE", result.stdout)
+        boundary = read_json(self.root / ".qikvrt/seed-workflow/dashboard-nonterminal-boundary.json")
+        self.assertEqual("HOLD", boundary["status"])
+        self.assertEqual("FRESH_NODE_REVALIDATION", boundary["resume_input"])
+        self.assertEqual("a" * 40, boundary["source_head"])
+        self.assertEqual("b" * 40, boundary["source_tree"])
+        self.assertEqual("dashboard-test", boundary["qikvrt_run_id"])
+        self.assertEqual("", (self.root / "github-output").read_text())
+        self.assertEqual("previous dashboard\n", (self.root / "docs/qikvrt_mesh_dashboard.html").read_text())
+        self.assertFalse((self.root / "evidence/seed_dashboard/runs/dashboard-test.json").exists())
+        for export in (run_dashboard, run_audit_export):
+            with self.assertRaisesRegex(SeedError, "not PASS"):
+                export(self.root, "must-not-export", now=NOW)
+
+    def test_dashboard_workflow_exports_only_after_pass(self) -> None:
+        result = self.dashboard_workflow(stale=False)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn("QIKVRT_SEED_DASHBOARD PASS", result.stdout)
+        self.assertFalse((self.root / ".qikvrt/seed-workflow/dashboard-nonterminal-boundary.json").exists())
+        outputs = (self.root / "github-output").read_text()
+        self.assertIn("docs/qikvrt_mesh_dashboard.html", outputs)
+        self.assertIn("evidence/seed_dashboard/runs/dashboard-test.json", outputs)
+        receipt = read_json(self.root / "evidence/seed_dashboard/runs/dashboard-test.json")
+        self.assertEqual("PASS", receipt["status"])
+
+    def test_dashboard_workflow_rejects_exit_ten_without_current_continue_receipt(self) -> None:
+        # An exit code cannot substitute for a persisted semantic receipt.
+        result = self.dashboard_workflow(stale=True, revalidation_script="exit 10\n")
+        self.assertNotEqual(0, result.returncode)
+        self.assertFalse((self.root / ".qikvrt/seed-workflow/dashboard-nonterminal-boundary.json").exists())
+        self.assertEqual("", (self.root / "github-output").read_text())
+
+    def test_dashboard_workflow_rejects_block_unknown_and_misbound_receipts(self) -> None:
+        for overrides in [
+            {"status": "BLOCK"}, {"status": "UNKNOWN"}, {"run_id": "previous-run"},
+            {"source_status_run_id": "previous-run"}, {"source_index_run_id": "previous-run"},
+            {"seed_repository": "other/seed"}, {"stale_count": 999},
+        ]:
+            with self.subTest(overrides=overrides):
+                script = f"exec {shlex.quote(sys.executable)} -B - <<'PY'\n" + textwrap.dedent(f"""\
+                    import os
+                    from pathlib import Path
+                    from tools import qikvrt_seed_common as seed
+                    seed.main(["revalidate", "--root", "."])
+                    for path in [Path("registry/NODEMESH_REVALIDATION.json"),
+                                 Path("evidence/seed_node_revalidation/runs") / (os.environ["QIKVRT_RUN_ID"] + ".json")]:
+                        result = seed.read_json(path)
+                        result.update({overrides!r})
+                        seed.write_json(path, result)
+                    raise SystemExit(10)
+                    """) + "PY\n"
+                result = self.dashboard_workflow(stale=True, revalidation_script=script)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("not a current-run CONTINUE receipt", result.stdout + result.stderr)
+                self.assertFalse((self.root / ".qikvrt/seed-workflow/dashboard-nonterminal-boundary.json").exists())
+                self.assertEqual("", (self.root / "github-output").read_text())
+
+    def test_dashboard_workflow_preserves_maintenance_and_revalidation_errors(self) -> None:
+        for maintenance_exit, revalidation in [(2, None), (0, "exit 2\n"), (0, "exit 37\n")]:
+            with self.subTest(maintenance_exit=maintenance_exit, revalidation=revalidation):
+                result = self.dashboard_workflow(stale=True, revalidation_script=revalidation,
+                                                 maintenance_exit=maintenance_exit)
+                self.assertNotEqual(0, result.returncode)
+                self.assertFalse((self.root / ".qikvrt/seed-workflow/dashboard-nonterminal-boundary.json").exists())
+                self.assertEqual("", (self.root / "github-output").read_text())
+
+    def test_dashboard_artifact_selects_current_exports_from_successful_step_output(self) -> None:
+        repository = Path(__file__).resolve().parents[1]
+        workflow = (repository / ".github/workflows/qikvrt_seed_dashboard_publish.yml").read_text(encoding="utf-8")
+        upload = workflow.split("      - name: Preserve local dashboard evidence", 1)[1]
+        self.assertIn("${{ steps.dashboard.outputs.export_paths }}", upload)
+        self.assertIn("dashboard-nonterminal-boundary.json", upload)
+        self.assertIn("include-hidden-files: true", upload)
+        self.assertNotIn("docs/qikvrt_mesh_dashboard.html", upload)
+        self.assertNotIn("evidence/seed_dashboard/LATEST.json", upload)
 
     def test_dashboard_build_binds_every_main_push_to_exact_head_artifact(self) -> None:
         repository = Path(__file__).resolve().parents[1]
