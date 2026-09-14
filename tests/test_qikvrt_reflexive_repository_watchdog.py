@@ -15,6 +15,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
 NODE_POLICY = ROOT / "registry/NODE_DISCOVERY_POLICY.json"
 WORKFLOW = ROOT / ".github/workflows/qikvrt_reflexive_repository_watchdog.yml"
+LIVE_STATUS_WORKFLOW = ROOT / ".github/workflows/qikvrt_live_status_watch.yml"
 
 SPEC = importlib.util.spec_from_file_location(
     "qikvrt_reflexive_repository_watchdog",
@@ -38,13 +39,14 @@ def run(
     created_at: str,
     updated_at: str,
     conclusion: str | None = None,
+    event: str = "workflow_dispatch",
 ) -> dict[str, object]:
     return {
         "id": run_id,
         "name": name,
         "status": status,
         "conclusion": conclusion,
-        "event": "workflow_dispatch",
+        "event": event,
         "head_sha": HEAD,
         "created_at": created_at,
         "updated_at": updated_at,
@@ -167,6 +169,65 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
         self.assertEqual(value["first_blocker"], "MORE_THAN_ONE_ACTIVE_REPOSITORY_WRITER")
         self.assertFalse(value["resource_graph"]["cycle_detected"])
         self.assertTrue(value["resource_graph"]["pre_cycle_conflict_detected"])
+
+    def test_truncated_exact_head_run_page_is_a_fail_closed_hold(self) -> None:
+        value = MODULE.analyze(
+            {
+                "total_count": 2,
+                "workflow_runs": [
+                    run(
+                        91,
+                        "QIKVRT CI",
+                        "completed",
+                        "2026-08-10T17:58:00Z",
+                        "2026-08-10T17:59:00Z",
+                        "success",
+                    )
+                ],
+            },
+            jobs(91),
+            expected_head=HEAD,
+            expected_tree=TREE,
+            repository="example/qik-vrt",
+            now=datetime(2026, 8, 10, 18, 0, tzinfo=timezone.utc),
+            root=ROOT,
+            authority_head=HEAD,
+        )
+        self.assertEqual(value["state"], "OBSERVATION_INCOMPLETE")
+        self.assertEqual(value["disposition"], "HOLD")
+        self.assertEqual(value["first_blocker"], "EXACT_HEAD_WORKFLOW_OBSERVATION_INCOMPLETE")
+        self.assertFalse(value["observations"]["coverage"]["complete"])
+        self.assertEqual(value["observations"]["coverage"]["total_run_count"], 2)
+
+    def test_active_workflow_run_feedback_pair_is_not_quiescent(self) -> None:
+        watchdog = "QIKVRT reflexive repository watchdog"
+        live_status = "QIKVRT live status watch"
+        runs = [
+            run(
+                101,
+                watchdog,
+                "queued",
+                "2026-08-10T17:58:00Z",
+                "2026-08-10T17:59:00Z",
+                event="workflow_run",
+            ),
+            run(
+                102,
+                live_status,
+                "queued",
+                "2026-08-10T17:58:01Z",
+                "2026-08-10T17:59:00Z",
+                event="workflow_run",
+            ),
+        ]
+        value = self.analyze(runs, {"jobs_by_run": {}})
+        self.assertEqual(value["state"], "PREEMPTIVE_HOLD_OBSERVER_FEEDBACK_CYCLE")
+        self.assertEqual(value["first_blocker"], "WORKFLOW_RUN_OBSERVER_FEEDBACK_CYCLE_DETECTED")
+        self.assertTrue(value["resource_graph"]["cycle_detected"])
+        self.assertEqual(
+            value["resource_graph"]["cycle_evidence"],
+            "EXACT_HEAD_WORKFLOW_RUN_FEEDBACK_PAIR",
+        )
 
     def test_stale_writer_lease_is_blocked_before_a_replacement_writer(self) -> None:
         value = self.analyze(
@@ -427,9 +488,15 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
 
     def test_workflow_is_five_minute_reflexive_and_read_only(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
+        live_status_workflow = LIVE_STATUS_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn('cron: "*/5 * * * *"', workflow)
         self.assertIn("workflow_run:", workflow)
-        self.assertIn("types: [requested, in_progress, completed]", workflow)
+        self.assertIn("types: [completed]", workflow)
+        self.assertNotIn('"QIKVRT live status watch"', workflow)
+        self.assertIn("MAX_RUNS_PER_OBSERVATION: \"20\"", workflow)
+        self.assertIn("EXACT_HEAD_WORKFLOW_OBSERVATION_INCOMPLETE", workflow)
+        self.assertIn("observation-failure.json", workflow)
+        self.assertIn("types: [completed]", live_status_workflow)
         self.assertIn("cancel-in-progress: true", workflow)
         self.assertIn("actions: read", workflow)
         self.assertIn("contents: read", workflow)

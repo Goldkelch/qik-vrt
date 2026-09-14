@@ -28,6 +28,9 @@ WAITING_STATUSES = frozenset({"queued", "waiting", "requested", "pending"})
 UNTRUSTED_CONCLUSIONS = frozenset({"action_required", "startup_failure"})
 EXECUTED_FAILURE_CONCLUSIONS = frozenset({"failure", "timed_out"})
 GATEWATCH_SCOPES = frozenset({"MAIN", "PULL_REQUEST_MAIN", "PULL_REQUEST_STACKED"})
+FEEDBACK_OBSERVER_NAMES = frozenset(
+    {"QIKVRT reflexive repository watchdog", "QIKVRT live status watch"}
+)
 GATEWATCH_STATES = frozenset(
     {
         "SUCCESS",
@@ -195,6 +198,37 @@ def _runs(value: Mapping[str, Any] | Sequence[Any]) -> list[Mapping[str, Any]]:
     if not isinstance(raw, list):
         raise ReflexiveWatchdogBlock("workflow run observation must contain workflow_runs")
     return [item for item in raw if isinstance(item, Mapping)]
+
+
+def _observation_coverage(value: Mapping[str, Any] | Sequence[Any]) -> dict[str, Any]:
+    """Describe whether the exact-head run observation is complete.
+
+    GitHub's list response contains ``total_count``.  The workflow deliberately
+    bounds the returned page to protect the installation rate budget; a page
+    that does not cover that count cannot be used to infer quiescence or a gate
+    result.  Sequence inputs and legacy fixtures lack pagination metadata and
+    are treated as complete only because their caller supplies the whole list.
+    """
+
+    runs = _runs(value)
+    if not isinstance(value, Mapping) or "total_count" not in value:
+        return {
+            "complete": True,
+            "source": "CALLER_COMPLETE_SEQUENCE",
+            "returned_run_count": len(runs),
+            "total_run_count": len(runs),
+        }
+    total = value.get("total_count")
+    if not isinstance(total, int) or isinstance(total, bool) or total < 0:
+        raise ReflexiveWatchdogBlock("workflow run observation total_count is invalid")
+    if total < len(runs):
+        raise ReflexiveWatchdogBlock("workflow run observation total_count is smaller than its run page")
+    return {
+        "complete": total == len(runs),
+        "source": "GITHUB_LIST_TOTAL_COUNT",
+        "returned_run_count": len(runs),
+        "total_run_count": total,
+    }
 
 
 def _jobs_by_run(value: Mapping[str, Any] | None) -> dict[str, list[Mapping[str, Any]]]:
@@ -606,10 +640,15 @@ def _resource_graph(
     active_writers: Sequence[Mapping[str, Any]],
     waiting_productive: Sequence[Mapping[str, Any]],
     active_productive: Sequence[Mapping[str, Any]],
+    active_observers: Sequence[Mapping[str, Any]],
+    waiting_observers: Sequence[Mapping[str, Any]],
+    observer_feedback_cycle_detected: bool,
 ) -> dict[str, Any]:
     writer_ids = [_run_id(run) for run in active_writers]
     waiting_ids = [_run_id(run) for run in waiting_productive]
     running_ids = [_run_id(run) for run in active_productive if run.get("status") == "in_progress"]
+    observer_holders = [_run_id(run) for run in active_observers if run.get("status") == "in_progress"]
+    observer_waiters = [_run_id(run) for run in waiting_observers]
     return {
         "schema": "qikvrt_repository_resource_graph_v1",
         "resources": [
@@ -625,8 +664,19 @@ def _resource_graph(
                 "observed_holders": running_ids,
                 "observed_waiters": waiting_ids,
             },
+            {
+                "resource": "OBSERVER_ADMISSION",
+                "capacity": 1,
+                "observed_holders": observer_holders,
+                "observed_waiters": observer_waiters,
+            },
         ],
-        "cycle_detected": False,
+        "cycle_detected": observer_feedback_cycle_detected,
+        "cycle_evidence": (
+            "EXACT_HEAD_WORKFLOW_RUN_FEEDBACK_PAIR"
+            if observer_feedback_cycle_detected
+            else "NONE"
+        ),
         "pre_cycle_conflict_detected": len(writer_ids) > 1,
     }
 
@@ -658,6 +708,7 @@ def analyze(
     if any(not isinstance(item, str) or not item for item in observer_names):
         raise ReflexiveWatchdogBlock("observer workflow names are invalid")
 
+    coverage = _observation_coverage(runs_value)
     runs = [run for run in _runs(runs_value) if run.get("head_sha") == expected_head]
     jobs_by_run = _jobs_by_run(jobs_value)
     normalized = [
@@ -670,6 +721,19 @@ def analyze(
     active_writers = [
         run for run in runs if run.get("name") in writer_names and run.get("status") in ACTIVE_STATUSES
     ]
+    active_observers = [
+        run for run in runs if run.get("name") in observer_names and run.get("status") in ACTIVE_STATUSES
+    ]
+    waiting_observers = [
+        run for run in active_observers if run.get("status") in WAITING_STATUSES
+    ]
+    observer_feedback_cycle_detected = FEEDBACK_OBSERVER_NAMES.issubset(
+        {
+            str(run.get("name"))
+            for run in active_observers
+            if run.get("event") == "workflow_run"
+        }
+    )
 
     writer_lease = _positive_int(prevention["writer_lease_seconds"], "writer lease")
     queue_lease = _positive_int(prevention["queue_lease_seconds"], "queue lease")
@@ -757,7 +821,25 @@ def analyze(
     productive_edge = "CONTINUE_REFLEXIVE_OBSERVATION"
     safe_continuation = "Preserve one writer, exact-head evidence, and the five-minute observer cadence."
 
-    if len(active_writers) > max_writers:
+    if not coverage["complete"]:
+        state = "OBSERVATION_INCOMPLETE"
+        blocker = "EXACT_HEAD_WORKFLOW_OBSERVATION_INCOMPLETE"
+        disposition = "HOLD"
+        productive_edge = "REOBSERVE_WITH_COMPLETE_EXACT_HEAD_RUN_PAGINATION"
+        safe_continuation = "Do not classify a bounded run page as complete exact-head evidence."
+    elif observer_feedback_cycle_detected:
+        state = "PREEMPTIVE_HOLD_OBSERVER_FEEDBACK_CYCLE"
+        blocker = "WORKFLOW_RUN_OBSERVER_FEEDBACK_CYCLE_DETECTED"
+        disposition = "HOLD"
+        productive_edge = "REMOVE_RECIPROCAL_WORKFLOW_RUN_EDGE_AND_REOBSERVE"
+        safe_continuation = "Do not admit another observer while the exact-head workflow-run feedback pair is active."
+    elif len(waiting_observers) > max_queued:
+        state = "PREEMPTIVE_HOLD_OBSERVER_QUEUE_PRESSURE"
+        blocker = "OBSERVER_QUEUE_EXCEEDED_PREVENTION_THRESHOLD"
+        disposition = "HOLD"
+        productive_edge = "COALESCE_OBSERVERS_WITHOUT_ADMITTING_ANOTHER_WAVE"
+        safe_continuation = "Do not report quiescence while observer admissions remain queued."
+    elif len(active_writers) > max_writers:
         state = "PREEMPTIVE_HOLD_COMPETING_WRITERS"
         blocker = "MORE_THAN_ONE_ACTIVE_REPOSITORY_WRITER"
         disposition = "HOLD"
@@ -826,7 +908,14 @@ def analyze(
         productive_edge = "KEEP_REFLEXIVE_OBSERVER_FRESH"
         safe_continuation = "Continue periodic observation; quiescence is not a PIPELINE_EMPTY claim."
 
-    resource_graph = _resource_graph(active_writers, waiting_productive, active_productive)
+    resource_graph = _resource_graph(
+        active_writers,
+        waiting_productive,
+        active_productive,
+        active_observers,
+        waiting_observers,
+        observer_feedback_cycle_detected,
+    )
     observed_at = _iso(now)
     receipt = {
         "schema": "qikvrt_reflexive_repository_watchdog_receipt_v1",
@@ -854,11 +943,14 @@ def analyze(
             "progress_lease_seconds": progress_lease,
         },
         "observations": {
+            "coverage": coverage,
             "exact_head_run_count": len(runs),
             "active_productive_runs": [_run_id(run) for run in active_productive],
             "active_writers": [_run_id(run) for run in active_writers],
             "stale_writers": stale_writers,
             "waiting_productive_runs": queue_ages,
+            "active_observer_runs": [_run_id(run) for run in active_observers],
+            "waiting_observer_runs": [_run_id(run) for run in waiting_observers],
             "untrusted_terminal_runs": untrusted,
             "runs": normalized,
         },

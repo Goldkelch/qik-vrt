@@ -63,9 +63,30 @@ the current Authority head only for comparison, materializes Action artifacts
 only, and never writes a repository liveness record, dispatches a productive
 workflow, or treats its own terminality as gate success.
 
+The exact-head workflow-run read is deliberately budgeted to one page of 20
+runs.  The response's `total_count` is binding: if it exceeds the returned
+page, the controller emits `OBSERVATION_INCOMPLETE` with a `HOLD` rather than
+classifying the subset as quiescent, terminal, or exhaustive.  In that case it
+does not begin the per-run job reads.  If a required API read itself fails, the
+workflow writes an artifact-only `observation-failure.json` before failing;
+this pre-receipt records `EXACT_HEAD_OBSERVATION_UNAVAILABLE` without
+pretending that a transport acknowledgement is business evidence.
+
 ## Reflexivity
 
-The watchdog observes the workflows that create and verify repository state, while its own executions are classified as observers rather than productive writers. Observer executions use a coalescing concurrency group so newer observations replace obsolete observations without consuming the repository write lease. A scheduled observation prevents unchanged heads from becoming permanently invisible merely because no new event occurs.
+The watchdog observes terminal source workflow results and its own executions
+are classified as observers rather than productive writers. Observer executions
+use a coalescing concurrency group so newer observations replace obsolete
+observations without consuming the repository write lease. The Live Status
+workflow may project a completed watchdog result, but the watchdog does not
+observe Live Status; this removes the reciprocal `workflow_run` admission
+edge. A scheduled observation prevents unchanged heads from becoming
+permanently invisible merely because no new event occurs.
+
+If both members of the former feedback pair are active on an exact head as
+`workflow_run` events, the controller records an explicit observer-feedback
+cycle `HOLD`; it does not hide the pair merely because observers are not
+productive writers.
 
 ## Database comparison boundary
 

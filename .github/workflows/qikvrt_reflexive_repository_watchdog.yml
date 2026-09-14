@@ -12,14 +12,15 @@ on:
       - "QIK-VRT autonomous draft-PR continuation"
       - "QIK-VRT expected-head promotion executor"
       - "QIKVRT workflow executor"
-      - "QIKVRT live status watch"
       - "QIKVRT CI"
       - "QIKVRT repository evidence materialization"
       - "QIKVRT Collective Proposal Review"
       - "QIK-VRT global claim completion"
       - "QIKVRT Batch-003 remaining subject disposition"
       - "QIKVRT adaptive runtime"
-    types: [requested, in_progress, completed]
+    # The five-minute schedule covers active progress.  Terminal source events
+    # are sufficient here and do not create a second observer wave per run.
+    types: [completed]
   push:
     branches: [main]
     paths:
@@ -86,21 +87,59 @@ jobs:
           EVENT_PR: ${{ github.event.pull_request.number || '' }}
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
           CURRENT_RUN_ID: ${{ github.run_id }}
+          MAX_RUNS_PER_OBSERVATION: "20"
         shell: bash
         run: |
           set -euo pipefail
           root=.qikvrt/reflexive-repository-watchdog
           mkdir -p "$root/jobs"
+          fail_closed() {
+            local stage="$1"
+            local detail_path="${2:-}"
+            local detail=""
+            if test -n "$detail_path" && test -f "$detail_path"; then
+              detail="$(tr '\n' ' ' < "$detail_path" | cut -c1-500)"
+            fi
+            jq -n \
+              --arg repository "$REPOSITORY" \
+              --arg expected_head "$EXPECTED_HEAD" \
+              --arg observed_head "$(cat "$root/observed-head.txt" 2>/dev/null || true)" \
+              --arg observed_tree "$(cat "$root/observed-tree.txt" 2>/dev/null || true)" \
+              --arg stage "$stage" \
+              --arg detail "$detail" \
+              '{
+                schema: "qikvrt_reflexive_repository_watchdog_observation_failure_v1",
+                repository: $repository,
+                expected_head: $expected_head,
+                observed_local_head: $observed_head,
+                observed_tree: $observed_tree,
+                state: "OBSERVATION_UNAVAILABLE",
+                disposition: "HOLD",
+                first_blocker: "EXACT_HEAD_OBSERVATION_UNAVAILABLE",
+                stage: $stage,
+                detail: $detail,
+                repository_mutation: false,
+                external_effect: false
+              }' > "$root/observation-failure.json"
+            exit 1
+          }
           local_head="$(git rev-parse --verify HEAD^{commit})"
-          test "$local_head" = "$EXPECTED_HEAD"
-          if test "$EVENT_NAME" = pull_request; then
-            live_head="$(gh api "repos/$REPOSITORY/pulls/$EVENT_PR" --jq '.head.sha')"
-          else
-            live_head="$(gh api "repos/$REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
-          fi
-          test "$live_head" = "$EXPECTED_HEAD"
           git rev-parse --verify HEAD^{tree} > "$root/observed-tree.txt"
           printf '%s\n' "$EXPECTED_HEAD" > "$root/observed-head.txt"
+          test "$local_head" = "$EXPECTED_HEAD" || fail_closed "CHECKOUT_HEAD_BINDING_DRIFT"
+          if ! [[ "$MAX_RUNS_PER_OBSERVATION" =~ ^[1-9][0-9]*$ ]]; then
+            fail_closed "INVALID_OBSERVATION_BUDGET"
+          fi
+          if test "$EVENT_NAME" = pull_request; then
+            if ! live_head="$(gh api "repos/$REPOSITORY/pulls/$EVENT_PR" --jq '.head.sha' 2>"$root/live-head-error.txt")"; then
+              fail_closed "READ_LIVE_PULL_REQUEST_HEAD" "$root/live-head-error.txt"
+            fi
+          else
+            if ! live_head="$(gh api "repos/$REPOSITORY/git/ref/heads/main" --jq '.object.sha' 2>"$root/live-head-error.txt")"; then
+              fail_closed "READ_LIVE_MAIN_HEAD" "$root/live-head-error.txt"
+            fi
+          fi
+          test "$live_head" = "$EXPECTED_HEAD" || fail_closed "LIVE_HEAD_BINDING_DRIFT"
           if test "$EVENT_NAME" = pull_request; then
             if test "${{ github.event.pull_request.base.ref }}" = main; then
               printf '%s\n' PULL_REQUEST_MAIN > "$root/observation-scope.txt"
@@ -112,14 +151,43 @@ jobs:
           fi
           authority_repository="$(jq -r '.authority.repository' state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json)"
           test "$authority_repository" != null
-          gh api "repos/$authority_repository/git/ref/heads/main" --jq '.object.sha' \
-            > "$root/observed-authority-main-head.txt"
-          gh api "repos/$REPOSITORY/actions/runs?head_sha=$EXPECTED_HEAD&per_page=100" \
-            > "$root/current-runs.json"
+          if test "$authority_repository" = "$REPOSITORY" && test "$EVENT_NAME" != pull_request; then
+            printf '%s\n' "$live_head" > "$root/observed-authority-main-head.txt"
+          elif ! gh api "repos/$authority_repository/git/ref/heads/main" --jq '.object.sha' \
+            > "$root/observed-authority-main-head.txt" 2>"$root/authority-head-error.txt"; then
+            fail_closed "READ_AUTHORITY_MAIN_HEAD" "$root/authority-head-error.txt"
+          fi
+          if ! gh api "repos/$REPOSITORY/actions/runs?head_sha=$EXPECTED_HEAD&per_page=$MAX_RUNS_PER_OBSERVATION" \
+            > "$root/current-runs.json" 2>"$root/current-runs-error.txt"; then
+            fail_closed "LIST_EXACT_HEAD_WORKFLOW_RUNS" "$root/current-runs-error.txt"
+          fi
+          if ! jq -e '.total_count | type == "number" and . >= 0' "$root/current-runs.json" >/dev/null; then
+            fail_closed "INVALID_EXACT_HEAD_RUN_OBSERVATION" "$root/current-runs.json"
+          fi
+          observed_run_count="$(jq '.workflow_runs | length' "$root/current-runs.json")"
+          total_run_count="$(jq '.total_count' "$root/current-runs.json")"
+          if test "$total_run_count" -gt "$observed_run_count"; then
+            jq -n \
+              --argjson observed_run_count "$observed_run_count" \
+              --argjson total_run_count "$total_run_count" \
+              --argjson max_runs_per_observation "$MAX_RUNS_PER_OBSERVATION" \
+              '{
+                schema: "qikvrt_reflexive_repository_watchdog_observation_coverage_v1",
+                complete: false,
+                state: "OBSERVATION_INCOMPLETE",
+                disposition: "HOLD",
+                first_blocker: "EXACT_HEAD_WORKFLOW_OBSERVATION_INCOMPLETE",
+                observed_run_count: $observed_run_count,
+                total_run_count: $total_run_count,
+                max_runs_per_observation: $max_runs_per_observation,
+                repository_mutation: false,
+                external_effect: false
+              }' > "$root/observation-coverage.json"
+            exit 0
+          fi
 
-          # The analyzer considers every returned run. Fetch the matching jobs for
-          # every one of those runs so missing observation data is never confused
-          # with a genuine terminal zero-job execution.
+          # Only a complete bounded run set may proceed to per-run job reads.
+          # A larger set is preserved above as OBSERVATION_INCOMPLETE instead.
           mapfile -t run_ids < <(
             jq -r '.workflow_runs[].id' "$root/current-runs.json"
           )
