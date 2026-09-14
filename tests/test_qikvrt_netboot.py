@@ -149,6 +149,7 @@ class NetbootTests(unittest.TestCase):
             fake = root / "qemu-stub"
             fake.write_text("#!/bin/sh\necho QIKVRT_MEGAST_BOOT_OK source_sha=" + "a" * 40 + "\n")
             fake.chmod(0o700)
+            (root / "qikvrt-netboot-receipt.json").write_text('{"stale_previous_attempt": true}')
             with patch.object(boot.shutil, "which", return_value=str(fake)):
                 with self.assertRaisesRegex(ValueError, "no exact-source runtime evidence"):
                     boot.boot(root, manifest, timeout=2, verify_only=True)
@@ -175,6 +176,29 @@ class NetbootTests(unittest.TestCase):
             self.assertEqual(failure["reason"], "GUEST_RUNTIME_BLOCKED")
             self.assertFalse(failure["effect_ack_done"])
             self.assertFalse((root / "qikvrt-netboot-receipt.json").exists())
+
+    def test_receipt_serial_hash_survives_qemu_shutdown_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in boot.FILES.values(): (root / name).write_bytes(b"image")
+            manifest = boot.make_manifest(root, "a" * 40)
+            fake = root / "qemu-stub"
+            fake.write_text("#!/usr/bin/env python3\nimport signal,sys,time\n"
+                            "def stop(*args):\n print('QEMU shutdown output', flush=True)\n sys.exit(0)\n"
+                            "signal.signal(signal.SIGTERM, stop)\n"
+                            "print('QIKVRT_MEGAST_RUNTIME_OK source_sha=" + "a" * 40 + "', flush=True)\n"
+                            "while True: time.sleep(1)\n")
+            fake.chmod(0o700)
+            def display(directory, screenshot):
+                screenshot.write_bytes(b"P6\n16 1\n255\n" + b"".join(bytes([i, i, i]) for i in range(16)))
+            with patch.object(boot.shutil, "which", return_value=str(fake)), patch.object(boot, "capture_display", side_effect=display):
+                receipt = boot.boot(root, manifest, timeout=5, verify_only=True)
+            persisted = json.loads((root / "qikvrt-netboot-receipt.json").read_text())
+            self.assertEqual(persisted, receipt)
+            self.assertEqual(receipt["serial_sha256"], boot.sha256(root / receipt["serial_evidence_file"]))
+            self.assertNotEqual(receipt["serial_sha256"], boot.sha256(root / "qikvrt-netboot-serial.log"))
+            self.assertIn("QEMU shutdown output", (root / "qikvrt-netboot-serial.log").read_text())
+            self.assertFalse(receipt["effect_ack_done"])
 
 
 if __name__ == "__main__":

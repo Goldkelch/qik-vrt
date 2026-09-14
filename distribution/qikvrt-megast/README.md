@@ -65,7 +65,9 @@ required for public downloads; an explicit private IP supports an isolated test
 network. It reobserves the network-booted guest's Xfce/Firefox window, loopback
 Effect-Ack endpoint, 7,864,387 C90 assertions, restored Smalltalk image and the
 received MC68000 program's actual execution under `qemu-m68k`. The serial log
-and receipt retain source and manifest hashes. This is an emulated CPU-family
+and receipt retain source and manifest hashes. The receipt names the immutable
+`qikvrt-netboot-witness.log` snapshot it hashes; the live serial log may keep
+growing during use and shutdown. This is an emulated CPU-family
 witness, not a physical Atari boot or an independent human release approval.
 
 The C90 bootstrap receiver additionally implements the existing fixed file-id 1

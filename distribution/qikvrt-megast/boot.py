@@ -219,7 +219,18 @@ def runtime_result(serial: str, source_sha: str) -> str | None:
     return result
 
 
+def snapshot_serial(logfile: Path) -> Path:
+    # QEMU can append shutdown messages and an interactive session keeps logging.
+    # Bind receipts to immutable observed bytes, not the still-open console log.
+    snapshot = logfile.with_name("qikvrt-netboot-witness.log")
+    snapshot.write_bytes(logfile.read_bytes())
+    return snapshot
+
+
 def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bool = False) -> dict:
+    # These fixed paths describe the current attempt, never an earlier boot.
+    for name in ("qikvrt-netboot-receipt.json", "qikvrt-netboot-failure.json"):
+        (directory / name).unlink(missing_ok=True)
     validate_manifest(manifest)
     if platform.machine() not in ("x86_64", "AMD64"):
         raise ValueError("client CPU must match the amd64 host image")
@@ -256,10 +267,11 @@ def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bo
                         capture_display(directory, directory / "qikvrt-netboot-failure.ppm")
                     except (OSError, ValueError):
                         pass
-                    serial = logfile.read_text(errors="replace")
+                    witness = snapshot_serial(logfile)
+                    serial = witness.read_text(errors="replace")
                     (directory / "qikvrt-netboot-failure.json").write_text(json.dumps({
                         "source_sha": manifest["source_sha"], "guest_memory_mib": guest_memory_mib(manifest),
-                        "guest_runtime_reobserved": False, "serial_sha256": sha256(logfile),
+                        "guest_runtime_reobserved": False, "serial_evidence_file": witness.name, "serial_sha256": sha256(witness),
                         "effect_ack_done": False, "reason": "GUEST_RUNTIME_BLOCKED" if runtime_result(serial, manifest["source_sha"]) == "failure" else "NO_EXACT_RUNTIME_WITNESS"}, indent=2) + "\n")
                     print(serial[-65536:], flush=True)
                     raise ValueError("no exact-source runtime evidence from network-booted guest; serial_tail:\n" + serial[-16384:])
@@ -271,8 +283,12 @@ def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bo
                 colors = {pixels[3][i:i+3] for i in range(0, len(pixels[3]), 3)}
                 if len(colors) < 16:
                     raise ValueError("graphical display lacks color UI evidence")
+                witness = snapshot_serial(logfile)
+                if runtime_result(witness.read_text(errors="replace"), manifest["source_sha"]) != "success":
+                    raise ValueError("runtime evidence changed before receipt binding")
                 receipt = {"schema": "qikvrt_netboot_receipt_v1", "source_sha": manifest["source_sha"],
-                           "manifest_sha256": sha256(directory / "qikvrt-netboot.json"), "serial_sha256": sha256(logfile),
+                           "manifest_sha256": sha256(directory / "qikvrt-netboot.json"),
+                           "serial_evidence_file": witness.name, "serial_sha256": sha256(witness),
                            "screenshot_sha256": sha256(screenshot), "observed_colors": len(colors),
                            "boot_method": "linux-live-http", "guest_memory_mib": guest_memory_mib(manifest), "cdrom_attached": False, "guest_runtime_reobserved": True,
                            "physical_atari_boot": False, "effect_ack_done": False}
