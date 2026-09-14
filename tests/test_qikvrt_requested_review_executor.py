@@ -802,6 +802,48 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertEqual(probe["conclusion"], "skipped")
         self.assertEqual(probe["jobs"][0]["conclusion"], "skipped")
 
+    def test_live_status_observer_failure_is_metadata_not_candidate_gate(self):
+        snap = self.snapshot()
+        snap["workflow_runs"].append(
+            self.workflow_run(
+                "QIKVRT live status watch",
+                identifier=601,
+                run_number=1,
+                path=".github/workflows/qikvrt_live_status_watch.yml",
+                conclusion="failure",
+            )
+        )
+
+        result = self.evaluate(snap)
+
+        self.assertEqual(result["mesh_disposition"], "APPROVE")
+        self.assertIsNone(result["first_blocker"])
+        self.assertIn("NON_GATE_OBSERVER_CLASSIFIED", self.finding_ids(result))
+        observer = next(
+            run
+            for run in result["latest_workflows"]
+            if run["name"] == "QIKVRT live status watch"
+        )
+        self.assertEqual(observer["conclusion"], "failure")
+
+    def test_live_status_observer_name_on_wrong_path_fails_closed(self):
+        snap = self.snapshot()
+        snap["workflow_runs"].append(
+            self.workflow_run(
+                "QIKVRT live status watch",
+                identifier=602,
+                run_number=1,
+                path=".github/workflows/candidate_name_collision.yml",
+                conclusion="failure",
+            )
+        )
+
+        result = self.evaluate(snap)
+
+        self.assertEqual(result["mesh_disposition"], "WAIT")
+        self.assertEqual(result["first_blocker"], "UNTRUSTED_GATE_BINDING")
+        self.assertIn("non-gate observer identity is untrusted", result["detail"])
+
     def test_job_id_status_and_conclusion_are_fingerprint_bound(self):
         baseline = self.snapshot()
         gate = next(
@@ -1263,8 +1305,6 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             "tree": self.snapshot(tree_sha="2" * 40),
             "base": self.snapshot(base_sha="3" * 40),
             "base-tree": self.snapshot(base_tree_sha="4" * 40),
-            "current-main": self.snapshot(current_main_sha="5" * 40),
-            "current-main-tree": self.snapshot(current_main_tree_sha="6" * 40),
             "base-ref": self.snapshot(base_ref="release"),
             "scope": self.snapshot(
                 changed_files=changed_scope,
@@ -1658,6 +1698,175 @@ class RequestedReviewExecutorTests(unittest.TestCase):
                     )
                 )
 
+    def test_ref_reconciliation_accepts_transient_known_old_then_exact_target(self):
+        old = "1" * 40
+        target = "2" * 40
+        responses = iter(
+            [
+                {"ref": MODULE.LEDGER_REF, "object": {"type": "commit", "sha": old}},
+                {
+                    "ref": MODULE.LEDGER_REF,
+                    "object": {"type": "commit", "sha": target},
+                },
+            ]
+        )
+        sleeper = mock.Mock()
+
+        result = MODULE.reconcile_ref_readback(
+            lambda: next(responses),
+            MODULE.LEDGER_REF,
+            old,
+            target,
+            delays=(0.25, 1.0),
+            sleeper=sleeper,
+        )
+
+        self.assertTrue(result["exact"])
+        self.assertEqual(result["state"], "EXACT")
+        self.assertEqual(result["observed_shas"], [old, target])
+        sleeper.assert_called_once_with(0.25)
+        self.assertFalse(any(result["completion_claims"].values()))
+
+    def test_ref_reconciliation_persistent_known_old_holds_without_widening(self):
+        old = "1" * 40
+        target = "2" * 40
+        fetch = mock.Mock(
+            return_value={
+                "ref": MODULE.LEDGER_REF,
+                "object": {"type": "commit", "sha": old},
+            }
+        )
+        sleeper = mock.Mock()
+
+        result = MODULE.reconcile_ref_readback(
+            fetch,
+            MODULE.LEDGER_REF,
+            old,
+            target,
+            delays=(0.25, 1.0),
+            sleeper=sleeper,
+        )
+
+        self.assertFalse(result["exact"])
+        self.assertEqual(result["state"], "HOLD_STALE_READBACK")
+        self.assertEqual(result["first_blocker"], "GIT_REF_READBACK_STALE")
+        self.assertEqual(result["observed_shas"], [old, old, old])
+        self.assertEqual(fetch.call_count, 3)
+        self.assertEqual(
+            [call.args[0] for call in sleeper.call_args_list],
+            [0.25, 1.0],
+        )
+
+    def test_ref_reconciliation_rejects_unrelated_or_malformed_readback_immediately(self):
+        old = "1" * 40
+        target = "2" * 40
+        unrelated = "3" * 40
+        sleeper = mock.Mock()
+
+        divergent = MODULE.reconcile_ref_readback(
+            lambda: {
+                "ref": MODULE.LEDGER_REF,
+                "object": {"type": "commit", "sha": unrelated},
+            },
+            MODULE.LEDGER_REF,
+            old,
+            target,
+            delays=(0.25, 1.0),
+            sleeper=sleeper,
+        )
+        malformed = MODULE.reconcile_ref_readback(
+            lambda: {
+                "ref": "refs/heads/unrelated",
+                "object": {"type": "commit", "sha": old},
+            },
+            MODULE.LEDGER_REF,
+            old,
+            target,
+            delays=(0.25, 1.0),
+            sleeper=sleeper,
+        )
+
+        self.assertEqual(divergent["state"], "HOLD_DIVERGED_READBACK")
+        self.assertEqual(divergent["observed_shas"], [unrelated])
+        self.assertEqual(malformed["state"], "HOLD_MALFORMED_READBACK")
+        self.assertIn("identity differs", malformed["first_blocker"])
+        sleeper.assert_not_called()
+
+    def test_ref_reconciliation_handles_create_404_and_exact_replay_read_only(self):
+        target = "2" * 40
+        exact = {
+            "ref": MODULE.LEDGER_REF,
+            "object": {"type": "commit", "sha": target},
+        }
+        responses = iter([None, exact])
+        sleeper = mock.Mock()
+
+        created = MODULE.reconcile_ref_readback(
+            lambda: next(responses),
+            MODULE.LEDGER_REF,
+            None,
+            target,
+            delays=(0.25,),
+            sleeper=sleeper,
+        )
+        replay = MODULE.reconcile_ref_readback(
+            lambda: exact,
+            MODULE.LEDGER_REF,
+            "1" * 40,
+            target,
+            delays=(),
+            sleeper=sleeper,
+        )
+
+        self.assertEqual(created["observed_shas"], [None, target])
+        self.assertTrue(created["exact"])
+        self.assertEqual(replay["observed_shas"], [target])
+        self.assertTrue(replay["exact"])
+        self.assertEqual(MODULE.exact_ref_sha(exact, MODULE.LEDGER_REF), target)
+
+    def test_ref_reconciliation_rejects_fast_forward_404_without_retry(self):
+        fetch = mock.Mock(return_value=None)
+        sleeper = mock.Mock()
+
+        result = MODULE.reconcile_ref_readback(
+            fetch,
+            MODULE.LEDGER_REF,
+            "1" * 40,
+            "2" * 40,
+            delays=(0.25, 1.0),
+            sleeper=sleeper,
+        )
+
+        self.assertFalse(result["exact"])
+        self.assertEqual(result["state"], "HOLD_DIVERGED_READBACK")
+        self.assertEqual(result["first_blocker"], "GIT_REF_READBACK_DIVERGED")
+        self.assertEqual(result["observed_shas"], [None])
+        fetch.assert_called_once_with()
+        sleeper.assert_not_called()
+
+    def test_ref_reconciliation_persistent_create_404_holds_at_bound(self):
+        fetch = mock.Mock(return_value=None)
+        sleeper = mock.Mock()
+
+        result = MODULE.reconcile_ref_readback(
+            fetch,
+            MODULE.LEDGER_REF,
+            None,
+            "2" * 40,
+            delays=(0.25, 1.0),
+            sleeper=sleeper,
+        )
+
+        self.assertFalse(result["exact"])
+        self.assertEqual(result["state"], "HOLD_STALE_READBACK")
+        self.assertEqual(result["first_blocker"], "GIT_REF_READBACK_STALE")
+        self.assertEqual(result["observed_shas"], [None, None, None])
+        self.assertEqual(fetch.call_count, 3)
+        self.assertEqual(
+            [call.args[0] for call in sleeper.call_args_list],
+            [0.25, 1.0],
+        )
+
     def test_recursive_queue_intent_and_ack_are_content_addressed_and_immutable(self):
         receipt = self.evaluate(self.snapshot())
         predecessor = "a" * 64
@@ -1817,6 +2026,30 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn("REQUIRED_GATE_PATHS_JSON", text)
         self.assertIn("refs/heads/qikvrt/mesh-review-ledger-v1", text)
         self.assertIn("'force':False", text)
+        self.assertIn("reconcile_ref_readback", core)
+        self.assertIn("reconcile_ref_readback", text)
+        self.assertEqual(text.count("reconcile_after_mutation("), 4)
+        self.assertIn("'ref_reconciliations':[]", text)
+        self.assertIn("'mutation_response_sha':None", text)
+        self.assertIn("_MUTATION_RESPONSE_MALFORMED", text)
+        self.assertIn("_MUTATION_RESPONSE_MISMATCH", text)
+        self.assertEqual(text.count("'POST',f'repos/{repo}/git/refs'"), 1)
+        self.assertEqual(
+            text.count("'PATCH',f'repos/{repo}/git/refs/heads/{short_ref}'"),
+            2,
+        )
+        self.assertEqual(text.count("'tree':tree,'parents':[ledger_head]"), 2)
+        helper_start = text.index("          def reconcile_after_mutation(")
+        helper_end = text.index(
+            "\n          try:\n              if not receipt_path",
+            helper_start,
+        )
+        reconciliation_helper = text[helper_start:helper_end]
+        self.assertNotIn("gh('POST'", reconciliation_helper)
+        self.assertNotIn("gh('PATCH'", reconciliation_helper)
+        self.assertEqual(reconciliation_helper.count("gh('GET'"), 1)
+        self.assertNotIn("updated=gh('GET',ref_path)", text)
+        self.assertNotIn("if gh('GET',ref_path)['object']['sha'] != commit", text)
         self.assertIn("existing_diff=blob_at(diff_path,ledger_head)", text)
         self.assertIn("prepare_diff_transport_ledger_entries", core)
         self.assertIn("prepare_diff_transport_ledger_entries", text)

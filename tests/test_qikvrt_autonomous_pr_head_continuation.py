@@ -115,6 +115,14 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
             self.text,
         )
 
+    def test_exact_installation_rate_limit_uses_the_bounded_observer_backoff(self) -> None:
+        self.assertIn("gh_read()", self.text)
+        self.assertIn("for delay in 0 15 45", self.text)
+        self.assertIn("API rate limit exceeded for installation.", self.text)
+        self.assertIn("QIKVRT_GITHUB_INSTALLATION_RATE_LIMIT_BACKOFF_SECONDS", self.text)
+        self.assertIn('if ! grep -Fq "API rate limit exceeded for installation." "$error"', self.text)
+        self.assertNotIn("until gh api", self.text)
+
     def test_false_noop_regression_runs_in_canonical_suite(self) -> None:
         decision = classify_observations(
             [

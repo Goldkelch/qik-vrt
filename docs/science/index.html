@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QIK-VRT Scientific Terminal</title>
+<style>
+:root{color-scheme:dark}body{font:16px system-ui;margin:0;background:#071018;color:#eaf2ff}header,main{max-width:1200px;margin:auto;padding:24px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}.card{border:1px solid #2d5168;border-radius:12px;padding:16px;background:#0b1721}a{color:#76d7ff}code,pre{background:#061018;padding:4px;border-radius:6px}.ok{color:#78ff9b}.hold{color:#ffd66b}.bad{color:#ff7777}.muted{color:#9fb2c2}.tag{display:inline-block;border:1px solid #35566d;border-radius:999px;padding:2px 8px;margin:2px}ul{padding-left:20px}#events{max-height:360px;overflow:auto;font:13px ui-monospace,monospace;white-space:pre-wrap}</style>
+</head>
+<body><header><h1>QIK-VRT Scientific Terminal</h1><p>Fester Repository-Einstieg für wissenschaftliche Kategorien, Exact-Subject-Beweisstatus, Live-Events und rekursive Terminal-Verknüpfungen.</p><p class="muted">Formal verifiziert innerhalb deklarierter Modelle ≠ empirisch bestätigt ≠ ontologisch bewiesen.</p></header>
+<main>
+<section class="grid">
+<div class="card"><h2>Exact subject / DoD</h2><div id="status">lade …</div></div>
+<div class="card"><h2>Feste relative Endpunkte</h2><ul><li><a href="index.json">Maschinenindex</a></li><li><a href="status.json">Lean/Lake-Status</a></li><li><a href="terminals.json">Terminalgraph + Abkürzungen</a></li><li><a href="live-events.jsonl">Live-Event-Journal</a></li><li><a href="../publications/">Publikationen</a></li><li><a href="../terminal/">Terminal</a></li></ul></div>
+</section>
+<section><h2>Wissenschaftliche Kategorien</h2><div id="cats" class="grid"></div></section>
+<section class="grid"><div class="card"><h2>Rekursive Terminals</h2><div id="mesh">lade …</div></div><div class="card"><h2>Live Events</h2><div id="events">lade …</div></div></section>
+</main>
+<script>
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function j(u){const r=await fetch(u,{cache:'no-store'});if(!r.ok)throw Error(r.status);return r.json()}
+async function text(u){const r=await fetch(u,{cache:'no-store'});if(!r.ok)throw Error(r.status);return r.text()}
+(async()=>{try{
+ const [s,i,t,e]=await Promise.all([j('status.json'),j('index.json'),j('terminals.json'),text('live-events.jsonl')]);
+ const cls=s.dod==='DONE_WITHIN_DECLARED_MODEL_SCOPE'?'ok':'hold';
+ document.querySelector('#status').innerHTML=`<p><b>HEAD:</b> <code>${esc(s.exact_subject)}</code></p><p><b>Lean:</b> ${esc(s.lean?.source_files)} sources · ${esc(s.lean?.toolchain)}</p><p><b>Lake:</b> ${esc(s.proof_execution?.state)}</p><p class="${cls}"><b>DoD:</b> ${esc(s.dod)}</p><p class="muted">${esc(s.boundary)}</p>`;
+ const cats=document.querySelector('#cats');
+ Object.entries(i.categories||{}).sort().forEach(([k,v])=>{const d=document.createElement('div');d.className='card';d.innerHTML=`<h3>${esc(k)}</h3><p>${v.length} claims</p>`+v.slice(0,12).map(c=>`<details><summary>${esc(c.id||'claim')} · ${esc(c.classification||c.status||'')}</summary><p>${esc(c.statement)}</p><p class="muted">${esc(c.scope)}</p><a href="../../${encodeURI(c.source)}">source</a></details>`).join('');cats.appendChild(d)});
+ document.querySelector('#mesh').innerHTML=`<p>${(t.nodes||[]).map(x=>`<span class="tag">${esc(x)}</span>`).join(' ')}</p><p><b>Links:</b> ${(t.edges||[]).length} · <b>derived shortcuts:</b> ${(t.shortcuts||[]).length}</p><p class="muted">${esc(t.derivation)}</p>`;
+ const lines=e.trim().split('\n').filter(Boolean).slice(-80).map(x=>{try{const q=JSON.parse(x);return `${q.observed_at}  ${q.verb}  ${q.causal_state}  ${q.subject?.head_sha||''}  ${q.source?.id||''}`}catch{return x}});document.querySelector('#events').textContent=lines.join('\n');
+}catch(err){document.querySelector('#status').innerHTML='<span class="bad">HOLD_UNVERIFIED: materialisierte Daten noch nicht verfügbar.</span>';document.querySelector('#events').textContent=String(err)}})();
+</script></body></html>

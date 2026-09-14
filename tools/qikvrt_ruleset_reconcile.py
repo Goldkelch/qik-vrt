@@ -130,7 +130,7 @@ def _request(
 ) -> tuple[dict[str, Any], str | None]:
     headers = {
         "Accept": "application/vnd.github+json",
-        "Authorization": f"Bearer {token}",
+        "Authorization": "Bearer " + token,
         "X-GitHub-Api-Version": "2022-11-28",
     }
     if etag:
@@ -208,8 +208,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             "schema": SCHEMA,
             "repository": policy["repository"],
             "ruleset_id": policy["ruleset_id"],
-            "state": "HOLD",
+            "state": "REQUEST_AUTHORITY",
             "first_blocker": str(exc),
+            "next_action": "ROUTE_RULESET_ADMIN_AUTHORITY_THROUGH_REPOSITORY_CARRIER",
+            "continuation_required": True,
             "mutation": "NONE",
             "effect_observed": False,
         }

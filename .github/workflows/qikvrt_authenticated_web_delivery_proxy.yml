@@ -1,0 +1,85 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+name: QIKVRT authenticated web delivery proxy
+
+on:
+  pull_request:
+    paths:
+      - "browser/firefox/qikvrt-terminal/**"
+      - "state/delivery/ACTIVE_DELIVERY_OBLIGATIONS_V1.json"
+      - "state/delivery/requests/ARXIV_PLANCK_TICK_GAP_LAW_V1.json"
+      - "state/delivery/requests/WIKIPEDIA_LEAN_LAKE_PROOF_STATUS_V1.json"
+      - "tests/test_qikvrt_authenticated_web_delivery_proxy.py"
+      - ".github/workflows/qikvrt_authenticated_web_delivery_proxy.yml"
+  push:
+    branches: [main]
+    paths:
+      - "browser/firefox/qikvrt-terminal/**"
+      - "state/delivery/**"
+      - "tests/test_qikvrt_authenticated_web_delivery_proxy.py"
+      - ".github/workflows/qikvrt_authenticated_web_delivery_proxy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-exact-adapter:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact subject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Parse exact delivery bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m json.tool browser/firefox/qikvrt-terminal/manifest.json >/dev/null
+          python3 -m json.tool state/delivery/ACTIVE_DELIVERY_OBLIGATIONS_V1.json >/dev/null
+          python3 -m json.tool state/delivery/requests/ARXIV_PLANCK_TICK_GAP_LAW_V1.json >/dev/null
+          python3 -m json.tool state/delivery/requests/WIKIPEDIA_LEAN_LAKE_PROOF_STATUS_V1.json >/dev/null
+
+      - name: Check authenticated delivery JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check browser/firefox/qikvrt-terminal/authenticated_delivery.js
+          node --check browser/firefox/qikvrt-terminal/background.js
+          node --check browser/firefox/qikvrt-terminal/content.js
+          node --check browser/firefox/qikvrt-terminal/review_effect.js
+
+      - name: Run authenticated delivery contract tests
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONNOUSERSITE: "1"
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v tests.test_qikvrt_authenticated_web_delivery_proxy
+
+      - name: Build deterministic Firefox adapter package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qikvrt-authenticated-web-delivery
+          (
+            cd browser/firefox/qikvrt-terminal
+            zip -X -9 /tmp/qikvrt-authenticated-web-delivery/qikvrt-authenticated-web-delivery.xpi \
+              manifest.json background.js content.js authenticated_delivery.js review_effect.js \
+              terminal.css options.html options.js README.md
+          )
+          sha256sum /tmp/qikvrt-authenticated-web-delivery/qikvrt-authenticated-web-delivery.xpi \
+            > /tmp/qikvrt-authenticated-web-delivery/qikvrt-authenticated-web-delivery.xpi.sha256
+          test -s /tmp/qikvrt-authenticated-web-delivery/qikvrt-authenticated-web-delivery.xpi
+          test -s /tmp/qikvrt-authenticated-web-delivery/qikvrt-authenticated-web-delivery.xpi.sha256
+
+      - name: Preserve exact adapter package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-authenticated-web-delivery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/qikvrt-authenticated-web-delivery
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,64 @@
+{
+  "schema": "qikvrt_explicit_hold_policy_v1",
+  "policy_id": "QIKVRT-EXPLICIT-HOLD-V1",
+  "version": "1.0.0",
+  "status": "ACTIVE_CANDIDATE",
+  "scope": {
+    "applies_to": [
+      "new repository-native decisions",
+      "new or reobserved review receipts",
+      "new issue lifecycle dispositions",
+      "new workflow recovery receipts"
+    ],
+    "historical_predecessor_receipts_are_immutable": true,
+    "predecessor_evidence_transfer": false
+  },
+  "rule": "Every HOLD or HOLD_UNVERIFIED must carry one explicit deterministic reason and one continuation contract.",
+  "required_hold_reason_fields": [
+    "reason_code",
+    "reason",
+    "subject",
+    "evidence_refs",
+    "owner",
+    "retry_condition",
+    "next_action",
+    "d0"
+  ],
+  "forbidden_reason_codes": [
+    "",
+    "NONE",
+    "NULL",
+    "UNKNOWN",
+    "UNSPECIFIED",
+    "GENERIC_HOLD",
+    "WAIT",
+    "RETRY"
+  ],
+  "forbidden_next_actions": [
+    "WAIT",
+    "RETRY",
+    "TRY_AGAIN",
+    "HOLD"
+  ],
+  "d0_mapping": {
+    "0": "NOOP only; not a HOLD",
+    "1": "A presently active or adverse condition blocks the exact subject",
+    "2": "Evidence is missing, stale, untrusted, zero-job, or drifted; reobserve the exact subject",
+    "3": "Technical continuation is supported but exact authority is missing or stale"
+  },
+  "mandatory_reclassification": {
+    "ZERO_EXECUTED_JOB_GATE": 2,
+    "CAUSAL_REVIEW_EVIDENCE_DRIFT": 2,
+    "EXACT_SUBJECT_DRIFT": 2,
+    "MISSING_EXACT_SUBJECT_EVIDENCE": 2,
+    "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED": 2,
+    "INDEPENDENT_CODE_OWNER_AUTHORITY_NOT_OBSERVED": 3,
+    "EXACT_SCOPE_AUTHORITY_NOT_OBSERVED": 3
+  },
+  "completion_claims_on_hold": {
+    "MERGE": false,
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}

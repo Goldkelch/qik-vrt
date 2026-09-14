@@ -1,0 +1,35 @@
+{
+  "schema": "qikvrt_pr_head_mutation_boundary_v1",
+  "version": "1.0.0",
+  "status": "NORMATIVE",
+  "problem": "GitHub may hold pull_request workflow runs at action_required when a synchronize event is caused by github-actions[bot]/GITHUB_TOKEN. A workflow that materializes evidence and pushes that materialization back onto the active PR head can therefore create a self-sustaining approval loop.",
+  "invariant": "PULL_REQUEST_WORKFLOW_MUST_NOT_MUTATE_ITS_OWN_PR_HEAD_WITH_GITHUB_TOKEN",
+  "required_behavior": {
+    "pull_request": [
+      "materialize in workspace",
+      "validate exact subject",
+      "emit check/artifact/readback evidence",
+      "never git commit to active PR head",
+      "never git push to github.head_ref"
+    ],
+    "push_or_explicit_non_pr_writer": [
+      "may persist deterministic materialization only under existing exact-ref drift checks and repository write authority"
+    ]
+  },
+  "forbidden_patterns": [
+    "pull_request + TARGET_REF=github.head_ref + unguarded git commit",
+    "pull_request + TARGET_REF=github.head_ref + unguarded git push origin HEAD:$TARGET_REF"
+  ],
+  "minimum_guard": "if: github.event_name != 'pull_request'",
+  "evidence_boundary": [
+    "PR_READONLY_MATERIALIZATION != REPOSITORY_PERSISTENCE",
+    "WORKFLOW_SUCCESS != REVIEW_APPROVAL",
+    "REPOSITORY_EVIDENCE != EXTERNAL_EFFECT"
+  ],
+  "origin_incident": {
+    "pull_request": 1004,
+    "observed_bot_head": "eabaa467d63a9fc7bc9b8e5f9fd65a5a979aa8d7",
+    "observed_conclusion": "action_required",
+    "jobs_started": false
+  }
+}

@@ -1,16 +1,20 @@
 {
   "manifest_version": 3,
   "name": "QIKVRT AI Terminal",
-  "version": "1.0.1",
-  "description": "Source-bound QIKVRT terminal with EFFECT_ACK gating, explicit audio/video interaction and Firefox proxy adapters.",
-  "permissions": ["storage", "alarms"],
+  "version": "1.1.0",
+  "description": "Source-bound QIKVRT terminal with EFFECT_ACK gating, explicit audio/video interaction and authenticated delivery adapters.",
+  "permissions": ["storage", "alarms", "activeTab", "scripting"],
   "host_permissions": [
     "https://api.github.com/*",
     "https://github.com/Goldkelch/qik-vrt/*",
     "https://goldkelch.github.io/qik-vrt/*",
+    "https://arxiv.org/*",
+    "https://*.wikipedia.org/*",
+    "https://auth.wikimedia.org/*",
     "http://127.0.0.1:8771/*",
     "http://localhost:8771/*"
   ],
+  "optional_host_permissions": ["https://*/*"],
   "background": {
     "scripts": ["background.js"],
     "persistent": false
@@ -28,6 +32,15 @@
     {
       "matches": ["https://github.com/Goldkelch/qik-vrt/pull/*/files*"],
       "js": ["review_effect.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://arxiv.org/*",
+        "https://*.wikipedia.org/*",
+        "https://auth.wikimedia.org/*"
+      ],
+      "js": ["authenticated_delivery.js"],
       "run_at": "document_idle"
     }
   ],

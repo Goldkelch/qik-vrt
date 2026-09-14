@@ -1,0 +1,83 @@
+{
+  "schema": "qikvrt-planck-tick-gap-law/1.0",
+  "title": "QIK-VRT Planck-tick gap law v1",
+  "author": "Ingolf Lohmann",
+  "status": "FALSIFIABLE_PHYSICAL_HYPOTHESIS",
+  "epistemic_boundary": {
+    "formal_model": true,
+    "differentiating_prediction_frozen": true,
+    "empirically_confirmed": false,
+    "independently_reproduced": false,
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  },
+  "physical_postulate": {
+    "id": "PTG-P01",
+    "statement": "For a bound quantum system with ground energy E0, physical phase evolution of an excitation gap DeltaE = E-E0 obeys the symmetric Planck-tick finite-difference law i*hbar*(psi(t+tP)-psi(t-tP))/(2*tP)=Hc*psi(t), where Hc=H-E0*I and tP=sqrt(hbar*G/c^5).",
+    "domain": "self-adjoint Hc with spectrum in [0, EP), EP=hbar/tP",
+    "reason_for_ground_reference": "The law is invariant under H -> H + C*I because E0 shifts by the same C.",
+    "not_claimed": [
+      "that Planck time has already been experimentally observed as a universal clock tick",
+      "that finite-difference quantum mechanics is historically novel",
+      "that the hypothesis is empirically confirmed"
+    ]
+  },
+  "derived_prediction": {
+    "id": "PTG-T01",
+    "dimensionless_gap": "x = DeltaE / EP",
+    "exact_frequency": "omega_Q = asin(x) / tP",
+    "standard_frequency": "omega_0 = DeltaE / hbar = x / tP",
+    "exact_frequency_shift": "delta_omega = (asin(x)-x)/tP",
+    "relative_shift": "omega_Q/omega_0 - 1 = asin(x)/x - 1",
+    "low_energy_expansion": "delta_omega = DeltaE^3/(6*hbar*EP^2) + O(DeltaE^5/EP^4)",
+    "sign": "positive for 0 < DeltaE < EP",
+    "falsifier": "For a coherently phase-tracked two-level system with independently known gap DeltaE, an upper bound on |omega_measured-DeltaE/hbar| that lies below the predicted positive delta_omega falsifies PTG-P01 in that domain."
+  },
+  "constants": {
+    "source": "CODATA 2022 / NIST",
+    "c_m_per_s": 299792458,
+    "hbar_J_s": 1.054571817e-34,
+    "G_m3_kg-1_s-2": 6.67430e-11,
+    "eV_J": 1.602176634e-19,
+    "derived_tP_s": 5.391246446661944e-44,
+    "derived_EP_eV": 1.2208901282098642e28
+  },
+  "frozen_examples": [
+    {
+      "DeltaE_eV": 1.0,
+      "relative_shift": 1.1181384583903479e-57,
+      "delta_omega_rad_per_s": 1.698751363094503e-42,
+      "one_radian_accumulation_time_s": 5.88667665984012e41
+    },
+    {
+      "DeltaE_eV": 1.0e6,
+      "relative_shift": 1.1181384583903479e-45,
+      "delta_omega_rad_per_s": 1.6987513630945025e-24,
+      "one_radian_accumulation_time_s": 5.8866766598401216e23
+    },
+    {
+      "DeltaE_eV": 1.0e9,
+      "relative_shift": 1.1181384583903477e-39,
+      "delta_omega_rad_per_s": 1.6987513630945025e-15,
+      "one_radian_accumulation_time_s": 5.886676659840121e14
+    },
+    {
+      "DeltaE_eV": 1.0e12,
+      "relative_shift": 1.1181384583903478e-33,
+      "delta_omega_rad_per_s": 1.6987513630945026e-6,
+      "one_radian_accumulation_time_s": 588667.6659840122
+    }
+  ],
+  "literature_boundary": {
+    "statement": "Finite-difference/chronon quantum mechanics predates QIK-VRT; the differentiating QIK-VRT v1 commitment here is the universal Planck-time tick, the ground-referenced exact binding, and the frozen parameter-free gap law above.",
+    "references": [
+      "P. Caldirola chronon program",
+      "R. A. H. Farias and E. Recami, Introduction of a Quantum of Time (chronon), arXiv:quant-ph/9706059"
+    ]
+  },
+  "closure_mapping": {
+    "H5-O05": "PARTIALLY_CLOSED_BY_FROZEN_PREDICTION; empirical test and independent reproduction remain open",
+    "next_evidence": "preregister one experimentally realizable coherent-gap platform, bind apparatus/calibration/data map, and compare measured phase residual against PTG-T01"
+  }
+}

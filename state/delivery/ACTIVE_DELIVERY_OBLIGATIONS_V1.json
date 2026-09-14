@@ -1,0 +1,93 @@
+{
+  "schema": "qikvrt_active_delivery_obligations_v1",
+  "version": "1.0",
+  "repository": "Goldkelch/qik-vrt",
+  "policy": "policy/QIKVRT_REQUIREMENT_DELIVERY_DOD_V1.json",
+  "obligations": [
+    {
+      "id": "LEAN_LAKE_PROOF_STATUS_TO_WIKIPEDIA_V1",
+      "source_requirement": "Canonical Lean/Lake proof-status and reproduction entrypoint",
+      "source_pr": 964,
+      "required_main_paths": [
+        "docs/LEAN_LAKE_PROOF_STATUS.md"
+      ],
+      "main_reobservation": {
+        "required": true,
+        "binding": "EXACT_MAIN_HEAD"
+      },
+      "delivery": {
+        "platform": "wikipedia",
+        "mode": "TRANSPARENT_COI_EDIT_REQUEST",
+        "adapter": "QIKVRT_FIREFOX_TERMINAL_PROXY_V1",
+        "request": "state/delivery/requests/WIKIPEDIA_LEAN_LAKE_PROOF_STATUS_V1.json",
+        "effect_ack_required": true,
+        "authoritative_readback": [
+          "wikipedia_revision_or_edit_request_id",
+          "page_or_talk_page_title",
+          "timestamp"
+        ]
+      },
+      "completion": "PENDING"
+    },
+    {
+      "id": "PLANCK_TICK_GAP_LAW_TO_ZENODO_V1",
+      "source_requirement": "Planck-Tick Gap Law scientific publication",
+      "source_pr": 962,
+      "required_main_paths": [
+        "docs/research/2026-09-03-planck-tick-gap-law/QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex",
+        "physics/planck_tick_gap_law_v1.json",
+        "release/planck-tick-gap-law-zenodo-v1/ZENODO_METADATA.json"
+      ],
+      "main_reobservation": {
+        "required": true,
+        "binding": "EXACT_MAIN_HEAD"
+      },
+      "delivery": {
+        "platform": "zenodo",
+        "mode": "REPOSITORY_NATIVE_PUBLISHER_THEN_READBACK",
+        "adapter": "qikvrt_planck_tick_gap_law_zenodo_publish.yml",
+        "request": "state/delivery/requests/ZENODO_PLANCK_TICK_GAP_LAW_V1.json",
+        "effect_ack_required": true,
+        "authoritative_readback": [
+          "record_id",
+          "doi",
+          "published_file_sha256",
+          "published_at"
+        ]
+      },
+      "completion": "PENDING"
+    },
+    {
+      "id": "PLANCK_TICK_GAP_LAW_TO_ARXIV_V1",
+      "source_requirement": "Planck-Tick Gap Law scientific publication",
+      "source_pr": 962,
+      "required_main_paths": [
+        "docs/research/2026-09-03-planck-tick-gap-law/QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex",
+        "release/planck-tick-gap-law-arxiv-v1/ARXIV_SUBMISSION.md",
+        "release/planck-tick-gap-law-arxiv-v1/SUBMISSION_CHECKLIST.md"
+      ],
+      "main_reobservation": {
+        "required": true,
+        "binding": "EXACT_MAIN_HEAD"
+      },
+      "delivery": {
+        "platform": "arxiv",
+        "mode": "AUTHENTICATED_WEB_SUBMISSION_THEN_READBACK",
+        "adapter": "QIKVRT_FIREFOX_TERMINAL_PROXY_V1",
+        "request": "state/delivery/requests/ARXIV_PLANCK_TICK_GAP_LAW_V1.json",
+        "effect_ack_required": true,
+        "authoritative_readback": [
+          "submission_id",
+          "submission_status",
+          "submitted_at"
+        ]
+      },
+      "completion": "PENDING"
+    }
+  ],
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}

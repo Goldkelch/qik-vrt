@@ -1,0 +1,128 @@
+name: QIKVRT universal terminal materialization
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/science/index.json'
+      - 'docs/science/status.json'
+      - 'docs/science/terminals.json'
+      - 'docs/science/live-events.jsonl'
+      - 'state/live/QIKVRT_LIVE_EVENTS.jsonl'
+  workflow_run:
+    workflows:
+      - 'QIKVRT CI'
+      - 'QIKVRT repository evidence materialization'
+      - 'QIKVRT code-owner review observer'
+      - 'QIKVRT zero-bug continuous invariant'
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: qikvrt-universal-terminal-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Resolve exact trusted subject
+        id: subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" = workflow_run ]; then
+            echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+            echo "source=workflow_run:${{ github.event.workflow_run.id }}:${{ github.event.workflow_run.conclusion }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+            echo "source=${GITHUB_EVENT_NAME}:${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Fail closed unless observed SHA is current Trusted Main
+        env:
+          SUBJECT_SHA: ${{ steps.subject.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          main_sha="$(git rev-parse origin/main)"
+          if [ "$SUBJECT_SHA" != "$main_sha" ]; then
+            echo "HOLD_UNVERIFIED stale subject=$SUBJECT_SHA current_main=$main_sha"
+            exit 0
+          fi
+
+      - name: Run Lean/Lake proof build when configured
+        id: lake
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f lean-toolchain ] && { [ -f lakefile.lean ] || [ -f lakefile.toml ]; }; then
+            curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y
+            export PATH="$HOME/.elan/bin:$PATH"
+            lake build
+            echo "state=VERIFIED" >> "$GITHUB_OUTPUT"
+          else
+            echo "state=NOT_CONFIGURED" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Materialize live events, proof index and recursive terminal graph
+        env:
+          QIKVRT_EXACT_SHA: ${{ steps.subject.outputs.sha }}
+          QIKVRT_SOURCE_EVENT: ${{ steps.subject.outputs.source }}
+        shell: bash
+        run: python3 tools/qikvrt_universal_terminal_materialize.py
+
+      - name: Bind Lean/Lake execution receipt to exact subject
+        env:
+          SUBJECT_SHA: ${{ steps.subject.outputs.sha }}
+          LAKE_STATE: ${{ steps.lake.outputs.state }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path('docs/science/status.json'); d=json.loads(p.read_text())
+          d['proof_execution']={
+            'state':os.environ['LAKE_STATE'],
+            'exact_subject':os.environ['SUBJECT_SHA'],
+            'workflow_run_id':os.environ['GITHUB_RUN_ID']
+          }
+          required=[
+            d['exact_subject']==os.environ['SUBJECT_SHA'],
+            os.environ['LAKE_STATE']=='VERIFIED',
+            Path('docs/science/index.json').exists(),
+            Path('docs/science/terminals.json').exists(),
+            Path('docs/science/live-events.jsonl').exists(),
+            Path('state/live/QIKVRT_LIVE_EVENTS.jsonl').exists()
+          ]
+          d['dod']='DONE_WITHIN_DECLARED_MODEL_SCOPE' if all(required) else 'HOLD_UNVERIFIED'
+          p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+'\n')
+          PY
+
+      - name: Commit only productive materialized delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add docs/science/index.json docs/science/status.json docs/science/terminals.json docs/science/live-events.jsonl state/live/QIKVRT_LIVE_EVENTS.jsonl
+          if git diff --cached --quiet; then
+            echo 'NOOP: terminal projection already current'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'ci: materialize universal terminal live proof state'
+          git push origin HEAD:main

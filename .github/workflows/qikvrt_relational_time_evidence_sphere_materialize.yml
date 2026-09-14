@@ -1,0 +1,143 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: Materialize relational-time Zenodo anchor carrier
+
+on:
+  push:
+    branches:
+      - publication/2026-08-31-relational-time-evidence-sphere-zenodo-v1
+    paths:
+      - .github/workflows/qikvrt_relational_time_evidence_sphere_zenodo_publish.yml
+      - .github/workflows/qikvrt_relational_time_evidence_sphere_materialize.yml
+      - release/relational-time-monotonic-evidence-sphere-zenodo-v1/PUBLISH_TRIGGER.json
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-relational-time-anchor-materialize-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.ref == 'refs/heads/publication/2026-08-31-relational-time-evidence-sphere-zenodo-v1' &&
+      github.actor == 'ingolf-lohmann' &&
+      github.triggering_actor == 'ingolf-lohmann'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TARGET_BRANCH: publication/2026-08-31-relational-time-evidence-sphere-zenodo-v1
+      SOURCE_HEAD: ${{ github.sha }}
+      EXPECTED_PARENT: 35f445a818754aaee4204dcb43f3898ad45b2273
+      EXPECTED_PUBLISHER_BLOB: e2071b319c41c32d4228ce9bf0b26427de238078
+      EXPECTED_TRIGGER_BLOB: dbf8c2d8b080d8db82fd4965f25ff93f69ae4a5a
+
+    steps:
+      - name: Check out exact publication carrier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 2
+          persist-credentials: true
+
+      - name: Verify exact single-purpose helper commit and remote head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$SOURCE_HEAD"
+          test "$(git show -s --format=%P HEAD)" = "$EXPECTED_PARENT"
+          changed="$(git diff-tree --no-commit-id --name-only -r HEAD^ HEAD)"
+          test "$changed" = '.github/workflows/qikvrt_relational_time_evidence_sphere_materialize.yml'
+          test "$(git rev-parse "HEAD:.github/workflows/qikvrt_relational_time_evidence_sphere_zenodo_publish.yml")" = "$EXPECTED_PUBLISHER_BLOB"
+          test "$(git rev-parse "HEAD:release/relational-time-monotonic-evidence-sphere-zenodo-v1/PUBLISH_TRIGGER.json")" = "$EXPECTED_TRIGGER_BLOB"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_head" = "$SOURCE_HEAD"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Regenerate and verify exact repository integrity projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          python3 -B - <<'PY'
+          import subprocess
+
+          expected = {
+              'REPOSITORY_FILE_MANIFEST.json',
+              'REPOSITORY_FILE_MANIFEST.json.sha256',
+              'SHA256SUMS.txt',
+          }
+          raw = subprocess.check_output(
+              ['git', 'status', '--porcelain=v1', '-z', '--untracked-files=all']
+          )
+          observed = {
+              item[3:].decode('utf-8')
+              for item in raw.split(b'\0')
+              if item
+          }
+          if observed != expected:
+              raise SystemExit(
+                  'BLOCK: materialized delta differs: ' + ','.join(sorted(observed))
+              )
+          PY
+
+      - name: Run complete repository gates before persistence
+        shell: bash
+        run: |
+          set -euo pipefail
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+          python3 -B - <<'PY'
+          import subprocess
+
+          expected = {
+              'REPOSITORY_FILE_MANIFEST.json',
+              'REPOSITORY_FILE_MANIFEST.json.sha256',
+              'SHA256SUMS.txt',
+          }
+          raw = subprocess.check_output(
+              ['git', 'status', '--porcelain=v1', '-z', '--untracked-files=all']
+          )
+          observed = {
+              item[3:].decode('utf-8')
+              for item in raw.split(b'\0')
+              if item
+          }
+          if observed != expected:
+              raise SystemExit(
+                  'BLOCK: post-test delta differs: ' + ','.join(sorted(observed))
+              )
+          PY
+
+      - name: Persist exact materialized carrier by fast-forward only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$SOURCE_HEAD"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_head" = "$SOURCE_HEAD"
+          git config user.name 'qik-vrt-anchor-materializer[bot]'
+          git config user.email 'qik-vrt-anchor-materializer[bot]@users.noreply.github.com'
+          git add -- \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt
+          git diff --cached --check
+          test -n "$(git diff --cached --name-only)"
+          git commit -m 'ci: materialize relational-time Zenodo anchor carrier'
+          remote_head_after_commit="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_head_after_commit" = "$SOURCE_HEAD"
+          git push origin "HEAD:$TARGET_BRANCH"

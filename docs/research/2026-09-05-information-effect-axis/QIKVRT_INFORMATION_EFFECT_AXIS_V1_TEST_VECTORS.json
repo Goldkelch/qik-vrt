@@ -1,0 +1,103 @@
+{
+  "schema": "qikvrt_information_effect_axis_test_vectors_v1",
+  "contract": "./QIKVRT_INFORMATION_EFFECT_AXIS_V1.json",
+  "vectors": [
+    {
+      "id": "complete_measurement_allows_claim_evaluation",
+      "input": {
+        "value": 1.25,
+        "time": "2026-09-06T00:00:00Z",
+        "uncertainty": 0.01,
+        "unit": "V",
+        "calibration": "cal-ref-1",
+        "provenance": "sensor-chain-1"
+      },
+      "expected_control_state": "NOOP"
+    },
+    {
+      "id": "missing_calibration_holds",
+      "input": {
+        "value": 1.25,
+        "time": "2026-09-06T00:00:00Z",
+        "uncertainty": 0.01,
+        "unit": "V",
+        "provenance": "sensor-chain-1"
+      },
+      "expected_control_state": "HOLD"
+    },
+    {
+      "id": "stale_observation_reobserves",
+      "input": {
+        "observation_state": "STALE",
+        "subject": "exact-state-1"
+      },
+      "expected_control_state": "REOBSERVE"
+    },
+    {
+      "id": "external_authority_requested",
+      "input": {
+        "transition": "EXTERNAL_EFFECT",
+        "local_authority": false
+      },
+      "expected_control_state": "REQUEST_AUTHORITY"
+    },
+    {
+      "id": "transport_without_physical_readback_not_effect_ack",
+      "input": {
+        "transport_ack": true,
+        "actuation_command_accepted": true,
+        "physical_readback": null
+      },
+      "expected_claim": "NOT_EFFECT_ACK",
+      "expected_control_state": "REOBSERVE"
+    },
+    {
+      "id": "saturated_measurement_holds",
+      "input": {
+        "value": 65535,
+        "unit": "ADC_CODE",
+        "measurement_state": "SATURATED",
+        "calibration": "cal-ref-2",
+        "provenance": "sensor-chain-2"
+      },
+      "expected_control_state": "HOLD"
+    },
+    {
+      "id": "out_of_domain_transition_holds",
+      "input": {
+        "operation": "DIVIDE",
+        "numerator": 1,
+        "denominator": 0,
+        "domain_contract": "denominator != 0"
+      },
+      "expected_control_state": "HOLD"
+    },
+    {
+      "id": "same_bytes_different_semantic_context_not_equivalent",
+      "input": {
+        "bytes": "000003e8",
+        "interpretations": [
+          {"unit": "mm", "scale": 1},
+          {"unit": "V", "scale": 0.001}
+        ]
+      },
+      "expected_claim": "BYTES_DO_NOT_DETERMINE_MEANING"
+    },
+    {
+      "id": "repository_validation_not_zenodo_publication",
+      "input": {
+        "repository_validated": true,
+        "public_zenodo_readback": false
+      },
+      "expected_claim": "NO_NEW_ZENODO_PUBLICATION"
+    },
+    {
+      "id": "zenodo_publication_not_empirical_confirmation",
+      "input": {
+        "public_zenodo_readback": true,
+        "empirical_measurement": false
+      },
+      "expected_claim": "NO_EMPIRICAL_CONFIRMATION"
+    }
+  ]
+}

@@ -1,0 +1,219 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: Publish Planck-tick gap law v1 to Zenodo
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'release/planck-tick-gap-law-zenodo-v1/OWNER_ZENODO_AUTHORIZATION.json'
+      - 'release/planck-tick-gap-law-zenodo-v1/ZENODO_METADATA.json'
+      - 'docs/research/2026-09-03-planck-tick-gap-law/QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex'
+      - 'docs/research/2026-09-03-planck-tick-gap-law/README.md'
+      - 'physics/planck_tick_gap_law_v1.json'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: qikvrt-planck-tick-gap-law-zenodo-v1
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'Goldkelch/qik-vrt' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: zenodo-production
+    env:
+      ZENODO_API_BASE: https://zenodo.org/api
+      AUTH_PATH: release/planck-tick-gap-law-zenodo-v1/OWNER_ZENODO_AUTHORIZATION.json
+      META_PATH: release/planck-tick-gap-law-zenodo-v1/ZENODO_METADATA.json
+      TEX_PATH: docs/research/2026-09-03-planck-tick-gap-law/QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex
+      README_PATH: docs/research/2026-09-03-planck-tick-gap-law/README.md
+      CONTRACT_PATH: physics/planck_tick_gap_law_v1.json
+      RECEIPT_PATH: release/planck-tick-gap-law-zenodo-v1/zenodo-publication.json
+    steps:
+      - name: Check out exact promoted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify single-use owner authorization and scientific boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e "$RECEIPT_PATH"
+          jq -e '
+            .schema == "qikvrt_owner_zenodo_authorization_v1" and
+            .publication_id == "planck-tick-gap-law-v1" and
+            .authorized == true and
+            .authorized_by == "Ingolf Lohmann" and
+            .allowed_effect == "CREATE_AND_PUBLISH_ONE_NEW_ZENODO_WORKING_PAPER_RECORD" and
+            .single_use == true and
+            .required_status_boundary.PHYSICAL_HYPOTHESIS_BOUND == true and
+            .required_status_boundary.DIFFERENTIATING_PREDICTION_FROZEN == true and
+            .required_status_boundary.EMPIRICAL_CORRESPONDENCE == false and
+            .required_status_boundary.INDEPENDENT_REPRODUCTION == false and
+            .required_status_boundary.PASS == false and
+            .required_status_boundary.FINAL_PASS == false and
+            .required_status_boundary.EFFECT_ACK_DONE == false
+          ' "$AUTH_PATH" >/dev/null
+          jq -e '
+            .epistemic_boundary.formal_model == true and
+            .epistemic_boundary.differentiating_prediction_frozen == true and
+            .epistemic_boundary.empirically_confirmed == false and
+            .epistemic_boundary.independently_reproduced == false and
+            .epistemic_boundary.PASS == false and
+            .epistemic_boundary.FINAL_PASS == false and
+            .epistemic_boundary.EFFECT_ACK_DONE == false
+          ' "$CONTRACT_PATH" >/dev/null
+          jq -e '.title == "From Exact Causal Binding to a Falsifiable Planck-Tick Gap Law"' "$META_PATH" >/dev/null
+
+      - name: Install deterministic TeX runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            texlive-latex-base texlive-latex-recommended texlive-latex-extra \
+            texlive-fonts-recommended texlive-science lmodern
+
+      - name: Compile exact scientific PDF and hash publication files
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=.qikvrt/planck-tick-publication
+          mkdir -p "$out"
+          cp "$TEX_PATH" "$out/QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex"
+          cp "$README_PATH" "$out/README.md"
+          cp "$CONTRACT_PATH" "$out/planck_tick_gap_law_v1.json"
+          cp "$META_PATH" "$out/ZENODO_METADATA.json"
+          cd "$out"
+          export SOURCE_DATE_EPOCH=1788415200
+          pdflatex -interaction=nonstopmode -halt-on-error QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex
+          pdflatex -interaction=nonstopmode -halt-on-error QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex
+          test -s QIKVRT_Planck_Tick_Gap_Law_2026-09-03.pdf
+          sha256sum \
+            QIKVRT_Planck_Tick_Gap_Law_2026-09-03.pdf \
+            QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex \
+            README.md planck_tick_gap_law_v1.json ZENODO_METADATA.json \
+            > SHA256SUMS.txt
+
+      - name: Publish exact file set to production Zenodo
+        id: zenodo
+        shell: bash
+        env:
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${ZENODO_ACCESS_TOKEN:-}"
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+
+          api = os.environ['ZENODO_API_BASE'].rstrip('/')
+          token = os.environ['ZENODO_ACCESS_TOKEN']
+          root = Path('.qikvrt/planck-tick-publication')
+          metadata = json.loads((root / 'ZENODO_METADATA.json').read_text(encoding='utf-8'))
+
+          def request(method, url, *, data=None, content_type='application/json'):
+              headers = {'Authorization': f'Bearer {token}'}
+              if data is not None:
+                  headers['Content-Type'] = content_type
+              req = Request(url, data=data, headers=headers, method=method)
+              with urlopen(req, timeout=120) as response:
+                  raw = response.read()
+                  return json.loads(raw.decode('utf-8')) if raw else {}
+
+          deposition = request('POST', f'{api}/deposit/depositions', data=b'{}')
+          dep_id = deposition['id']
+          deposition = request(
+              'PUT', f'{api}/deposit/depositions/{dep_id}',
+              data=json.dumps({'metadata': metadata}, sort_keys=True).encode('utf-8'))
+          bucket = deposition['links']['bucket']
+          files = [
+              'QIKVRT_Planck_Tick_Gap_Law_2026-09-03.pdf',
+              'QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex',
+              'README.md',
+              'planck_tick_gap_law_v1.json',
+              'ZENODO_METADATA.json',
+              'SHA256SUMS.txt',
+          ]
+          file_receipts = []
+          for name in files:
+              payload = (root / name).read_bytes()
+              uploaded = request(
+                  'PUT', f'{bucket}/{name}', data=payload,
+                  content_type='application/octet-stream')
+              file_receipts.append({
+                  'name': name,
+                  'sha256': hashlib.sha256(payload).hexdigest(),
+                  'bytes': len(payload),
+                  'zenodo': uploaded,
+              })
+          published = request('POST', f'{api}/deposit/depositions/{dep_id}/actions/publish', data=b'{}')
+          receipt = {
+              'schema': 'qikvrt_planck_tick_gap_law_zenodo_publication_v1',
+              'state': 'published',
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'repository_head': os.environ['GITHUB_SHA'],
+              'record_id': published.get('record_id') or published.get('id'),
+              'doi': published.get('doi') or (published.get('metadata') or {}).get('doi'),
+              'conceptdoi': published.get('conceptdoi'),
+              'links': published.get('links'),
+              'files': file_receipts,
+              'scientific_boundary': {
+                  'PHYSICAL_HYPOTHESIS_BOUND': True,
+                  'DIFFERENTIATING_PREDICTION_FROZEN': True,
+                  'EMPIRICAL_CORRESPONDENCE': False,
+                  'INDEPENDENT_REPRODUCTION': False,
+                  'PASS': False,
+                  'FINAL_PASS': False,
+                  'EFFECT_ACK_DONE': False,
+              },
+          }
+          target = Path(os.environ['RECEIPT_PATH'])
+          target.parent.mkdir(parents=True, exist_ok=True)
+          target.write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          if not receipt['doi']:
+              raise SystemExit('ZENODO_PUBLISH_DID_NOT_RETURN_DOI')
+          print('ZENODO_DOI=' + str(receipt['doi']))
+          PY
+
+      - name: Persist Zenodo effect receipt on separate branch and PR
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RECEIPT_BRANCH: receipt/planck-tick-gap-law-zenodo-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          test -s "$RECEIPT_PATH"
+          git config user.name 'qik-vrt-zenodo-publication[bot]'
+          git config user.email 'qik-vrt-zenodo-publication[bot]@users.noreply.github.com'
+          git switch -c "$RECEIPT_BRANCH"
+          git add "$RECEIPT_PATH"
+          git diff --cached --check
+          git commit -m 'zenodo: persist Planck-tick gap-law publication receipt'
+          auth="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $auth" push origin "HEAD:refs/heads/$RECEIPT_BRANCH"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/pulls" \
+            -f title='Persist Planck-tick gap-law Zenodo receipt' \
+            -f head="$RECEIPT_BRANCH" \
+            -f base=main \
+            -f body='Repository-native Zenodo publication receipt. The DOI records byte persistence only; it does not imply empirical confirmation, PASS, FINAL_PASS, or general EFFECT_ACK_DONE.'
+
+      - name: Preserve publication receipt as workflow artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: planck-tick-gap-law-zenodo-receipt-${{ github.run_id }}
+          path: release/planck-tick-gap-law-zenodo-v1/zenodo-publication.json
+          if-no-files-found: warn
+          retention-days: 90

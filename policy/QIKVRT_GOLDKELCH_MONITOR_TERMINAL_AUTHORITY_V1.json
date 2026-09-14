@@ -1,0 +1,60 @@
+{
+  "schema": "qikvrt_goldkelch_monitor_terminal_authority_v1",
+  "authority_node": "Goldkelch/qik-vrt",
+  "authority_terminal": {
+    "implementation_profile": "policy/QIKVRT_UNIVERSAL_TERMINAL_VIRTUALIZATION_V1.json",
+    "browser": "Firefox",
+    "effect_ack_http_daemon": "src/qikvrt_effect_ack_http_terminal.py",
+    "runtime": "POSIX-compatible Linux userspace packaged as OCI container",
+    "terminal_use": "GOLDKELCH_NODE_ONLY",
+    "protected_effects_require": [
+      "exact_subject_binding",
+      "prepare",
+      "single_use_commit",
+      "post_effect_reobservation",
+      "authoritative_effect_ack"
+    ]
+  },
+  "vercel_projection": {
+    "role": "PUBLIC_OR_MESH_VISIBLE_MONITOR_ONLY",
+    "terminal_capability": false,
+    "write_capability": false,
+    "effect_commit_capability": false,
+    "purpose": "Project Goldkelch's latest repository-native terminal state, exact subject binding, receipts, successor and HOLD information without exposing the authority terminal itself."
+  },
+  "mesh_node_contract": {
+    "non_authority_nodes": "MONITOR_ONLY",
+    "on_observed_projection_change": [
+      "DO_NOT_INFER_EFFECT_FROM_PROJECTION",
+      "REQUEST_EXACT_CHANGE_FROM_GOLDKELCH_AUTHORITY",
+      "READ_BACK_EXACT_AUTHORITY_SUBJECT_AND_RECEIPT",
+      "INTEGRATE_ONLY_NEW_EXACT_BOUND_EVIDENCE_LOCALLY",
+      "REOBSERVE_LOCAL_EXACT_SUBJECT",
+      "EMIT_LOCAL_RECEIPT_OR_HOLD"
+    ],
+    "predecessor_evidence_transfer": false,
+    "timestamp_order_is_causality": false
+  },
+  "discovery_model": {
+    "analogy": "DNS-like discovery plus repository-native exact-subject effect acknowledgement",
+    "normative_claim": "ENGINEERING_DISCOVERY_AND_ORCHESTRATION_PROFILE",
+    "not_claimed": [
+      "replacement of Internet DNS",
+      "protocol-standard status",
+      "universal deployment",
+      "empirical proof of anticipation or intuition",
+      "PASS",
+      "FINAL_PASS",
+      "EFFECT_ACK_DONE without exact readback"
+    ]
+  },
+  "orchestration_extensions": {
+    "protocol_adapters_may_include": ["SNMP", "HTTP", "DNS", "repository events"],
+    "rule": "Adapters translate observations into bounded exact-subject work units; they do not bypass Effect Acknowledgement semantics."
+  },
+  "identity_boundary": {
+    "biometric_methods_may_include": ["face", "fingerprint", "voice"],
+    "biometric_data_must_not_be_repository_material": true,
+    "authentication_is_external_to_terminal_proof": true
+  }
+}
