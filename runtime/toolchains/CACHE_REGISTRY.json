@@ -127,6 +127,54 @@
       ],
       "version": "4.19.0"
     },
+    "live-build": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        ".github/workflows/qikvrt_megast_distribution_v1.yml",
+        "distribution/qikvrt-megast/build.sh",
+        "tests/test_qikvrt_netboot.py"
+      ],
+      "cache_class": "runner-image-layer",
+      "cache_locations": [
+        "github-hosted-runner-image:ubuntu-24.04"
+      ],
+      "failure_recovery": "Keep logs; stop the specific child and retain artifacts; no retry of deterministic failures",
+      "profiles": [
+        "distribution"
+      ],
+      "provider": "Ubuntu runner package manager and hash-locked Debian live-build package",
+      "trusted_save": false,
+      "verification": [
+        "reported tool version",
+        "strict C90 compile or exact live-build package digest",
+        "actual guest network boot and QMP color screenshot"
+      ],
+      "version": "20250505+deb13u1"
+    },
+    "m68k-linux-gnu-gcc": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        ".github/workflows/qikvrt_megast_distribution_v1.yml",
+        "distribution/qikvrt-megast/build.sh",
+        "tests/test_qikvrt_netboot.py"
+      ],
+      "cache_class": "runner-image-layer",
+      "cache_locations": [
+        "github-hosted-runner-image:ubuntu-24.04"
+      ],
+      "failure_recovery": "Keep logs; stop the specific child and retain artifacts; no retry of deterministic failures",
+      "profiles": [
+        "distribution"
+      ],
+      "provider": "Ubuntu runner package manager and hash-locked Debian live-build package",
+      "trusted_save": false,
+      "verification": [
+        "reported tool version",
+        "strict C90 compile or exact live-build package digest",
+        "actual guest network boot and QMP color screenshot"
+      ],
+      "version": "m68000-static-c90"
+    },
     "node": {
       "authority_files": [
         "runtime/toolchains/TOOLCHAIN.lock.tsv",
@@ -153,6 +201,32 @@
         "test execution"
       ],
       "version": "24.x"
+    },
+    "pharo": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "runtime/toolchains/pharo-13.lock.json",
+        "tools/qikvrt_smalltalk.py",
+        "tools/bootstrap-runtime.sh",
+        "tests/smalltalk/core-vectors.st"
+      ],
+      "cache_class": "repo-managed-archive",
+      "cache_locations": [
+        ".qikvrt/toolchains/pharo/13.1-4f7563dfe5-vm33501fd6"
+      ],
+      "profiles": [
+        "smalltalk",
+        "all"
+      ],
+      "provider": "tools/qikvrt_smalltalk.py via tools/bootstrap-runtime.sh",
+      "trusted_save": true,
+      "verification": [
+        "archive SHA256",
+        "exact extracted byte comparison",
+        "clean image build and restart",
+        "2621440 exhaustive C90/Smalltalk vectors"
+      ],
+      "version": "13.1-4f7563dfe5-vm33501fd6"
     },
     "poppler": {
       "authority_files": [
@@ -258,6 +332,30 @@
         "runtime execution"
       ],
       "version": "3.12.13"
+    },
+    "qemu-system-x86_64": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        ".github/workflows/qikvrt_megast_distribution_v1.yml",
+        "distribution/qikvrt-megast/build.sh",
+        "tests/test_qikvrt_netboot.py"
+      ],
+      "cache_class": "runner-image-layer",
+      "cache_locations": [
+        "github-hosted-runner-image:ubuntu-24.04"
+      ],
+      "failure_recovery": "Keep logs; stop the specific child and retain artifacts; no retry of deterministic failures",
+      "profiles": [
+        "distribution"
+      ],
+      "provider": "Ubuntu runner package manager and hash-locked Debian live-build package",
+      "trusted_save": false,
+      "verification": [
+        "reported tool version",
+        "strict C90 compile or exact live-build package digest",
+        "actual guest network boot and QMP color screenshot"
+      ],
+      "version": "qmp-screendump-linux-live-v1"
     },
     "sherpa-onnx-node": {
       "authority_files": [
