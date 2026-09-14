@@ -46,6 +46,14 @@ class MegaSTDistributionContract(unittest.TestCase):
         self.assertIn('cd out\n          sha256sum -c qikvrt-megast-amd64.iso.sha256', text)
         self.assertIn('Read back published release metadata', text)
 
+    def test_pull_request_build_is_literal_head_bound(self):
+        text = WORKFLOW.read_text()
+        subject = '${{ github.event.pull_request.head.sha || github.sha }}'
+        self.assertEqual(text.count(f'ref: {subject}'), 2)
+        self.assertIn(f'QIKVRT_EXACT_SHA: {subject}', text)
+        self.assertIn(f'"source_sha": "{subject}"', text)
+        self.assertIn(f'name: qikvrt-megast-{subject}', text)
+
     def test_workflow_pins_trixie_live_build_toolchain(self):
         text = WORKFLOW.read_text()
         self.assertNotIn('apt-get install -y live-build', text)

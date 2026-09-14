@@ -22,6 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
@@ -34,6 +36,8 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Install live-build toolchain
         run: |
           sudo apt-get update
@@ -53,17 +57,17 @@ jobs:
           lb --version
       - name: Build exact-subject ISO
         env:
-          QIKVRT_EXACT_SHA: ${{ github.sha }}
+          QIKVRT_EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: sudo -E ./distribution/qikvrt-megast/build.sh
       - name: Reobserve artifact binding
         run: |
           test -s out/qikvrt-megast-amd64.iso
           (cd out && sha256sum -c qikvrt-megast-amd64.iso.sha256)
-          grep -F '"source_sha": "${{ github.sha }}"' out/qikvrt-megast-build-receipt.json
+          grep -F '"source_sha": "${{ github.event.pull_request.head.sha || github.sha }}"' out/qikvrt-megast-build-receipt.json
           grep -F '"effect_ack_done": false' out/qikvrt-megast-build-receipt.json
       - uses: actions/upload-artifact@v4
         with:
-          name: qikvrt-megast-${{ github.sha }}
+          name: qikvrt-megast-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
             out/qikvrt-megast-amd64.iso
             out/qikvrt-megast-amd64.iso.sha256
