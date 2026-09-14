@@ -46,15 +46,19 @@ cat > "$WORK/config/includes.chroot/etc/qikvrt/distribution.json" <<EOF
 EOF
 
 cd "$WORK"
-lb config \
+set -- lb config \
   --mode debian \
   --distribution trixie \
   --architectures amd64 \
   --binary-images iso-hybrid \
   --archive-areas "main contrib non-free-firmware" \
-  --security true \
-  --updates true \
+  --security true
+if lb config --help 2>&1 | grep -q -- '--updates'; then
+  set -- "$@" --updates true
+fi
+set -- "$@" \
   --bootappend-live "boot=live components username=qikvrt hostname=qikvrt-megast"
+"$@"
 
 lb build
 

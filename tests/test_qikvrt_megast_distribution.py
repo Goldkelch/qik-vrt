@@ -24,7 +24,8 @@ class MegaSTDistributionContract(unittest.TestCase):
     def test_live_build_uses_supported_security_and_updates_switches(self):
         text = BUILD.read_text()
         self.assertIn('--security true', text)
-        self.assertIn('--updates true', text)
+        self.assertIn("lb config --help 2>&1 | grep -q -- '--updates'", text)
+        self.assertIn('set -- "$@" --updates true', text)
         self.assertNotIn('--security-suite', text)
 
     def test_visual_shell_does_not_claim_atari_identity(self):
