@@ -69,10 +69,15 @@ jobs:
           assert 'test_legacy_model_client_is_absent' not in text
           extra = '\n    def test_legacy_model_client_is_absent(self):\n        self.assertFalse((ROOT / "scripts/issue_agent/infer.py").exists())\n\n    def test_validation_is_independent_of_model_prompt(self):\n        text = (ROOT / "tests/issue_agent/test_validate.py").read_text(encoding="utf-8")\n        self.assertNotIn("scripts.issue_agent.infer", text)\n        self.assertNotIn("SYSTEM_PROMPT", text)\n'
           path.write_text(text.replace(marker, '\n' + extra + marker), encoding='utf-8')
-          cmd = [sys.executable, '-B', '-m', 'unittest', 'discover', '-s', 'tests/issue_agent', '-p', 'test_deterministic_workflow.py', '-v']
+          path = Path('tests/issue_agent/test_validate.py')
+          text = path.read_text(encoding='utf-8')
+          assert text.count(marker) == 1
+          registration = '\n    def test_deterministic_controller_tests_are_full_suite_gates(self):\n        text = (ROOT / "Makefile").read_text(encoding="utf-8")\n        block = text.split("evidence-contract-test:" + chr(10), 1)[1].split(chr(10) + "m68000-kernel-contract:", 1)[0]\n        recipes = [line for line in block.splitlines() if line.startswith(chr(9)) and "-m unittest -v" in line]\n        self.assertEqual(len(recipes), 1)\n        for module in ("tests.issue_agent.test_compile", "tests.issue_agent.test_deterministic_workflow", "tests.issue_agent.test_validate"):\n            self.assertIn(module, recipes[0].split())\n        targets = [line for line in text.splitlines() if line.startswith("test: compile ")]\n        self.assertEqual(len(targets), 1)\n        self.assertIn("evidence-contract-test", targets[0].split())\n'
+          path.write_text(text.replace(marker, '\n' + registration + marker), encoding='utf-8')
+          cmd = [sys.executable, '-B', '-m', 'unittest', 'discover', '-s', 'tests/issue_agent', '-v']
           red = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
           (out / 'red-residual-model-dependency.log').write_bytes(red.stdout)
-          assert red.returncode == 1 and b'FAILED (failures=2)' in red.stdout, red.stdout.decode(errors='replace')
+          assert red.returncode == 1 and b'FAILED (failures=3)' in red.stdout, red.stdout.decode(errors='replace')
           path = Path('tests/issue_agent/test_validate.py')
           text = path.read_text(encoding='utf-8')
           old_import = 'from scripts.issue_agent.infer import SYSTEM_PROMPT\n'
@@ -91,8 +96,14 @@ jobs:
           text = text.replace(old_line, 'self.assertEqual(policy["issue_lifecycle"]["unclassified_open_issue"], "FORBIDDEN")')
           assert 'SYSTEM_PROMPT' not in text
           path.write_text(text, encoding='utf-8')
+          path = Path('Makefile')
+          text = path.read_text(encoding='utf-8')
+          old = '-m unittest -v tests.issue_agent.test_validate tests.test_authority_mirror_equality_receipt'
+          assert text.count(old) == 1
+          new = '-m unittest -v tests.issue_agent.test_compile tests.issue_agent.test_deterministic_workflow tests.issue_agent.test_validate tests.test_authority_mirror_equality_receipt'
+          path.write_text(text.replace(old,new),encoding='utf-8')
           subprocess.run(['git', 'rm', '--', 'scripts/issue_agent/infer.py'], check=True)
-          subprocess.run(['git', 'add', '--', 'tests/issue_agent/test_validate.py', 'tests/issue_agent/test_deterministic_workflow.py'], check=True)
+          subprocess.run(['git', 'add', '--', 'Makefile', 'tests/issue_agent/test_validate.py', 'tests/issue_agent/test_deterministic_workflow.py'], check=True)
           PYCODE
       - name: Run scoped regressions and complete deterministic gates
         shell: bash
@@ -106,11 +117,18 @@ jobs:
           python3 -B tools/qikvrt_integrity.py generate > "$out/integrity-repeat.log"
           sha256sum -c "$out/integrity-before.sha256"
           make test > "$out/full-make-test.log" 2>&1
+          python3 -B - <<'TESTS'
+          from pathlib import Path
+          import os
+          raw=(Path(os.environ['RUNNER_TEMP'])/'compiler-port/full-make-test.log').read_text()
+          for name in ('test_legacy_model_client_is_absent', 'test_validation_is_independent_of_model_prompt', 'test_deterministic_controller_tests_are_full_suite_gates', 'test_issue_policy_requires_one_lifecycle_disposition'):
+              assert any(line.startswith(name+' (') and line.endswith(' ... ok') for line in raw.splitlines()), name
+          TESTS
           python3 -B tools/qikvrt_integrity.py verify 2>&1 | tee "$out/integrity-verify-after.log"
           sha256sum -c "$out/integrity-before.sha256"
           git add -- REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
           git diff --cached --check
-      - name: Seal six-path prepared tree without changing the source PR
+      - name: Seal seven-path prepared tree without changing the source PR
         shell: bash
         run: |
           set -euo pipefail
@@ -119,6 +137,7 @@ jobs:
           import hashlib, json, os, subprocess
           out = Path(os.environ['RUNNER_TEMP']) / 'compiler-port'
           expected = {
+           'Makefile': 'M',
            'scripts/issue_agent/infer.py': 'D',
            'tests/issue_agent/test_validate.py': 'M',
            'tests/issue_agent/test_deterministic_workflow.py': 'M',
@@ -172,7 +191,7 @@ jobs:
           test "$(read_ref main)" = "$EXPECTED_MAIN"
           test "$(read_ref publication/future-message-present-receiver-v1)" = "$EXPECTED_PUBLICATION"
           test "$(read_ref "$TRANSPORT_BRANCH")" = "$GITHUB_SHA"
-          # Transport only the five prepared blobs and one deletion over this lane's
+          # Transport only the six prepared blobs and one deletion over this lane's
           # existing tree. Do not add/change/remove a workflow using GITHUB_TOKEN.
           python3 -B - <<'OBJECTS'
           from pathlib import Path
@@ -209,7 +228,7 @@ jobs:
           import json, os
           out=Path(os.environ['RUNNER_TEMP'])/'compiler-port'
           value=json.loads((out/'preparation.json').read_text())
-          value['transport_persistence']={'commit':os.environ['CARRIER_COMMIT'],'tree':os.environ['CARRIER_TREE'],'ref':os.environ['TRANSPORT_BRANCH'],'exact_ref_readback':True,'candidate_and_main_mutated':False,'scope':'six-path object transport only; workflows unchanged; not a validated source tree'}
+          value['transport_persistence']={'commit':os.environ['CARRIER_COMMIT'],'tree':os.environ['CARRIER_TREE'],'ref':os.environ['TRANSPORT_BRANCH'],'exact_ref_readback':True,'candidate_and_main_mutated':False,'scope':'seven-path object transport only; workflows unchanged; not a validated source tree'}
           (out/'persistence.json').write_text(json.dumps(value,sort_keys=True,indent=2)+'\n')
           print(json.dumps(value,sort_keys=True))
           PYCODE
