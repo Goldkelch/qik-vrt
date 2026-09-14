@@ -42,6 +42,17 @@ class MegaSTDistributionContract(unittest.TestCase):
         self.assertIn('sha256sum -c', text)
         self.assertIn('Read back published release metadata', text)
 
+    def test_workflow_pins_trixie_live_build_toolchain(self):
+        text = WORKFLOW.read_text()
+        self.assertNotIn('apt-get install -y live-build', text)
+        self.assertIn('live-build_20250505+deb13u1_all.deb', text)
+        self.assertIn(
+            '58e09779881cbcc631c49ceb703413e0247a87db01823e597b2a1c40a2afd8f4',
+            text,
+        )
+        self.assertIn('/tmp/live-build.deb | sha256sum -c -', text)
+        self.assertIn('sudo dpkg -i /tmp/live-build.deb', text)
+
     def test_terminal_definition_requires_download_readback(self):
         text = README.read_text()
         self.assertIn('stable release path', text)
