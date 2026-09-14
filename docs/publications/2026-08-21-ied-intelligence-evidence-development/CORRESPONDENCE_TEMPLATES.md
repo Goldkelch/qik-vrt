@@ -139,3 +139,44 @@ Requested action: confirm only whether the frozen bytes and metadata are interna
 
 Kind regards,  
 Ingolf Lohmann
+
+## 7. Gemeinsamer Quellenzugang und Rückmeldungen
+
+Die [einheitliche Projektdarstellung](../PROJECT_PRESENTATION.md) und der
+[Quellen- und Grafikkatalog](../PROJECT_SOURCE_CATALOG_20260914.json) sind der
+gemeinsame Einstieg für journalistische und wissenschaftliche Anfragen.
+Individuelle Supportverfahren und deren Vorgaben bleiben gesondert maßgeblich.
+
+Rückmeldungen verwenden den bestehenden `src/qikvrt_api_handler.py`-Eingang
+mit `effect_scope=opaque-byte-storage-only`. Die Nachricht ist ein Quellenobjekt,
+keine neue Policy, kein Review und kein auszuführender Auftrag.
+
+Für eine spätere Mail- oder Formularanbindung sind vor Aktivierung erforderlich:
+
+1. Ein benannter, authentifizierter Receiver mit Ereigniszustellung und einer
+   dauerhaften, kontobezogenen Ereigniskennung; keine erfundene Empfangsbestätigung.
+2. Bindung von Quelle, Empfangszeit-Beobachtung, Originaldigest, bearbeiteter
+   Repository-Fassung und zulässigem Speicherumfang. Header-Absender allein ist
+   keine verifizierte Personenidentität.
+3. Ein stabiler Idempotenzschlüssel aus Receiver-Namespace und Ereigniskennung.
+   Gleicher Schlüssel und andere Bytes sind ein Konflikt. Eine zweite Zustellung
+   erzeugt keine zweite Bearbeitungs- oder Versandfreigabe.
+4. Private Originale bleiben im dafür freigegebenen Speicher. Ins öffentliche
+   Repository gelangen standardmäßig Metadaten und freigegebene, redigierte
+   Auszüge; keine Zugangsdaten, Ticket-Tokens oder ungeprüften Volltranskripte.
+5. Inhaltliche Bewertung als eigener, auf das Quellenobjekt verweisender
+   Bearbeitungsschritt. Antwort, automatische Empfangsmeldung, Zustimmung,
+   Code-Owner-Freigabe und wissenschaftliche Bestätigung bleiben verschieden.
+6. Wiederherstellung aus dem gespeicherten Receiver-Zustand bei Unterbrechung;
+   unbekannter Zustand hält nachgelagerte Effekte an. Änderungen an Code,
+   Rulesets und Publikationen behalten ihre eigenen Review- und Wirkungsgates.
+
+Dies beschreibt die Anbindung an vorhandene Mechanismen. Es installiert keinen
+Mailbox-Receiver und aktiviert keinen Dauerbetrieb. Der Ereignis-Intake in
+PR #914 ist ein eigenständiger Entwurf und darf vor seinen eigenen Prüfungen
+nicht als produktiv verfügbar behandelt werden.
+
+Versandtransparenz bedeutet: vorgeschlagene Ziele, tatsächlich versandte
+Nachrichten, Anbieterbestätigungen und eingegangene Antworten getrennt führen.
+Ein gemeinsamer Verteiler ist kein Beleg dafür, dass jemand eine Nachricht
+erhalten, gelesen oder ihren Inhalt anerkannt hat.
