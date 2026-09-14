@@ -1,0 +1,1599 @@
+information, contact: fonts at gnome dot org.
+diff --git a/runtime/toolchains/pharo-vm-LICENSE.txt b/runtime/toolchains/pharo-vm-LICENSE.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..1c6c7bce7c9571403fefcb25a07aa9c7e2773555
+--- /dev/null
++++ b/runtime/toolchains/pharo-vm-LICENSE.txt
+@@ -0,0 +1,21 @@
++License (MIT):
++All contributions from 3D Immersive Collaboration Consulting in this release are
++Copyright (c) 2013 3D Immersive Collaboration Consulting, LLC.
++
++Permission is hereby granted, free of charge, to any person obtaining a copy
++of this software and associated documentation files (the "Software"), to deal
++in the Software without restriction, including without limitation the rights
++to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++copies of the Software, and to permit persons to whom the Software is
++furnished to do so, subject to the following conditions:
++
++The above copyright notice and this permission notice shall be included in
++all copies or substantial portions of the Software.
++
++THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
++THE SOFTWARE.
+diff --git a/src/cloud_transputer/m68k_contract_probe.c b/src/cloud_transputer/m68k_contract_probe.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..d1d94775e6b0fa771d92647dfcb5ac1d07b7d047
+--- /dev/null
++++ b/src/cloud_transputer/m68k_contract_probe.c
+@@ -0,0 +1,56 @@
++/* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 */
++/* Copyright 2026 Ingolf Lohmann. */
++/* Bounded C90 executable witness for the MC68000-visible QIK-VRT boundary. */
++#include <stdio.h>
++
++enum qikvrt_boundary_d0 {
++    QIKVRT_NOOP = 0,
++    QIKVRT_HOLD = 1,
++    QIKVRT_REOBSERVE = 2,
++    QIKVRT_REQUEST_AUTHORITY = 3
++};
++
++enum qikvrt_effect_state {
++    QIKVRT_EFFECT_NACK = 0,
++    QIKVRT_EFFECT_ACK_CONTINUE = 1,
++    QIKVRT_EFFECT_ACK_ISOLATE = 2,
++    QIKVRT_EFFECT_ACK_BLOCK = 3,
++    QIKVRT_EFFECT_ACK_DONE = 4
++};
++
++static int ordinary_release(int effect_state)
++{
++    return effect_state == QIKVRT_EFFECT_ACK_DONE;
++}
++
++static int d0_valid(int value)
++{
++    return (value & ~3) == 0;
++}
++
++int main(void)
++{
++#ifdef __m68k__
++    puts("ARCH=MC68000_FAMILY");
++#else
++    puts("ARCH=NON_M68K");
++#endif
++    if (QIKVRT_NOOP != 0 || QIKVRT_HOLD != 1 || QIKVRT_REOBSERVE != 2 ||
++        QIKVRT_REQUEST_AUTHORITY != 3) return 10;
++    if (!d0_valid(QIKVRT_NOOP) || !d0_valid(QIKVRT_REQUEST_AUTHORITY) || d0_valid(4)) return 11;
++    if ((1 + 2) != QIKVRT_REQUEST_AUTHORITY) return 12;
++    if (QIKVRT_EFFECT_NACK != 0 || QIKVRT_EFFECT_ACK_CONTINUE != 1 ||
++        QIKVRT_EFFECT_ACK_ISOLATE != 2 || QIKVRT_EFFECT_ACK_BLOCK != 3 ||
++        QIKVRT_EFFECT_ACK_DONE != 4) return 13;
++    if (ordinary_release(QIKVRT_EFFECT_NACK) || ordinary_release(QIKVRT_EFFECT_ACK_BLOCK)) return 14;
++    if (!ordinary_release(QIKVRT_EFFECT_ACK_DONE)) return 15;
++    puts("D0_BOUNDARY_CODES=0,1,2,3");
++    puts("D0_BINARY_WEIGHTS=1,2");
++    puts("D0_COMPOSITION_3=1+2");
++    puts("NEXT_ORTHOGONAL_WEIGHT=4");
++    puts("EFFECT_ACK_CODES=0,1,2,3,4");
++    puts("EFFECT_ACK_REGISTER=D4");
++    puts("OVERLAY_BANKS=4");
++    puts("ORDINARY_RELEASE=EFFECT_ACK_DONE_ONLY");
++    return 0;
++}
+diff --git a/src/cloud_transputer/m68k_wire_roundtrip.c b/src/cloud_transputer/m68k_wire_roundtrip.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..dc8845f3b13829bad3118468a7e9ef2d426248b5
+--- /dev/null
++++ b/src/cloud_transputer/m68k_wire_roundtrip.c
+@@ -0,0 +1,20 @@
++#include "qikvrt_wire_v1.h"
++#include <stdio.h>
++#include <string.h>
++static void hx(const char*n,const unsigned char*p,unsigned int z){unsigned int i;printf("%s=",n);for(i=0U;i<z;++i)printf("%02x",(unsigned int)p[i]);printf("\n");}
++static int bind(const qikvrt_wire_frame*a,const qikvrt_wire_frame*b){return a->session_id==b->session_id&&a->nonce==b->nonce&&a->message_id==b->message_id&&a->chunk_index==b->chunk_index&&a->chunk_count==b->chunk_count;}
++int main(void){
++ static const unsigned char msg[]="SIEHWIESOBESSER!\nDefinitiv tief.\nq.e.d.\nIngolf Lohmann\n";
++ unsigned char rq[QIKVRT_WIRE_MAX_FRAME],rc[QIKVRT_WIRE_MAX_FRAME],dec[QIKVRT_WIRE_MAX_PAYLOAD],state[QIKVRT_WIRE_MAX_PAYLOAD],rh[32],rp[32];
++ unsigned int rqn=0U,rcn=0U,mlen=(unsigned int)(sizeof(msg)-1U);qikvrt_wire_frame q,qd,r,rd;
++ memset(&q,0,sizeof(q));q.direction=0U;q.type=1U;q.d0=2U;q.d4=0U;q.session_id=0x51494b56U;q.nonce=0x20260913U;q.source_node=2U;q.virtual_time_lo=20260913U;q.message_id=1U;q.chunk_count=1U;q.payload_length=mlen;
++ if(!qikvrt_wire_encode(&q,msg,rq,sizeof(rq),&rqn))return 10;
++ if(!qikvrt_wire_decode(rq,rqn,&qd,dec,sizeof(dec)))return 11;
++ if(qd.payload_length!=mlen||memcmp(dec,msg,mlen)!=0)return 12;
++ memcpy(state,dec,mlen);if(memcmp(state,msg,mlen)!=0)return 13;qikvrt_sha256(rq,rqn,rh);memcpy(rp,rh,32U);
++ memset(&r,0,sizeof(r));r.direction=1U;r.type=3U;r.d0=0U;r.d4=4U;r.session_id=qd.session_id;r.nonce=qd.nonce;r.source_node=6U;r.virtual_time_lo=qd.virtual_time_lo;r.message_id=qd.message_id;r.chunk_count=qd.chunk_count;r.payload_length=32U;
++ if(!qikvrt_wire_encode(&r,rp,rc,sizeof(rc),&rcn))return 14;
++ if(!qikvrt_wire_decode(rc,rcn,&rd,dec,sizeof(dec)))return 15;
++ if(!bind(&qd,&rd)||rd.d4!=4U||rd.payload_length!=32U||memcmp(dec,rh,32U)!=0)return 16;
++ printf("WIRE_PROTOCOL=QIKVRT_WIRE_V1\nBYTE_ORDER=BIG_ENDIAN\nREQUEST_ROUNDTRIP=PASS\nLOCAL_STATE_REOBSERVED=PASS\nRECEIPT_BINDING=PASS\nREVERSE_ROUNDTRIP=PASS\nTRANSPORT_ACK_NOT_EFFECT_ACK=TRUE\nLOCAL_REFERENCE_EFFECT_ACK_DONE=TRUE\nGENERAL_EFFECT_ACK_DONE=FALSE\n");hx("REQUEST_HEX",rq,rqn);hx("RECEIPT_HEX",rc,rcn);return 0;
++}
+diff --git a/src/cloud_transputer/qikvrt_boot_receive.c b/src/cloud_transputer/qikvrt_boot_receive.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..65a4dc9c584788c602fce3d08a7a4a8ceb1c250e
+--- /dev/null
++++ b/src/cloud_transputer/qikvrt_boot_receive.c
+@@ -0,0 +1,155 @@
++/* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 */
++/* Copyright 2026 Ingolf Lohmann. ISO C90 plus bounded POSIX UDP transport. */
++#define _POSIX_C_SOURCE 200809L
++#include "qikvrt_wire_v1.h"
++#include <arpa/inet.h>
++#include <errno.h>
++#include <fcntl.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <sys/socket.h>
++#include <sys/stat.h>
++#include <sys/time.h>
++#include <time.h>
++#include <unistd.h>
++
++#define HEADER 32U
++#define CHUNK 128U
++#define MAX_IMAGE (4U * 1024U * 1024U)
++
++static unsigned int get32(const unsigned char *p)
++{
++    return ((unsigned int)p[0] << 24U) | ((unsigned int)p[1] << 16U)
++        | ((unsigned int)p[2] << 8U) | (unsigned int)p[3];
++}
++
++static void put32(unsigned char *p, unsigned int n)
++{
++    p[0] = (unsigned char)(n >> 24U); p[1] = (unsigned char)(n >> 16U);
++    p[2] = (unsigned char)(n >> 8U); p[3] = (unsigned char)n;
++}
++
++static unsigned int checksum(const unsigned char *p, unsigned int length)
++{
++    unsigned char data[28U + CHUNK];
++    memcpy(data, p, 28U);
++    if (length != 0U) { memcpy(data + 28U, p + HEADER, length); }
++    return qikvrt_fnv1a32(data, 28U + length);
++}
++
++static int exchange(int fd, unsigned int type, unsigned int nonce,
++                    unsigned int offset, unsigned int total,
++                    unsigned char *reply, time_t deadline)
++{
++    unsigned char request[HEADER];
++    unsigned int attempt, dropped, length;
++    ssize_t count;
++    memset(request, 0, sizeof(request)); memcpy(request, "QBT1", 4U);
++    request[4] = (unsigned char)type;
++    put32(request + 8U, nonce); put32(request + 12U, 1U);
++    put32(request + 16U, offset); put32(request + 20U, total);
++    put32(request + 28U, checksum(request, 0U));
++    for (attempt = 0U; attempt < 3U && time(0) < deadline; ++attempt) {
++        if (send(fd, request, sizeof(request), 0) != (ssize_t)sizeof(request)) { return -1; }
++        for (dropped = 0U; dropped < 8U && time(0) < deadline; ++dropped) {
++            count = recv(fd, reply, HEADER + CHUNK + 1U, 0);
++            if (count < 0) { if (errno == EINTR) { continue; } break; }
++            if (count < (ssize_t)HEADER || count > (ssize_t)(HEADER + CHUNK)) { continue; }
++            length = get32(reply + 24U);
++            if (memcmp(reply, "QBT1", 4U) != 0 || length > CHUNK
++                || (unsigned int)count != HEADER + length || reply[5] || reply[6] || reply[7]
++                || get32(reply + 8U) != nonce || get32(reply + 12U) != 1U
++                || get32(reply + 16U) != offset
++                || get32(reply + 28U) != checksum(reply, length)) { continue; }
++            if ((type == 1U && reply[4] == 2U) || (type == 3U && reply[4] == 4U)
++                || (type == 5U && reply[4] == 5U)) { return (int)length; }
++        }
++    }
++    return -1;
++}
++
++int main(int argc, char **argv)
++{
++    struct sockaddr_in address;
++    struct timeval timeout;
++    unsigned char reply[HEADER + CHUNK + 1U], expected[32], actual[32];
++    unsigned char *image;
++    unsigned int nonce, total, offset, n, value;
++    unsigned long port, session;
++    char *end;
++    int fd, output, rc, length;
++    ssize_t written;
++    time_t deadline;
++    if (argc != 6) {
++        fprintf(stderr, "usage: %s SERVER_IPV4 PORT OUTPUT EXPECTED_SHA256 NONCE\n", argv[0]);
++        return 64;
++    }
++    port = strtoul(argv[2], &end, 10);
++    if (!*argv[2] || strspn(argv[2], "0123456789") != strlen(argv[2]) || *end || port == 0UL || port > 65535UL) { return 64; }
++    session = strtoul(argv[5], &end, 10);
++    if (!*argv[5] || strspn(argv[5], "0123456789") != strlen(argv[5]) || *end || session == 0UL || session > 4294967295UL) { return 64; }
++    nonce = (unsigned int)session;
++    if (strlen(argv[4]) != 64U) { return 64; }
++    for (n = 0U; n < 32U; ++n) {
++        if (strspn(argv[4], "0123456789abcdef") != 64U
++            || sscanf(argv[4] + n * 2U, "%2x", &value) != 1) { return 64; }
++        expected[n] = (unsigned char)value;
++    }
++    memset(&address, 0, sizeof(address)); address.sin_family = AF_INET;
++    address.sin_port = htons((unsigned short)port);
++    if (inet_pton(AF_INET, argv[1], &address.sin_addr) != 1) { return 64; }
++    fd = socket(AF_INET, SOCK_DGRAM, 0);
++    if (fd < 0) { return 71; }
++    timeout.tv_sec = 2; timeout.tv_usec = 0;
++    if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) != 0
++        || connect(fd, (struct sockaddr *)&address, sizeof(address)) != 0) { close(fd); return 69; }
++    deadline = time(0) + 120;
++    alarm(121U); /* Outer wall-clock bound even if the civil clock moves back. */
++    length = exchange(fd, 1U, nonce, 0U, 0U, reply, deadline);
++    if (length != 32) { close(fd); return 65; }
++    total = get32(reply + 20U);
++    if (total == 0U || total > MAX_IMAGE || memcmp(reply + HEADER, expected, 32U)) {
++        close(fd); return 65;
++    }
++    image = (unsigned char *)malloc(total);
++    if (image == 0) { close(fd); return 71; }
++    rc = 65;
++    for (offset = 0U; offset < total;) {
++        length = exchange(fd, 3U, nonce, offset, total, reply, deadline);
++        n = total - offset < CHUNK ? total - offset : CHUNK;
++        if (length != (int)n || get32(reply + 20U) != total) { goto finish; }
++        memcpy(image + offset, reply + HEADER, n); offset += n;
++    }
++    qikvrt_sha256(image, total, actual);
++    if (memcmp(actual, expected, 32U)) { goto finish; }
++    /* Exclusive creation: never overwrite existing files or follow a symlink. */
++    output = open(argv[3], O_CREAT | O_EXCL | O_WRONLY, S_IRUSR | S_IWUSR);
++    if (output < 0) { rc = 73; goto finish; }
++    offset = 0U;
++    while (offset < total) {
++        written = write(output, image + offset, total - offset);
++        if (written < 0 && errno == EINTR) { continue; }
++        if (written <= 0) { close(output); unlink(argv[3]); rc = 74; goto finish; }
++        offset += (unsigned int)written;
++    }
++    rc = fsync(output); if (close(output) != 0) { rc = -1; }
++    if (rc != 0) { unlink(argv[3]); rc = 74; goto finish; }
++    /* Re-read persisted bytes before emitting content acknowledgement. */
++    output = open(argv[3], O_RDONLY); offset = 0U;
++    if (output < 0) { rc = 74; goto finish; }
++    while (offset < total) {
++        written = read(output, image + offset, total - offset);
++        if (written < 0 && errno == EINTR) { continue; }
++        if (written <= 0) { close(output); rc = 74; goto finish; }
++        offset += (unsigned int)written;
++    }
++    close(output); qikvrt_sha256(image, total, actual);
++    if (memcmp(actual, expected, 32U)) { rc = 65; goto finish; }
++    length = exchange(fd, 5U, nonce, total, total, reply, deadline);
++    if (length != 0 || get32(reply + 20U) != total) { rc = 69; goto finish; }
++    printf("QIKVRT_BOOT_CONTENT_VERIFIED file_id=1 bytes=%u sha256=%s execution=SEPARATE\n", total, argv[4]);
++    rc = 0;
++finish:
++    free(image); close(fd); return rc;
++}
+diff --git a/src/cloud_transputer/qikvrt_sha256_v1.c b/src/cloud_transputer/qikvrt_sha256_v1.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..b5caff9a397e32b9dc437699ff1f1b69b3396c14
+--- /dev/null
++++ b/src/cloud_transputer/qikvrt_sha256_v1.c
+@@ -0,0 +1,38 @@
++#include "qikvrt_wire_v1.h"
++#include <limits.h>
++#include <string.h>
++#if UINT_MAX != 4294967295U
++#error "QIKVRT wire v1 requires 32-bit unsigned int"
++#endif
++#define ROR32(x,n) (((x) >> (n)) | ((x) << (32U-(n))))
++#define CH(x,y,z) (((x)&(y)) ^ ((~(x))&(z)))
++#define MAJ(x,y,z) (((x)&(y)) ^ ((x)&(z)) ^ ((y)&(z)))
++#define EP0(x) (ROR32((x),2U)^ROR32((x),13U)^ROR32((x),22U))
++#define EP1(x) (ROR32((x),6U)^ROR32((x),11U)^ROR32((x),25U))
++#define SIG0(x) (ROR32((x),7U)^ROR32((x),18U)^((x)>>3U))
++#define SIG1(x) (ROR32((x),17U)^ROR32((x),19U)^((x)>>10U))
++static const unsigned int k[64]={
++0x428a2f98U,0x71374491U,0xb5c0fbcfU,0xe9b5dba5U,0x3956c25bU,0x59f111f1U,0x923f82a4U,0xab1c5ed5U,
++0xd807aa98U,0x12835b01U,0x243185beU,0x550c7dc3U,0x72be5d74U,0x80deb1feU,0x9bdc06a7U,0xc19bf174U,
++0xe49b69c1U,0xefbe4786U,0x0fc19dc6U,0x240ca1ccU,0x2de92c6fU,0x4a7484aaU,0x5cb0a9dcU,0x76f988daU,
++0x983e5152U,0xa831c66dU,0xb00327c8U,0xbf597fc7U,0xc6e00bf3U,0xd5a79147U,0x06ca6351U,0x14292967U,
++0x27b70a85U,0x2e1b2138U,0x4d2c6dfcU,0x53380d13U,0x650a7354U,0x766a0abbU,0x81c2c92eU,0x92722c85U,
++0xa2bfe8a1U,0xa81a664bU,0xc24b8b70U,0xc76c51a3U,0xd192e819U,0xd6990624U,0xf40e3585U,0x106aa070U,
++0x19a4c116U,0x1e376c08U,0x2748774cU,0x34b0bcb5U,0x391c0cb3U,0x4ed8aa4aU,0x5b9cca4fU,0x682e6ff3U,
++0x748f82eeU,0x78a5636fU,0x84c87814U,0x8cc70208U,0x90befffaU,0xa4506cebU,0xbef9a3f7U,0xc67178f2U};
++static void p32(unsigned char*p,unsigned int v){p[0]=(unsigned char)(v>>24U);p[1]=(unsigned char)(v>>16U);p[2]=(unsigned char)(v>>8U);p[3]=(unsigned char)v;}
++static unsigned int g32(const unsigned char*p){return ((unsigned int)p[0]<<24U)|((unsigned int)p[1]<<16U)|((unsigned int)p[2]<<8U)|(unsigned int)p[3];}
++static void block(unsigned int s[8],const unsigned char b[64]){
++ unsigned int w[64],a,bb,c,d,e,f,g,h,t1,t2,i;
++ for(i=0U;i<16U;++i)w[i]=g32(b+i*4U);
++ for(i=16U;i<64U;++i)w[i]=SIG1(w[i-2U])+w[i-7U]+SIG0(w[i-15U])+w[i-16U];
++ a=s[0];bb=s[1];c=s[2];d=s[3];e=s[4];f=s[5];g=s[6];h=s[7];
++ for(i=0U;i<64U;++i){t1=h+EP1(e)+CH(e,f,g)+k[i]+w[i];t2=EP0(a)+MAJ(a,bb,c);h=g;g=f;f=e;e=d+t1;d=c;c=bb;bb=a;a=t1+t2;}
++ s[0]+=a;s[1]+=bb;s[2]+=c;s[3]+=d;s[4]+=e;s[5]+=f;s[6]+=g;s[7]+=h;
++}
++void qikvrt_sha256(const unsigned char*data,unsigned int len,unsigned char out[32]){
++ unsigned int s[8]={0x6a09e667U,0xbb67ae85U,0x3c6ef372U,0xa54ff53aU,0x510e527fU,0x9b05688cU,0x1f83d9abU,0x5be0cd19U};
++ unsigned char b[64];unsigned int off=0U,rem,i,lo,hi;
++ while(len-off>=64U){block(s,data+off);off+=64U;}rem=len-off;memset(b,0,sizeof(b));if(rem)memcpy(b,data+off,rem);b[rem]=0x80U;
++ lo=len<<3U;hi=len>>29U;if(rem>=56U){block(s,b);memset(b,0,sizeof(b));}p32(b+56U,hi);p32(b+60U,lo);block(s,b);for(i=0U;i<8U;++i)p32(out+i*4U,s[i]);
++}
+diff --git a/src/cloud_transputer/qikvrt_wire_v1.c b/src/cloud_transputer/qikvrt_wire_v1.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..95beab3c251cf85536f4c9804a97cc40ae3a340b
+--- /dev/null
++++ b/src/cloud_transputer/qikvrt_wire_v1.c
+@@ -0,0 +1,33 @@
++#include "qikvrt_wire_v1.h"
++#include <string.h>
++static void p16(unsigned char*p,unsigned int v){p[0]=(unsigned char)(v>>8U);p[1]=(unsigned char)v;}
++static void p32(unsigned char*p,unsigned int v){p[0]=(unsigned char)(v>>24U);p[1]=(unsigned char)(v>>16U);p[2]=(unsigned char)(v>>8U);p[3]=(unsigned char)v;}
++static unsigned int g16(const unsigned char*p){return ((unsigned int)p[0]<<8U)|(unsigned int)p[1];}
++static unsigned int g32(const unsigned char*p){return ((unsigned int)p[0]<<24U)|((unsigned int)p[1]<<16U)|((unsigned int)p[2]<<8U)|(unsigned int)p[3];}
++unsigned int qikvrt_fnv1a32(const unsigned char*d,unsigned int n){unsigned int h=2166136261U,i;for(i=0U;i<n;++i){h^=(unsigned int)d[i];h*=16777619U;}return h;}
++static int valid(const qikvrt_wire_frame*f){
++ if(f->direction>1U||f->type<1U||f->type>4U||f->d0>3U||f->d4>4U)return 0;
++ if(f->chunk_count==0U||f->chunk_index>=f->chunk_count||f->payload_length>QIKVRT_WIRE_MAX_PAYLOAD)return 0;
++ if(f->type==QIKVRT_TYPE_REQUEST&&f->direction!=QIKVRT_DIRECTION_FORWARD)return 0;
++ if(f->type!=QIKVRT_TYPE_REQUEST&&f->direction!=QIKVRT_DIRECTION_REVERSE)return 0;
++ return 1;
++}
++int qikvrt_wire_encode(const qikvrt_wire_frame*f,const unsigned char*payload,unsigned char*out,unsigned int cap,unsigned int*written){
++ unsigned int total,hc,fc;unsigned char dg[32];
++ if(!f||!out||!written||!valid(f)||(f->payload_length&&!payload))return 0;
++ total=84U+f->payload_length+4U;if(cap<total)return 0;memset(out,0,total);
++ out[0]='Q';out[1]='V';out[2]='R';out[3]='T';out[4]=1U;out[5]=f->direction;out[6]=f->type;out[7]=f->flags;out[8]=f->d0;out[9]=f->d4;p16(out+10U,84U);
++ p32(out+12U,f->session_id);p32(out+16U,f->nonce);p32(out+20U,f->source_node);p32(out+24U,f->virtual_time_hi);p32(out+28U,f->virtual_time_lo);p32(out+32U,f->message_id);p32(out+36U,f->chunk_index);p32(out+40U,f->chunk_count);p32(out+44U,f->payload_length);
++ qikvrt_sha256(payload,f->payload_length,dg);memcpy(out+48U,dg,32U);hc=qikvrt_fnv1a32(out,80U);p32(out+80U,hc);if(f->payload_length)memcpy(out+84U,payload,f->payload_length);fc=qikvrt_fnv1a32(out,84U+f->payload_length);p32(out+84U+f->payload_length,fc);*written=total;return 1;
++}
++int qikvrt_wire_decode(const unsigned char*w,unsigned int n,qikvrt_wire_frame*f,unsigned char*payload,unsigned int pcap){
++ unsigned int plen,total;unsigned char dg[32];
++ if(!w||!f||n<88U)return 0;
++ if(w[0]!='Q'||w[1]!='V'||w[2]!='R'||w[3]!='T'||w[4]!=1U||g16(w+10U)!=84U)return 0;
++ plen=g32(w+44U);if(plen>4096U)return 0;total=84U+plen+4U;if(n!=total||pcap<plen)return 0;
++ if(g32(w+80U)!=qikvrt_fnv1a32(w,80U))return 0;
++ if(g32(w+84U+plen)!=qikvrt_fnv1a32(w,84U+plen))return 0;
++ qikvrt_sha256(w+84U,plen,dg);
++ if(memcmp(dg,w+48U,32U)!=0)return 0;
++ memset(f,0,sizeof(*f));f->direction=w[5];f->type=w[6];f->flags=w[7];f->d0=w[8];f->d4=w[9];f->session_id=g32(w+12U);f->nonce=g32(w+16U);f->source_node=g32(w+20U);f->virtual_time_hi=g32(w+24U);f->virtual_time_lo=g32(w+28U);f->message_id=g32(w+32U);f->chunk_index=g32(w+36U);f->chunk_count=g32(w+40U);f->payload_length=plen;memcpy(f->payload_sha256,w+48U,32U);if(!valid(f))return 0;if(plen)memcpy(payload,w+84U,plen);return 1;
++}
+diff --git a/src/cloud_transputer/qikvrt_wire_v1.h b/src/cloud_transputer/qikvrt_wire_v1.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..17beca4f30407cbc70f4bc9754cf2c1724c18e82
+--- /dev/null
++++ b/src/cloud_transputer/qikvrt_wire_v1.h
+@@ -0,0 +1,33 @@
++#ifndef QIKVRT_WIRE_V1_H
++#define QIKVRT_WIRE_V1_H
++#define QIKVRT_WIRE_VERSION 1U
++#define QIKVRT_WIRE_HEADER_BYTES 84U
++#define QIKVRT_WIRE_TRAILER_BYTES 4U
++#define QIKVRT_WIRE_MAX_PAYLOAD 4096U
++#define QIKVRT_WIRE_MAX_FRAME (QIKVRT_WIRE_HEADER_BYTES + QIKVRT_WIRE_MAX_PAYLOAD + QIKVRT_WIRE_TRAILER_BYTES)
++#define QIKVRT_DIRECTION_FORWARD 0U
++#define QIKVRT_DIRECTION_REVERSE 1U
++#define QIKVRT_TYPE_REQUEST 1U
++#define QIKVRT_TYPE_RESPONSE 2U
++#define QIKVRT_TYPE_RECEIPT 3U
++#define QIKVRT_TYPE_REOBSERVATION 4U
++#define QIKVRT_D0_NOOP 0U
++#define QIKVRT_D0_HOLD 1U
++#define QIKVRT_D0_REOBSERVE 2U
++#define QIKVRT_D0_REQUEST_AUTHORITY 3U
++#define QIKVRT_D4_EFFECT_NACK 0U
++#define QIKVRT_D4_EFFECT_ACK_CONTINUE 1U
++#define QIKVRT_D4_EFFECT_ACK_ISOLATE 2U
++#define QIKVRT_D4_EFFECT_ACK_BLOCK 3U
++#define QIKVRT_D4_EFFECT_ACK_DONE 4U
++typedef struct qikvrt_wire_frame_s {
++ unsigned char direction,type,flags,d0,d4;
++ unsigned int session_id,nonce,source_node,virtual_time_hi,virtual_time_lo;
++ unsigned int message_id,chunk_index,chunk_count,payload_length;
++ unsigned char payload_sha256[32];
++} qikvrt_wire_frame;
++unsigned int qikvrt_fnv1a32(const unsigned char *data,unsigned int length);
++void qikvrt_sha256(const unsigned char *data,unsigned int length,unsigned char out[32]);
++int qikvrt_wire_encode(const qikvrt_wire_frame *frame,const unsigned char *payload,unsigned char *out,unsigned int capacity,unsigned int *written);
++int qikvrt_wire_decode(const unsigned char *wire,unsigned int wire_length,qikvrt_wire_frame *frame,unsigned char *payload,unsigned int payload_capacity);
++#endif
+diff --git a/src/smalltalk/QikvrtEffectAck.st b/src/smalltalk/QikvrtEffectAck.st
+new file mode 100644
+index 0000000000000000000000000000000000000000..7644f00e70f2748929be3d15b90ee09c2343fd2b
+--- /dev/null
++++ b/src/smalltalk/QikvrtEffectAck.st
+@@ -0,0 +1,64 @@
++"SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0"
++"Copyright 2026 Ingolf Lohmann. Verified snapshots, never network authority."
++Object subclass: #QikvrtEffectAck
++    instanceVariableNames: ''
++    classVariableNames: ''
++    package: 'QIKVRT-Core'!
++
++!QikvrtEffectAck class methodsFor: 'contract'!
++fields
++    ^ #(transport_ack input_identifier_available input_digest_valid
++        origin_checked context_checked semantics_reconstructed effect_anticipated
++        risk_classified risk_known responsibility_assigned responsibility_owner_present
++        connection_decided policy_allows_release deadline_exceeded no_open_questions
++        no_next_required_checks required_evidence_present predecessor_invalid integrity_failure)
++!
++stateNames
++    ^ #(EFFECT_NACK EFFECT_ACK_CONTINUE EFFECT_ACK_DONE EFFECT_ACK_ISOLATE EFFECT_ACK_BLOCK)
++!
++evaluate: snapshot
++    "Preserve the C90 verified-snapshot first-match order. Malformed snapshots block."
++    | decision complete |
++    (snapshot isKindOf: Dictionary) ifFalse: [ ^ #EFFECT_ACK_BLOCK ].
++    (self fields allSatisfy: [ :key |
++        (snapshot includesKey: key) and: [
++            (snapshot at: key) == true or: [ (snapshot at: key) == false ] ] ])
++        ifFalse: [ ^ #EFFECT_ACK_BLOCK ].
++    decision := snapshot at: #connection_decision ifAbsent: [ ^ #EFFECT_ACK_BLOCK ].
++    (decision isInteger and: [ decision between: 0 and: 4 ])
++        ifFalse: [ ^ #EFFECT_ACK_BLOCK ].
++    (snapshot at: #predecessor_invalid) ifTrue: [ ^ #EFFECT_ACK_BLOCK ].
++    (snapshot at: #deadline_exceeded) ifTrue: [ ^ #EFFECT_ACK_BLOCK ].
++    ((snapshot at: #input_identifier_available) and: [ snapshot at: #input_digest_valid ])
++        ifFalse: [ ^ #EFFECT_NACK ].
++    (snapshot at: #integrity_failure) ifTrue: [ ^ #EFFECT_ACK_BLOCK ].
++    decision = 4 ifTrue: [ ^ #EFFECT_ACK_BLOCK ].
++    decision = 3 ifTrue: [ ^ #EFFECT_ACK_ISOLATE ].
++    decision = 2 ifFalse: [ ^ #EFFECT_ACK_CONTINUE ].
++    complete := #(transport_ack input_digest_valid origin_checked context_checked
++        semantics_reconstructed effect_anticipated risk_classified risk_known
++        responsibility_assigned responsibility_owner_present connection_decided
++        policy_allows_release no_open_questions no_next_required_checks required_evidence_present)
++        allSatisfy: [ :key | snapshot at: key ].
++    ^ complete ifTrue: [ #EFFECT_ACK_DONE ] ifFalse: [ #EFFECT_ACK_CONTINUE ]
++!
++snapshotFromMask: mask decision: decision
++    | snapshot |
++    (mask isInteger and: [ mask between: 0 and: 524287 ])
++        ifFalse: [ self error: 'Snapshot mask outside 19-bit contract' ].
++    snapshot := Dictionary new.
++    self fields withIndexDo: [ :key :index |
++        snapshot at: key put: (mask bitAt: index) = 1 ].
++    snapshot at: #connection_decision put: decision.
++    ^ snapshot
++!
++coreCodeFor: state
++    ^ (self stateNames indexOf: state ifAbsent: [ ^ 4 ]) - 1
++!
++wireCodeFor: state
++    "D4 wire codes differ from the C enum. Never transmit the C index directly."
++    ^ #(0 1 4 2 3) at: (self coreCodeFor: state) + 1
++!
++ordinaryRelease: state
++    ^ state = #EFFECT_ACK_DONE
++! !
+diff --git a/src/smalltalk/README.md b/src/smalltalk/README.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..335081828e21b11d91f2f712ae8a3d596d7b68fb
+--- /dev/null
++++ b/src/smalltalk/README.md
+@@ -0,0 +1,50 @@
++# QIK-VRT Smalltalk core
++
++`QikvrtEffectAck.st` is an independently executable Pharo Smalltalk implementation
++of the C90 verified-snapshot kernel. Python remains the rich evidence/protocol
++adapter; C90 remains the dependency-minimal kernel. Existing Python functionality
++and tests are retained.
++
++The 19 Boolean fields and five decisions share the existing C90 test-mask order.
++All 2,621,440 combinations are compared byte-for-byte with the compiled C90
++kernel, whose existing suite independently checks 7,864,387 assertions. The
++Smalltalk test also rejects malformed snapshots and restores a freshly built
++image before testing. These counts refer to the stated domains, not to millions
++of independent end-to-end boot tests.
++
++Another 23 representable boundary cases compare the rich Python engine with
++the C90/Smalltalk results. Projection into the verified snapshot preserves
++Python's reception rule: without a transport acknowledgement, a raw identifier
++string is not an available effect-checkable input identity. This is a scoped
++adapter check, not a claim that every Python protocol feature was ported.
++
++```
++python3 -B tools/qikvrt_smalltalk.py install
++make smalltalk-test
++python3 -B tools/qikvrt_smalltalk.py build --output /tmp/qikvrt-smalltalk-image
++```
++
++Source is stored in Git as standard Smalltalk file-in text. The generated image
++is a derivative, not an editable source of authority. Each build begins with the
++locked upstream image and records the exact source, image and lock hashes. The
++Linux x86_64 VM and image archives are bound in `pharo-13.lock.json`; a changed
++upstream URL response fails closed. Rollback deletes only an incomplete new
++installation and never replaces a verified cache. A successful restore does not
++approve, publish, deploy or complete the broader project.
++
++The C enum and the Transputer D4 encoding are deliberately different:
++
++| State | C90 enum | D4 wire |
++| --- | ---: | ---: |
++| EFFECT_NACK | 0 | 0 |
++| EFFECT_ACK_CONTINUE | 1 | 1 |
++| EFFECT_ACK_DONE | 2 | 4 |
++| EFFECT_ACK_ISOLATE | 3 | 2 |
++| EFFECT_ACK_BLOCK | 4 | 3 |
++
++Use `wireCodeFor:` at the transport boundary; never send a C enum as D4 directly.
++
++Upstream: [Pharo download](https://pharo.org/download),
++[Pharo source](https://github.com/pharo-project/pharo),
++[VM source](https://github.com/pharo-project/pharo-vm).
++The upstream licenses are retained under `runtime/toolchains/pharo-*-LICENSE.txt`.
+diff --git a/src/smalltalk/save-image.st b/src/smalltalk/save-image.st
+new file mode 100644
+index 0000000000000000000000000000000000000000..c5f4081e2deeaa98bf177415c393a235a60bb11d
+--- /dev/null
++++ b/src/smalltalk/save-image.st
+@@ -0,0 +1,5 @@
++"SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0"
++"Only the pure verified-snapshot kernel enters this reproducible image."
++(QikvrtEffectAck evaluate: nil) = #EFFECT_ACK_BLOCK
++    ifFalse: [ self error: 'QIKVRT kernel self-test failed' ].
++Smalltalk snapshot: true andQuit: true.
+diff --git a/src/smalltalk/smoke.st b/src/smalltalk/smoke.st
+new file mode 100644
+index 0000000000000000000000000000000000000000..89ccfdb0177b6123c72025d356ce31bfb353ce2e
+--- /dev/null
++++ b/src/smalltalk/smoke.st
+@@ -0,0 +1,5 @@
++"SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0"
++(QikvrtEffectAck evaluate: nil) = #EFFECT_ACK_BLOCK
++    ifFalse: [ self error: 'QIKVRT restored image missing kernel' ].
++Stdio stdout nextPutAll: 'QIKVRT_SMALLTALK_IMAGE_RESTORED'; lf.
++Smalltalk snapshot: false andQuit: true.
+diff --git a/state/work_units/QIKVRT_CLOUD_TRANSPUTER_MAIN_INTEGRATION_REPAIR_V1.json b/state/work_units/QIKVRT_CLOUD_TRANSPUTER_MAIN_INTEGRATION_REPAIR_V1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..dc50e6fd6bb909c732e8bbdfae40accd90140309
+--- /dev/null
++++ b/state/work_units/QIKVRT_CLOUD_TRANSPUTER_MAIN_INTEGRATION_REPAIR_V1.json
+@@ -0,0 +1,130 @@
++{
++  "schema": "qikvrt_ai_contribution_work_unit_v1",
++  "work_unit_id": "QIKVRT-CLOUD-TRANSPUTER-MAIN-INTEGRATION-REPAIR-V1",
++  "created_at": "2026-09-13T18:15:32Z",
++  "source_repository": "Goldkelch/qik-vrt",
++  "source_ref": "refs/pull/1079/head",
++  "source_commit": "ec76419f8aa96ff89a78b00dac8101d5c374e3b3",
++  "source_tree": "19f75180af6479ae2f4e504ecdea971a1716d2a2",
++  "main_integration": {
++    "main_commit": "a86054139b49c13c5cd344753b248b46b5daf66f",
++    "main_tree": "feff1cae2401a3df83febc3b9458de70d79b818e",
++    "integration_commit": "635cadeb66f7995b1ce5bce31a727b69c7f1dcb5",
++    "history_rewrite": false,
++    "predecessor_evidence_transfer": false
++  },
++  "human_actor": {
++    "actor_class": "HUMAN",
++    "attribution_id": "Ingolf Lohmann",
++    "role": "Product Owner and Code Owner",
++    "identity_proof_boundary": "The current transport and repository account context attribute the implementation directive; they are not biometric or universal identity proof."
++  },
++  "artificial_cognitive_actor": {
++    "actor_class": "ARTIFICIAL_COGNITIVE_SYSTEM",
++    "provider": "OpenAI",
++    "system_family": "Codex",
++    "model_or_build": "GPT-5 family; exact serving build UNAVAILABLE",
++    "session_or_run_id": "UNAVAILABLE",
++    "tools_and_adapters": [
++      "QIK-VRT /AI runtime bootloader",
++      "QIK-VRT tool-cache verifier",
++      "local Git",
++      "Python unittest",
++      "GitHub connector"
++    ],
++    "identity_and_observation_limits": "Tool and model-family information is runtime-supplied. It establishes neither person identity, independent authority, authorship rights, deployment, approval nor external effect."
++  },
++  "human_contributions": [
++    {
++      "type": "INTEGRATION_DIRECTION",
++      "description": "Selected continuation of PR #1079 onto current Main as the Cloud-Transputer integration candidate."
++    },
++    {
++      "type": "EVIDENCE_BOUNDARY",
++      "description": "Required that predecessor deployment evidence is not transferred and that transport success is not treated as EFFECT_ACK_DONE."
++    }
++  ],
++  "artificial_cognitive_contributions": [
++    {
++      "type": "CAUSAL_DIAGNOSIS",
++      "description": "Bound the shared CI, zero-bug and collective-review failure to unpersisted deterministic integrity output; bound the terminal failure to an initial health/readback race without asserting an unobserved process-exit cause."
++    },
++    {
++      "type": "IMPLEMENTATION",
++      "description": "Integrated current Main append-only, restored a standalone-neutral terminal start surface, retained explicit Cloud/Compose Mesh routing, aligned the runtime contract at V2, made the container contract require three consecutive full Health-plus-capability readback pairs with bounded observation and socket evidence, labelled every post-readback check in the runtime artifact, and scoped Firefox ESR's unsigned local-reference-XPI setting to the CI reference container only."
++    },
++    {
++      "type": "VERIFICATION_PREPARATION",
++      "description": "Added deterministic CLI daemon liveness coverage and source-bound terminal regression checks before fresh exact-head CI."
++    }
++  ],
++  "joint_components": [
++    {
++      "component": "Cloud Transputer current-Main repair candidate",
++      "human_part": "product direction, integration choice and evidence boundaries",
++      "artificial_cognitive_part": "repository diagnosis, append-only integration, implementation, tests and evidence preparation",
++      "separable": true
++    }
++  ],
++  "unresolved_origin": [
++    "The historical artifact and exact head a20b2a1ba02f4e10d1127b4085f5357285b show an early loopback refusal after a successful health readback while the daemon process remains alive. Exact head 4565067583f50bef85cd45ff5a2d17955d9878cc then achieved stable readback attempts 4 through 6 and exposed a later unlabelled post-readback failure. Exact head 0f3292a7d1a082bfe265c4d438da0d315c5fef25 labelled that independent failure as the post-Firefox profile XPI check; the next candidate enables the documented ESR local-reference preference only in the CI launch and reobserves the same durable profile without inventing deployment or activation evidence."
++  ],
++  "inputs": {
++    "retention_mode": "METADATA_ONLY",
++    "human_directive_transport": "CURRENT_CHAT_SESSION",
++    "raw_transcript_persisted": false,
++    "repository_evidence": [
++      "PR #1079 live head ec76419f8aa96ff89a78b00dac8101d5c374e3b3",
++      "Main a86054139b49c13c5cd344753b248b46b5daf66f",
++      "universal-terminal run 34571994361 job 103175902892",
++      "diagnostic artifact 10188149377 SHA-256 2c958a2b64d34e6b4503e928c4dd595dda9c1c6e8d0956ef71cb3c6ee742f5ac",
++      "exact-head universal-terminal run 34774954700 job 103771256756 artifact 10322584913",
++      "exact-head universal-terminal run 34775510859 job 103772787501 artifact 10323212000",
++      "exact-head universal-terminal run 34776071178 job 103774293059 artifact 10323491549"
++    ]
++  },
++  "outputs": {
++    "paths": [
++      "deploy/universal-terminal/entrypoint.sh",
++      "deploy/universal-terminal/Dockerfile",
++      "policy/QIKVRT_UNIVERSAL_TERMINAL_VIRTUALIZATION_V1.json",
++      "tests/test_qikvrt_universal_terminal_network_boundary.py",
++      "tests/test_qikvrt_effect_ack_http_terminal.py",
++      ".github/workflows/qikvrt_universal_terminal_container.yml",
++      "state/work_units/QIKVRT_CLOUD_TRANSPUTER_MAIN_INTEGRATION_REPAIR_V1.json",
++      "REPOSITORY_FILE_MANIFEST.json",
++      "REPOSITORY_FILE_MANIFEST.json.sha256",
++      "SHA256SUMS.txt"
++    ],
++    "sha256_binding": "MATERIALIZED_PENDING_GIT_COMMIT",
++    "self_binding_rule": "The future commit and deterministic integrity projections bind this work-unit file; no impossible in-file self-hash is claimed."
++  },
++  "verification": {
++    "tool_cache": "PASS_14_OF_14",
++    "bootstrap_before_repair": "BLOCK_PERSISTED_REPOSITORY_INTEGRITY_MISMATCH",
++    "standalone_daemon_liveness_before_repair": "PASS_THREE_CONSECUTIVE_LOOPBACK_READBACKS",
++    "focused_tests": "PASS_4_TESTS_LOCAL_ESR_REFERENCE_EXTENSION_REPAIR_WORKTREE",
++    "full_repository_tests": "PASS_MAKE_TEST_EXIT_0_LOCAL_ESR_REFERENCE_EXTENSION_REPAIR_WORKTREE",
++    "repository_integrity_after_change": "PASS_4114_CLASSIFIED_ENTRIES_4105_IMMUTABLE_DIGESTS_LOCAL_ESR_REFERENCE_EXTENSION_REPAIR_WORKTREE",
++    "trusted_exact_head_ci": "PENDING_NEW_ESR_REFERENCE_EXTENSION_CANDIDATE_COMMIT_AND_REMOTE_REOBSERVATION"
++  },
++  "human_decision": {
++    "implementation_authorization": "PRODUCT_OWNER_AUTHORIZED_CURRENT_CHAT",
++    "candidate_review": "PENDING",
++    "acceptance": "NOT_YET_RECORDED"
++  },
++  "external_effects": {
++    "candidate_branch_push": "AUTHORIZED_REVIEW_CANDIDATE_ONLY_PENDING",
++    "pull_request": "EXISTING_DRAFT_PR_1079",
++    "native_review": "NOT_SUBMITTED",
++    "merge": "NOT_EXECUTED",
++    "deployment": "NOT_EXECUTED",
++    "publication": "NOT_EXECUTED"
++  },
++  "status": "LOCAL_VALIDATED_ESR_REFERENCE_EXTENSION_REPAIR_PENDING_CANDIDATE_COMMIT_AND_EXACT_HEAD_CI",
++  "release_claims": {
++    "PASS": false,
++    "FINAL_PASS": false,
++    "EFFECT_ACK_DONE": false
++  }
++}
+diff --git a/state/work_units/TRANSPUTER_SMALLTALK_IP_BOOT_20260914_V1.json b/state/work_units/TRANSPUTER_SMALLTALK_IP_BOOT_20260914_V1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..606b35e093bf15db6778ebe7b4b9ece743b3b64a
+--- /dev/null
++++ b/state/work_units/TRANSPUTER_SMALLTALK_IP_BOOT_20260914_V1.json
+@@ -0,0 +1,69 @@
++{
++  "schema": "qikvrt_work_unit_v1",
++  "work_unit_id": "TRANSPUTER_SMALLTALK_IP_BOOT_20260914_V1",
++  "request": "Finish existing Transputer carrier with complete C90 corpus, third Smalltalk language and executable IP boot download client",
++  "human_contribution": {
++    "human": "Ingolf Lohmann",
++    "scope": "requirements, architecture and explicit implementation/continuation authorization on 2026-09-14"
++  },
++  "artificial_cognitive_contribution": {
++    "system": "OpenAI Codex",
++    "scope": "Smalltalk implementation, bounded C90 IP receiver, network boot client, build integration and tests"
++  },
++  "origin_class": "JOINT_SEPARABLE",
++  "reuse_sources": [
++    "PR1079 at 57afb6d2dc82328a596a4f18461517f730a8d622",
++    "src/effect_ack_core.c",
++    "src/qikvrt_effect_ack.py",
++    "tests/test_effect_ack_core.c",
++    "distribution/qikvrt-megast",
++    "tools/bootstrap-runtime.sh"
++  ],
++  "base_commit": "57afb6d2dc82328a596a4f18461517f730a8d622",
++  "local_validation": {
++    "existing_c90_assertions": 7864387,
++    "smalltalk_c90_combinations": 2621440,
++    "state_vector_sha256": "4d42866a336d28b78432bc12a313fd8b76f8f7199164caa9dea65ff3c0d71a85",
++    "repository_make_test": "passed before final integration metadata; fresh candidate CI required",
++    "network_image_boot": "PENDING_EXACT_CANDIDATE_BUILD"
++  },
++  "email_scope": {
++    "sent_items_reobserved": 10,
++    "subject": "QIK-VRT aus Karlsruhe: nachvollziehbare KI-Entwicklung, formale Modelle und verantwortete Ausf\u00fchrung",
++    "body_sha256": "1e208ab8d81bed7d75b9f1efaaa75b47a5b9ebd2bd14e462df32bd4bdb95b13f",
++    "sent_items_private_record": "QIKVRT_Versandnachweis_2026-09-14.json",
++    "receipt_does_not_claim_delivery_or_reading": true
++  },
++  "remaining": [
++    "literal-head image build and receiving-client network boot",
++    "independent exact-head Code Owner review",
++    "effective Main protection",
++    "legitimate Main promotion and exact-Main reobservation",
++    "public asset download and checksum readback"
++  ],
++  "effect_ack_done": false,
++  "ordinary_release": false,
++  "image_validation_attempts": [
++    {
++      "source_sha": "24a481778cde05f23c4ac8a714452575dfad2002",
++      "run_id": 34883383007,
++      "iso_sha256": "02892074212d2d8bcd578ce66408a776b5b75841f62afb56be440d0ec71f42f2",
++      "iso_bytes": 1656078336,
++      "iso_boot_observed": true,
++      "network_runtime_observed": false,
++      "disposition": "Runtime marker missing; inner serial evidence was not retained. Successor retains failure telemetry and sizes RAM for the fetched rootfs plus graphical runtime. No predecessor boot evidence transfers."
++    },
++    {
++      "source_sha": "4a5f7752cc6882c52aeebbb7f1cf30fa960f581b",
++      "run_id": 34886279381,
++      "artifact_id": 10365922448,
++      "artifact_digest": "sha256:315ea7426a5b85758b2c89747c1dcb2a4eb942d60aafce5b52dac32a25380479",
++      "iso_sha256": "61b1e5b1a11c7b2e0d0d19561255fcdc8e250b166a5a6d59aefc544b86eb4239",
++      "iso_bytes": 1656078336,
++      "iso_boot_observed": true,
++      "network_rootfs_downloaded_and_mounted": true,
++      "network_runtime_observed": false,
++      "disposition": "The exact network guest downloaded and mounted the root filesystem, but 900 host seconds of single-threaded TCG advanced only to roughly 48 guest seconds in live-config. Prefer accessible KVM and retain a multi-threaded TCG fallback; no predecessor boot evidence transfers."
++    }
++  ]
++}
+diff --git a/tests/smalltalk/core-vectors.c b/tests/smalltalk/core-vectors.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..b5b1acee2f6397dd3ca4b81a8f39762ed6939c76
+--- /dev/null
++++ b/tests/smalltalk/core-vectors.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 */
++/* Reuse the existing exhaustive test snapshot constructor; no second C oracle. */
++#define main qikvrt_existing_test_main
++#include "../test_effect_ack_core.c"
++#undef main
++int main(void)
++{
++    unsigned long mask;
++    int decision;
++    qikvrt_effect_ack_input input;
++    for (mask = 0UL; mask < (1UL << 19); ++mask) {
++        for (decision = 0; decision < 5; ++decision) {
++            input = input_from_mask(mask, (qikvrt_effect_ack_decision)decision);
++            if (putchar((int)qikvrt_effect_ack_evaluate(&input)) == EOF) {
++                return 74;
++            }
++        }
++    }
++    return fflush(stdout) == 0 ? 0 : 74;
++}
+diff --git a/tests/smalltalk/core-vectors.st b/tests/smalltalk/core-vectors.st
+new file mode 100644
+index 0000000000000000000000000000000000000000..6bacfda0ac9310ee4b7825b2d13e841cbb6ccfad
+--- /dev/null
++++ b/tests/smalltalk/core-vectors.st
+@@ -0,0 +1,27 @@
++"SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0"
++"The C90 oracle exhaustively checks the same 19 flags x 5 decisions."
++| output snapshot state |
++(QikvrtEffectAck evaluate: nil) = #EFFECT_ACK_BLOCK
++    ifFalse: [ self error: 'nil must block' ].
++snapshot := QikvrtEffectAck snapshotFromMask: 122879 decision: 2.
++(QikvrtEffectAck evaluate: snapshot) = #EFFECT_ACK_DONE
++    ifFalse: [ self error: 'Complete snapshot must be DONE' ].
++snapshot at: #connection_decision put: 5.
++(QikvrtEffectAck evaluate: snapshot) = #EFFECT_ACK_BLOCK
++    ifFalse: [ self error: 'Invalid decision must block' ].
++snapshot removeKey: #transport_ack.
++(QikvrtEffectAck evaluate: snapshot) = #EFFECT_ACK_BLOCK
++    ifFalse: [ self error: 'Missing field must block' ].
++(QikvrtEffectAck wireCodeFor: #EFFECT_ACK_DONE) = 4
++    ifFalse: [ self error: 'Wire DONE must be D4=4' ].
++output := 'smalltalk-vectors.bin' asFileReference binaryWriteStream.
++[
++    0 to: 524287 do: [ :mask |
++        snapshot := QikvrtEffectAck snapshotFromMask: mask decision: 0.
++        0 to: 4 do: [ :decision |
++            snapshot at: #connection_decision put: decision.
++            state := QikvrtEffectAck evaluate: snapshot.
++            output nextPut: (QikvrtEffectAck coreCodeFor: state) ] ]
++] ensure: [ output close ].
++Stdio stdout nextPutAll: 'QIKVRT_SMALLTALK_VECTORS=2621440'; lf.
++Smalltalk snapshot: false andQuit: true.
+diff --git a/tests/test_qikvrt_cloud_transputer_materialization.py b/tests/test_qikvrt_cloud_transputer_materialization.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..8f36bcf3355a26e7ad3cd9876ba498f03c738337
+--- /dev/null
++++ b/tests/test_qikvrt_cloud_transputer_materialization.py
+@@ -0,0 +1,90 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++import json
++from pathlib import Path
++import unittest
++
++ROOT = Path(__file__).resolve().parents[1]
++
++class CloudTransputerMaterializationTests(unittest.TestCase):
++    @classmethod
++    def setUpClass(cls):
++        cls.policy = json.loads((ROOT/'policy/QIKVRT_CLOUD_TRANSPUTER_V1.json').read_text())
++        cls.dockerfile = (ROOT/'deploy/universal-terminal/Dockerfile').read_text()
++        cls.compose = (ROOT/'deploy/universal-terminal/compose.yaml').read_text()
++        cls.service = (ROOT/'deploy/universal-terminal/service-entrypoint.sh').read_text()
++        cls.probe = (ROOT/'src/cloud_transputer/m68k_contract_probe.c').read_text()
++
++    def test_d0_boundary_is_exact_four_state_machine(self):
++        self.assertEqual(self.policy['boundary_contract']['decision_codes'], {
++            'NOOP':0, 'HOLD':1, 'REOBSERVE':2, 'REQUEST_AUTHORITY':3})
++        self.assertEqual(self.policy['boundary_contract']['d0_width_bits'], 2)
++        self.assertEqual(self.policy['boundary_contract']['d0_mask'], 3)
++
++    def test_0124_is_binary_weight_composition_not_five_state_d0(self):
++        boundary = self.policy['boundary_contract']
++        self.assertEqual(boundary['binary_weights'], [1,2,4])
++        self.assertIn('3 = 1 + 2', boundary['composition_rule'])
++        self.assertIn('weight 4', boundary['composition_rule'])
++        self.assertEqual(self.policy['logic_0124_source_status'], 'RECOVERED_FROM_OWNER_MATERIAL')
++
++    def test_effect_ack_is_separate_protocol_state_register(self):
++        self.assertEqual(self.policy['effect_ack_protocol']['state_codes'], {
++            'EFFECT_NACK':0, 'EFFECT_ACK_CONTINUE':1, 'EFFECT_ACK_ISOLATE':2,
++            'EFFECT_ACK_BLOCK':3, 'EFFECT_ACK_DONE':4})
++        self.assertEqual(self.policy['effect_ack_protocol']['register'], 'D4')
++        self.assertEqual(self.policy['effect_ack_protocol']['ordinary_release'], 'EFFECT_ACK_DONE only')
++        self.assertEqual(self.policy['boundary_contract']['register_binding']['D0'],
++                         'low two bits are the invariant QIK-VRT/TEMDD boundary decision')
++        self.assertEqual(self.policy['boundary_contract']['register_binding']['D4'], 'effect-ack protocol state')
++
++    def test_mc68000_probe_enforces_boundary_split(self):
++        for token in ('D0_BOUNDARY_CODES=0,1,2,3','D0_BINARY_WEIGHTS=1,2',
++                      'D0_COMPOSITION_3=1+2','NEXT_ORTHOGONAL_WEIGHT=4',
++                      'EFFECT_ACK_CODES=0,1,2,3,4','EFFECT_ACK_REGISTER=D4'):
++            self.assertIn(token, self.probe)
++        self.assertIn('d0_valid', self.probe)
++        self.assertIn('d0_valid(4)', self.probe)
++
++    def test_mc68000_contract_and_overlay(self):
++        self.assertEqual(self.policy['architecture'], 'MC68000')
++        self.assertEqual(self.policy['overlay_model']['banks'], 4)
++        self.assertTrue(self.policy['overlay_model']['fence_required'])
++        self.assertTrue(self.policy['overlay_model']['instruction_prefetch_flush'])
++
++    def test_ip_bootstrap_contract(self):
++        value=self.policy['ip_bootstrap']
++        self.assertEqual(value['subnet'], '10.73.0.0/24')
++        self.assertEqual(value['discovery_port'], 7331)
++        self.assertEqual(value['route'], ['discover','offer','request','data','done'])
++        self.assertEqual(value['checksum'], 'FNV1A32')
++
++    def test_image_contains_required_runtime_planes(self):
++        for token in ('firefox-esr','novnc','openssh-server','postgresql','snmpd','bind9',
++                      'gcc-m68k-linux-gnu','qemu-user','qikvrt-m68k-selftest'):
++            self.assertIn(token, self.dockerfile)
++
++    def test_mc68000_checksum_binds_the_installed_executable(self):
++        self.assertIn('/usr/local/bin/qikvrt-m68k-selftest', self.dockerfile)
++        self.assertIn('qikvrt-m68k-selftest.sha256', self.dockerfile)
++        self.assertIn("awk '{print $1 \"  /usr/local/bin/qikvrt-m68k-selftest\"}'", self.dockerfile)
++        self.assertNotIn('(cd /out && sha256sum qikvrt-m68k-selftest > m68k/qikvrt-m68k-selftest.sha256)', self.dockerfile)
++
++    def test_compose_preserves_durable_terminal_restart(self):
++        terminal = self.compose.split('  qikvrt-universal-terminal:', 1)[1].split('\n\n  qikvrt-gateway:', 1)[0]
++        self.assertIn('restart: unless-stopped', terminal)
++
++    def test_compose_materializes_fixed_mesh(self):
++        for token in ('10.73.0.0/24','10.73.0.2','10.73.0.3','10.73.0.4','10.73.0.6',
++                      'qikvrt-universal-terminal','qikvrt-sqld','qikvrt-mirror','qikvrt-mc68000',
++                      'qikvrt-smtpd','qikvrt-dnsd','qikvrt-snmpd','qikvrt-sshd'):
++            self.assertIn(token, self.compose)
++
++    def test_personal_posix_is_fail_closed_when_required(self):
++        self.assertIn('QIKVRT_REQUIRE_PERSONAL_POSIX', self.service)
++        self.assertIn('PERSONAL_POSIX_UNBOUND', self.service)
++        self.assertIn('m68k-linux-gnu-gcc', self.service)
++        self.assertIn('qemu-m68k', self.service)
++
++if __name__ == '__main__':
++    unittest.main()
+diff --git a/tests/test_qikvrt_cloud_transputer_mesh_runtime.py b/tests/test_qikvrt_cloud_transputer_mesh_runtime.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..466c89e295d96718a37d19f677fb2b5a406b392e
+--- /dev/null
++++ b/tests/test_qikvrt_cloud_transputer_mesh_runtime.py
+@@ -0,0 +1,29 @@
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++
++
++def test_cloud_carrier_materializes_transputer_mesh_roles():
++    script = (ROOT / "deploy/universal-terminal/cloud-entrypoint.sh").read_text()
++    for mode in ("m68k", "smtpd", "dnsd", "snmpd"):
++        assert f"QIKVRT_SERVICE_MODE={mode}" in script
++    assert "qikvrt_cloud_transputer_mesh_health_v1" in script
++    assert "effect_ack\":\"NOT_IMPLIED" in script
++    assert "emit_health READY" in script
++
++
++def test_mesh_health_is_a_runtime_readback_not_static_success():
++    nginx = (ROOT / "deploy/universal-terminal/nginx.conf").read_text()
++    assert "alias /tmp/qikvrt-mesh-health.json;" in nginx
++    assert "location = /qik-vrt/mesh/v1/healthz" in nginx
++    assert "location = /qik-vrt/mesh/v1/topology" in nginx
++    assert "return 200" not in nginx.split("location = /qik-vrt/mesh/v1/healthz", 1)[1].split("}", 1)[0]
++
++def test_compose_gateway_health_waits_for_real_terminal_endpoints():
++    service = (ROOT / "deploy/universal-terminal/service-entrypoint.sh").read_text()
++    assert "qikvrt_compose_mesh_gateway_health_v1" in service
++    assert "http://127.0.0.1:8771/.well-known/effect-ack" in service
++    assert "http://127.0.0.1:6080/vnc.html" in service
++    assert '"terminal":"OBSERVED"' in service
++    assert '"m68k":"SEPARATELY_REOBSERVED"' in service
++    assert '"effect_ack":"NOT_IMPLIED"' in service
+diff --git a/tests/test_qikvrt_effect_ack_http_terminal.py b/tests/test_qikvrt_effect_ack_http_terminal.py
+index fe2eda3b7e76410415e5a6ab8aac6ee1bfdf5762..d110600e95bcea72c053f397597272ad160edf3c 100644
+--- a/tests/test_qikvrt_effect_ack_http_terminal.py
++++ b/tests/test_qikvrt_effect_ack_http_terminal.py
+@@ -3,6 +3,8 @@ from __future__ import annotations
+ import base64
+ import importlib.util
+ import json
++import socket
++import subprocess
+ import sys
+ import threading
+ import time
+@@ -221,5 +223,59 @@ class LoopbackTerminalE2ETests(unittest.TestCase):
+         self.assertFalse(body["ordinary_release"])
+ 
+ 
++class LoopbackTerminalCliLivenessTests(unittest.TestCase):
++    def test_cli_daemon_survives_consecutive_loopback_readbacks(self) -> None:
++        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as reservation:
++            reservation.bind(("127.0.0.1", 0))
++            port = reservation.getsockname()[1]
++        process = subprocess.Popen(
++            [
++                sys.executable,
++                "-B",
++                str(MODULE_PATH),
++                "--host",
++                "127.0.0.1",
++                "--port",
++                str(port),
++            ],
++            stdout=subprocess.PIPE,
++            stderr=subprocess.PIPE,
++            text=True,
++        )
++        try:
++            self.assertIsNotNone(process.stdout)
++            ready = json.loads(process.stdout.readline())
++            self.assertEqual(
++                ready,
++                {
++                    "external_effects": "NONE",
++                    "host": "127.0.0.1",
++                    "port": port,
++                    "state": "READY",
++                },
++            )
++            for _ in range(3):
++                with urllib.request.urlopen(
++                    f"http://127.0.0.1:{port}/.well-known/effect-ack", timeout=3
++                ) as response:
++                    self.assertEqual(response.status, 200)
++                    capability = json.loads(response.read().decode("utf-8"))
++                    self.assertEqual(
++                        capability["schema"], "qikvrt_effect_ack_http_capability_v1"
++                    )
++                self.assertIsNone(process.poll())
++        finally:
++            process.terminate()
++            try:
++                process.wait(timeout=3)
++            except subprocess.TimeoutExpired:
++                process.kill()
++                process.wait(timeout=3)
++            if process.stdout is not None:
++                process.stdout.close()
++            if process.stderr is not None:
++                process.stderr.close()
++
++
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/tests/test_qikvrt_megast_distribution.py b/tests/test_qikvrt_megast_distribution.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..305277977f2d3e811b45d0ef9dc888e55ede3e05
+--- /dev/null
++++ b/tests/test_qikvrt_megast_distribution.py
+@@ -0,0 +1,95 @@
++import pathlib
++import unittest
++
++ROOT = pathlib.Path(__file__).resolve().parents[1]
++BUILD = ROOT / "distribution/qikvrt-megast/build.sh"
++SESSION = ROOT / "distribution/qikvrt-megast/qikvrt-megast-session.sh"
++README = ROOT / "distribution/qikvrt-megast/README.md"
++WORKFLOW = ROOT / ".github/workflows/qikvrt_megast_distribution_v1.yml"
++
++
++class MegaSTDistributionContract(unittest.TestCase):
++    def test_build_contract_is_fail_closed(self):
++        text = BUILD.read_text()
++        self.assertIn('set -eu', text)
++        self.assertIn('effect_ack_done', text)
++        self.assertIn('qikvrt-megast-amd64.iso.sha256', text)
++        self.assertIn('BLOCKED: live-build produced no ISO', text)
++
++    def test_modern_compatibility_envelope_is_present(self):
++        text = BUILD.read_text()
++        for token in ('hatari', 'firefox-esr', 'flatpak', 'podman', 'xfce4'):
++            self.assertIn(token, text)
++
++    def test_live_build_uses_supported_security_and_updates_switches(self):
++        text = BUILD.read_text()
++        self.assertIn("lb config --help 2>&1 | grep -q -- '--security-suite'", text)
++        self.assertIn('--security true --security-suite trixie-security', text)
++        self.assertIn('debian-security trixie-security', text)
++        self.assertIn('set -- "$@" --security false', text)
++        self.assertIn("lb config --help 2>&1 | grep -q -- '--updates'", text)
++        self.assertIn('set -- "$@" --updates true', text)
++
++    def test_visual_shell_does_not_claim_atari_identity(self):
++        text = SESSION.read_text()
++        self.assertIn('Mega-ST/GEM-inspired', text)
++        self.assertIn('does not claim binary or hardware identity', text)
++        self.assertIn('effect_ack_done', text)
++
++    def test_publication_waits_for_exact_main(self):
++        text = WORKFLOW.read_text()
++        self.assertIn("github.ref == 'refs/heads/main'", text)
++        self.assertEqual(
++            text.count('(cd out && sha256sum -c qikvrt-megast-amd64.iso.sha256)'),
++            1,
++        )
++        self.assertIn('cd out\n          sha256sum -c qikvrt-megast-amd64.iso.sha256', text)
++        self.assertIn('Read back published release metadata', text)
++
++    def test_pull_request_build_is_literal_head_bound(self):
++        text = WORKFLOW.read_text()
++        subject = '${{ github.event.pull_request.head.sha || github.sha }}'
++        self.assertEqual(text.count(f'ref: {subject}'), 2)
++        self.assertIn(f'QIKVRT_EXACT_SHA: {subject}', text)
++        self.assertIn(f'"source_sha": "{subject}"', text)
++        self.assertIn(f'name: qikvrt-megast-{subject}', text)
++
++    def test_workflow_pins_trixie_live_build_toolchain(self):
++        text = WORKFLOW.read_text()
++        self.assertNotIn('apt-get install -y live-build', text)
++        self.assertIn('live-build_20250505+deb13u1_all.deb', text)
++        self.assertIn(
++            '58e09779881cbcc631c49ceb703413e0247a87db01823e597b2a1c40a2afd8f4',
++            text,
++        )
++        self.assertIn('/tmp/live-build.deb | sha256sum -c -', text)
++        self.assertIn('sudo dpkg -i /tmp/live-build.deb', text)
++        self.assertIn('debian-archive-keyring_2025.1_all.deb', text)
++        self.assertIn(
++            '9ea7778e443144ca490668737a8ab22dd3e748bb99e805e22ec055abeb3c7fac',
++            text,
++        )
++        self.assertIn('/tmp/debian-archive-keyring.deb | sha256sum -c -', text)
++        self.assertIn('sudo dpkg -i /tmp/debian-archive-keyring.deb', text)
++
++    def test_boot_witness_precedes_multi_user_and_qemu_binds_extracted_kernel(self):
++        build = BUILD.read_text()
++        workflow = WORKFLOW.read_text()
++        self.assertIn("After=local-fs.target", build)
++        self.assertIn("Before=multi-user.target", build)
++        self.assertNotIn("After=multi-user.target", build)
++        self.assertIn("-kernel out/qikvrt-megast-vmlinuz", workflow)
++        self.assertIn("-initrd out/qikvrt-megast-initrd", workflow)
++        self.assertIn("-append \"boot=live components", workflow)
++        self.assertIn("-cdrom out/qikvrt-megast-amd64.iso", workflow)
++
++    def test_terminal_definition_requires_download_readback(self):
++        text = README.read_text()
++        self.assertIn('stable release path', text)
++        self.assertIn('independently read back after publication', text)
++        self.assertIn('EFFECT_ACK_DONE', text)
++        self.assertIn('Stay fail closed and keep future open', text)
++
++
++if __name__ == '__main__':
++    unittest.main()
+diff --git a/tests/test_qikvrt_netboot.py b/tests/test_qikvrt_netboot.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..21a7485bc2417e08bcfa9c108b9492e077d81674
+--- /dev/null
++++ b/tests/test_qikvrt_netboot.py
+@@ -0,0 +1,146 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++import hashlib
++import importlib.util
++import json
++from pathlib import Path
++import shutil
++import socket
++import subprocess
++import tempfile
++import threading
++import unittest
++from unittest.mock import patch
++
++ROOT = Path(__file__).resolve().parents[1]
++spec = importlib.util.spec_from_file_location("qikvrt_netboot", ROOT / "distribution/qikvrt-megast/boot.py")
++boot = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(boot)
++
++
++class NetbootTests(unittest.TestCase):
++    @classmethod
++    def setUpClass(cls):
++        cls.temp = tempfile.TemporaryDirectory()
++        cls.receiver = Path(cls.temp.name) / "receive"
++        subprocess.run(["cc", "-std=c90", "-pedantic", "-Wall", "-Wextra", "-Werror", "-O2",
++                        "-Isrc/cloud_transputer", "src/cloud_transputer/qikvrt_boot_receive.c",
++                        "src/cloud_transputer/qikvrt_wire_v1.c", "src/cloud_transputer/qikvrt_sha256_v1.c",
++                        "-o", str(cls.receiver)], cwd=ROOT, check=True)
++
++    @classmethod
++    def tearDownClass(cls):
++        cls.temp.cleanup()
++
++    def roundtrip(self, payload, digest=None, existing=False):
++        with tempfile.TemporaryDirectory() as tmp:
++            output = Path(tmp) / "QIKVRT_BOOT.BIN"
++            if existing:
++                output.write_bytes(b"preserve")
++            server = boot.BootDatagramServer(("127.0.0.1", 0), payload)
++            thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
++            try:
++                result = subprocess.run([str(self.receiver), "127.0.0.1", str(server.server_address[1]), str(output),
++                                         digest or hashlib.sha256(payload).hexdigest(), "4711"], capture_output=True, timeout=15)
++            finally:
++                server.shutdown(); server.server_close(); thread.join()
++            return result, output.read_bytes() if output.exists() else None, server.completed
++
++    def test_c90_receiver_applies_and_reobserves_all_chunk_boundaries(self):
++        for size in (1, 127, 128, 129, 4097):
++            with self.subTest(size=size):
++                payload = bytes(i % 256 for i in range(size))
++                result, actual, ledger = self.roundtrip(payload)
++                self.assertEqual(result.returncode, 0, result.stderr)
++                self.assertEqual(actual, payload)
++                self.assertIn(b"QIKVRT_BOOT_CONTENT_VERIFIED", result.stdout)
++                self.assertEqual(len(ledger), 1)
++                self.assertFalse(ledger[0]["booted"])
++
++    def test_untrusted_image_digest_never_creates_output(self):
++        result, output, _ = self.roundtrip(b"image", digest="0" * 64)
++        self.assertNotEqual(result.returncode, 0)
++        self.assertIsNone(output)
++
++    def test_existing_file_is_never_overwritten(self):
++        result, output, _ = self.roundtrip(b"image", existing=True)
++        self.assertNotEqual(result.returncode, 0)
++        self.assertEqual(output, b"preserve")
++
++    def test_incorrect_nonce_and_corrupt_packets_have_no_effect(self):
++        with boot.BootDatagramServer(("127.0.0.1", 0), b"image") as server:
++            thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
++            try:
++                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as peer:
++                    peer.settimeout(.1)
++                    peer.sendto(boot.frame(1, 0, 0, 0), server.server_address)
++                    with self.assertRaises(TimeoutError): peer.recv(160)
++                    packet = bytearray(boot.frame(1, 4711, 0, 0)); packet[-1] ^= 1
++                    peer.sendto(packet, server.server_address)
++                    with self.assertRaises(TimeoutError): peer.recv(160)
++            finally:
++                server.shutdown(); thread.join()
++            self.assertEqual(server.completed, [])
++
++    def test_manifest_rejects_foreign_architecture_and_path_substitution(self):
++        with tempfile.TemporaryDirectory() as tmp:
++            root = Path(tmp)
++            for name in boot.FILES.values(): (root / name).write_bytes(b"image")
++            manifest = boot.make_manifest(root, "a" * 40)
++            manifest["architecture"] = "MC68000"
++            with self.assertRaises(ValueError): boot.validate_manifest(manifest)
++            manifest["architecture"] = "x86_64"
++            manifest["files"]["kernel"]["name"] = "../kernel"
++            with self.assertRaises(ValueError): boot.validate_manifest(manifest)
++
++    def test_download_hash_mismatch_is_not_accepted(self):
++        with tempfile.TemporaryDirectory() as tmp:
++            root = Path(tmp); (root / "payload").write_bytes(b"corrupt")
++            handler = lambda *a, **kw: boot.http.server.SimpleHTTPRequestHandler(*a, directory=str(root), **kw)
++            with boot.http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler) as server:
++                thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
++                try:
++                    with self.assertRaises(ValueError):
++                        boot.download(f"http://127.0.0.1:{server.server_address[1]}/payload", root / "received", "0" * 64, 7)
++                finally:
++                    server.shutdown(); thread.join()
++            self.assertFalse((root / "received").exists())
++            self.assertFalse((root / "received.partial").exists())
++
++    def test_network_boot_allows_bounded_graphical_runtime_and_reports_serial_tail(self):
++        source = (ROOT / "distribution/qikvrt-megast/boot.py").read_text()
++        self.assertIn("timeout: int = 900", source)
++        self.assertIn("serial_tail:", source)
++
++    def test_large_rootfs_fits_half_ram_with_runtime_headroom(self):
++        for size in (1, 1488416768, 2 * 1024**3):
++            memory = boot.guest_memory_mib({"files": {"rootfs": {"bytes": size}}}) * 1024**2
++            self.assertGreaterEqual(memory, 2 * size + 1024**3)
++
++    def test_hardware_acceleration_is_preferred_with_multithreaded_fallback(self):
++        with patch.object(boot.os, "access", return_value=True):
++            self.assertEqual(boot.qemu_acceleration(), "kvm")
++        with patch.object(boot.os, "access", return_value=False):
++            self.assertEqual(boot.qemu_acceleration(), "tcg,thread=multi")
++        workflow = (ROOT / ".github/workflows/qikvrt_megast_distribution_v1.yml").read_text()
++        self.assertIn('sudo chown "$(id -u):$(id -g)" /dev/kvm', workflow)
++
++    def test_early_boot_marker_never_substitutes_for_runtime_and_failure_is_retained(self):
++        with tempfile.TemporaryDirectory() as tmp:
++            root = Path(tmp)
++            for name in boot.FILES.values(): (root / name).write_bytes(b"image")
++            manifest = boot.make_manifest(root, "a" * 40)
++            fake = root / "qemu-stub"
++            fake.write_text("#!/bin/sh\necho QIKVRT_MEGAST_BOOT_OK source_sha=" + "a" * 40 + "\n")
++            fake.chmod(0o700)
++            with patch.object(boot.shutil, "which", return_value=str(fake)):
++                with self.assertRaisesRegex(ValueError, "no exact-source runtime evidence"):
++                    boot.boot(root, manifest, timeout=2, verify_only=True)
++            failure = json.loads((root / "qikvrt-netboot-failure.json").read_text())
++            self.assertFalse(failure["guest_runtime_reobserved"])
++            self.assertFalse(failure["effect_ack_done"])
++            self.assertFalse((root / "qikvrt-netboot-receipt.json").exists())
++            self.assertIn("QIKVRT_MEGAST_BOOT_OK", (root / "qikvrt-netboot-serial.log").read_text())
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/test_qikvrt_universal_terminal_network_boundary.py b/tests/test_qikvrt_universal_terminal_network_boundary.py
+index ef90a7f2a0b6beac59e34426b9328bf662266de6..2cf818b801ee4c9dba5be2241a0c99cb1d070fde 100644
+--- a/tests/test_qikvrt_universal_terminal_network_boundary.py
++++ b/tests/test_qikvrt_universal_terminal_network_boundary.py
+@@ -6,6 +6,10 @@ import unittest
+ ROOT = pathlib.Path(__file__).resolve().parents[1]
+ COMPOSE = ROOT / "deploy/universal-terminal/compose.yaml"
+ POLICY = ROOT / "policy/QIKVRT_UNIVERSAL_TERMINAL_VIRTUALIZATION_V1.json"
++ENTRYPOINT = ROOT / "deploy/universal-terminal/entrypoint.sh"
++CLOUD_ENTRYPOINT = ROOT / "deploy/universal-terminal/cloud-entrypoint.sh"
++DOCKERFILE = ROOT / "deploy/universal-terminal/Dockerfile"
++WORKFLOW = ROOT / ".github/workflows/qikvrt_universal_terminal_container.yml"
+ 
+ 
+ class UniversalTerminalNetworkBoundaryTests(unittest.TestCase):
+@@ -37,6 +41,59 @@ class UniversalTerminalNetworkBoundaryTests(unittest.TestCase):
+             "REQUIRED",
+         )
+ 
++    def test_standalone_default_and_cloud_mesh_route_are_explicit_and_distinct(self):
++        policy = json.loads(POLICY.read_text(encoding="utf-8"))
++        self.assertEqual(policy["runtime_transport"]["default_start_surface"], "about:blank")
++        self.assertEqual(
++            policy["runtime_transport"]["runtime_state_schema"],
++            "qikvrt_universal_terminal_runtime_state_v2",
++        )
++        self.assertIn(
++            'START_URL="${QIKVRT_START_URL:-about:blank}"',
++            ENTRYPOINT.read_text(encoding="utf-8"),
++        )
++        dockerfile = DOCKERFILE.read_text(encoding="utf-8")
++        self.assertIn("QIKVRT_START_URL=about:blank", dockerfile)
++        self.assertIn('browser.startup.homepage", "about:blank"', dockerfile)
++        entrypoint = ENTRYPOINT.read_text(encoding="utf-8")
++        self.assertIn("QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION", entrypoint)
++        self.assertIn(
++            'user_pref("xpinstall.signatures.required", false);',
++            entrypoint,
++        )
++        self.assertIn(
++            'export QIKVRT_START_URL="${QIKVRT_CLOUD_START_URL:-http://127.0.0.1:8080/qik-vrt/mesh/v1/}"',
++            CLOUD_ENTRYPOINT.read_text(encoding="utf-8"),
++        )
++        workflow = WORKFLOW.read_text(encoding="utf-8")
++        self.assertIn("qikvrt_universal_terminal_runtime_state_v2", workflow)
++        self.assertNotIn("qikvrt_universal_terminal_runtime_state_v1", workflow)
++
++    def test_workflow_requires_bounded_stable_paired_readbacks(self):
++        workflow = WORKFLOW.read_text(encoding="utf-8")
++        self.assertEqual(workflow.count("reobserve_stable_terminal()"), 2)
++        self.assertEqual(workflow.count("for attempt in $(seq 1 40); do"), 2)
++        self.assertEqual(workflow.count('if [ "$stable" -eq 3 ]; then return 0; fi'), 2)
++        self.assertEqual(
++            workflow.count(
++                "curl --max-time 2 -fsS http://127.0.0.1:8771/.well-known/effect-ack"
++            ),
++            2,
++        )
++        self.assertIn("initial-readback-observations.log", workflow)
++        self.assertIn("restart-readback-observations.log", workflow)
++        self.assertIn("loopback-sockets.txt", workflow)
++        self.assertIn("initial-post-readback-checks.log", workflow)
++        self.assertIn("restart-post-readback-checks.log", workflow)
++        self.assertEqual(workflow.count("CHECK_NAME=stable_paired_readback"), 2)
++        self.assertEqual(
++            workflow.count("QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION=1"),
++            2,
++        )
++        self.assertIn("CHECK_NAME=reference_extension_signature_mode", workflow)
++        self.assertIn("CHECK_NAME=profile_extension", workflow)
++        self.assertIn("CHECK_NAME=initial_runtime_state_copy", workflow)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/tools/bootstrap-runtime.sh b/tools/bootstrap-runtime.sh
+index 348b15daf0a0a10497d9b1ba5a68ec8829dd2bb6..7d14967aca2c38c61845e4bf481c20c0cfcfa073 100644
+--- a/tools/bootstrap-runtime.sh
++++ b/tools/bootstrap-runtime.sh
+@@ -23,7 +23,7 @@ usage() {
+     cat <<'EOF'
+ Usage: tools/bootstrap-runtime.sh [--check-only] [--install]
+        [--accept-third-party]
+-       [--profile core|ietf|formal|audio|publication|all]
++       [--profile core|ietf|formal|audio|publication|smalltalk|all]
+        [--cache-dir PATH]
+ 
+ Every profile checks GitHub CLI first. Only the verified GitHub CLI and
+@@ -91,7 +91,7 @@ while [ "$#" -gt 0 ]; do
+ done
+ 
+ case "$PROFILE" in
+-    core|ietf|formal|audio|publication|all) ;;
++    core|ietf|formal|audio|publication|smalltalk|all) ;;
+     *) usage >&2; exit 2 ;;
+ esac
+ if [ "$MODE" = install ] && [ "$ACCEPT_THIRD_PARTY" -ne 1 ]; then
+@@ -389,6 +389,14 @@ check_audio_profile() {
+     fi
+ }
+ 
++check_smalltalk_profile() {
++    if [ "$MODE" = install ]; then
++        python3 "$ROOT/tools/qikvrt_smalltalk.py" install --cache-dir "$CACHE_DIR" || fail "Pharo installation failed"
++    elif ! python3 "$ROOT/tools/qikvrt_smalltalk.py" verify --cache-dir "$CACHE_DIR"; then
++        mark_continue "Run --install --accept-third-party --profile smalltalk for the locked Pharo runtime"
++    fi
++}
++
+ check_publication_profile() {
+     missing=
+     for tool in xelatex pdftotext pdftoppm; do
+@@ -412,12 +420,14 @@ case "$PROFILE" in
+     formal) check_formal_profile ;;
+     audio) check_audio_profile ;;
+     publication) check_publication_profile ;;
++    smalltalk) check_smalltalk_profile ;;
+     all)
+         check_core_profile
+         check_ietf_profile
+         check_formal_profile
+         check_audio_profile
+         check_publication_profile
++        check_smalltalk_profile
+         ;;
+ esac
+ 
+diff --git a/tools/qikvrt_smalltalk.py b/tools/qikvrt_smalltalk.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..20ef6eff3399f89e4e449ee2db5662edd8062eb5
+--- /dev/null
++++ b/tools/qikvrt_smalltalk.py
+@@ -0,0 +1,192 @@
++#!/usr/bin/env python3
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++"""Pinned Pharo bootstrap, reproducible source loading and exhaustive C90 comparison.
++
++Extends bootstrap-runtime's language profiles. Base image/cache bytes never acquire
++authority through a mutable live image; every build starts from the hash-locked ZIP.
++"""
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++import os
++from pathlib import Path
++import platform
++import shutil
++import subprocess
++import sys
++import tempfile
++import urllib.request
++import zipfile
++
++ROOT = Path(__file__).resolve().parents[1]
++LOCK_PATH = ROOT / "runtime/toolchains/pharo-13.lock.json"
++
++
++def digest(path: Path) -> str:
++    with path.open("rb") as stream:
++        return hashlib.file_digest(stream, "sha256").hexdigest()
++
++
++def run(command: list[str], cwd: Path) -> None:
++    subprocess.run(command, cwd=cwd, check=True, timeout=600)
++
++
++def cache_path(cache: Path, lock: dict) -> Path:
++    return cache / "pharo" / lock["version"]
++
++
++def verify(cache: Path, lock: dict) -> Path:
++    directory = cache_path(cache, lock)
++    for kind in ("image", "vm"):
++        archive = directory / (kind + ".zip")
++        if digest(archive) != lock[kind]["sha256"]:
++            raise ValueError(f"{kind}: archive digest mismatch")
++        with zipfile.ZipFile(archive) as source:
++            for member in source.infolist():
++                if member.is_dir():
++                    continue
++                path = directory / kind / member.filename
++                if path.is_symlink() or not path.resolve().is_relative_to((directory / kind).resolve()):
++                    raise ValueError("unsafe cache member")
++                if digest(path) != hashlib.sha256(source.read(member)).hexdigest():
++                    raise ValueError(f"{kind}: extracted bytes changed: {member.filename}")
++    return directory
++
++
++def install(cache: Path, lock: dict, archive_dir: Path | None = None) -> Path:
++    if platform.system() != "Linux" or platform.machine() not in ("x86_64", "AMD64"):
++        raise ValueError("Pharo lock is for Linux x86_64")
++    target = cache_path(cache, lock)
++    if target.exists():
++        return verify(cache, lock)
++    target.parent.mkdir(parents=True, exist_ok=True)
++    temporary = Path(tempfile.mkdtemp(prefix=".install-", dir=target.parent))
++    try:
++        for kind in ("image", "vm"):
++            archive = temporary / (kind + ".zip")
++            print(f"PHARO_FETCH {kind}", flush=True)
++            if archive_dir:
++                shutil.copyfile(archive_dir / (kind + ".zip"), archive)
++            else:
++                with urllib.request.urlopen(lock[kind]["url"], timeout=120) as response, archive.open("wb") as output:
++                    shutil.copyfileobj(response, output)
++            if digest(archive) != lock[kind]["sha256"]:
++                raise ValueError(f"{kind}: downloaded archive digest mismatch")
++            with zipfile.ZipFile(archive) as source:
++                for member in source.infolist():
++                    path = temporary / kind / member.filename
++                    if not path.resolve().is_relative_to((temporary / kind).resolve()):
++                        raise ValueError("unsafe archive path")
++                source.extractall(temporary / kind)
++                for member in source.infolist():
++                    path = temporary / kind / member.filename
++                    if path.is_file() and member.external_attr >> 16 & 0o111:
++                        path.chmod(0o755)
++        temporary.rename(target)
++    finally:
++        if temporary.exists():
++            shutil.rmtree(temporary)
++    print("PHARO_INSTALL_COMPLETE", flush=True)
++    return verify(cache, lock)
++
++
++def build(directory: Path, lock: dict, output: Path) -> Path:
++    output.mkdir(parents=True, exist_ok=True)
++    image = output / "QIKVRT.image"
++    if image.exists():
++        raise ValueError("Refusing to overwrite an existing mutable image")
++    shutil.copyfile(directory / "image" / lock["image"]["file"], image)
++    original_changes = (directory / "image" / lock["image"]["file"]).with_suffix(".changes")
++    shutil.copyfile(original_changes, image.with_suffix(".changes"))
++    for source in (directory / "image").glob("*.sources"):
++        shutil.copyfile(source, output / source.name)
++    vm = str(directory / "vm" / lock["vm"]["file"])
++    run([vm, "--headless", str(image), "st", str(ROOT / "src/smalltalk/QikvrtEffectAck.st"), str(ROOT / "src/smalltalk/save-image.st")], output)
++    run([vm, "--headless", str(image), "st", str(ROOT / "src/smalltalk/smoke.st")], output)
++    receipt = {"schema": "qikvrt_smalltalk_image_v1", "lock_sha256": digest(LOCK_PATH),
++               "source_sha256": digest(ROOT / "src/smalltalk/QikvrtEffectAck.st"),
++               "image_sha256": digest(image), "image_restored": True, "effect_ack_done": False}
++    (output / "smalltalk-image-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
++    return image
++
++
++def test(directory: Path, lock: dict) -> None:
++    with tempfile.TemporaryDirectory(prefix="qikvrt-smalltalk-") as temp:
++        work = Path(temp)
++        image = build(directory, lock, work)
++        run([str(directory / "vm" / lock["vm"]["file"]), "--headless", str(image), "st", str(ROOT / "tests/smalltalk/core-vectors.st")], work)
++        executable = work / "c90-vectors"
++        run([os.environ.get("CC", "cc"), "-std=c90", "-pedantic", "-Wall", "-Wextra", "-Werror", "-O2", "-I" + str(ROOT / "include"), str(ROOT / "src/effect_ack_core.c"), str(ROOT / "tests/smalltalk/core-vectors.c"), "-o", str(executable)], work)
++        with (work / "c90-vectors.bin").open("wb") as output:
++            subprocess.run([str(executable)], stdout=output, check=True, timeout=60)
++        a, b = work / "c90-vectors.bin", work / "smalltalk-vectors.bin"
++        if a.stat().st_size != 2621440 or b.stat().st_size != 2621440 or digest(a) != digest(b):
++            raise ValueError("Smalltalk/C90 exhaustive result mismatch")
++        # Also use the existing rich Python engine on representable boundary
++        # cases. Its evidence parser is intentionally not replaced by the C ABI.
++        sys.path.insert(0, str(ROOT / "src"))
++        from qikvrt_effect_ack import EffectAckEngine, ConnectionDecision, RiskLevel
++        sys.path.insert(0, str(ROOT))
++        from tests.test_effect_ack_conformance import request
++        vectors = a.read_bytes()
++        cases = [(122879, 2, {}, 100)]
++        fields = {0: "transport_ack", 1: "input_id", 3: "origin_checked", 4: "context_checked",
++                  5: "semantics_reconstructed", 6: "effect_anticipated", 7: "risk_classified",
++                  8: "risk_level", 9: "responsibility_assigned", 10: "responsibility_owner",
++                  12: "policy_allows_release", 14: "open_questions", 15: "next_required_checks", 16: "evidence_refs"}
++        for bit, field in fields.items():
++            value = False
++            if field in ("input_id", "responsibility_owner"): value = ""
++            if field == "risk_level": value = RiskLevel.UNKNOWN
++            if field in ("open_questions", "next_required_checks"): value = ("pending",)
++            if field == "evidence_refs": value = ()
++            mask = 122879 & ~(1 << bit)
++            if field == "transport_ack":
++                # A rich Python request without acknowledged reception has no
++                # effect-checkable input identity. The core consumes verified
++                # facts, not the raw request's non-empty identifier string.
++                mask &= ~(1 << 1)
++            cases.append((mask, 2, {field: value}, 100))
++        for code, decision in enumerate(ConnectionDecision):
++            mask = 122879 if code != 0 else 122879 & ~(1 << 11)
++            cases.append((mask, code, {"connection_decision": decision}, 100))
++        cases += [(122879 | (1 << 13), 2, {}, 0),
++                  (122879 | (1 << 18), 2, {"declared_input_hash": "0" * 64}, 100),
++                  (122879 & ~(1 << 2), 2, {"payload": None, "declared_input_hash": None}, 100)]
++        names = ["EFFECT_NACK", "EFFECT_ACK_CONTINUE", "EFFECT_ACK_DONE", "EFFECT_ACK_ISOLATE", "EFFECT_ACK_BLOCK"]
++        for mask, decision, changes, timeout in cases:
++            result = EffectAckEngine(clock_ns=lambda: 0).evaluate(request(**changes), timeout_ms=timeout)
++            if result.state.value != names[vectors[mask * 5 + decision]]:
++                raise ValueError(f"Python/C90/Smalltalk boundary mismatch: {mask}/{decision}")
++        print(f"QIKVRT_PYTHON_C90_SMALLTALK_BOUNDARIES={len(cases)}")
++        print(f"QIKVRT_SMALLTALK_C90_EXHAUSTIVE_MATCH vectors=2621440 sha256={digest(a)}")
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("command", choices=("verify", "install", "build", "test"))
++    parser.add_argument("--cache-dir", type=Path, default=Path(os.environ.get("QIKVRT_TOOLCHAIN_CACHE", ROOT / ".qikvrt/toolchains")))
++    parser.add_argument("--archive-dir", type=Path)
++    parser.add_argument("--output", type=Path)
++    args = parser.parse_args()
++    lock = json.loads(LOCK_PATH.read_text())
++    try:
++        directory = install(args.cache_dir.resolve(), lock, args.archive_dir) if args.command == "install" else verify(args.cache_dir.resolve(), lock)
++        if args.command == "build":
++            if not args.output:
++                parser.error("build requires --output")
++            build(directory, lock, args.output.resolve())
++        if args.command == "test":
++            test(directory, lock)
++        print(f"PHARO_{args.command.upper()}_OK version={lock['version']}")
++        return 0
++    except (OSError, ValueError, zipfile.BadZipFile, subprocess.SubprocessError) as error:
++        print(f"BLOCK: {error}")
++        return 1
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
