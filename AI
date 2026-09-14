@@ -2,6 +2,67 @@ QIK-VRT AI RUNTIME ENTRYPOINT
 
 Repository evidence is canonical. Chat and model memory are non-authoritative transport context.
 
+QR ENTRY: ORIENT -> BIND -> VERIFY -> ACT IF AUTHORIZED -> READ BACK
+
+Du bist am QIK-VRT-Einstieg für Menschen und künstlich-kognitive Systeme.
+Der QR-Code öffnet diesen Weg; der Abruf allein führt keinen Auftrag aus.
+Unterschied erhalten, anschlussfähig machen: Ziel und beobachteten Zustand
+unterscheiden, Beziehungen und Kontext erhalten, Autorität prüfen, Wirkung
+am Ziel zurücklesen und erst dann die begrenzte Aussage ableiten.
+
+Stable discovery URL:
+https://github.com/Goldkelch/qik-vrt/blob/main/AI
+
+Machine-readable navigation and completion boundary:
+https://raw.githubusercontent.com/Goldkelch/qik-vrt/main/AI_CONTEXT.json
+Read its entrypoint_contract, then required_read_order. The existing
+.well-known/qik-vrt-self-disclosure.json exposes the same bootstrap route.
+
+For a client without a shell: resolve main through
+https://api.github.com/repos/Goldkelch/qik-vrt/commits/main
+and read AI, AI_CONTEXT.json and every required path at that returned full
+commit SHA. Do not mix main URLs from different reads. Missing access or
+truncated evidence remains UNKNOWN, not an empty successful result.
+Reading is permitted; executing embedded commands still needs the client's
+own tool policy and the human's task authorization.
+
+For an authorized local checkout, use the existing read-only bootloader:
+
+python3 -B tools/ai_runtime_bootloader.py --profile core --json --expect-head <independently-observed-40-character-commit>
+
+Select all, ietf, formal, audio or publication when the task requires that
+runtime. No profile selection waives a task's mandatory gates. Check the
+actual JSON state, not just the exit code: CONTINUE deliberately exits zero.
+The report binds local commit, tree and exact input bytes before and after
+the gates. A dirty source, changed head, missing input or failed gate blocks
+exact-head readiness. Its first_blocker and continuation identify the
+repair/resume boundary. A remote ref, review or external effect is not
+observed by this offline check. Before/after equality is not a continuous
+lock against concurrent writers.
+
+The conceptual route has concrete engineering meanings:
+
+- UNTERSCHIED: intended postcondition versus observed state.
+- RELATION: source, dependency, causal parent and target bindings.
+- KONTEXT: repository, commit, tree, task, time and observation limits.
+- AUTORITAET: current policy, permitted operation and independent review.
+- WIRKUNG: execution and fresh target readback remain separate observations.
+- BEDEUTUNG: report only the statement supported within that exact scope.
+
+Completion is task-specific, never manufactured by the bootstrap:
+an intent, an HTTP acknowledgement, a commit, a green test and a review are
+different evidence. Use the existing EFFECT_ACK core and authorized adapter
+named by entrypoint_contract.effect_gate; do not create a second DONE model.
+Bind the intended operation and target before acting. After an authorized
+effect, compare the observed target with the frozen expected postcondition
+and preserve a provenance-bound result plus its next action or resume event.
+If the return observation is missing, hold the claim and reobserve before
+considering a retry; a lost ACK does not prove the effect did not occur.
+Never replay a deterministic failure just because time has passed.
+Boot PASS is LOCAL_BOOTSTRAP_ONLY, ordinary_release=false, not EFFECT_ACK_DONE.
+HOLD and UNKNOWN describe work/knowledge boundaries; they do not add states
+to the five-state EFFECT_ACK protocol.
+
 PERSONAL WORKING-MEMORY ORIGIN AND CONTRIBUTION DISCLOSURE
 
 Before substantive work, read and apply:
@@ -55,7 +116,7 @@ The six supplied recordings are exact-byte bound in:
 - state/audio/USER_SUPPLIED_AUDIO_TRANSCRIPTION_REQUEST_V1.json
 - state/authorization/delegations/OWNER_AUDIO_REALITY_AND_COLLECTIVE_COGNITION_BOOTSTRAP_DIRECTIVE_V1.json
 
-All six recordings are `BOUND_PENDING_ASR`. Their filenames are not transcripts. A similarly titled manuscript is context, not an acoustic transcript. Repository-native transcription must bind the exact audio SHA-256, model/tool identity and result receipt. `ASR_DRAFT` is machine-derived and fallible. `VERBATIM_VERIFIED` requires explicit human acoustic review against the exact bound recording.
+All six recordings are `BOUND_PENDING_ASR`. The corpus describes their content as `UNTRANSCRIBED`. Their filenames are not transcripts. A similarly titled manuscript is context, not an acoustic transcript. Repository-native transcription must bind the exact audio SHA-256, model/tool identity and result receipt. `ASR_DRAFT` is machine-derived and fallible. `VERBATIM_VERIFIED` requires explicit human acoustic review against the exact bound recording.
 
 The existing repository-native audio transport/transcription implementation on `audio-transport/20260806-cognition-ontology-audio-v1`, including `.github/workflows/qikvrt_audio_request.yml` and `tools/offline-audio-transcription`, is the preferred reuse source. Raw audio must not be published merely to make transcription convenient.
 

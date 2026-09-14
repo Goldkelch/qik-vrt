@@ -3,6 +3,48 @@
   "context_id": "qik-vrt-cross-ai-handoff-2026-07-23",
   "entrypoint": "AI",
   "entrypoint_rule": "Every QIK-VRT repository exposes the same root path /AI as the shortest GitHub-native human and machine runtime entrypoint.",
+  "entrypoint_contract": {
+    "schema": "qikvrt-ai-entrypoint-contract/1.0",
+    "authority_repository": "Goldkelch/qik-vrt",
+    "authority_policy": "policy/CANONICAL_UPSTREAM_REMOTE_V1.json",
+    "discovery_url": "https://github.com/Goldkelch/qik-vrt/blob/main/AI",
+    "raw_context_url": "https://raw.githubusercontent.com/Goldkelch/qik-vrt/main/AI_CONTEXT.json",
+    "resolve_ref_url": "https://api.github.com/repos/Goldkelch/qik-vrt/commits/main",
+    "pinned_raw_url_template": "https://raw.githubusercontent.com/Goldkelch/qik-vrt/{commit}/{path}",
+    "mutable_urls_are_discovery_only": true,
+    "http_get_executes_task": false,
+    "read_order_field": "required_read_order",
+    "routes": {
+      "orientation": ["docs/CURRENT_AUTHORITY.md", "docs/AI_BOOTSTRAP_KNOWLEDGE_CORPUS.md"],
+      "provenance": ["policy/AI_PERSONAL_WORKING_MEMORY_ORIGIN_AND_ATTRIBUTION_V1.json"],
+      "capabilities": [".well-known/qik-vrt-self-disclosure.json", "AI_ADAPTERS.json"],
+      "runtime": ["tools/ai_runtime_bootloader.py", "tools/ai_collective_bootstrap_extension.py"],
+      "repository_change": ["tools/qikvrt_autonomous_pre_effect_controller.py", "policy/GITHUB_MAIN_RULESET_V1.json"],
+      "publications": ["docs/publications/index.json"],
+      "effect_gate": ["src/qikvrt_effect_ack.py", "src/qikvrt_api_handler.py", "api/qikvrt_github_api.openapi.yaml"]
+    },
+    "effect_gate": {
+      "implementation": "src/qikvrt_effect_ack.py",
+      "adapter": "src/qikvrt_api_handler.py",
+      "protocol_schema": "qikvrt_responsibility_protocol_v1",
+      "bootstrap_may_issue_done": false,
+      "external_checks_authenticated_by": "separately authorized integration boundary",
+      "required_connection_order": ["intent_and_expected_postcondition", "exact_subject_and_target", "current_authority_and_checks", "authorized_execution", "target_readback", "scope_bound_receipt"],
+      "unknown_effect": "HOLD_CLAIM_AND_REOBSERVE_BEFORE_RETRY",
+      "source_or_target_changed": "INVALIDATE_DEPENDENT_EVIDENCE_AND_REBIND"
+    },
+    "boot_receipt": {
+      "schema": "qikvrt-ai-runtime-boot/1.3",
+      "scope": "LOCAL_BOOTSTRAP_ONLY",
+      "implementation": "tools/ai_runtime_bootloader.py",
+      "subject_fields": ["commit", "tree", "ref", "dirty", "inputs", "remote_state_observed"],
+      "source_binding": "local Git objects and SHA-256 of exact required inputs, reobserved after gates",
+      "required_result_fields": ["state", "first_blocker", "continuation", "effect_state", "ordinary_release", "completion_claims"],
+      "remote_state_observed": false,
+      "ordinary_release": false,
+      "persistence": "caller preserves the report in an authorized work unit; the bootloader writes stdout only"
+    }
+  },
   "adapter_registry": "AI_ADAPTERS.json",
   "progress_protocol": {
     "human_contract": "docs/HUMAN_MACHINE_PROGRESS_PROTOCOL.md",

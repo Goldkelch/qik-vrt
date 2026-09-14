@@ -1569,6 +1569,72 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             ["2", "4", "5", "6"],
         )
 
+    def test_live_status_writer_marker_is_recognized_by_discussion_reader(self):
+        writer = ROOT / ".github/workflows/qikvrt_live_status_watch.yml"
+        marker_lines = [
+            line.strip() for line in writer.read_text(encoding="utf-8").splitlines()
+            if line.strip().startswith("MARKER:")
+        ]
+        self.assertEqual(len(marker_lines), 1)
+        marker = marker_lines[0].split("'", 2)[1]
+        comment = {
+            "id": 77,
+            "body": marker + "\nCurrent live projection.",
+            "user": {"login": "github-actions[bot]"},
+            "updated_at": "2026-09-14T12:00:00Z",
+        }
+        with mock.patch.object(
+            MODULE, "_gh_pages",
+            side_effect=lambda endpoint: [comment] if "/issues/" in endpoint else [],
+        ):
+            self.assertEqual(MODULE._discussion_observation("example/qik-vrt", 349), [])
+
+    def test_live_surface_edits_preserve_only_trusted_projection_binding(self):
+        marker = "<!-- qikvrt-universal-terminal-live-surface-v1 -->"
+        cases = (
+            ("current-projection", "github-actions[bot]", marker, True),
+            ("human-marker", "reviewer", marker, False),
+            ("owner-marker", "ingolf-lohmann", marker, False),
+            ("other-bot", "dependabot[bot]", marker, False),
+            ("embedded-marker", "github-actions[bot]", "Discussion: " + marker, False),
+            ("unknown-version", "github-actions[bot]", marker.replace("v1", "v2"), False),
+            ("ordinary-bot-comment", "github-actions[bot]", "Review finding", False),
+        )
+        for label, author, prefix, projection_only in cases:
+            with self.subTest(label=label):
+                snapshots = []
+                for minute in (0, 1):
+                    comment = {
+                        "id": 77,
+                        "body": f"{prefix}\nObservation {minute}.",
+                        "user": {"login": author},
+                        "updated_at": f"2026-09-14T12:0{minute}:00Z",
+                    }
+                    with mock.patch.object(
+                        MODULE, "_gh_pages",
+                        side_effect=lambda endpoint: [comment] if "/issues/" in endpoint else [],
+                    ):
+                        discussion = MODULE._discussion_observation("example/qik-vrt", 349)
+                    snapshots.append(self.snapshot(discussion_items=discussion))
+                expected = self.evaluate(snapshots[0])
+                with mock.patch.object(
+                    MODULE, "observe_repository",
+                    return_value=(snapshots[1], DEFAULT_DIFF_BYTES),
+                ):
+                    report, fresh, _diff = MODULE.verify_current_receipt(
+                        expected, MODULE._pretty_json_bytes(expected), DEFAULT_DIFF_BYTES,
+                        "example/qik-vrt", 349, 999,
+                        list(REQUIRED_GATE_PATHS), REQUIRED_GATE_PATHS, [],
+                    )
+                self.assertEqual(report["ledger_safe"], projection_only)
+                self.assertEqual(report["checks"]["causal_binding"], projection_only)
+                self.assertEqual(
+                    expected["discussion_sha256"] == fresh["discussion_sha256"],
+                    projection_only,
+                )
+                if not projection_only:
+                    self.assertEqual(report["first_blocker"], "CAUSAL_REVIEW_EVIDENCE_DRIFT")
+
     def test_status_dedup_considers_only_latest_context_projection(self):
         fingerprint = "a" * 64
         approved = {

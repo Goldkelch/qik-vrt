@@ -11,7 +11,10 @@ files. Runtime installation and task effects remain separate, explicit actions.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
+import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -22,10 +25,26 @@ ROOT = Path(__file__).resolve().parents[1]
 CORPUS_PATH = ROOT / "policy/AI_BOOTSTRAP_KNOWLEDGE_CORPUS_V1.json"
 ADAPTATION_POLICY_PATH = ROOT / "policy/HUMAN_MACHINE_INTERFACE_ADAPTATION_V1.json"
 ADAPTATION_MATRIX_PATH = ROOT / "state/interface_adaptation/EVALUATION_MATRIX.json"
+BOOT_SOURCE_PATHS = (
+    "tools/ai_runtime_bootloader.py",
+    "tools/ai_handoff.py",
+    "tools/qikvrt_integrity.py",
+    "tools/qikvrt_tool_cache.py",
+    "tools/bootstrap-runtime.sh",
+    "tools/bootstrap-gh.sh",
+    "policy/CANONICAL_UPSTREAM_REMOTE_V1.json",
+    "REPOSITORY_FILE_MANIFEST.json",
+    "REPOSITORY_FILE_MANIFEST.json.sha256",
+    "SHA256SUMS.txt",
+)
 
 
 class BootBlock(RuntimeError):
     """A required repository-runtime gate failed."""
+
+    def __init__(self, message: str, gate: dict[str, Any] | None = None):
+        super().__init__(message)
+        self.gate = gate
 
 
 def run_gate(name: str, command: list[str], accepted: set[int] | None = None) -> dict[str, Any]:
@@ -39,9 +58,14 @@ def run_gate(name: str, command: list[str], accepted: set[int] | None = None) ->
             stderr=subprocess.PIPE,
             timeout=180,
             check=False,
+            env={**os.environ, "GIT_NO_LAZY_FETCH": "1", "GIT_NO_REPLACE_OBJECTS": "1",
+                 "GIT_TERMINAL_PROMPT": "0"},
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        raise BootBlock(f"{name}: execution failed: {exc}") from exc
+        raise BootBlock(f"{name}: execution failed: {exc}", {
+            "name": name, "command": command, "exit_code": None,
+            "stdout": "", "stderr": str(exc), "state": "BLOCK",
+        }) from exc
     result = {
         "name": name,
         "command": command,
@@ -53,7 +77,7 @@ def run_gate(name: str, command: list[str], accepted: set[int] | None = None) ->
     if completed.returncode not in accepted:
         result["state"] = "BLOCK"
         detail = completed.stderr.strip() or completed.stdout.strip() or "no diagnostic"
-        raise BootBlock(f"{name}: exit {completed.returncode}: {detail}")
+        raise BootBlock(f"{name}: exit {completed.returncode}: {detail}", result)
     return result
 
 
@@ -65,7 +89,7 @@ def git_value(*args: str) -> str:
 def load_json_object(path: Path, label: str) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise BootBlock(f"{label} is unreadable: {exc}") from exc
     if not isinstance(value, dict):
         raise BootBlock(f"{label} must contain an object")
@@ -74,6 +98,127 @@ def load_json_object(path: Path, label: str) -> dict[str, Any]:
 
 def load_context() -> dict[str, Any]:
     return load_json_object(ROOT / "AI_CONTEXT.json", "AI_CONTEXT.json")
+
+
+def validate_entrypoint(context: dict[str, Any]) -> dict[str, Any]:
+    entry = context.get("entrypoint_contract")
+    if not isinstance(entry, dict) or entry.get("schema") != "qikvrt-ai-entrypoint-contract/1.0":
+        raise BootBlock("ENTRYPOINT_CONTRACT_INVALID")
+    policy = load_json_object(ROOT / "policy/CANONICAL_UPSTREAM_REMOTE_V1.json", "canonical upstream policy")
+    canonical = policy.get("canonical_upstream")
+    if not isinstance(canonical, dict):
+        raise BootBlock("ENTRYPOINT_AUTHORITY_INVALID")
+    repository = canonical.get("repository")
+    if not isinstance(repository, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
+        raise BootBlock("ENTRYPOINT_AUTHORITY_INVALID")
+    expected = {
+        "authority_repository": repository,
+        "authority_policy": "policy/CANONICAL_UPSTREAM_REMOTE_V1.json",
+        "discovery_url": f"https://github.com/{repository}/blob/main/AI",
+        "raw_context_url": f"https://raw.githubusercontent.com/{repository}/main/AI_CONTEXT.json",
+        "resolve_ref_url": f"https://api.github.com/repos/{repository}/commits/main",
+        "pinned_raw_url_template": f"https://raw.githubusercontent.com/{repository}/{{commit}}/{{path}}",
+        "read_order_field": "required_read_order",
+    }
+    if any(entry.get(key) != value for key, value in expected.items()):
+        raise BootBlock("ENTRYPOINT_AUTHORITY_BINDING_DRIFT")
+    if entry.get("http_get_executes_task") is not False or entry.get("mutable_urls_are_discovery_only") is not True:
+        raise BootBlock("ENTRYPOINT_DISCOVERY_BOUNDARY_DRIFT")
+    effect = entry.get("effect_gate")
+    receipt = entry.get("boot_receipt")
+    if (not isinstance(effect, dict) or effect.get("bootstrap_may_issue_done") is not False
+            or effect.get("implementation") != "src/qikvrt_effect_ack.py"
+            or effect.get("adapter") != "src/qikvrt_api_handler.py"
+            or effect.get("protocol_schema") != "qikvrt_responsibility_protocol_v1"
+            or not isinstance(receipt, dict) or receipt.get("scope") != "LOCAL_BOOTSTRAP_ONLY"
+            or receipt.get("schema") != "qikvrt-ai-runtime-boot/1.3"
+            or receipt.get("ordinary_release") is not False
+            or receipt.get("remote_state_observed") is not False):
+        raise BootBlock("ENTRYPOINT_EFFECT_BOUNDARY_DRIFT")
+    routes = entry.get("routes")
+    if not isinstance(routes, dict) or set(routes) != {
+        "orientation", "provenance", "capabilities", "runtime", "repository_change", "publications", "effect_gate"
+    }:
+        raise BootBlock("ENTRYPOINT_ROUTES_INVALID")
+    for paths in routes.values():
+        if not isinstance(paths, list) or not 1 <= len(paths) <= 8 or any(not isinstance(path, str) for path in paths):
+            raise BootBlock("ENTRYPOINT_ROUTES_INVALID")
+    return entry
+
+
+def capture_subject(context: dict[str, Any]) -> dict[str, Any]:
+    """Bind local source bytes, not the mutable remote or a past progress report."""
+    paths = context.get("required_read_order")
+    if (not isinstance(paths, list) or not 1 <= len(paths) <= 64
+            or any(not isinstance(path, str) for path in paths)
+            or len(set(paths)) != len(paths)):
+        raise BootBlock("SOURCE_READ_ORDER_INVALID")
+    entry = context.get("entrypoint_contract", {})
+    if not isinstance(entry, dict) or not isinstance(entry.get("routes", {}), dict):
+        raise BootBlock("ENTRYPOINT_ROUTES_INVALID")
+    route_paths = []
+    for group in entry.get("routes", {}).values():
+        if (not isinstance(group, list) or not 1 <= len(group) <= 8
+                or any(not isinstance(path, str) for path in group)):
+            raise BootBlock("ENTRYPOINT_ROUTES_INVALID")
+        route_paths.extend(group)
+    paths = sorted(set(paths) | set(BOOT_SOURCE_PATHS) | set(route_paths))
+    for path in paths:
+        if (not re.fullmatch(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*", path)
+                or path.startswith("-") or any(p in {".", "..", ".git"} for p in Path(path).parts)):
+            raise BootBlock("SOURCE_PATH_INVALID")
+        current = ROOT
+        for part in Path(path).parts:
+            current = current / part
+            if current.is_symlink():
+                raise BootBlock(f"SOURCE_PATH_INVALID: {path}")
+    if Path(git_value("rev-parse", "--show-toplevel")).resolve() != ROOT.resolve():
+        raise BootBlock("SOURCE_REPOSITORY_ROOT_MISMATCH")
+    head = git_value("rev-parse", "--verify", "HEAD^{commit}")
+    tree = git_value("rev-parse", "--verify", f"{head}^{{tree}}")
+    if not all(re.fullmatch(r"[0-9a-f]{40}", value) for value in (head, tree)):
+        raise BootBlock("SOURCE_GIT_IDENTITY_INVALID")
+    entries = git_value("ls-tree", "-r", "-z", "--full-tree", head, "--", *paths)
+    blobs = {}
+    for entry in entries.split("\0"):
+        if entry:
+            metadata, path = entry.split("\t", 1)
+            mode, kind, digest = metadata.split()
+            if kind == "blob" and mode in {"100644", "100755"}:
+                blobs[path] = digest
+    inputs = []
+    for path in paths:
+        target = ROOT / path
+        try:
+            if not target.is_file() or target.stat().st_size > 2 * 1024 * 1024:
+                raise BootBlock(f"SOURCE_FILE_UNAVAILABLE_OR_OVERSIZED: {path}")
+            with target.open("rb") as stream:
+                raw = stream.read(2 * 1024 * 1024 + 1)
+            if len(raw) > 2 * 1024 * 1024:
+                raise BootBlock(f"SOURCE_FILE_UNAVAILABLE_OR_OVERSIZED: {path}")
+        except OSError as exc:
+            raise BootBlock(f"SOURCE_FILE_UNREADABLE: {path}") from exc
+        blob = hashlib.sha1(f"blob {len(raw)}\0".encode("ascii") + raw).hexdigest()
+        if blobs.get(path) != blob:
+            raise BootBlock(f"SOURCE_BYTES_NOT_COMMIT_BOUND: {path}")
+        inputs.append({"path": path, "bytes": len(raw), "git_blob_sha1": blob,
+                       "sha256": hashlib.sha256(raw).hexdigest()})
+    subject = {
+        "commit": head, "tree": tree,
+        "ref": git_value("rev-parse", "--abbrev-ref", "HEAD"),
+        "dirty": bool(git_value("status", "--porcelain=v1", "--untracked-files=normal")),
+        "inputs": inputs, "remote_state_observed": False,
+    }
+    if git_value("rev-parse", "--verify", "HEAD^{commit}") != head:
+        raise BootBlock("SOURCE_CHANGED_DURING_OBSERVATION")
+    return subject
+
+
+def require_bound_subject(subject: dict[str, Any], expected_head: str | None) -> None:
+    if expected_head is not None and subject["commit"] != expected_head:
+        raise BootBlock("EXPECTED_HEAD_MISMATCH")
+    if subject["dirty"]:
+        raise BootBlock("WORKTREE_NOT_COMMIT_BOUND")
 
 
 def load_bootstrap_corpus() -> dict[str, Any]:
@@ -159,7 +304,7 @@ def load_interface_adaptation() -> tuple[dict[str, Any], dict[str, Any]]:
     return policy, matrix
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="emit one JSON document")
     parser.add_argument(
@@ -169,10 +314,20 @@ def main() -> int:
         help="runtime profile checked without installation",
     )
     parser.add_argument("--task", default="", help="task label recorded in the boot report")
-    args = parser.parse_args()
+    parser.add_argument("--expect-head", help="exact commit observed by the caller; never a branch name")
+    args = parser.parse_args(argv)
 
     report: dict[str, Any] = {
-        "schema": "qikvrt-ai-runtime-boot/1.2",
+        "schema": "qikvrt-ai-runtime-boot/1.3",
+        "scope": "LOCAL_BOOTSTRAP_ONLY",
+        "observed_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "expected_head": args.expect_head,
+        "effect_state": "EFFECT_ACK_CONTINUE",
+        "ordinary_release": False,
+        "completion_claims": {"PASS": False, "FINAL_PASS": False, "EFFECT_ACK_DONE": False},
+        "remote_state_observed": False,
+        "source_reobserved_unchanged": False,
+        "first_blocker": None,
         "repository_root": str(ROOT),
         "task": args.task,
         "state": "RUNNING",
@@ -193,9 +348,29 @@ def main() -> int:
         ],
     }
 
+    phase = "source binding"
     try:
+        if args.expect_head is not None and not re.fullmatch(r"[0-9a-f]{40}", args.expect_head):
+            raise BootBlock("EXPECTED_HEAD_INVALID")
         context = load_context()
+        validate_entrypoint(context)
+        subject = capture_subject(context)
+        report["subject"] = subject
+        report["git_commit"] = subject["commit"]
+        report["git_tree"] = subject["tree"]
+        report["git_ref"] = subject["ref"]
+        require_bound_subject(subject, args.expect_head)
+        report["source_fingerprint_sha256"] = hashlib.sha256(
+            json.dumps(subject, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        report["discovery"] = context.get("entrypoint_contract", {})
+        # A declared authority URL is not authenticated local/remote identity.
+        # Do not print Git remotes: they can contain credentials or private URLs.
+        report["repository"] = context.get("entrypoint_contract", {}).get("authority_repository", "UNAVAILABLE")
+        report["repository_identity_source"] = "DECLARED_CONTEXT_NOT_REMOTE_OBSERVATION"
+        phase = "bootstrap knowledge corpus"
         corpus = load_bootstrap_corpus()
+        phase = "human machine interface adaptation"
         adaptation_policy, adaptation_matrix = load_interface_adaptation()
         artifacts = corpus["source_artifacts"]
         untranscribed = [item for item in artifacts if item.get("content_status") == "UNTRANSCRIBED"]
@@ -218,10 +393,6 @@ def main() -> int:
             "matrix_rows": len(adaptation_matrix.get("rows", [])),
             "minimum_observations_before_preference": adaptation_policy.get("evaluation_matrix", {}).get("minimum_observations_before_preference"),
         }
-        report["repository"] = git_value("config", "--get", "remote.origin.url")
-        report["git_ref"] = git_value("rev-parse", "--abbrev-ref", "HEAD")
-        report["git_commit"] = git_value("rev-parse", "HEAD")
-
         report["gates"].append(
             {
                 "name": "bootstrap knowledge corpus",
@@ -242,9 +413,11 @@ def main() -> int:
                 "state": "PASS",
             }
         )
+        phase = "AI handoff"
         report["gates"].append(
             run_gate("AI handoff", [sys.executable, "-B", "tools/ai_handoff.py"])
         )
+        phase = "repository integrity"
         report["gates"].append(
             run_gate(
                 "repository integrity",
@@ -252,6 +425,7 @@ def main() -> int:
             )
         )
 
+        phase = "tool cache coverage"
         cache_verifier = ROOT / "tools/qikvrt_tool_cache.py"
         if cache_verifier.is_file():
             report["gates"].append(
@@ -263,6 +437,7 @@ def main() -> int:
         else:
             raise BootBlock("tools/qikvrt_tool_cache.py is missing")
 
+        phase = "runtime profile"
         bootstrap = ROOT / "tools/bootstrap-runtime.sh"
         if bootstrap.is_file():
             report["gates"].append(
@@ -275,6 +450,12 @@ def main() -> int:
         else:
             raise BootBlock("tools/bootstrap-runtime.sh is missing")
 
+        phase = "source reobservation"
+        after = capture_subject(load_context())
+        require_bound_subject(after, args.expect_head)
+        if after != subject:
+            raise BootBlock("SOURCE_CHANGED_DURING_BOOT")
+        report["source_reobserved_unchanged"] = True
         has_continue = any(gate["state"] == "CONTINUE" for gate in report["gates"])
         report["state"] = "CONTINUE" if has_continue else "PASS"
         report["next_action"] = (
@@ -282,10 +463,35 @@ def main() -> int:
             if has_continue
             else "Execute the authorized task using the fastest previously verified path; record comparable performance evidence and persist only reviewed improvements."
         )
-    except BootBlock as exc:
+    except (BootBlock, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
         report["state"] = "BLOCK"
         report["blocker"] = str(exc)
+        gate = (exc.gate if isinstance(exc, BootBlock) else None) or {
+            "name": phase, "state": "BLOCK", "exit_code": None,
+            "command": [], "stdout": "", "stderr": str(exc),
+        }
+        report["gates"].append(gate)
+        report["first_blocker"] = gate
+        report["effect_state"] = "EFFECT_ACK_BLOCK"
         report["next_action"] = "Repair the named repository gate and rerun the bootloader."
+
+    report["finished_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
+    resume = ["python3", "-B", "tools/ai_runtime_bootloader.py", "--profile", args.profile, "--json"]
+    if args.task:
+        resume.extend(["--task", args.task])
+    report["continuation"] = {
+        "state": {"BLOCK": "REPAIR_REQUIRED", "CONTINUE": "RUNTIME_REQUIREMENTS_OPEN",
+                  "PASS": "TASK_AUTHORITY_REOBSERVATION_REQUIRED"}[report["state"]],
+        "next_action": report["next_action"],
+        "retry_condition": "The named input, gate or authorized runtime prerequisite changed; reobserve the exact subject first.",
+        "resume_command": resume,
+        "expected_head_rule": "Supply --expect-head from a fresh independent ref read; never transfer this report to a successor.",
+        "automatic_retry": False,
+        "task_execution_authorized": False,
+        "required_before_effect": ["exact task and target binding", "current policy and authorization",
+                                   "applicable exact-head tests and independent review"],
+        "required_after_effect": ["effect execution evidence", "target postcondition readback"],
+    }
 
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))
@@ -294,6 +500,9 @@ def main() -> int:
         print(f"REPOSITORY={report.get('repository', 'unavailable')}")
         print(f"GIT_REF={report.get('git_ref', 'unavailable')}")
         print(f"GIT_COMMIT={report.get('git_commit', 'unavailable')}")
+        print(f"GIT_TREE={report.get('git_tree', 'unavailable')}")
+        print(f"EFFECT_STATE={report['effect_state']}")
+        print("ORDINARY_RELEASE=false")
         corpus_report = report.get("knowledge_corpus", {})
         if corpus_report:
             print(f"KNOWLEDGE_CORPUS_ARTIFACTS={corpus_report.get('artifact_count', 0)}")
