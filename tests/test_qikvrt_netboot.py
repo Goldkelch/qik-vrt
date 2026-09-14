@@ -125,6 +125,12 @@ class NetbootTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/qikvrt_megast_distribution_v1.yml").read_text()
         self.assertIn('sudo chown "$(id -u):$(id -g)" /dev/kvm', workflow)
 
+    def test_guest_terminal_markers_bypass_the_optional_journal_relay(self):
+        witness = (ROOT / "distribution/qikvrt-megast/runtime-witness.py").read_text()
+        self.assertIn('with open("/dev/ttyS0", "w") as serial:', witness)
+        self.assertIn("emit_serial(marker)", witness)
+        self.assertLess(witness.index("emit_serial(marker)"), witness.index('subprocess.run(["logger", "-t", "qikvrt-runtime", marker]'))
+
     def test_early_boot_marker_never_substitutes_for_runtime_and_failure_is_retained(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

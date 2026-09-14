@@ -20,6 +20,17 @@ ROOT = Path("/opt/qikvrt")
 LAST_STAGE = "initialization"
 
 
+def emit_serial(message):
+    """Emit terminal runtime evidence on the host-observed channel directly."""
+    line = message.rstrip("\n") + "\n"
+    try:
+        with open("/dev/ttyS0", "w") as serial:
+            serial.write(line)
+            serial.flush()
+    except OSError:
+        print(line, end="", flush=True)
+
+
 def stage(name):
     global LAST_STAGE
     LAST_STAGE = name
@@ -124,7 +135,9 @@ def main():
                "physical_atari_boot": False, "effect_ack_done": False}
     Path.home().joinpath(".config/qikvrt/runtime-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     # Journal stream is forwarded to ttyS0 by the distribution's rsyslog rule.
-    subprocess.run(["logger", "-t", "qikvrt-runtime", "QIKVRT_MEGAST_RUNTIME_OK source_sha=" + source], check=True)
+    marker = "QIKVRT_MEGAST_RUNTIME_OK source_sha=" + source
+    emit_serial(marker)
+    subprocess.run(["logger", "-t", "qikvrt-runtime", marker], check=True)
     print(json.dumps(receipt, sort_keys=True))
 
 
@@ -137,5 +150,7 @@ if __name__ == "__main__":
     except Exception as error:
         traceback.print_exc()
         detail = str(error) + " " + str(getattr(error, "stderr", ""))
-        subprocess.run(["logger", "-t", "qikvrt-runtime", "QIKVRT_RUNTIME_BLOCK stage=" + LAST_STAGE + " error=" + detail[:2000]], check=False)
+        marker = "QIKVRT_RUNTIME_BLOCK stage=" + LAST_STAGE + " error=" + detail[:2000]
+        emit_serial(marker)
+        subprocess.run(["logger", "-t", "qikvrt-runtime", marker], check=False)
         raise SystemExit(1)
