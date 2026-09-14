@@ -72,6 +72,17 @@ class MegaSTDistributionContract(unittest.TestCase):
         self.assertIn('/tmp/debian-archive-keyring.deb | sha256sum -c -', text)
         self.assertIn('sudo dpkg -i /tmp/debian-archive-keyring.deb', text)
 
+    def test_boot_witness_precedes_multi_user_and_qemu_binds_extracted_kernel(self):
+        build = BUILD.read_text()
+        workflow = WORKFLOW.read_text()
+        self.assertIn("After=local-fs.target", build)
+        self.assertIn("Before=multi-user.target", build)
+        self.assertNotIn("After=multi-user.target", build)
+        self.assertIn("-kernel out/qikvrt-megast-vmlinuz", workflow)
+        self.assertIn("-initrd out/qikvrt-megast-initrd", workflow)
+        self.assertIn("-append \"boot=live components", workflow)
+        self.assertIn("-cdrom out/qikvrt-megast-amd64.iso", workflow)
+
     def test_terminal_definition_requires_download_readback(self):
         text = README.read_text()
         self.assertIn('stable release path', text)

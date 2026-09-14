@@ -73,8 +73,12 @@ jobs:
           trap 'sudo umount /mnt/qikvrt-megast >/dev/null 2>&1 || true' EXIT
           sudo mount -o loop,ro out/qikvrt-megast-amd64.iso /mnt/qikvrt-megast
           test -s /mnt/qikvrt-megast/live/filesystem.squashfs
-          find /mnt/qikvrt-megast/live -maxdepth 1 -type f -name 'vmlinuz*' | grep -q .
-          find /mnt/qikvrt-megast/live -maxdepth 1 -type f -name 'initrd*' | grep -q .
+          kernel=$(find /mnt/qikvrt-megast/live -maxdepth 1 -type f -name 'vmlinuz*' | head -n1)
+          initrd=$(find /mnt/qikvrt-megast/live -maxdepth 1 -type f -name 'initrd*' | head -n1)
+          test -n "$kernel"
+          test -n "$initrd"
+          sudo install -o "$(id -u)" -g "$(id -g)" -m 0644 "$kernel" out/qikvrt-megast-vmlinuz
+          sudo install -o "$(id -u)" -g "$(id -g)" -m 0644 "$initrd" out/qikvrt-megast-initrd
           printf 'QIKVRT_MEGAST_MOUNT_OK source_sha=%s\n' '${{ github.event.pull_request.head.sha || github.sha }}'
       - name: Boot exact ISO and reobserve guest witness
         run: |
@@ -86,7 +90,9 @@ jobs:
             -m 1536 \
             -smp 2 \
             -cdrom out/qikvrt-megast-amd64.iso \
-            -boot d \
+            -kernel out/qikvrt-megast-vmlinuz \
+            -initrd out/qikvrt-megast-initrd \
+            -append "boot=live components username=qikvrt hostname=qikvrt-megast console=tty0 console=ttyS0,115200n8" \
             -display none \
             -serial "file:$log" \
             -no-reboot \

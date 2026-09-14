@@ -50,7 +50,8 @@ chmod 0755 "$WORK/config/includes.chroot/usr/local/bin/qikvrt-megast-boot-witnes
 cat > "$WORK/config/includes.chroot/etc/systemd/system/qikvrt-megast-boot-witness.service" <<'EOF'
 [Unit]
 Description=QIK-VRT Mega ST exact-subject boot witness
-After=multi-user.target
+After=local-fs.target
+Before=multi-user.target
 
 [Service]
 Type=oneshot
