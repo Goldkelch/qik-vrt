@@ -105,6 +105,11 @@ class NetbootTests(unittest.TestCase):
             self.assertFalse((root / "received").exists())
             self.assertFalse((root / "received.partial").exists())
 
+    def test_network_boot_allows_bounded_graphical_runtime_and_reports_serial_tail(self):
+        source = (ROOT / "distribution/qikvrt-megast/boot.py").read_text()
+        self.assertIn("timeout: int = 900", source)
+        self.assertIn("serial_tail:", source)
+
     def test_done_datagram_never_implies_executed_image(self):
         self.assertNotIn("effect_ack_done\": True", (ROOT / "distribution/qikvrt-megast/boot.py").read_text())
 

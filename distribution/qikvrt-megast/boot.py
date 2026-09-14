@@ -173,7 +173,7 @@ def receive(url: str, expected: str, directory: Path) -> dict:
     return manifest
 
 
-def boot(directory: Path, manifest: dict, *, timeout: int = 420, verify_only: bool = False) -> dict:
+def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bool = False) -> dict:
     validate_manifest(manifest)
     if platform.machine() not in ("x86_64", "AMD64"):
         raise ValueError("client CPU must match the amd64 host image")
@@ -206,7 +206,7 @@ def boot(directory: Path, manifest: dict, *, timeout: int = 420, verify_only: bo
                         break
                     time.sleep(1)
                 if marker not in logfile.read_text(errors="replace"):
-                    raise ValueError("no exact-source runtime evidence from network-booted guest")
+                    raise ValueError("no exact-source runtime evidence from network-booted guest; serial_tail:\n" + logfile.read_text(errors="replace")[-16384:])
                 screenshot = directory / "qikvrt-netboot.ppm"
                 with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as qmp:
                     qmp.settimeout(10)
