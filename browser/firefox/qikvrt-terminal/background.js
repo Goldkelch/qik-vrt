@@ -3,6 +3,7 @@ const DEFAULT_BACKEND = "http://127.0.0.1:8771";
 const ALLOWED_BACKENDS = new Set(["http://127.0.0.1:8771", "http://localhost:8771"]);
 const DEFAULT_EVENT_STREAM = "http://127.0.0.1:8787/events";
 const ALLOWED_EVENT_STREAMS = new Set(["http://127.0.0.1:8787/events", "http://localhost:8787/events"]);
+const LAST_EVENT_ID_HEADER = "Last-Event-ID";
 const STATE_MAP = new Map([
   ["nack", "EFFECT_NACK"],
   ["continue", "EFFECT_ACK_CONTINUE"],
@@ -106,7 +107,10 @@ async function connectLiveEventStream() {
   });
   source.addEventListener("qikvrt_event", event => {
     const lastEventId = event.lastEventId || "";
-    const update = {qikvrtLiveEventState: "EVENT"};
+    const update = {
+      qikvrtLiveEventState: "EVENT",
+      qikvrtLiveEventResumeHeader: LAST_EVENT_ID_HEADER
+    };
     if (lastEventId) update.qikvrtLastEventId = lastEventId;
     browser.storage.local.set(update).catch(() => undefined);
     persistWatchdogFrame().catch(() => undefined);
