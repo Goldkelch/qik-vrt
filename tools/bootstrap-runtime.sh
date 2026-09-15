@@ -404,7 +404,12 @@ rails_bundle() {
         BUNDLE_CACHE_PATH="$RAILS_VERIFIED_CACHE" BUNDLE_FROZEN=true \
         BUNDLE_IGNORE_CONFIG=1 BUNDLE_WITHOUT= BUNDLE_WITH=test \
         BUNDLE_DISABLE_CHECKSUM_VALIDATION=false BUNDLE_RETRY=0 \
-        RUBYOPT= RUBYLIB= "$RAILS_RUBY" -S bundle _2.6.9_ "$@"
+        RUBYOPT= RUBYLIB= "$RAILS_RUBY" -e '
+        gem "bundler", "=2.6.9"
+        executable = Gem.bin_path("bundler", "bundle", "=2.6.9")
+        puts "RAILS_STEP bundler-entrypoint=" + executable
+        load executable
+        ' -- "$@"
 }
 
 rails_verify_archives() {
