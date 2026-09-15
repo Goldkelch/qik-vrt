@@ -1,0 +1,69 @@
+{
+  "schema": "qikvrt_universal_terminal_evidence_router_v1",
+  "contract_id": "universal-terminal-evidence-router-v1",
+  "purpose": "Permit recursive route learning over addressable evidence relations without inventing, compressing, transferring, or upgrading evidence.",
+  "relation_objects": {
+    "addressable": true,
+    "provenance_required": true,
+    "exact_subject_binding_required": true,
+    "recursive_mesh_learning_allowed": true
+  },
+  "routing_logic": {
+    "candidate_derivation": "UT(A,B) AND UT(B,C) => candidateRoute(A,C)",
+    "admissibility": "candidateRoute(A,C) AND V(A,B) AND V(B,C) AND B_exact AND P_preserved => admissibleRoute(A,C)",
+    "forbidden_evidence_transitivity": "E(A,B) AND E(B,C) !=> E(A,C)",
+    "route_compression": "ALLOWED_AFTER_FRESH_VALIDATION",
+    "evidence_compression": "FORBIDDEN",
+    "predecessor_evidence_transfer": false
+  },
+  "temporal_semantics": {
+    "evidence_history": "MONOTONIC_APPEND_ONLY",
+    "assertion_validity": "NON_MONOTONIC",
+    "routing_knowledge": "MONOTONIC_WHERE_PROVENANCE_REMAINS_ADDRESSABLE",
+    "current_admissibility": "FRESH_VALIDATION_REQUIRED",
+    "stale_evidence": "RETAIN_ADDRESSABLE",
+    "stale_as_current": "FORBIDDEN",
+    "interpretation": "E_(t+1) may contain more historical evidence while containing no additional currently valid assertion."
+  },
+  "epistemic_type_boundary": [
+    "REACHABLE_NE_OBSERVED",
+    "OBSERVED_NE_VALID",
+    "VALID_NE_PROVED",
+    "PROVED_NE_EFFECT"
+  ],
+  "recursive_cycle": [
+    "REQUEST",
+    "DISCOVER_ADDRESSABLE_EVIDENCE_GRAPH",
+    "DERIVE_CANDIDATE_ROUTES",
+    "SELECT_MINIMUM_COST_CANDIDATE",
+    "REOBSERVE_REQUIRED_EXACT_SUBJECTS",
+    "VALIDATE_PROOF_PROVENANCE_CURRENT_VALIDITY",
+    "CLASSIFY_ADMISSIBILITY",
+    "TRAVERSE_REQUIRED_EDGES_ONLY",
+    "READBACK",
+    "MATERIALIZE_IMMUTABLE_RECEIPTS",
+    "APPEND_DELTA_E",
+    "UPDATE_ROUTING_KNOWLEDGE",
+    "EXPOSE_NEW_LIVE_STATE",
+    "RETURN"
+  ],
+  "optimization": {
+    "objective": "MINIMUM_COST_CURRENTLY_ADMISSIBLE_TRAVERSAL",
+    "cached_candidate_route_is_proof_receipt": false,
+    "acceptance_oracle": "A learned shorter admissible route may reduce required traversals but MUST NOT reduce the set of provenance relations addressable for the decision."
+  },
+  "fail_closed": {
+    "head_or_tree_drift": "REVALIDATE_OR_HOLD",
+    "missing_provenance": "HOLD_UNVERIFIED",
+    "stale_required_edge": "HOLD_UNVERIFIED",
+    "invalid_proof": "HOLD_UNVERIFIED",
+    "effect_without_readback": "UNPROVEN",
+    "success_is_effect": false
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "MAIN_INTEGRATION": false
+  }
+}
