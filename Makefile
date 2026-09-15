@@ -2,6 +2,7 @@
 # Copyright 2026 Ingolf Lohmann.
 
 PYTHON ?= python3
+RUBY ?= ruby
 CC ?= cc
 EFFECT_ACK_C90_CFLAGS ?= -std=c90 -pedantic -Wall -Wextra -Werror
 
@@ -29,6 +30,15 @@ anticipation-contract:
 
 tool-cache-contract:
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tools/qikvrt_tool_cache.py verify
+
+# Both supplied suites are mandatory; missing dependencies must fail, not skip.
+# A reviewed transitive lock and runtime/cache admission remain prerequisites.
+.PHONY: megast-rails-test
+megast-rails-test: tool-cache-contract
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tests/test_megast_rails_gate.py
+	@test -s deploy/vercel-monitor/Gemfile.lock || { echo "BLOCK: reviewed Mega ST Rails Gemfile.lock and runtime/cache profile required" >&2; exit 1; }
+	cd deploy/vercel-monitor && BUNDLE_GEMFILE=Gemfile BUNDLE_FROZEN=true BUNDLE_WITHOUT= $(RUBY) -rbundler/setup test/megast_test.rb
+	cd deploy/vercel-monitor && BUNDLE_GEMFILE=Gemfile BUNDLE_FROZEN=true BUNDLE_WITHOUT= $(RUBY) -rbundler/setup test/rails_smoke_test.rb
 
 runtime-contract: tool-cache-contract
 	sh -n tools/bootstrap-gh.sh tools/bootstrap-runtime.sh
@@ -104,7 +114,7 @@ seed:
 e2e:
 	$(PYTHON) tests/test_tcpip_e2e.py
 
-test: compile integrity netboot-test effect-ack-core-test scientific-bundle-test adaptive-cognition-test anticipation-contract runtime-contract ai-runtime-contract interaction-archive-test release-automation evidence-contract-test workflow-executor-mesh-contract repository-writer-contract repository-terminal-test mesh-authority-mirror-instance-test real-mesh-test real-mesh-system-verification launcher conformance unit security license seed e2e
+test: compile integrity netboot-test megast-rails-test effect-ack-core-test scientific-bundle-test adaptive-cognition-test anticipation-contract runtime-contract ai-runtime-contract interaction-archive-test release-automation evidence-contract-test workflow-executor-mesh-contract repository-writer-contract repository-terminal-test mesh-authority-mirror-instance-test real-mesh-test real-mesh-system-verification launcher conformance unit security license seed e2e
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tools/qikvrt_integrity.py verify
 
 run-api:
