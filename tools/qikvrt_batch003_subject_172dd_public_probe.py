@@ -46,6 +46,10 @@ MAX_ARCHIVE_ENTRIES = 4096
 MAX_ENTRY_BYTES = 16 * 1024 * 1024
 MAX_TOTAL_UNCOMPRESSED_BYTES = 64 * 1024 * 1024
 MAX_COMPRESSION_RATIO = 1000.0
+GET_ATTEMPTS = 4
+GET_BACKOFF_SECONDS = (1, 2, 4)
+GET_TIMEOUT_SECONDS = 120
+RETRYABLE_HTTP_STATUSES = {408, 429}
 TEXT_EXTENSIONS = {
     ".c", ".h", ".cc", ".cpp", ".cxx", ".hpp", ".py", ".ps1", ".sh",
     ".bat", ".cmd", ".md", ".txt", ".json", ".jsonl", ".yaml", ".yml",
@@ -61,6 +65,10 @@ TEXT_BASENAMES = {
 
 
 class ProbeError(RuntimeError):
+    pass
+
+
+class TransientObservationError(ProbeError):
     pass
 
 
@@ -98,7 +106,7 @@ def request_bytes(
     *,
     accept: str,
     max_bytes: int,
-    attempts: int = 4,
+    attempts: int = GET_ATTEMPTS,
     opener: Callable[[urllib.request.Request, float], Any] | None = None,
 ) -> bytes:
     last: Exception | None = None
@@ -112,7 +120,7 @@ def request_bytes(
             },
         )
         try:
-            with open_call(request, 120.0) as response:
+            with open_call(request, float(GET_TIMEOUT_SECONDS)) as response:
                 final_url = response.geturl()
                 parsed = urllib.parse.urlsplit(final_url)
                 host = (parsed.hostname or "").lower()
@@ -124,11 +132,25 @@ def request_bytes(
                 if len(data) > max_bytes:
                     fail(f"response exceeded byte bound {max_bytes}: {url}")
                 return data
+        except urllib.error.HTTPError as exc:
+            if exc.code not in RETRYABLE_HTTP_STATUSES and not 500 <= exc.code <= 599:
+                raise ProbeError(f"unable to read {url}: {exc}") from exc
+            last = exc
+            if attempt + 1 < attempts:
+                time.sleep(
+                    GET_BACKOFF_SECONDS[attempt]
+                    if attempt < len(GET_BACKOFF_SECONDS)
+                    else 2**attempt
+                )
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             last = exc
             if attempt + 1 < attempts:
-                time.sleep(2**attempt)
-    raise ProbeError(f"unable to read {url}: {last}")
+                time.sleep(
+                    GET_BACKOFF_SECONDS[attempt]
+                    if attempt < len(GET_BACKOFF_SECONDS)
+                    else 2**attempt
+                )
+    raise TransientObservationError(f"unable to read {url}: {last}")
 
 
 def record_files(record: Mapping[str, Any]) -> list[dict[str, Any]]:

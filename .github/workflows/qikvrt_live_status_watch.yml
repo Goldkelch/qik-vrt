@@ -14,10 +14,10 @@ on:
       - "QIKVRT Collective Proposal Review"
       - "QIKVRT requested review executor"
       - "QIKVRT required code-owner review"
-      - "QIKVRT reciprocal Mesh review"
       - "QIKVRT universal terminal materialization"
-      - "QIKVRT reflexive repository watchdog"
-    types: [requested, in_progress, completed]
+    # The watchdog is an observer, not a PR-carrier event source.  Keeping
+    # observers out of this intake prevents a workflow_run feedback cycle.
+    types: [completed]
   workflow_dispatch:
     inputs:
       pr:
@@ -95,6 +95,17 @@ jobs:
               if [ -z "$pr" ]; then exit 0; fi
               head="$(jq -r '.workflow_run.head_sha' "$event")"
               name="$(jq -r '.workflow_run.name' "$event")"
+              source_event="$(jq -r '.workflow_run.event // empty' "$event")"
+              # Direct review executor runs use refs/pull/<n>/merge, so their
+              # workflow-run head is an execution SHA rather than the exact
+              # reviewed candidate head.  The direct native review path is
+              # already observed above; do not manufacture a second, mutable
+              # live-surface projection from this unbound successor.
+              if [ "$name" = 'QIKVRT requested review executor' ] && \
+                 { [ "$source_event" = pull_request_review ] || \
+                   [ "$source_event" = pull_request_review_comment ]; }; then
+                exit 0
+              fi
               state="$(jq -r '.workflow_run.conclusion // .workflow_run.status' "$event")"
               run_url="$(jq -r '.workflow_run.html_url' "$event")"
               source_id="$(jq -r '.workflow_run.id' "$event")"

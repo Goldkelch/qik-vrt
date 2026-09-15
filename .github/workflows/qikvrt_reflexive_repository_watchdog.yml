@@ -10,16 +10,14 @@ on:
     workflows:
       - "QIK-VRT autonomous bounded self-heal"
       - "QIK-VRT autonomous draft-PR continuation"
-      - "QIK-VRT expected-head promotion executor"
       - "QIKVRT workflow executor"
-      - "QIKVRT live status watch"
       - "QIKVRT CI"
       - "QIKVRT repository evidence materialization"
       - "QIKVRT Collective Proposal Review"
       - "QIK-VRT global claim completion"
       - "QIKVRT Batch-003 remaining subject disposition"
       - "QIKVRT adaptive runtime"
-    types: [requested, in_progress, completed]
+    types: [completed]
   push:
     branches: [main]
     paths:
@@ -79,6 +77,7 @@ jobs:
           python-version: "3.12"
 
       - name: Reobserve exact head, tree, runs, jobs, and previous reflexive receipt
+        id: observe
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -91,13 +90,74 @@ jobs:
           set -euo pipefail
           root=.qikvrt/reflexive-repository-watchdog
           mkdir -p "$root/jobs"
+          rate_limit_marker="$root/rate-limit-exhausted.json"
+          rm -f "$rate_limit_marker"
+
+          emit_rate_limit_hold() {
+            local endpoint
+            endpoint="$(jq -r '.endpoint // "unknown"' "$rate_limit_marker")"
+            jq -n \
+              --arg repository "$REPOSITORY" \
+              --arg head "$EXPECTED_HEAD" \
+              --arg run "$CURRENT_RUN_ID" \
+              --arg endpoint "$endpoint" \
+              '{schema:"qikvrt_reflexive_repository_watchdog_rate_limit_hold_v1",state:"HOLD_UNVERIFIED",verification_state:"HOLD_UNVERIFIED",disposition:"REOBSERVE",repository:$repository,head_sha:$head,first_blocker:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",detail:"bounded GitHub installation rate-limit backoff exhausted before exact reflexive observation",hold_reason:{reason_code:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",reason:"The GitHub App installation quota prevented an exact read-only reflexive observation.",subject:{repository:$repository,kind:"commit",identifier:$head,head_sha:$head},evidence_refs:[("actions/run/"+$run),("github-api/"+$endpoint)],owner:{role:"EXACT_SUBJECT_OBSERVER",actor:"github-actions[bot]"},retry_condition:{event:"native_repository_event",predicate:"the GitHub App installation quota no longer prevents exact observation of the same commit"},next_action:"REOBSERVE_ON_NEXT_NATIVE_REPOSITORY_EVENT",d0:2},derived_action:{d0:2,state:"REOBSERVE",next_action:"REOBSERVE_ON_NEXT_NATIVE_REPOSITORY_EVENT",productive_effect:false,effect_ack:"NOT_REQUIRED"},completion_claims:{PASS:false,FINAL_PASS:false,EFFECT_ACK_DONE:false,MERGE:false}}' \
+              > "$root/reflexive-watchdog-receipt.json"
+            cp "$root/reflexive-watchdog-receipt.json" "$root/gatewatch-receipt.json"
+            echo 'observation_complete=false' >> "$GITHUB_OUTPUT"
+            jq '{state, disposition, first_blocker, derived_action, hold_reason}' \
+              "$root/reflexive-watchdog-receipt.json"
+          }
+
+          # The watchdog performs observations only. Retry only the exact
+          # installation quota response; all other GitHub API failures remain
+          # hard failures. This never manufactures a new repository event.
+          gh_read() {
+            local output error delay endpoint
+            endpoint="$1"
+            output="$(mktemp)"
+            error="$(mktemp)"
+            for delay in 0 15 45; do
+              if [ "$delay" -gt 0 ]; then
+                echo "QIKVRT_GITHUB_INSTALLATION_RATE_LIMIT_BACKOFF_SECONDS=$delay" >&2
+                sleep "$delay"
+              fi
+              if gh api "$@" >"$output" 2>"$error"; then
+                cat "$output"
+                rm -f "$output" "$error"
+                return 0
+              fi
+              if ! grep -Fq "API rate limit exceeded for installation." "$error"; then
+                cat "$error" >&2
+                rm -f "$output" "$error"
+                return 1
+              fi
+            done
+            cat "$error" >&2
+            jq -n \
+              --arg endpoint "$endpoint" \
+              '{state:"HOLD_UNVERIFIED",d0:2,reason:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",endpoint:$endpoint,productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
+              > "$rate_limit_marker"
+            printf '{}\n'
+            rm -f "$output" "$error"
+            return 0
+          }
+
+          rate_limit_hold_if_needed() {
+            if test -f "$rate_limit_marker"; then
+              emit_rate_limit_hold
+              exit 0
+            fi
+          }
+
           local_head="$(git rev-parse --verify HEAD^{commit})"
           test "$local_head" = "$EXPECTED_HEAD"
           if test "$EVENT_NAME" = pull_request; then
-            live_head="$(gh api "repos/$REPOSITORY/pulls/$EVENT_PR" --jq '.head.sha')"
+            live_head="$(gh_read "repos/$REPOSITORY/pulls/$EVENT_PR" --jq '.head.sha')"
           else
-            live_head="$(gh api "repos/$REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+            live_head="$(gh_read "repos/$REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
           fi
+          rate_limit_hold_if_needed
           test "$live_head" = "$EXPECTED_HEAD"
           git rev-parse --verify HEAD^{tree} > "$root/observed-tree.txt"
           printf '%s\n' "$EXPECTED_HEAD" > "$root/observed-head.txt"
@@ -112,10 +172,12 @@ jobs:
           fi
           authority_repository="$(jq -r '.authority.repository' state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json)"
           test "$authority_repository" != null
-          gh api "repos/$authority_repository/git/ref/heads/main" --jq '.object.sha' \
+          gh_read "repos/$authority_repository/git/ref/heads/main" --jq '.object.sha' \
             > "$root/observed-authority-main-head.txt"
-          gh api "repos/$REPOSITORY/actions/runs?head_sha=$EXPECTED_HEAD&per_page=100" \
+          rate_limit_hold_if_needed
+          gh_read "repos/$REPOSITORY/actions/runs?head_sha=$EXPECTED_HEAD&per_page=100" \
             > "$root/current-runs.json"
+          rate_limit_hold_if_needed
 
           # The analyzer considers every returned run. Fetch the matching jobs for
           # every one of those runs so missing observation data is never confused
@@ -124,31 +186,37 @@ jobs:
             jq -r '.workflow_runs[].id' "$root/current-runs.json"
           )
           for run_id in "${run_ids[@]}"; do
-            gh api "repos/$REPOSITORY/actions/runs/$run_id/jobs?per_page=100" \
+            gh_read "repos/$REPOSITORY/actions/runs/$run_id/jobs?per_page=100" \
               > "$root/jobs/$run_id.json"
+            rate_limit_hold_if_needed
           done
 
           if test "$EVENT_NAME" != pull_request; then
             previous_run="$(
-              gh api "repos/$REPOSITORY/actions/workflows/qikvrt_reflexive_repository_watchdog.yml/runs?branch=main&status=completed&per_page=20" \
+              gh_read "repos/$REPOSITORY/actions/workflows/qikvrt_reflexive_repository_watchdog.yml/runs?branch=main&status=completed&per_page=20" \
                 | jq -r --argjson current "$CURRENT_RUN_ID" \
-                  '[.workflow_runs[] | select(.id != $current and .conclusion == "success")][0].id // empty'
+                  '[.workflow_runs[]? | select(.id != $current and .conclusion == "success")][0].id // empty'
             )"
+            rate_limit_hold_if_needed
             if test -n "$previous_run"; then
               previous_artifact="$(
-                gh api "repos/$REPOSITORY/actions/runs/$previous_run/artifacts?per_page=100" \
-                  | jq -r '[.artifacts[] | select(.name | startswith("qikvrt-reflexive-repository-watchdog-"))][0].id // empty'
+                gh_read "repos/$REPOSITORY/actions/runs/$previous_run/artifacts?per_page=100" \
+                  | jq -r '[.artifacts[]? | select(.name | startswith("qikvrt-reflexive-repository-watchdog-"))][0].id // empty'
               )"
+              rate_limit_hold_if_needed
               if test -n "$previous_artifact"; then
-                gh api "repos/$REPOSITORY/actions/artifacts/$previous_artifact/zip" \
-                  > "$root/previous-receipt.zip" || true
+                gh_read "repos/$REPOSITORY/actions/artifacts/$previous_artifact/zip" \
+                  > "$root/previous-receipt.zip"
+                rate_limit_hold_if_needed
                 unzip -p "$root/previous-receipt.zip" reflexive-watchdog-receipt.json \
                   > "$root/previous-receipt.json" 2>/dev/null || true
               fi
             fi
           fi
+          echo 'observation_complete=true' >> "$GITHUB_OUTPUT"
 
       - name: Analyze the pre-deadlock state without mutation
+        if: steps.observe.outputs.observation_complete == 'true'
         env:
           REPOSITORY: ${{ github.repository }}
         shell: bash

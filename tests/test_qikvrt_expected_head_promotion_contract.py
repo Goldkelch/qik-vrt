@@ -9,6 +9,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
 PROMOTION_WORKFLOW = ROOT / ".github/workflows/qikvrt_expected_head_promotion.yml"
+REQUESTED_REVIEW_CONTRACT = ROOT / ".github/workflows/qikvrt_requested_review_contract.yml"
 SELF_HEAL_WORKFLOW = ROOT / ".github/workflows/qikvrt_autonomous_self_heal.yml"
 MARKER = "<!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->"
 
@@ -27,7 +28,7 @@ class ExpectedHeadPromotionContractTests(unittest.TestCase):
         )
         self.assertEqual(executor["opt_in_marker"], MARKER)
         self.assertEqual(executor["maximum_candidates_per_run"], 1)
-        self.assertEqual(executor["schedule_fallback"], "*/10 * * * *")
+        self.assertEqual(executor["schedule_fallback"], "EVENT_DRIVEN_ONLY")
         self.assertEqual(
             executor["two_phase_promotion"],
             [
@@ -55,7 +56,7 @@ class ExpectedHeadPromotionContractTests(unittest.TestCase):
 
     def test_executor_is_bounded_and_fails_closed_before_merge(self) -> None:
         workflow = PROMOTION_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn('cron: "*/10 * * * *"', workflow)
+        self.assertNotIn("schedule:", workflow)
         self.assertIn("cancel-in-progress: false", workflow)
         self.assertIn("READY_RECLASSIFICATION_CAS_UNAVAILABLE", pathlib.Path(
             ROOT / "tools/qikvrt_expected_head_promotion.py"
@@ -70,6 +71,27 @@ class ExpectedHeadPromotionContractTests(unittest.TestCase):
         compact = workflow.replace(" ", "")
         self.assertIn("other.get('base',{}).get('sha')!=current_main", compact)
         self.assertIn("other.get('head',{}).get('sha')==head", compact)
+
+    def test_bootstrap_liveness_gap_is_explicit_and_cannot_hide_behind_green_p2(self) -> None:
+        workflow = PROMOTION_WORKFLOW.read_text(encoding="utf-8")
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))["promotion_executor"]
+        self.assertIn("HEAD1_BASE_CAS_UNAVAILABLE", workflow)
+        self.assertIn("no repository mutation follows", workflow)
+        self.assertIn("REQUEST_HISTORY_PRESERVING_EXACT_BASE_CAS_AUTHORITY", workflow)
+        self.assertFalse(contract["automatic_merge_mutation"])
+        self.assertEqual(
+            contract["merge_binding"],
+            "DISABLED_BECAUSE_GITHUB_PULL_MERGE_SHA_DOES_NOT_BIND_REOBSERVED_BASE_AS_HEAD1",
+        )
+        self.assertNotIn("EFFECT_ACK_DONE=true", workflow)
+
+    def test_requested_review_contract_checks_the_actual_verify_invocation(self) -> None:
+        invocation = "'tools/qikvrt_requested_review_executor.py','verify'"
+        self.assertIn(invocation, PROMOTION_WORKFLOW.read_text(encoding="utf-8"))
+        self.assertIn(
+            f'grep -F "{invocation}" .github/workflows/qikvrt_expected_head_promotion.yml',
+            REQUESTED_REVIEW_CONTRACT.read_text(encoding="utf-8"),
+        )
 
     def test_external_effect_claims_remain_fail_closed(self) -> None:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))

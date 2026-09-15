@@ -45,6 +45,8 @@ RETRACTION_EVENT_ACTIONS = {
         "reopened",
         }
     ),
+    "pull_request_review": frozenset({"submitted", "edited", "dismissed"}),
+    "pull_request_review_comment": frozenset({"created", "edited", "deleted"}),
     "issue_comment": frozenset({"created", "edited", "deleted"}),
     "workflow_run": frozenset({"completed"}),
 }
@@ -429,8 +431,6 @@ def _exact_followup_event(intake: Mapping[str, Any]) -> bool:
     """Accept one trusted exact event that can close a still-live request."""
     event_name = intake.get("event_name")
     event_action = intake.get("event_action")
-    if event_name == "workflow_dispatch":
-        return event_action == ""
     if event_name == "pull_request_target" and event_action in {
         "review_requested",
         "review_request_removed",
