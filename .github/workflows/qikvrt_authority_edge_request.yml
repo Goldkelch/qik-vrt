@@ -1,0 +1,82 @@
+name: QIKVRT authority-edge request producer
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  request-authority:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'github-actions[bot]' &&
+      github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-24.04
+    env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      TARGET_REPOSITORY: Goldkelch/qik-vrt
+      ADMIN_REPOSITORY: ingolf-lohmann/qik-vrt
+      ADMIN_TOKEN: ${{ secrets.QIKVRT_GITHUB_ADMIN_TOKEN }}
+    steps:
+      - name: Discover exact ACTION_REQUIRED runs for event head
+        id: runs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ADMIN_TOKEN"
+          api="https://api.github.com/repos/$TARGET_REPOSITORY/actions/runs?head_sha=$EXPECTED_HEAD&event=pull_request&per_page=100"
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $ADMIN_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$api" > "$RUNNER_TEMP/runs.json"
+          python3 - "$EXPECTED_HEAD" "$GITHUB_OUTPUT" <<'PY'
+          import json,sys
+          head,out=sys.argv[1:]
+          data=json.load(open(__import__('os').environ['RUNNER_TEMP']+'/runs.json'))
+          ids=[]
+          for run in data.get('workflow_runs',[]):
+              if run.get('head_sha') != head:
+                  continue
+              if run.get('status') == 'completed' and run.get('conclusion') == 'action_required':
+                  ids.append(str(run['id']))
+          if not ids:
+              raise SystemExit('BLOCK: no exact-head ACTION_REQUIRED runs observed')
+          with open(out,'a',encoding='utf-8') as f:
+              f.write('run_ids='+','.join(ids)+'\n')
+          print('exact_head='+head)
+          print('action_required_runs='+','.join(ids))
+          PY
+      - name: Dispatch each exact authority request to admin node
+        shell: bash
+        env:
+          RUN_IDS: ${{ steps.runs.outputs.run_ids }}
+        run: |
+          set -euo pipefail
+          IFS=',' read -r -a ids <<< "$RUN_IDS"
+          for run_id in "${ids[@]}"; do
+            payload="$(python3 - "$TARGET_REPOSITORY" "$run_id" "$EXPECTED_HEAD" <<'PY'
+          import json,sys
+          repository,run_id,head=sys.argv[1:]
+          print(json.dumps({
+            'event_type':'qikvrt-authority-admit',
+            'client_payload':{
+              'repository':repository,
+              'run_id':int(run_id),
+              'head_sha':head,
+            },
+          },separators=(',',':')))
+          PY
+            )"
+            curl --fail-with-body --silent --show-error \
+              -X POST \
+              -H "Authorization: Bearer $ADMIN_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              -d "$payload" \
+              "https://api.github.com/repos/$ADMIN_REPOSITORY/dispatches"
+          done
