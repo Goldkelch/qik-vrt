@@ -23,7 +23,7 @@ usage() {
     cat <<'EOF'
 Usage: tools/bootstrap-runtime.sh [--check-only] [--install]
        [--accept-third-party]
-       [--profile core|ietf|formal|audio|publication|smalltalk|all]
+       [--profile core|ietf|formal|audio|publication|smalltalk|rails|all]
        [--cache-dir PATH]
 
 Every profile checks GitHub CLI first. Only the verified GitHub CLI and
@@ -91,7 +91,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$PROFILE" in
-    core|ietf|formal|audio|publication|smalltalk|all) ;;
+    core|ietf|formal|audio|publication|smalltalk|rails|all) ;;
     *) usage >&2; exit 2 ;;
 esac
 if [ "$MODE" = install ] && [ "$ACCEPT_THIRD_PARTY" -ne 1 ]; then
@@ -173,6 +173,15 @@ find_python_312() {
         fi
     done
     return 1
+}
+
+check_rails_profile() {
+    command -v ruby >/dev/null 2>&1 || { mark_continue "rails: Ruby 3.3.8 is absent"; return; }
+    [ "$(ruby -e 'print RUBY_VERSION')" = "3.3.8" ] || { mark_continue "rails: Ruby 3.3.8 required"; return; }
+    command -v bundle >/dev/null 2>&1 || { mark_continue "rails: Bundler 2.5.22 is absent"; return; }
+    [ "$(bundle --version)" = "Bundler version 2.5.22" ] || { mark_continue "rails: Bundler 2.5.22 required"; return; }
+    (cd "$ROOT/deploy/vercel-monitor" && BUNDLE_FROZEN=true bundle check) || { mark_continue "rails: frozen Gemfile.lock closure is not installed"; return; }
+    printf '%s\n' "PASS: Rails runtime Ruby 3.3.8 / Bundler 2.5.22 / frozen dependency closure"
 }
 
 check_core_profile() {
@@ -432,3 +441,7 @@ case "$PROFILE" in
 esac
 
 exit "$OVERALL"
+
+if [ "$PROFILE" = rails ] || [ "$PROFILE" = all ]; then
+    check_rails_profile
+fi
