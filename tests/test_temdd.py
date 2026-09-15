@@ -14,4 +14,6 @@ class TEMDDTests(unittest.TestCase):
  def test_subject_scope_not_global(self):
   bad=GOOD.replace('repository = "Goldkelch/qik-vrt";','')+' repository = "evil/global";'
   with self.assertRaises(ValueError): parse(bad)
+ def test_missing_handler_blocks(self):
+  with self.assertRaises(ValueError): parse(GOOD.replace('on event { follow exact; classify causal; }','').replace('on blocker { learn smallest_sound_successor; execute successor; }',''))
 if __name__=='__main__': unittest.main()
