@@ -1,8 +1,8 @@
 const AUTHORITY = "Goldkelch/qik-vrt";
 const DEFAULT_BACKEND = "http://127.0.0.1:8771";
 const ALLOWED_BACKENDS = new Set(["http://127.0.0.1:8771", "http://localhost:8771"]);
-const WATCHDOG_ALARM = "qikvrt-repository-watchdog";
-const WATCHDOG_PERIOD_MINUTES = 5;
+const DEFAULT_EVENT_STREAM = "http://127.0.0.1:8787/events";
+const ALLOWED_EVENT_STREAMS = new Set(["http://127.0.0.1:8787/events", "http://localhost:8787/events"]);
 const STATE_MAP = new Map([
   ["nack", "EFFECT_NACK"],
   ["continue", "EFFECT_ACK_CONTINUE"],
@@ -10,6 +10,7 @@ const STATE_MAP = new Map([
   ["isolate", "EFFECT_ACK_ISOLATE"],
   ["block", "EFFECT_ACK_BLOCK"]
 ]);
+let qikvrtLiveEvent = null;
 
 function fail(reason) {
   return {ok: false, state: "HOLD", ordinary_release: false, reason};
@@ -85,10 +86,35 @@ async function persistWatchdogFrame() {
   return frame;
 }
 
-async function ensureWatchdog() {
-  const current = await browser.alarms.get(WATCHDOG_ALARM);
-  if (!current) await browser.alarms.create(WATCHDOG_ALARM, {periodInMinutes: WATCHDOG_PERIOD_MINUTES});
-  return persistWatchdogFrame();
+async function eventStreamUrl() {
+  const stored = await browser.storage.local.get(["qikvrtEventStream", "qikvrtLastEventId"]);
+  const value = stored.qikvrtEventStream || DEFAULT_EVENT_STREAM;
+  if (!ALLOWED_EVENT_STREAMS.has(value)) throw new Error("event stream outside allowlist");
+  const url = new URL(value);
+  const lastEventId = stored.qikvrtLastEventId;
+  if (typeof lastEventId === "string" && lastEventId) url.searchParams.set("since", lastEventId);
+  return url.toString();
+}
+
+async function connectLiveEventStream() {
+  if (qikvrtLiveEvent) return qikvrtLiveEvent;
+  const url = await eventStreamUrl();
+  const source = new EventSource(url, {withCredentials: false});
+  qikvrtLiveEvent = source;
+  source.addEventListener("open", () => {
+    browser.storage.local.set({qikvrtLiveEventState: "CONNECTED"}).catch(() => undefined);
+  });
+  source.addEventListener("qikvrt_event", event => {
+    const lastEventId = event.lastEventId || "";
+    const update = {qikvrtLiveEventState: "EVENT"};
+    if (lastEventId) update.qikvrtLastEventId = lastEventId;
+    browser.storage.local.set(update).catch(() => undefined);
+    persistWatchdogFrame().catch(() => undefined);
+  });
+  source.onerror = () => {
+    browser.storage.local.set({qikvrtLiveEventState: "RECONNECTING"}).catch(() => undefined);
+  };
+  return source;
 }
 
 function decodeSfBytes(value) {
@@ -218,10 +244,16 @@ async function commitEffect(payload) {
   return {...result, ordinary_release: Boolean(done && result.body && result.body.ordinary_release === true)};
 }
 
-browser.runtime.onInstalled.addListener(() => { ensureWatchdog().catch(() => undefined); });
-browser.runtime.onStartup.addListener(() => { ensureWatchdog().catch(() => undefined); });
-browser.alarms.onAlarm.addListener(alarm => { if (alarm.name === WATCHDOG_ALARM) persistWatchdogFrame().catch(() => undefined); });
-ensureWatchdog().catch(() => undefined);
+browser.runtime.onInstalled.addListener(() => {
+  connectLiveEventStream().catch(() => undefined);
+  persistWatchdogFrame().catch(() => undefined);
+});
+browser.runtime.onStartup.addListener(() => {
+  connectLiveEventStream().catch(() => undefined);
+  persistWatchdogFrame().catch(() => undefined);
+});
+connectLiveEventStream().catch(() => undefined);
+persistWatchdogFrame().catch(() => undefined);
 
 browser.runtime.onMessage.addListener(message => {
   if (!message || typeof message.kind !== "string") return Promise.resolve(fail("invalid message"));
