@@ -11,7 +11,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates firefox-esr python3 python3-minimal git zip \
-      xvfb x11vnc novnc websockify dbus-x11 procps curl \
+      xvfb x11vnc novnc websockify dbus-x11 procps curl xterm \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/qikvrt
@@ -31,7 +31,8 @@ RUN mkdir -p /opt/qikvrt/runtime/bootstrap-profile/extensions /opt/qikvrt/runtim
 
 COPY deploy/universal-terminal/entrypoint.sh /usr/local/bin/qikvrt-universal-terminal
 COPY deploy/universal-terminal/runtime-health.sh /usr/local/bin/qikvrt-runtime-health
-RUN chmod +x /usr/local/bin/qikvrt-universal-terminal /usr/local/bin/qikvrt-runtime-health
+RUN chmod +x /usr/local/bin/qikvrt-universal-terminal /usr/local/bin/qikvrt-runtime-health \
+    /opt/qikvrt/tools/qikvrt_live_tail_stream.py
 
 VOLUME ["/var/lib/qikvrt/profile", "/var/lib/qikvrt/state"]
 EXPOSE 6080
