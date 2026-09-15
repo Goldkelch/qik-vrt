@@ -19,6 +19,7 @@ def parse(text):
  for m in re.finditer(r"on\s+(event|blocker)\s*\{(.*?)\}",text,re.S): handlers.append({'event':m.group(1),'statements':[x.strip() for x in m.group(2).split(';') if x.strip()]})
  d=one(r"until\s*\{(.*?)\}",'until').group(1).strip().rstrip(';'); dod=[x.strip() for x in d.split('&&') if x.strip()]
  if not handlers or not dod: raise ValueError('handlers and DoD required')
+ if len(set(dod))!=len(dod): raise ValueError('duplicate DoD predicate')
  if target=='QIKVRT_DOD' and set(dod)!=QIKVRT_DOD: raise ValueError('QIKVRT_DOD requires complete canonical predicate')
  return {'schema':'temdd_ir_v0_1','version':v,'authority':a,'subject':{'name':s.group(1),'repository':rm.group(1),'binding':'exact'},'request':{'name':q.group(1),'target':target},'handlers':handlers,'dod':dod}
 def main(argv):
