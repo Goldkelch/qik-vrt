@@ -67,13 +67,13 @@ repository-writer-contract:
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_materialization_scope tests.test_qikvrt_repository_writer_lease tests.test_qikvrt_required_review_gate tests.test_qikvrt_ruleset_reconcile tests.issue_agent.test_validate
 
 repository-terminal-test:
-	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_repository_terminal
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_repository_terminal tests.test_qikvrt_cloud_transputer_mesh_runtime
 
 mesh-authority-mirror-instance-test:
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_authority_mirror_mesh_instance
 
 real-mesh-test:
-	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_real_mesh
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_real_mesh tests.test_qikvrt_live_sse
 
 real-mesh-system-verification:
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_real_mesh_system_verification
@@ -104,7 +104,7 @@ seed:
 e2e:
 	$(PYTHON) tests/test_tcpip_e2e.py
 
-test: compile integrity effect-ack-core-test scientific-bundle-test adaptive-cognition-test anticipation-contract runtime-contract ai-runtime-contract interaction-archive-test release-automation evidence-contract-test workflow-executor-mesh-contract repository-writer-contract repository-terminal-test mesh-authority-mirror-instance-test real-mesh-test real-mesh-system-verification launcher conformance unit security license seed e2e
+test: compile integrity netboot-test effect-ack-core-test scientific-bundle-test adaptive-cognition-test anticipation-contract runtime-contract ai-runtime-contract interaction-archive-test release-automation evidence-contract-test workflow-executor-mesh-contract repository-writer-contract repository-terminal-test mesh-authority-mirror-instance-test real-mesh-test real-mesh-system-verification launcher conformance unit security license seed e2e
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tools/qikvrt_integrity.py verify
 
 run-api:
@@ -116,3 +116,11 @@ run-api:
 
 clean:
 	rm -rf unit_state e2e_state .qikvrt/runtime .qikvrt/evidence .qikvrt/api .qikvrt/cache .qikvrt/release .qikvrt/interactions .qikvrt/real-mesh logs __pycache__ src/__pycache__ scripts/__pycache__ tests/__pycache__ tools/__pycache__
+
+.PHONY: smalltalk-test
+smalltalk-test: tool-cache-contract effect-ack-core-test
+	$(PYTHON) -B tools/qikvrt_smalltalk.py test
+
+.PHONY: netboot-test
+netboot-test:
+	$(PYTHON) -B -m unittest tests.test_qikvrt_netboot -v
