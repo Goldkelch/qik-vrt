@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import platform
 import shutil
+import select
 import subprocess
 import sys
 import tempfile
@@ -23,6 +24,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK_PATH = ROOT / "runtime/toolchains/pharo-13.lock.json"
+SOURCES = ("src/smalltalk/QikvrtEffectAck.st", "src/smalltalk/QikvrtEventReactor.st")
 
 
 def digest(path: Path) -> str:
@@ -104,13 +106,161 @@ def build(directory: Path, lock: dict, output: Path) -> Path:
     for source in (directory / "image").glob("*.sources"):
         shutil.copyfile(source, output / source.name)
     vm = str(directory / "vm" / lock["vm"]["file"])
-    run([vm, "--headless", str(image), "st", str(ROOT / "src/smalltalk/QikvrtEffectAck.st"), str(ROOT / "src/smalltalk/save-image.st")], output)
+    run([vm, "--headless", str(image), "st", *[str(ROOT / p) for p in SOURCES], str(ROOT / "src/smalltalk/save-image.st")], output)
     run([vm, "--headless", str(image), "st", str(ROOT / "src/smalltalk/smoke.st")], output)
     receipt = {"schema": "qikvrt_smalltalk_image_v1", "lock_sha256": digest(LOCK_PATH),
                "source_sha256": digest(ROOT / "src/smalltalk/QikvrtEffectAck.st"),
+               "sources_sha256": {p: digest(ROOT / p) for p in (*SOURCES, "src/smalltalk/events.st")},
                "image_sha256": digest(image), "image_restored": True, "effect_ack_done": False}
     (output / "smalltalk-image-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     return image
+
+
+class EventWorker:
+    """A persistent Smalltalk reactor over inherited local pipes.
+
+    The timeout bounds a requested operation, never schedules status polling.
+    There are no credentials, user-provided selectors, or shell commands here.
+    """
+    def __init__(self, directory: Path, lock: dict, image: Path, binding: dict):
+        receipt = json.loads((image.parent / "smalltalk-image-receipt.json").read_text())
+        sources = {p: digest(ROOT / p) for p in (*SOURCES, "src/smalltalk/events.st")}
+        if (receipt.get("sources_sha256") != sources
+                or receipt.get("lock_sha256") != digest(LOCK_PATH)
+                or receipt.get("image_sha256") != digest(image)):
+            raise ValueError("Smalltalk image/source/lock binding drift")
+        self.runtime_binding = {"lock": digest(LOCK_PATH), "sources": sources,
+                                "adapter": digest(Path(__file__)),
+                                "ledger": digest(ROOT / "tools/qikvrt_real_mesh.py")}
+        self.process = subprocess.Popen(
+            [str(directory / "vm" / lock["vm"]["file"]), "--headless", str(image),
+             "st", str(ROOT / "src/smalltalk/events.st")],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, encoding="utf-8", bufsize=1)
+        try:
+            if self.exchange(binding).get("status") != "READY":
+                raise ValueError("Smalltalk rejected the exact subject binding")
+        except BaseException:
+            self.close()
+            raise
+
+    def exchange(self, event):
+        from tools.qikvrt_real_mesh import canonical_json_bytes
+        encoded = canonical_json_bytes(event)
+        if len(encoded) > 65535:
+            raise ValueError("event exceeds pipe bound")
+        self.process.stdin.write(encoded.decode("utf-8") + "\n")
+        self.process.stdin.flush()
+        ready, _, _ = select.select([self.process.stdout], [], [], 15)
+        if not ready:
+            raise TimeoutError("Smalltalk event processing deadline exceeded")
+        line = self.process.stdout.readline(16 * 1024 * 1024)
+        if not line.endswith("\n"):
+            raise ValueError("Smalltalk terminated or exceeded response bound")
+        response = json.loads(line)
+        if not isinstance(response, dict):
+            raise ValueError("Smalltalk response is not an object")
+        return response
+
+    def close(self):
+        self.process.stdin.close()
+        try:
+            self.process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            self.process.kill()
+            self.process.wait()
+        self.process.stdout.close()
+
+
+class EventContinuation:
+    """Reuse the existing hash-linked, fsynced Mesh ledger as a durable outbox.
+
+    Only the pure Smalltalk handler is replayed. COMPLETED means local handler
+    output was persisted, never that an external action or a P0-P7 gate passed.
+    Stdout is a projection; consumers must use event IDs and the durable outbox
+    to recover a crash between persistence and receipt of that projection.
+    """
+    def __init__(self, worker, binding, ledger_path):
+        from tools.qikvrt_real_mesh import AppendOnlyNodeLedger, canonical_sha256
+        self.worker = worker
+        self.ledger = AppendOnlyNodeLedger(ledger_path, "smalltalk:" + canonical_sha256(
+            {"binding": binding, "runtime": worker.runtime_binding}))
+        self.failed = False
+        if len(self.ledger.accepted) > 10000:
+            raise ValueError("event history capacity exceeded")
+        self.recovered = []
+        for accepted in list(self.ledger.accepted.values()):
+            event = accepted["event"]
+            response = self.worker.exchange(event)
+            if response.get("status") != "ACCEPTED":
+                raise ValueError("Smalltalk cannot reconstruct the accepted event history")
+            self.recovered.extend(self._complete(response))
+
+    def _complete(self, response):
+        outputs = []
+        for result in response.get("completions", []):
+            event_id = result["event_id"]
+            old = self.ledger.completed.get(event_id)
+            if old is not None:
+                if old != result:
+                    raise ValueError("Smalltalk replay changed a persisted continuation")
+                continue
+            if event_id not in self.ledger.accepted:
+                raise ValueError("Smalltalk completed an event absent from the inbox")
+            self.ledger.append("COMPLETED", event_id, response=result)
+            outputs.append(result)
+        return outputs
+
+    def accept(self, event):
+        from tools.qikvrt_live_sse import valid_event
+        from tools.qikvrt_real_mesh import canonical_json_bytes
+        if self.failed:
+            raise ValueError("event consumer requires restart after persistence failure")
+        canonical_json_bytes(event)  # Reject non-canonical JSON, including floats.
+        if not valid_event(event):
+            raise ValueError("invalid live event envelope")
+        event_id = event["event_id"]
+        old = self.ledger.accepted.get(event_id)
+        if old is not None:
+            if old["event"] != event:
+                raise ValueError("event ID rebound to different content")
+            return []
+        response = self.worker.exchange(event)
+        if response.get("status") != "ACCEPTED":
+            raise ValueError("Smalltalk HOLD: " + str(response.get("reason", response)))
+        try:
+            self.ledger.append("ACCEPTED", event_id, accepted={"event": event})
+            return self._complete(response)
+        except BaseException:
+            self.failed = True
+            raise
+
+
+def events(directory, lock, binding_path, events_path, ledger_path, once=False):
+    from tools.qikvrt_live_sse import EventFile, unique_object
+    binding = json.loads(binding_path.read_text(), object_pairs_hook=unique_object)
+    # Acquire the single-writer lease before starting or replaying Smalltalk.
+    import fcntl
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    with (ledger_path.parent / (ledger_path.name + ".lock")).open("a") as lease:
+        fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with tempfile.TemporaryDirectory(prefix="qikvrt-event-image-") as temp:
+            image = build(directory, lock, Path(temp))
+            worker = EventWorker(directory, lock, image, binding)
+            try:
+                consumer = EventContinuation(worker, binding, ledger_path)
+                for result in consumer.recovered:
+                    print(json.dumps(result, sort_keys=True), flush=True)
+                reader = EventFile(events_path)
+                try:
+                    print('QIKVRT_SMALLTALK_EVENT_READY', flush=True)
+                    for event in reader.read_new() if once else reader.follow():
+                        for result in consumer.accept(event):
+                            print(json.dumps(result, sort_keys=True), flush=True)
+                finally:
+                    reader.close()
+            finally:
+                worker.close()
 
 
 def test(directory: Path, lock: dict) -> None:
@@ -167,10 +317,14 @@ def test(directory: Path, lock: dict) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("verify", "install", "build", "test"))
+    parser.add_argument("command", choices=("verify", "install", "build", "test", "events"))
     parser.add_argument("--cache-dir", type=Path, default=Path(os.environ.get("QIKVRT_TOOLCHAIN_CACHE", ROOT / ".qikvrt/toolchains")))
     parser.add_argument("--archive-dir", type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--binding", type=Path)
+    parser.add_argument("--events", type=Path)
+    parser.add_argument("--ledger", type=Path)
+    parser.add_argument("--once", action="store_true", help="Process available events once and exit")
     args = parser.parse_args()
     lock = json.loads(LOCK_PATH.read_text())
     try:
@@ -181,6 +335,13 @@ def main() -> int:
             build(directory, lock, args.output.resolve())
         if args.command == "test":
             test(directory, lock)
+            os.environ["QIKVRT_TOOLCHAIN_CACHE"] = str(args.cache_dir.resolve())
+            run([sys.executable, "-B", "-m", "unittest", "-v",
+                 "tests.test_qikvrt_smalltalk_events"], ROOT)
+        if args.command == "events":
+            if not all((args.binding, args.events, args.ledger)):
+                parser.error("events requires --binding, --events and --ledger")
+            events(directory, lock, args.binding, args.events, args.ledger, args.once)
         print(f"PHARO_{args.command.upper()}_OK version={lock['version']}")
         return 0
     except (OSError, ValueError, zipfile.BadZipFile, subprocess.SubprocessError) as error:
@@ -189,4 +350,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
     raise SystemExit(main())
