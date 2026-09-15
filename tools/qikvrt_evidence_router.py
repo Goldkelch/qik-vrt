@@ -50,8 +50,9 @@ def candidate_route(a_to_b: Relation, b_to_c: Relation) -> CandidateRoute:
 
 
 def validate_candidate(candidate: CandidateRoute, relations: Iterable[Relation]) -> AdmissibleRoute:
+    relations = tuple(relations)
     by_receipt = {relation.receipt: relation for relation in relations}
-    if len(by_receipt) != len(tuple(relations)):
+    if len(by_receipt) != len(relations):
         raise ValueError("RECEIPT_IDENTITY_AMBIGUOUS")
     selected = []
     for receipt in candidate.receipts:
