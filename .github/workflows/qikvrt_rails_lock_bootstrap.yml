@@ -33,6 +33,8 @@ jobs:
       - name: Resolve, install and test deterministic Rails lock candidate
         working-directory: deploy/vercel-monitor
         shell: bash
+        env:
+          SECRET_KEY_BASE: qikvrt-rails-smoke-only-not-production-0000000000000000000000000000000000000000000000000000000000000000
         run: |
           set -euo pipefail
           test "$(ruby -e 'print RUBY_VERSION')" = '3.3.8'
