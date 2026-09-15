@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sys
 from typing import Any, Iterable
@@ -83,18 +84,42 @@ def load_catalog() -> tuple[dict[str, Any], dict[int, dict[str, Any]]]:
     return catalog, by_code
 
 
-def select_complete_plan(observation: dict[str, Any]) -> dict[str, Any]:
-    compiler = _load_compiler()
+def select_complete_plan(observation: dict[str, Any], *, api_url: str | None = None) -> dict[str, Any]:
     normalized = normalize_observation(observation)
     flags = encode_observation(normalized)
     machine = bytes.fromhex("".join(HEX_PATH.read_text(encoding="ascii").split()))
-    if machine != compiler.MACHINE:
-        raise ValueError("registered Spark bytes differ from deterministic compiler")
-    plan_code, dynamic_instructions = compiler.execute_kernel(machine, flags)
-    expected = compiler.reference_plan(flags)
-    if plan_code != expected:
-        raise AssertionError((flags, expected, plan_code))
+    execution = None
+    if api_url is not None:
+        sys.path.insert(0, str(ROOT))
+        sys.path.insert(0, str(ROOT / "src"))
+        from scripts.qikvrt_api_client import execute_m68000
+        from qikvrt_m68000_runtime import KERNEL_ID, source_binding
+
+        repository = os.environ.get("QIKVRT_ALLOWED_REPOSITORY", "")
+        if not repository:
+            raise ValueError("QIKVRT_ALLOWED_REPOSITORY is required for REST self-consumption")
+        request = {
+            "schema": "qikvrt_m68000_execution_request_v1",
+            "runtime": source_binding(ROOT, repository), "kernel_id": KERNEL_ID,
+            "kernel_sha256": hashlib.sha256(machine).hexdigest(),
+            "registers": {"d0": flags},
+        }
+        execution = execute_m68000(api_url, request, os.environ.get("QIKVRT_API_TOKEN", ""))
+        plan_code = execution["registers"]["d0"]
+        dynamic_instructions = execution["dynamic_m68000_instructions"]
+    else:
+        compiler = _load_compiler()
+        if machine != compiler.MACHINE:
+            raise ValueError("registered Spark bytes differ from deterministic compiler")
+        plan_code, dynamic_instructions = compiler.execute_kernel(machine, flags)
+        expected = compiler.reference_plan(flags)
+        if plan_code != expected:
+            raise AssertionError((flags, expected, plan_code))
     catalog, by_code = load_catalog()
+    if execution is not None:
+        from qikvrt_m68000_runtime import RuntimeConflict
+        if source_binding(ROOT, repository) != execution["request"]["runtime"]:
+            raise RuntimeConflict("consumer source changed after MC68000 readback")
     plan = by_code[plan_code]
     observation_bytes = _canonical_json(normalized)
     return {
@@ -104,6 +129,9 @@ def select_complete_plan(observation: dict[str, Any]) -> dict[str, Any]:
         "observation_sha256": hashlib.sha256(observation_bytes).hexdigest(),
         "kernel_id": catalog["kernel_id"],
         "kernel_sha256": hashlib.sha256(machine).hexdigest(),
+        "execution_transport": "authenticated_rest" if execution is not None else "pure_reference",
+        "machine_execution_receipt": execution,
+        "machine_readback_verified": execution is not None,
         "spark_core_passes": 1,
         "dynamic_m68000_instructions": dynamic_instructions,
         "complete_branch_plan_selected": True,
@@ -190,13 +218,15 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--observation", type=Path, required=True)
     parser.add_argument("--pure-reference-ring", action="store_true")
+    parser.add_argument("--m68000-api-url", default=os.environ.get(
+        "QIKVRT_M68000_API_URL", "http://127.0.0.1:8766"))
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(list(argv) if argv is not None else None)
     observation = json.loads(args.observation.read_text(encoding="utf-8"))
     if args.pure_reference_ring:
         result = execute_pure_reference_ring(observation)
     else:
-        result = select_complete_plan(observation)
+        result = select_complete_plan(observation, api_url=args.m68000_api_url)
     print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2 if args.json else None))
     return 0
 

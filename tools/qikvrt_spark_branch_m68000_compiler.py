@@ -79,7 +79,9 @@ def execute_kernel(code: bytes, d0: int) -> tuple[int, int]:
     pc, z, count = 0, False, 0
     d0 &= 0xFFFFFFFF
     while True:
-        if pc + 2 > len(code):
+        if count >= 64:
+            raise RuntimeError("Spark kernel instruction budget exhausted")
+        if pc < 0 or pc % 2 or pc + 2 > len(code):
             raise RuntimeError("truncated Spark kernel")
         op = int.from_bytes(code[pc:pc + 2], "big")
         count += 1
