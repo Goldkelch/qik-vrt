@@ -8,6 +8,14 @@ consumer of the constant machine execution interface. The ordinary Spark CLI
 uses REST by default. The explicitly selected pure reference ring remains a
 verification model. A failed REST call never falls back to a host decision.
 
+The [2026-09-15 architecture decision](ARCHITECTURE.md#owner-decision-synchronous-rest-and-compiled-relations)
+makes this fixed REST contract the shared Node interface for proved executable
+relations. It requires synchronous input-to-output processing, immutable kernel
+reuse, the MC68000/C90 versus variable-language division, and independently
+measured acceptance on each Node. This V1 implementation is one bounded
+increment toward that requirement; its opcode interpreter does not establish
+the C90/MC68000 backend connection or availability on every Node.
+
 ## Reused implementation
 
 | Layer | Existing component and V1 behavior |
