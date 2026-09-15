@@ -56,7 +56,7 @@ evidence-contract-test:
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.issue_agent.test_validate tests.test_authority_mirror_equality_receipt tests.test_canonical_closing_status_article tests.test_charter_zenodo tests.test_qikvrt_self_disclosure tests.test_qikvrt_quantitative_comparison_publication tests.test_planck_spacetime_unit_quantum_tunnel_publication tests.test_virtual_past_reception tests.test_quantum_classical_runtime_article tests.test_canonical_temporal_memory_publication tests.test_vrtcore_h56_zenodo_candidate tests.test_vrtcore_zenodo_publication_controls tests.test_observer_relative_retrocausality_zenodo_finalizer tests.test_zenodo_corpus_inventory_failure_receipt tests.test_zenodo_corpus_proof tests.test_zenodo_machine_proof_policy
 
 m68000-kernel-contract:
-	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_virtual_mesh_m68000_acceptance
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_virtual_mesh_m68000_acceptance tests.test_qikvrt_m68000_rest
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tools/qikvrt_virtual_mesh_m68000_acceptance.py --iterations 3 --json >/dev/null
 
 workflow-executor-mesh-contract: m68000-kernel-contract

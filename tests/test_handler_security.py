@@ -51,7 +51,7 @@ def encoded_secret(material: bytes) -> str:
 
 
 @contextlib.contextmanager
-def live_shim(root: Path):
+def live_shim(root: Path, *, m68000_runtime=None):
     environment = {
         "QIKVRT_API_TOKEN": API_TOKEN,
         "QIKVRT_API_TOKEN_EXPIRES_UTC": "2099-01-01T00:00:00Z",
@@ -67,6 +67,8 @@ def live_shim(root: Path):
         with shim._RATE_LOCK:
             shim._RATE_WINDOWS.clear()
         server = ThreadingHTTPServer(("127.0.0.1", 0), shim.QikvrtGitHubApiShim)
+        if m68000_runtime is not None:
+            server.m68000_runtime = m68000_runtime
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:

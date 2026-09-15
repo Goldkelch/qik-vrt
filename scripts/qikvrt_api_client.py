@@ -69,6 +69,81 @@ def read_response(response) -> str:
         raise ValueError("API response exceeds the 2 MiB client limit")
     return data.decode("utf-8")
 
+
+def execute_m68000(base_url: str, request: dict, token: str) -> dict:
+    """Execute once and validate an authenticated, exact-request GET readback.
+
+    No redirect, retry, poll, local fallback or ordinary effect is performed.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+    from qikvrt_api_handler import _strict_json_loads
+    from qikvrt_m68000_runtime import API_PATH, canonical_bytes, digest
+
+    parsed = urlparse(base_url)
+    if (parsed.scheme not in {"http", "https"} or not parsed.hostname
+            or parsed.username or parsed.password or parsed.query or parsed.fragment
+            or parsed.path not in {"", "/"}):
+        raise ValueError("MC68000 base URL must be an HTTP(S) origin")
+    if parsed.scheme == "http" and parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+        raise ValueError("non-loopback MC68000 endpoint requires HTTPS")
+    if parsed.port is not None and not 1 <= parsed.port <= 65535:
+        raise ValueError("invalid MC68000 endpoint port")
+    if not token:
+        raise ValueError("QIKVRT_API_TOKEN is required")
+    opener = urllib.request.build_opener(NoRedirectHandler(), urllib.request.ProxyHandler({}))
+
+    def exchange(path: str, body: bytes | None = None) -> dict:
+        req = urllib.request.Request(
+            base_url.rstrip("/") + path, data=body,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            method="POST" if body is not None else "GET",
+        )
+        with opener.open(req, timeout=10) as response:
+            if response.status != 200:
+                raise ValueError("MC68000 request did not return 200")
+            value = _strict_json_loads(read_response(response))
+        if not isinstance(value, dict):
+            raise ValueError("MC68000 response must be an object")
+        return value
+
+    receipt = exchange(API_PATH + "/executions", canonical_bytes(request))
+    projection = dict(receipt)
+    receipt_sha = projection.pop("receipt_sha256", None)
+    if receipt_sha != digest(projection):
+        raise ValueError("MC68000 receipt digest mismatch")
+    if (receipt.get("schema") != "qikvrt_m68000_execution_receipt_v1"
+            or canonical_bytes(receipt.get("request")) != canonical_bytes(request)
+            or receipt.get("request_sha256") != digest(request)):
+        raise ValueError("MC68000 receipt is not bound to this request")
+    registers = receipt.get("registers")
+    count = receipt.get("dynamic_m68000_instructions")
+    if (not isinstance(registers, dict) or set(registers) != {"d0"}
+            or type(registers["d0"]) is not int or not 0 <= registers["d0"] <= 11
+            or type(count) is not int or not 1 <= count <= 64):
+        raise ValueError("MC68000 result is outside the Spark ABI")
+    fixed = {
+        "backend": "bounded_m68000_instruction_interpreter_v1",
+        "registered_machine_bytes_executed": True,
+        "higher_level_rule_reinterpreted_for_decision": False,
+        "full_machine_emulation": False,
+        "physical_m68000_execution_observed": False,
+        "physical_speedup_measured": False,
+        "host_effects_executed": False, "native_approval_observed": False,
+        "effect_state": "EFFECT_ACK_CONTINUE", "ordinary_release": False,
+        "effect_ack_done_claimed": False,
+    }
+    if set(receipt) != set(fixed) | {
+            "schema", "request", "request_sha256", "receipt_sha256",
+            "registers", "dynamic_m68000_instructions"}:
+        raise ValueError("MC68000 receipt contains unknown fields")
+    if any(canonical_bytes(receipt.get(key)) != canonical_bytes(value)
+           for key, value in fixed.items()):
+        raise ValueError("MC68000 receipt exceeded its execution boundary")
+    readback = exchange(API_PATH + "/executions/" + digest(request))
+    if canonical_bytes(readback) != canonical_bytes(receipt):
+        raise ValueError("MC68000 readback differs from execution receipt")
+    return receipt
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base-url", default="http://127.0.0.1:8766")

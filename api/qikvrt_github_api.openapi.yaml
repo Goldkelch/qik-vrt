@@ -3,7 +3,7 @@
 openapi: 3.0.3
 info:
   title: QIKVRT GitHub Dispatch Adapter API
-  version: 2.0.0
+  version: 2.1.0
   description: >
     The local adapter exposes GitHub-shaped dispatch paths but evaluates the
     request synchronously and returns a QIK-VRT EFFECT_ACK body. GitHub's real
@@ -16,6 +16,67 @@ servers:
   - url: https://api.github.com
     description: GitHub asynchronous REST dispatch API
 paths:
+  /qik-vrt/mesh/v1/m68000/kernels:
+    get:
+      operationId: m68000Kernels
+      summary: Discover the loaded registered Spark plan kernel and runtime source binding.
+      description: Local adapter extension; this path is not implemented by api.github.com.
+      responses:
+        '200':
+          description: Bounded instruction interpreter inventory; no complete machine or speedup claim.
+        '401': { description: Invalid or expired bearer credential. }
+        '409': { description: Loaded runtime differs from the current checkout; restart and reobserve. }
+        '429': { description: Rate limit exceeded. }
+        '503': { description: MC68000 runtime is disabled or unavailable. }
+  /qik-vrt/mesh/v1/m68000/executions:
+    post:
+      operationId: executeM68000
+      summary: Execute registered MC68000 bytes against one exact-bound Spark observation byte.
+      description: >
+        Local adapter extension. D0 input is eight Spark flags; D0 output is a
+        plan code 0..11, not the four-state D0 ABI of the cloud transputer and
+        not the five-state D4 EFFECT_ACK ABI. No supplied machine program or
+        repository effect is executed. Identical requests reuse retained receipts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/M68000Request' }
+      responses:
+        '200':
+          description: Technical execution receipt with EFFECT_ACK_CONTINUE and ordinary_release false.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/M68000Receipt' }
+        '400': { description: Malformed request, unregistered kernel or invalid register domain. }
+        '401': { description: Invalid or expired bearer credential. }
+        '409': { description: Repository, commit, tree, source or kernel digest conflict. }
+        '429': { description: Rate limit exceeded. }
+        '503': { description: Runtime unavailable; no automatic fallback. }
+  /qik-vrt/mesh/v1/m68000/executions/{request_sha256}:
+    get:
+      operationId: readbackM68000
+      summary: Read back a retained exact-request execution receipt.
+      description: >
+        Readback is process-local and bounded (256 receipts by default, oldest
+        evicted); restart or eviction returns 404. Persist the verified receipt
+        with its consumer work unit for durable evidence. HTTP 200 is not approval.
+      parameters:
+        - name: request_sha256
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-f]{64}$' }
+      responses:
+        '200':
+          description: Same canonical receipt as POST.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/M68000Receipt' }
+        '401': { description: Invalid or expired bearer credential. }
+        '404': { description: Unknown, evicted or previous-process receipt. }
+        '409': { description: Runtime source changed; receipt cannot be transferred. }
+        '429': { description: Rate limit exceeded. }
+        '503': { description: Runtime unavailable. }
   /health:
     get:
       operationId: health
@@ -97,6 +158,61 @@ components:
       required: true
       schema: { type: string, pattern: '^[A-Za-z0-9_.-]{1,100}$' }
   schemas:
+    M68000Runtime:
+      type: object
+      additionalProperties: false
+      required: [repository, head_sha, tree_sha, checkout_clean, source_files, runtime_sha256]
+      properties:
+        repository: { type: string }
+        head_sha: { type: string, pattern: '^[0-9a-f]{40}$' }
+        tree_sha: { type: string, pattern: '^[0-9a-f]{40}$' }
+        checkout_clean: { type: boolean }
+        source_files:
+          type: object
+          additionalProperties: { type: string, pattern: '^[0-9a-f]{64}$' }
+        runtime_sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+    M68000Request:
+      type: object
+      additionalProperties: false
+      required: [schema, runtime, kernel_id, kernel_sha256, registers]
+      properties:
+        schema: { type: string, enum: [qikvrt_m68000_execution_request_v1] }
+        runtime: { $ref: '#/components/schemas/M68000Runtime' }
+        kernel_id: { type: string, enum: [lean_spark_branch_plan_v1] }
+        kernel_sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        registers:
+          type: object
+          additionalProperties: false
+          required: [d0]
+          properties:
+            d0: { type: integer, minimum: 0, maximum: 255 }
+    M68000Receipt:
+      type: object
+      additionalProperties: false
+      required: [schema, request, request_sha256, receipt_sha256, registers, dynamic_m68000_instructions, backend, registered_machine_bytes_executed, higher_level_rule_reinterpreted_for_decision, full_machine_emulation, physical_m68000_execution_observed, physical_speedup_measured, host_effects_executed, native_approval_observed, effect_state, ordinary_release, effect_ack_done_claimed]
+      properties:
+        schema: { type: string, enum: [qikvrt_m68000_execution_receipt_v1] }
+        request: { $ref: '#/components/schemas/M68000Request' }
+        request_sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        receipt_sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        registers:
+          type: object
+          additionalProperties: false
+          required: [d0]
+          properties:
+            d0: { type: integer, minimum: 0, maximum: 11 }
+        dynamic_m68000_instructions: { type: integer, minimum: 1, maximum: 64 }
+        backend: { type: string, enum: [bounded_m68000_instruction_interpreter_v1] }
+        registered_machine_bytes_executed: { type: boolean, enum: [true] }
+        higher_level_rule_reinterpreted_for_decision: { type: boolean, enum: [false] }
+        full_machine_emulation: { type: boolean, enum: [false] }
+        physical_m68000_execution_observed: { type: boolean, enum: [false] }
+        physical_speedup_measured: { type: boolean, enum: [false] }
+        host_effects_executed: { type: boolean, enum: [false] }
+        native_approval_observed: { type: boolean, enum: [false] }
+        effect_state: { type: string, enum: [EFFECT_ACK_CONTINUE] }
+        ordinary_release: { type: boolean, enum: [false] }
+        effect_ack_done_claimed: { type: boolean, enum: [false] }
     Health:
       type: object
       additionalProperties: false

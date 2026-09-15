@@ -189,6 +189,9 @@ class QikvrtGitHubApiShim(BaseHTTPRequestHandler):
         raise ValueError(f"{field} must be true or false")
 
     def do_GET(self):
+        if self.path.startswith("/qik-vrt/mesh/v1/m68000"):
+            self._m68000_request("GET")
+            return
         if self.path == "/health":
             valid = _security_configuration_valid()
             attestation_configured = bool(
@@ -211,6 +214,9 @@ class QikvrtGitHubApiShim(BaseHTTPRequestHandler):
         self._send_json(404, {"status": "BLOCK", "reason": "not found"})
 
     def do_POST(self):
+        if self.path.startswith("/qik-vrt/mesh/v1/m68000"):
+            self._m68000_request("POST")
+            return
         if not self._rate_allowed():
             self._send_json(429, {"status": "BLOCK", "reason": "rate limit exceeded"})
             return
@@ -317,6 +323,40 @@ class QikvrtGitHubApiShim(BaseHTTPRequestHandler):
         if os.environ.get("QIKVRT_API_LOG", "0") == "1":
             super().log_message(fmt, *args)
 
+    def _m68000_request(self, method: str) -> None:
+        from qikvrt_m68000_runtime import API_PATH, RuntimeConflict
+
+        if not self._rate_allowed():
+            self._send_json(429, {"status": "BLOCK", "reason": "rate limit exceeded"})
+            return
+        if not self._authorized():
+            self._send_json(401, {"status": "BLOCK", "reason": "unauthorized"})
+            return
+        runtime = getattr(self.server, "m68000_runtime", None)
+        if runtime is None or not _security_configuration_valid():
+            self._send_json(503, {"status": "BLOCK", "reason": "MC68000 runtime unavailable"})
+            return
+        if runtime.binding["repository"] != os.environ.get("QIKVRT_ALLOWED_REPOSITORY"):
+            self._send_json(409, {"status": "BLOCK", "reason": "repository scope changed"})
+            return
+        try:
+            if method == "GET" and self.path == API_PATH + "/kernels":
+                self._send_json(200, runtime.discovery())
+            elif method == "POST" and self.path == API_PATH + "/executions":
+                self._send_json(200, runtime.execute(self._read_json()))
+            elif method == "GET" and re.fullmatch(API_PATH + r"/executions/[0-9a-f]{64}", self.path):
+                receipt = runtime.readback(self.path.rsplit("/", 1)[1])
+                self._send_json(200 if receipt is not None else 404,
+                                receipt or {"status": "BLOCK", "reason": "receipt not retained"})
+            else:
+                self._send_json(404, {"status": "BLOCK", "reason": "unknown MC68000 endpoint"})
+        except RuntimeConflict as exc:
+            self._send_json(409, {"status": "BLOCK", "reason": str(exc)})
+        except (ValueError, UnicodeError) as exc:
+            self._send_json(400, {"status": "BLOCK", "reason": str(exc)})
+        except Exception:
+            self._send_json(503, {"status": "BLOCK", "reason": "MC68000 execution unavailable"})
+
 def main() -> int:
     host = os.environ.get("QIKVRT_API_HOST", "127.0.0.1")
     try:
@@ -369,6 +409,15 @@ def main() -> int:
         print("BLOCK non-loopback requires QIKVRT_ALLOW_NON_LOOPBACK=1", file=sys.stderr)
         return 2
     server = ThreadingHTTPServer((host, port), QikvrtGitHubApiShim)
+    if os.environ.get("QIKVRT_M68000_ENABLED", "0") == "1":
+        from qikvrt_m68000_runtime import M68000Runtime
+        try:
+            server.m68000_runtime = M68000Runtime(
+                Path(os.environ.get("QIKVRT_REPO_ROOT", os.getcwd())), allowed_repository)
+        except Exception as exc:
+            server.server_close()
+            print(f"BLOCK MC68000 initialization failed: {exc}", file=sys.stderr)
+            return 2
     if host != "127.0.0.1":
         cert_file = os.environ.get("QIKVRT_TLS_CERT_FILE", "")
         key_file = os.environ.get("QIKVRT_TLS_KEY_FILE", "")
