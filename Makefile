@@ -67,7 +67,7 @@ repository-writer-contract:
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_materialization_scope tests.test_qikvrt_repository_writer_lease tests.test_qikvrt_required_review_gate tests.test_qikvrt_ruleset_reconcile tests.issue_agent.test_validate
 
 repository-terminal-test:
-	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_repository_terminal
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_repository_terminal tests.test_qikvrt_cloud_transputer_mesh_runtime
 
 mesh-authority-mirror-instance-test:
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_authority_mirror_mesh_instance

@@ -1,4 +1,5 @@
 from pathlib import Path
+import unittest
 from html.parser import HTMLParser
 from urllib.parse import parse_qs, urljoin, urlsplit
 
@@ -95,3 +96,23 @@ def test_ai_surface_does_not_assert_a_personal_session_or_completed_work():
     assert "EFFECT_ACK_DONE" in surface
     assert "setInterval" not in surface
     assert "http-equiv=\"refresh\"" not in surface
+
+
+def load_tests(loader, tests, pattern):
+    """Keep the existing function tests visible to the stdlib CI runner."""
+    return unittest.TestSuite(
+        unittest.FunctionTestCase(test)
+        for test in (
+            test_cloud_carrier_materializes_transputer_mesh_roles,
+            test_mesh_health_is_a_runtime_readback_not_static_success,
+            test_compose_gateway_health_waits_for_real_terminal_endpoints,
+            test_ai_gateway_routes_reuse_the_live_mesh_surface,
+            test_ai_and_legacy_mesh_routes_resolve_the_same_live_targets,
+            test_firefox_launcher_binds_the_bookworm_novnc_websocket_path,
+            test_ai_surface_does_not_assert_a_personal_session_or_completed_work,
+        )
+    )
+
+
+if __name__ == "__main__":
+    unittest.main()
