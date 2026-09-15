@@ -1,0 +1,23 @@
+{
+  "schema": "qikvrt-terminal-monitor-stream-v1",
+  "mode": "event_driven",
+  "source": "repository_native_monitor_pattern",
+  "transport": "serialized_transputer_stream",
+  "sink": "universal_terminal_frontend",
+  "transition": [
+    "repository_event",
+    "monitor_pattern",
+    "serialized_transputer_stream",
+    "universal_terminal_backend",
+    "frontend_push",
+    "visible_append_without_user_prompt",
+    "next_repository_event"
+  ],
+  "append_only": true,
+  "multiple_consecutive_transitions": true,
+  "prompt_required": false,
+  "snapshot_as_tail": false,
+  "repository_core_polling": false,
+  "silent_termination_while_work_remains": false,
+  "terminal_condition": "effect_ack_done"
+}

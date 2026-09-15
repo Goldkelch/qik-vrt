@@ -38,6 +38,111 @@
   const commitButton = $("[data-act=commit]");
   const snapshotButton = $("[data-act=snapshot]");
 
+  // Read-only monitor projection. Stream receipt delivery never calls Prepare,
+  // Commit or OBSERVE_AUTHORITY and never replaces the protected input buffer.
+  const monitor = document.createElement("section");
+  monitor.setAttribute("aria-label", "Repository Live-Monitor");
+  monitor.className = "qv-live-monitor";
+  const liveTitle = document.createElement("h3");
+  liveTitle.textContent = "Repository · Live-Monitor";
+  const liveState = document.createElement("p");
+  liveState.setAttribute("data-role", "live-state");
+  liveState.setAttribute("role", "status");
+  const liveJournal = document.createElement("ol");
+  liveJournal.setAttribute("data-role", "live-events");
+  liveJournal.setAttribute("role", "log");
+  liveJournal.setAttribute("aria-live", "polite");
+  liveJournal.setAttribute("aria-relevant", "additions");
+  const liveNote = document.createElement("small");
+  liveNote.textContent = "Letzte 256 Belege · Empfangsreihenfolge, nicht Zeit als Kausalbeweis. Anzeige erteilt keine Freigabe.";
+  monitor.append(liveTitle, liveState, liveJournal, liveNote);
+  output.parentNode.insertBefore(monitor, output);
+  const liveStyle = document.createElement("style");
+  liveStyle.textContent = `
+    #qikvrt-ai-terminal-host .qv-live-monitor {font-family:system-ui,sans-serif;margin:0 0 14px}
+    #qikvrt-ai-terminal-host .qv-live-monitor h3 {margin:0 0 6px;font-size:1.1em;color:var(--qv-accent)}
+    #qikvrt-ai-terminal-host [data-role=live-state] {font-size:.9em;margin:0 0 12px;color:#d0bf8c}
+    #qikvrt-ai-terminal-host [data-role=live-state][data-state=CONNECTED],
+    #qikvrt-ai-terminal-host [data-role=live-state][data-state=EVENT] {color:#b7e39a}
+    #qikvrt-ai-terminal-host [data-role=live-state][data-state=HOLD] {color:#ffb1a8}
+    #qikvrt-ai-terminal-host [data-role=live-events] {margin:0 0 8px;padding:0;list-style:none;max-height:340px;overflow:auto}
+    #qikvrt-ai-terminal-host [data-role=live-events] li {margin:0 0 8px;padding:12px;border:1px solid #324b61;border-left:3px solid var(--qv-accent);border-radius:8px;background:#061727}
+    #qikvrt-ai-terminal-host [data-role=live-events] li[data-result=success] {border-left-color:#91ce89}
+    #qikvrt-ai-terminal-host [data-role=live-events] li[data-result=failure] {border-left-color:#ef8b82}
+    #qikvrt-ai-terminal-host [data-role=live-events] p {margin:5px 0;font-size:.87em;color:#c8d4df;overflow-wrap:anywhere}
+    #qikvrt-ai-terminal-host [data-role=live-events] summary {cursor:pointer;font-size:.85em;color:var(--qv-accent)}
+    #qikvrt-ai-terminal-host [data-role=live-events] pre {white-space:pre-wrap;word-break:break-all;font-size:11px}
+    #qikvrt-ai-terminal-host .qv-live-monitor small {display:block;opacity:.7;font-size:.78em}
+  `;
+  host.appendChild(liveStyle);
+  const displayed = new Map();
+  let liveRevision = 0;
+
+  function showLiveState(name, detail) {
+    const labels = {
+      CONNECTED: "Verbunden · Verbindung offen; kein Fortschritt ohne neuen Beleg.",
+      EVENT: "Beleg empfangen · Folgeereignisse erscheinen automatisch.",
+      RECONNECTING: "Verbindung unterbrochen · letzte Belege bleiben sichtbar, sind aber nicht frisch.",
+      HOLD: "Monitor angehalten · gebundene Fortsetzung erforderlich."
+    };
+    liveState.dataset.state = name || "UNBOUND";
+    liveState.textContent = labels[name] || "Noch kein gebundener Monitorstrom empfangen.";
+    if (typeof detail === "string" && detail) liveState.textContent += " " + detail;
+  }
+
+  function appendLiveReceipts(records) {
+    if (!Array.isArray(records)) { showLiveState("HOLD", "Ungültiges lokales Journal."); return; }
+    for (const receipt of records) {
+      if (!receipt || receipt.schema !== "qikvrt_live_event_v1" || receipt.repository !== "Goldkelch/qik-vrt" ||
+          typeof receipt.event_id !== "string" || !receipt.subject || !/^[0-9a-f]{40}$/.test(receipt.subject.head_sha || "")) {
+        showLiveState("HOLD", "Ereignis ohne gültige Quellbindung."); return;
+      }
+      if (displayed.has(receipt.event_id)) continue;
+      const item = document.createElement("li");
+      item.setAttribute("data-event-id", receipt.event_id);
+      const payload = receipt.payload || {};
+      const result = typeof payload.conclusion === "string" ? payload.conclusion : "";
+      item.dataset.result = result;
+      const title = document.createElement("strong");
+      const verbs = {OBSERVE: "Beobachtung", CLASSIFY: "Einordnung", ACTION: "Aktion gemeldet", EFFECT: "Wirkung gemeldet", READBACK: "Rücklesung", SUCCESSOR: "Nachfolger gemeldet", HOLD: "Blockierung"};
+      const sign = result === "success" ? "✓ " : result === "failure" ? "✗ " : "→ ";
+      title.textContent = sign + (verbs[receipt.verb] || receipt.verb || "Ereignis") + (typeof payload.workflow_name === "string" ? " · " + payload.workflow_name : "");
+      const binding = document.createElement("p");
+      binding.textContent = receipt.repository + " · " + receipt.subject.head_sha.slice(0, 12) + " · " + (receipt.phase || "Phase offen") + " · " + (receipt.causal_state || "Zustand offen");
+      const details = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = "Quellbeleg · " + receipt.event_id;
+      const raw = document.createElement("pre");
+      // All external values are text, never HTML or executable event handlers.
+      raw.textContent = JSON.stringify(receipt, null, 2);
+      details.append(summary, raw);
+      item.append(title, binding, details);
+      liveJournal.appendChild(item);
+      displayed.set(receipt.event_id, item);
+      if (displayed.size > 256) {
+        const oldest = displayed.keys().next().value;
+        liveJournal.removeChild(displayed.get(oldest));
+        displayed.delete(oldest);
+      }
+    }
+  }
+
+  showLiveState("UNBOUND");
+  browser.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local") return;
+    if (!changes.qikvrtLiveEvents && !changes.qikvrtLiveEventState && !changes.qikvrtLiveEventError) return;
+    liveRevision += 1;
+    if (changes.qikvrtLiveEventState) showLiveState(changes.qikvrtLiveEventState.newValue, changes.qikvrtLiveEventError && changes.qikvrtLiveEventError.newValue);
+    if (changes.qikvrtLiveEvents) appendLiveReceipts(changes.qikvrtLiveEvents.newValue);
+  });
+  const startupRevision = liveRevision;
+  browser.storage.local.get(["qikvrtLiveEvents", "qikvrtLiveEventState", "qikvrtLiveEventError"]).then(stored => {
+    // Do not replay an older startup snapshot after a newer pushed window.
+    if (liveRevision !== startupRevision) return;
+    showLiveState(stored.qikvrtLiveEventState, stored.qikvrtLiveEventError);
+    appendLiveReceipts(stored.qikvrtLiveEvents || []);
+  }).catch(error => showLiveState("HOLD", error.message));
+
   let audioStream = null;
   let audioRecorder = null;
   let audioChunks = [];
