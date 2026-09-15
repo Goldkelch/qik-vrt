@@ -190,6 +190,15 @@ class ProducerTests(unittest.TestCase):
             self.runtime.ensure_subject()
         self.assertTrue(self.runtime.ledger.stopped)
 
+    def test_copied_checkout_ignores_stat_cache_drift_but_not_byte_changes(self):
+        copied = Path(self.temp.name) / 'image-checkout'
+        # Docker COPY changes cached inode/mtime metadata without changing Git bytes.
+        shutil.copytree(self.root, copied, copy_function=shutil.copyfile)
+        self.assertEqual(m.subject(copied, 'Goldkelch/qik-vrt', 1103), self.runtime.subject)
+        (copied/'docs/terminal/temdd/index.html').write_text('actual byte mutation')
+        with self.assertRaisesRegex(m.Hold, 'DIRTY'):
+            m.subject(copied, 'Goldkelch/qik-vrt', 1103)
+
     def test_storage_failure_never_publishes(self):
         self.runtime.ledger.db.execute("CREATE TRIGGER deny BEFORE INSERT ON events BEGIN SELECT RAISE(FAIL, 'disk failure fixture'); END")
         with mock.patch.object(self.runtime.ledger.condition, 'notify_all') as notify:
@@ -359,6 +368,8 @@ class ProducerTests(unittest.TestCase):
         workflow = (ROOT/'.github/workflows/qikvrt_temdd.yml').read_text()
         self.assertIn('github.event.pull_request.head.sha || github.sha', workflow)
         self.assertIn('make temdd-event-ledger-test', workflow)
+        self.assertIn("'REPOSITORY_FILE_MANIFEST.json.sha256'", workflow)
+        self.assertNotIn("'REPOSITORY_FILE_MANIFEST.sha256'", workflow)
 
     def test_consumer_validation_and_reconnect_state_machine(self):
         js = r'''

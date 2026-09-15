@@ -69,7 +69,7 @@ def subject(root, repository, pr):
         tree = git('rev-parse', '--verify', head + '^{tree}')
         if not HEX40.fullmatch(head) or not HEX40.fullmatch(tree):
             raise Hold('EXACT_SUBJECT_UNOBSERVABLE')
-        git('diff-index', '--quiet', head, '--')
+        git('diff', '--quiet', head, '--')
         if git('rev-parse', '--verify', 'HEAD^{commit}') != head:
             raise Hold('EXACT_SUBJECT_CHANGED')
     except (OSError, subprocess.SubprocessError) as exc:
