@@ -118,5 +118,50 @@ sys.exit(19 if os.environ.get('FAIL_SUITE') == sys.argv[-1] else 0)
         self.assertNotEqual(0, output.returncode)
         self.assertEqual([], self.recorded())
 
+class RailsBootstrapDispatchTests(unittest.TestCase):
+    """Exercise the real shell dispatcher with explicitly isolated tool doubles."""
+
+    def check_profile(self, extra, expected):
+        with tempfile.TemporaryDirectory(prefix='qikvrt-rails-dispatch-') as directory:
+            root = Path(directory)
+            (root / 'tools').mkdir()
+            (root / 'bin').mkdir()
+            (root / 'deploy/vercel-monitor').mkdir(parents=True)
+            script = root / 'tools/bootstrap-runtime.sh'
+            script.write_bytes((ROOT / 'tools/bootstrap-runtime.sh').read_bytes())
+            (root / 'tools/bootstrap-gh.sh').write_text('#!/bin/sh\nexit 0\n')
+            (root / 'bin/ruby').write_text('#!/bin/sh\nprintf "%s" "${TEST_RUBY_VERSION:-3.3.8}"\n')
+            (root / 'bin/bundle').write_text(
+                '#!/bin/sh\nif [ "$1" = --version ]; then '
+                'printf "Bundler version %s\\n" "${TEST_BUNDLER_VERSION:-2.5.22}"; '
+                'else exit "${TEST_CLOSURE_RC:-0}"; fi\n')
+            for executable in (root / 'bin').iterdir():
+                executable.chmod(0o755)
+            env = {k: v for k, v in os.environ.items() if not k.startswith('TEST_')}
+            env.update(extra)
+            env['PATH'] = str(root / 'bin') + os.pathsep + env.get('PATH', '')
+            result = subprocess.run(
+                ['sh', str(script), '--check-only', '--profile', 'rails'],
+                env=env, text=True, capture_output=True, timeout=10)
+            self.assertEqual(expected, result.returncode, result.stdout + result.stderr)
+            if expected == 0:
+                self.assertIn('PASS: Rails runtime', result.stdout)
+            else:
+                self.assertIn('rails:', result.stderr)
+                self.assertNotIn('PASS: Rails runtime', result.stdout)
+
+    def test_valid_profile_is_actually_executed(self):
+        self.check_profile({}, 0)
+
+    def test_wrong_ruby_cannot_pass(self):
+        self.check_profile({'TEST_RUBY_VERSION': '3.2.0'}, 20)
+
+    def test_wrong_bundler_cannot_pass(self):
+        self.check_profile({'TEST_BUNDLER_VERSION': '0.0.0'}, 20)
+
+    def test_missing_locked_closure_cannot_pass(self):
+        self.check_profile({'TEST_CLOSURE_RC': '1'}, 20)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
