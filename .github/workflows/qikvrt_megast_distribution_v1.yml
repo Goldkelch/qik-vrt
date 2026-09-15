@@ -12,7 +12,7 @@ on:
       - 'tools/qikvrt_smalltalk.py'
       - 'runtime/toolchains/**'
   push:
-    branches: [ main ]
+    branches: [ main, 'transport/pr1079-image-2fdcf8d2-v1' ]
     paths:
       - 'distribution/qikvrt-megast/**'
       - '.github/workflows/qikvrt_megast_distribution_v1.yml'
@@ -25,10 +25,11 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   contract:
+    if: github.ref != 'refs/heads/transport/pr1079-image-2fdcf8d2-v1'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -184,6 +185,8 @@ jobs:
           retention-days: 30
 
   publish:
+    permissions:
+      contents: write
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
@@ -227,3 +230,203 @@ jobs:
           grep -F "\"tagName\":\"$tag\"" out/release-readback.json
           grep -F 'qikvrt-megast-amd64.iso' out/release-readback.json
           echo 'P7 transport/readback established; independent public download checksum and full acceptance corpus remain required for EFFECT_ACK_DONE.'
+
+  export-existing-image:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/transport/pr1079-image-2fdcf8d2-v1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Check out exact transport commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Set up locked Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.13'
+      - name: Verify exact transport integrity and bootstrap
+        run: |
+          python3 -B tools/qikvrt_tool_cache.py verify
+          python3 -B tools/ai_runtime_bootloader.py --profile all --json
+          python3 -B tools/ai_collective_bootstrap_extension.py --json
+      - name: Read and split only the bound successful source artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import hashlib, json, os, pathlib, urllib.request, urllib.parse
+          from datetime import datetime, timezone
+          
+          REPOSITORY = "Goldkelch/qik-vrt"
+          SOURCE = "2fdcf8d233b1495732ef38e3406ebfc095fd0ef3"
+          RUN = 34895793369
+          ARTIFACT = 10368454862
+          EXPECTED_SIZE = 3298453805
+          EXPECTED_SHA256 = "762fccec9f80bc83ac0475d5fdc3627dd370ad5ac8aabaa6d1c878de20a1bb76"
+          PART_SIZE = 400 * 1024 * 1024
+          ROOT = pathlib.Path(os.environ["RUNNER_TEMP"]) / "qikvrt-image-export"
+          ROOT.mkdir(exist_ok=False)
+          TOKEN = os.environ["GH_TOKEN"]
+          
+          class SafeRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  if urllib.parse.urlsplit(newurl).scheme != "https":
+                      raise RuntimeError("NON_HTTPS_ARTIFACT_REDIRECT")
+                  redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+                  if redirected is not None:
+                      redirected.remove_header("Authorization")
+                  return redirected
+          
+          opener = urllib.request.build_opener(SafeRedirect())
+          def request(path):
+              return urllib.request.Request(
+                  "https://api.github.com/repos/" + REPOSITORY + "/" + path,
+                  headers={"Authorization": "Bearer " + TOKEN, "Accept": "application/vnd.github+json",
+                           "X-GitHub-Api-Version": "2022-11-28"},
+              )
+          
+          def api(path):
+              with opener.open(request(path), timeout=90) as response:
+                  data = response.read(2 * 1024 * 1024 + 1)
+              if len(data) > 2 * 1024 * 1024:
+                  raise RuntimeError("METADATA_BOUND_EXCEEDED")
+              return json.loads(data)
+          
+          def exact_subject():
+              pull = api("pulls/1079")
+              if pull["head"]["sha"] != SOURCE or pull["head"]["repo"]["full_name"] != REPOSITORY:
+                  raise RuntimeError("EXACT_SOURCE_DRIFT")
+              return {"head": pull["head"]["sha"], "base": pull["base"]["sha"], "state": pull["state"]}
+          
+          before = exact_subject()
+          run = api("actions/runs/" + str(RUN))
+          artifact = api("actions/artifacts/" + str(ARTIFACT))
+          if not (
+              run["id"] == RUN and run["head_sha"] == SOURCE
+              and run["status"] == "completed" and run["conclusion"] == "success"
+              and run["path"] == ".github/workflows/qikvrt_megast_distribution_v1.yml"
+              and run["repository"]["full_name"] == REPOSITORY
+              and artifact["id"] == ARTIFACT and artifact["expired"] is False
+              and artifact["name"] == "qikvrt-megast-" + SOURCE
+              and artifact["size_in_bytes"] == EXPECTED_SIZE
+              and artifact["digest"] == "sha256:" + EXPECTED_SHA256
+              and artifact["workflow_run"]["id"] == RUN
+              and artifact["workflow_run"]["head_sha"] == SOURCE
+          ):
+              raise RuntimeError("ARTIFACT_SOURCE_BINDING_INVALID")
+          
+          parts = []
+          total = 0
+          whole = hashlib.sha256()
+          with opener.open(request("actions/artifacts/" + str(ARTIFACT) + "/zip"), timeout=90) as response:
+              while total < EXPECTED_SIZE:
+                  name = "archive.part" + str(len(parts)).zfill(2)
+                  path = ROOT / name
+                  count = 0
+                  digest = hashlib.sha256()
+                  with path.open("xb") as target:
+                      while count < min(PART_SIZE, EXPECTED_SIZE - total):
+                          chunk = response.read(min(1024 * 1024, PART_SIZE - count, EXPECTED_SIZE - total - count))
+                          if not chunk:
+                              raise RuntimeError("ARTIFACT_TRUNCATED")
+                          target.write(chunk)
+                          digest.update(chunk)
+                          whole.update(chunk)
+                          count += len(chunk)
+                  total += count
+                  parts.append({"index": len(parts), "name": name, "bytes": count, "sha256": digest.hexdigest()})
+                  print("PART_VERIFIED " + name + " bytes=" + str(count), flush=True)
+              if response.read(1):
+                  raise RuntimeError("ARTIFACT_OVERSIZED")
+          if total != EXPECTED_SIZE or whole.hexdigest() != EXPECTED_SHA256 or len(parts) != 8:
+              raise RuntimeError("ARTIFACT_DIGEST_OR_PART_COUNT_MISMATCH")
+          after = exact_subject()
+          receipt = {
+              "schema": "qikvrt_exact_image_chunk_export_v1", "observed_at": datetime.now(timezone.utc).isoformat(),
+              "repository": REPOSITORY, "source_sha": SOURCE, "source_run_id": RUN, "source_artifact_id": ARTIFACT,
+              "source_archive_bytes": total, "source_archive_sha256": whole.hexdigest(),
+              "transport_commit": os.environ["GITHUB_SHA"], "transport_run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "before": before, "after": after, "parts": parts,
+              "source_rebuilt": False, "review_or_promotion": False, "public_release": False, "effect_ack_done": False,
+          }
+          (ROOT / "EXPORT_RECEIPT.json").write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+          print("EXACT_ARCHIVE_VERIFIED " + whole.hexdigest(), flush=True)
+          PY
+      - name: Preserve source and chunk bindings
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-image-2fdcf8d2-export-receipt
+          path: ${{ runner.temp }}/qikvrt-image-export/EXPORT_RECEIPT.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Preserve exact archive part 00
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-image-2fdcf8d2-part00
+          path: ${{ runner.temp }}/qikvrt-image-export/archive.part00
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
+      - name: Preserve exact archive part 01
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-image-2fdcf8d2-part01
+          path: ${{ runner.temp }}/qikvrt-image-export/archive.part01
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
+      - name: Preserve exact archive part 02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-image-2fdcf8d2-part02
+          path: ${{ runner.temp }}/qikvrt-image-export/archive.part02
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
+      - name: Preserve exact archive part 03
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-image-2fdcf8d2-part03
+          path: ${{ runner.temp }}/qikvrt-image-export/archive.part03
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
+      - name: Preserve exact archive part 04
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-image-2fdcf8d2-part04
+          path: ${{ runner.temp }}/qikvrt-image-export/archive.part04
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
+      - name: Preserve exact archive part 05
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-image-2fdcf8d2-part05
+          path: ${{ runner.temp }}/qikvrt-image-export/archive.part05
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
+      - name: Preserve exact archive part 06
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-image-2fdcf8d2-part06
+          path: ${{ runner.temp }}/qikvrt-image-export/archive.part06
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
+      - name: Preserve exact archive part 07
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-image-2fdcf8d2-part07
+          path: ${{ runner.temp }}/qikvrt-image-export/archive.part07
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
