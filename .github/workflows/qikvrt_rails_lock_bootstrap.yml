@@ -55,6 +55,7 @@ jobs:
           bundle _2.5.22_ install --jobs 4 --retry 0
           bundle _2.5.22_ check
           bundle _2.5.22_ cache
+          (cd vendor/cache && gem fetch bundler --version 2.5.22 --clear-sources --source https://rubygems.org)
           bundle _2.5.22_ exec ruby -rjson -rdigest -e '
             gems = Bundler.load.specs.sort_by(&:name).map do |s|
               f = File.join("vendor/cache", "#{s.full_name}.gem")
@@ -66,7 +67,6 @@ jobs:
             end
             File.write("vendor/gem-inventory.json", JSON.pretty_generate({schema: "qikvrt_rails_gem_inventory_v1", ruby: RUBY_VERSION, bundler: Bundler::VERSION, gems: gems}) + "\n")
           '
-          (cd vendor/cache && gem fetch bundler --version 2.5.22 --clear-sources --source https://rubygems.org)
           sha256sum vendor/cache/*.gem > vendor/gem-packages.sha256
           printf '%s\n' '5be1a34fe3e9e52f89e15d1450101fce02c0d5ab1c53635af9b626e98598ff97  Gemfile.lock' | sha256sum -c -
       - name: Run both real Ruby and Rails suites on frozen input
