@@ -1,0 +1,229 @@
+name: QIKVRT Mega ST Distribution
+
+on:
+  pull_request:
+    paths:
+      - 'distribution/qikvrt-megast/**'
+      - '.github/workflows/qikvrt_megast_distribution_v1.yml'
+      - 'tests/test_qikvrt_megast_distribution.py'
+      - 'tests/test_qikvrt_netboot.py'
+      - 'src/smalltalk/**'
+      - 'src/cloud_transputer/**'
+      - 'tools/qikvrt_smalltalk.py'
+      - 'runtime/toolchains/**'
+  push:
+    branches: [ main ]
+    paths:
+      - 'distribution/qikvrt-megast/**'
+      - '.github/workflows/qikvrt_megast_distribution_v1.yml'
+      - 'tests/test_qikvrt_megast_distribution.py'
+      - 'tests/test_qikvrt_netboot.py'
+      - 'src/smalltalk/**'
+      - 'src/cloud_transputer/**'
+      - 'tools/qikvrt_smalltalk.py'
+      - 'runtime/toolchains/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Verify distribution contract
+        run: python -m unittest tests.test_qikvrt_megast_distribution tests.test_qikvrt_netboot -v
+
+  build:
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Install live-build and boot-test toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cpio curl debootstrap xorriso squashfs-tools qemu-system-x86 gcc-m68k-linux-gnu libc6-dev-m68k-cross
+          curl -fsSLo /tmp/debian-archive-keyring.deb \
+            https://deb.debian.org/debian/pool/main/d/debian-archive-keyring/debian-archive-keyring_2025.1_all.deb
+          printf '%s  %s\n' \
+            '9ea7778e443144ca490668737a8ab22dd3e748bb99e805e22ec055abeb3c7fac' \
+            /tmp/debian-archive-keyring.deb | sha256sum -c -
+          sudo dpkg -i /tmp/debian-archive-keyring.deb
+          curl -fsSLo /tmp/live-build.deb \
+            https://deb.debian.org/debian/pool/main/l/live-build/live-build_20250505+deb13u1_all.deb
+          printf '%s  %s\n' \
+            '58e09779881cbcc631c49ceb703413e0247a87db01823e597b2a1c40a2afd8f4' \
+            /tmp/live-build.deb | sha256sum -c -
+          sudo dpkg -i /tmp/live-build.deb
+          lb --version
+          qemu-system-x86_64 --version
+      - name: Verify C90 and Smalltalk language implementations
+        run: |
+          python3 -B tools/qikvrt_tool_cache.py verify
+          sh tests/test_effect_ack_core.sh
+          python3 -B tools/qikvrt_smalltalk.py install
+          python3 -B tools/qikvrt_smalltalk.py test
+      - name: Build exact-subject ISO
+        env:
+          QIKVRT_EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: sudo -E ./distribution/qikvrt-megast/build.sh
+      - name: Reobserve artifact binding
+        run: |
+          test -s out/qikvrt-megast-amd64.iso
+          (cd out && sha256sum -c qikvrt-megast-amd64.iso.sha256)
+          grep -F '"source_sha": "${{ github.event.pull_request.head.sha || github.sha }}"' out/qikvrt-megast-build-receipt.json
+          grep -F '"effect_ack_done": false' out/qikvrt-megast-build-receipt.json
+      - name: Mount exact ISO and inspect live filesystem
+        run: |
+          set -eu
+          sudo mkdir -p /mnt/qikvrt-megast
+          trap 'sudo umount /mnt/qikvrt-megast >/dev/null 2>&1 || true' EXIT
+          sudo mount -o loop,ro out/qikvrt-megast-amd64.iso /mnt/qikvrt-megast
+          test -s /mnt/qikvrt-megast/live/filesystem.squashfs
+          kernel=$(find /mnt/qikvrt-megast/live -maxdepth 1 -type f -name 'vmlinuz*' | head -n1)
+          initrd=$(find /mnt/qikvrt-megast/live -maxdepth 1 -type f -name 'initrd*' | head -n1)
+          test -n "$kernel"
+          test -n "$initrd"
+          sudo install -o "$(id -u)" -g "$(id -g)" -m 0644 "$kernel" out/qikvrt-megast-vmlinuz
+          sudo install -o "$(id -u)" -g "$(id -g)" -m 0644 "$initrd" out/qikvrt-megast-initrd
+          sudo install -o "$(id -u)" -g "$(id -g)" -m 0644 /mnt/qikvrt-megast/live/filesystem.squashfs out/qikvrt-megast-filesystem.squashfs
+          printf 'QIKVRT_MEGAST_MOUNT_OK source_sha=%s\n' '${{ github.event.pull_request.head.sha || github.sha }}'
+      - name: Boot exact ISO and reobserve guest witness
+        run: |
+          set -eu
+          log=out/qikvrt-megast-qemu-serial.log
+          sudo install -o "$(id -u)" -g "$(id -g)" -m 0644 /dev/null "$log"
+          qemu-system-x86_64 \
+            -accel tcg \
+            -m 1536 \
+            -smp 2 \
+            -cdrom out/qikvrt-megast-amd64.iso \
+            -kernel out/qikvrt-megast-vmlinuz \
+            -initrd out/qikvrt-megast-initrd \
+            -append "boot=live components username=qikvrt hostname=qikvrt-megast console=tty0 console=ttyS0,115200n8" \
+            -display none \
+            -serial "file:$log" \
+            -no-reboot \
+            -no-shutdown &
+          pid=$!
+          ok=0
+          for _ in $(seq 1 180); do
+            if grep -Fq 'QIKVRT_MEGAST_BOOT_OK source_sha=${{ github.event.pull_request.head.sha || github.sha }}' "$log"; then
+              ok=1
+              break
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          cat "$log"
+          test "$ok" -eq 1
+          printf 'QIKVRT_MEGAST_BOOT_REOBSERVED source_sha=%s\n' '${{ github.event.pull_request.head.sha || github.sha }}'
+      - name: Build network-boot manifest and execute receiving client
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" out
+          test ! -e /dev/kvm || sudo chown "$(id -u):$(id -g)" /dev/kvm
+          python3 -B distribution/qikvrt-megast/boot.py manifest out '${{ github.event.pull_request.head.sha || github.sha }}'
+          python3 -m http.server 17331 --bind 127.0.0.1 --directory out > /tmp/qikvrt-download.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:17331/qikvrt-netboot.json > /dev/null && break
+            sleep 1
+          done
+          manifest_sha=$(sha256sum out/qikvrt-netboot.json | cut -d' ' -f1)
+          result=0
+          python3 -B distribution/qikvrt-megast/boot.py receive \
+            http://127.0.0.1:17331/qikvrt-netboot.json "$manifest_sha" /tmp/qikvrt-received --boot --verify-only || result=$?
+          for evidence in /tmp/qikvrt-received/qikvrt-netboot*; do
+            test ! -f "$evidence" || cp "$evidence" out/
+          done
+          cp distribution/qikvrt-megast/boot.py out/qikvrt-netboot-client.py
+          exit "$result"
+      - name: Preserve inspectable startup evidence separately from the image
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qikvrt-megast-evidence-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            out/qikvrt-megast-amd64.iso.sha256
+            out/qikvrt-megast-build-receipt.json
+            out/qikvrt-megast-qemu-serial.log
+            out/QIKVRT_BOOT.BIN
+            out/qikvrt-netboot*
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qikvrt-megast-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            out/qikvrt-megast-amd64.iso
+            out/qikvrt-megast-amd64.iso.sha256
+            out/qikvrt-megast-build-receipt.json
+            out/qikvrt-megast-qemu-serial.log
+            out/qikvrt-megast-vmlinuz
+            out/qikvrt-megast-initrd
+            out/qikvrt-megast-filesystem.squashfs
+            out/QIKVRT_BOOT.BIN
+            out/qikvrt-netboot*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: qikvrt-megast-${{ github.sha }}
+          path: out
+      - name: Verify before publication
+        run: |
+          cd out
+          sha256sum -c qikvrt-megast-amd64.iso.sha256
+          grep -F '"source_sha": "${{ github.sha }}"' qikvrt-megast-build-receipt.json
+          grep -F 'QIKVRT_MEGAST_BOOT_OK source_sha=${{ github.sha }}' qikvrt-megast-qemu-serial.log
+          grep -F 'QIKVRT_MEGAST_RUNTIME_OK source_sha=${{ github.sha }}' qikvrt-netboot-serial.log
+      - name: Publish exact-Main release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          short=$(printf '%s' '${{ github.sha }}' | cut -c1-12)
+          tag="qikvrt-megast-${short}"
+          gh release create "$tag" \
+            out/qikvrt-megast-amd64.iso \
+            out/qikvrt-megast-amd64.iso.sha256 \
+            out/qikvrt-megast-build-receipt.json \
+            out/qikvrt-megast-qemu-serial.log \
+            out/qikvrt-megast-vmlinuz out/qikvrt-megast-initrd \
+            out/qikvrt-megast-filesystem.squashfs out/QIKVRT_BOOT.BIN \
+            out/qikvrt-netboot* \
+            --repo '${{ github.repository }}' \
+            --target '${{ github.sha }}' \
+            --title "QIK-VRT Mega ST ${short}" \
+            --notes "Exact-Main QIK-VRT Mega ST distribution. Publication transport does not imply EFFECT_ACK_DONE."
+      - name: Read back published release metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          short=$(printf '%s' '${{ github.sha }}' | cut -c1-12)
+          tag="qikvrt-megast-${short}"
+          gh release view "$tag" --repo '${{ github.repository }}' --json tagName,targetCommitish,assets > out/release-readback.json
+          grep -F "\"tagName\":\"$tag\"" out/release-readback.json
+          grep -F 'qikvrt-megast-amd64.iso' out/release-readback.json
+          echo 'P7 transport/readback established; independent public download checksum and full acceptance corpus remain required for EFFECT_ACK_DONE.'

@@ -103,14 +103,18 @@ class AIRuntimeBootloaderContractTests(unittest.TestCase):
         workflow = (
             ROOT / ".github" / "workflows" / "qikvrt_ci.yml"
         ).read_text(encoding="utf-8")
-        checkout = (
+        self.assertIn(
             "      - uses: "
             "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 "
-            "# v7.0.1\n"
-            "        with:\n"
-            "          fetch-depth: 0\n"
+            "# v7.0.1\n",
+            workflow,
         )
-        self.assertIn(checkout, workflow)
+        self.assertIn(
+            "          ref: ${{ github.event.pull_request.head.sha || github.sha }}\n",
+            workflow,
+        )
+        self.assertIn("          fetch-depth: 0\n", workflow)
+        self.assertIn("          persist-credentials: false\n", workflow)
 
     def test_manuscript_workflow_provisions_declared_poppler_before_h5(self) -> None:
         workflow = (
