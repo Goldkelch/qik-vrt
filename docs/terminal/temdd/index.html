@@ -1,9 +1,44 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>QIK-VRT TEMDD Live Universal Terminal</title><style>body{margin:0;background:#090c10;color:#e8edf2;font:14px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}main{max-width:1280px;margin:auto;padding:18px}.grid{display:grid;grid-template-columns:1fr 2fr;gap:14px}.p{background:#11171e;border:1px solid #303a46;border-radius:12px;padding:16px}.meta{display:grid;grid-template-columns:110px 1fr;gap:6px}.muted{color:#8d9aaa}.ok{color:#68d391}.hold{color:#ecc94b}.bad{color:#fc8181}#tail{height:68vh;overflow:auto;white-space:pre-wrap;background:#070a0d;padding:12px;border-radius:8px}.badge{border:1px solid #43505e;border-radius:99px;padding:2px 8px}button{background:#18212b;color:#e8edf2;border:1px solid #43505e;border-radius:7px;padding:6px 10px}@media(max-width:800px){.grid{grid-template-columns:1fr}#tail{height:55vh}}</style></head><body><main><h1>QIK-VRT · TEMDD LIVE UNIVERSAL TERMINAL <span id="state" class="badge hold">CONNECTING</span></h1><p class="muted">Observer lifetime ≠ execution lifetime · exact-subject evidence · fail-closed · replayable event cursor</p><div class="grid"><section class="p"><h2>Exact state</h2><div class="meta"><span class="muted">Authority</span><span>Goldkelch/qik-vrt</span><span class="muted">PR</span><span><a href="https://github.com/Goldkelch/qik-vrt/pull/1103">#1103 TEMDD bootstrap</a></span><span class="muted">HEAD</span><span id="head">—</span><span class="muted">TREE</span><span id="tree">—</span><span class="muted">Event ID</span><span id="cursor">—</span><span class="muted">DoD</span><span id="dod" class="hold">NOT PROVEN</span></div><h2>Transport</h2><p id="transport">discovering repository-native stream…</p><button id="reconnect">RECONNECT</button></section><section class="p"><h2>tail -f</h2><div id="tail"></div></section></div></main><script>
-const tail=document.getElementById('tail'),state=document.getElementById('state'),cursorEl=document.getElementById('cursor');let es=null;let cursor=localStorage.getItem('qikvrt.temdd.cursor')||'';
-function line(kind,msg,id){const t=new Date().toISOString();tail.textContent+=`${t}  ${kind.padEnd(10)} ${msg}\n`;tail.scrollTop=tail.scrollHeight;if(id){cursor=id;cursorEl.textContent=id;localStorage.setItem('qikvrt.temdd.cursor',id)}}
-function setState(s,c){state.textContent=s;state.className='badge '+c}
-async function exact(){try{const p=await fetch('https://api.github.com/repos/Goldkelch/qik-vrt/pulls/1103',{headers:{Accept:'application/vnd.github+json'}}).then(r=>r.json());document.getElementById('head').textContent=p.head.sha;const c=await fetch(`https://api.github.com/repos/Goldkelch/qik-vrt/commits/${p.head.sha}`,{headers:{Accept:'application/vnd.github+json'}}).then(r=>r.json());document.getElementById('tree').textContent=c.commit.tree.sha;line('SUBJECT',`#1103 @ ${p.head.sha} / ${c.commit.tree.sha}`)}catch(e){line('HOLD','exact-state readback unavailable: '+e.message);setState('HOLD','hold')}}
-function connect(){if(es)es.close();const base='/api/temdd/events';const url=cursor?`${base}?after=${encodeURIComponent(cursor)}`:base;document.getElementById('transport').textContent=`SSE ${url}`;try{es=new EventSource(url);es.onopen=()=>{setState('LIVE','ok');line('CONNECT','TEMDD event stream connected')};es.onmessage=e=>{let msg=e.data;try{const x=JSON.parse(e.data);msg=`${x.kind||'EVENT'} ${x.subject||''} ${x.message||''}`;if(x.dod===true){document.getElementById('dod').textContent='EFFECT_ACK_DONE';document.getElementById('dod').className='ok'}}catch(_){}line('EVENT',msg,e.lastEventId||'')};es.onerror=()=>{setState('HOLD','hold');line('HOLD','stream unavailable; execution is not downgraded to NOOP; waiting for native reconnect event');es.close()}}catch(e){setState('HOLD','hold');line('HOLD',e.message)}}
-document.getElementById('reconnect').onclick=connect;cursorEl.textContent=cursor||'—';exact();connect();
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>QIK-VRT TEMDD Live Universal Terminal</title><style>body{margin:0;background:#090c10;color:#e8edf2;font:14px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}main{max-width:1280px;margin:auto;padding:18px}.grid{display:grid;grid-template-columns:1fr 2fr;gap:14px}.p{background:#11171e;border:1px solid #303a46;border-radius:12px;padding:16px}.meta{display:grid;grid-template-columns:110px 1fr;gap:6px}.muted{color:#8d9aaa}.ok{color:#68d391}.hold{color:#ecc94b}#tail{height:68vh;overflow:auto;white-space:pre-wrap;background:#070a0d;padding:12px;border-radius:8px}.badge{border:1px solid #43505e;border-radius:99px;padding:2px 8px}button{background:#18212b;color:#e8edf2;border:1px solid #43505e;border-radius:7px;padding:6px 10px}@media(max-width:800px){.grid{grid-template-columns:1fr}#tail{height:55vh}}</style></head><body><main><h1>QIK-VRT · TEMDD LIVE UNIVERSAL TERMINAL <span id="state" class="badge hold">CONNECTING</span></h1><p class="muted">Observer lifetime ≠ execution lifetime · exact-subject evidence · fail-closed · replayable event cursor</p><div class="grid"><section class="p"><h2>Exact checkout subject</h2><div class="meta"><span class="muted">Authority</span><span id="repository">—</span><span class="muted">PR</span><span id="pr">—</span><span class="muted">HEAD</span><span id="head">—</span><span class="muted">TREE</span><span id="tree">—</span><span class="muted">Event ID</span><span id="cursor">—</span><span class="muted">DoD</span><span id="dod" class="hold">NOT PROVEN</span></div><h2>Transport</h2><p id="transport">discovering local native stream…</p><button id="reconnect">RECONNECT</button><p class="muted">Ledger persistence is not validation, review, promotion, or EFFECT_ACK_DONE. A deployed checkout is not a fresh remote PR-head observation.</p></section><section class="p"><h2>tail -f</h2><div id="tail"></div></section></div></main><script>
+'use strict';
+const tail=document.getElementById('tail'),state=document.getElementById('state'),cursorEl=document.getElementById('cursor');
+let es=null,cursor='',exactSubject=null,ledgerId='',cursorKey='',generation=0;
+function line(kind,msg){tail.textContent+=`${new Date().toISOString()}  ${kind.padEnd(10)} ${msg}\n`;tail.scrollTop=tail.scrollHeight;}
+function setState(s,c){state.textContent=s;state.className='badge '+c;}
+function hold(reason){setState('HOLD','hold');document.getElementById('dod').textContent='NOT PROVEN';line('HOLD',reason);}
+function validSubject(s){return s&&Object.keys(s).sort().join(',')==='head,pr,repository,tree'&&typeof s.repository==='string'&&Number.isInteger(s.pr)&&s.pr>0&&/^[0-9a-f]{40}$/.test(s.head)&&/^[0-9a-f]{40}$/.test(s.tree);}
+function sameSubject(a,b){return validSubject(a)&&validSubject(b)&&['repository','pr','head','tree'].every(k=>a[k]===b[k]);}
+function sequence(id){const m=/^([0-9a-f]{32}):([1-9][0-9]{0,18})$/.exec(id);if(!m||m[1]!==ledgerId)throw Error('foreign or malformed ledger cursor');return BigInt(m[2]);}
+async function connect(){
+  const current=++generation;if(es)es.close();es=null;setState('CONNECTING','hold');
+  try{
+    const r=await fetch('/api/temdd/subject',{cache:'no-store'});if(!r.ok)throw Error('exact checkout readback unavailable');
+    const x=await r.json();if(current!==generation)return;
+    if(!validSubject(x.subject)||!/^[0-9a-f]{32}$/.test(x.ledger_id)||x.dod!==false||x.evidence_transfer!=='DENY')throw Error('invalid exact-subject envelope');
+    exactSubject=x.subject;ledgerId=x.ledger_id;
+    cursorKey='qikvrt.temdd.cursor:'+JSON.stringify([ledgerId,exactSubject.repository,exactSubject.pr,exactSubject.head,exactSubject.tree]);
+    cursor=localStorage.getItem(cursorKey)||'';if(cursor)sequence(cursor);
+    for(const key of ['repository','pr','head','tree'])document.getElementById(key).textContent=exactSubject[key];
+    cursorEl.textContent=cursor||'—';line('SUBJECT',JSON.stringify(exactSubject));
+    const url='/api/temdd/events'+(cursor?'?after='+encodeURIComponent(cursor):'');
+    document.getElementById('transport').textContent='SSE '+url;
+    const source=new EventSource(url);es=source;let bound=false;
+    source.onopen=()=>{if(current===generation){bound=false;setState('CONNECTED','hold');}};
+    source.addEventListener('subject',e=>{if(current!==generation)return;try{
+      const s=JSON.parse(e.data);if(!sameSubject(s.subject,exactSubject)||s.ledger_id!==ledgerId||s.dod!==false||s.evidence_transfer!=='DENY')throw Error('stream subject mismatch');
+      bound=true;setState('OBSERVING','ok');line('CONNECT','exact-subject stream bound; DoD remains unproven');
+    }catch(err){source.close();hold(err.message);}});
+    source.onmessage=e=>{if(current!==generation)return;try{
+      const event=JSON.parse(e.data);
+      if(!bound||event.schema!=='qikvrt_temdd_event_v1'||!sameSubject(event.subject,exactSubject)||event.id!==e.lastEventId||event.evidence_transfer!=='DENY'||event.dod!==false)throw Error('unbound or invalid event');
+      const next=sequence(event.id);if(cursor&&next<=sequence(cursor))throw Error('non-monotonic event');
+      if(!/^(OBSERVE|CLASSIFY|ACTION|EFFECT|READBACK|SUCCESSOR|HOLD)$/.test(event.kind)||typeof event.message!=='string')throw Error('invalid event content');
+      line(event.kind,event.message+' · '+event.subject.head+' · '+event.id);
+      localStorage.setItem(cursorKey,event.id);cursor=event.id;cursorEl.textContent=cursor;
+    }catch(err){source.close();hold(err.message);}};
+    source.addEventListener('hold',()=>{if(current===generation){source.close();hold('producer readback unavailable; fresh reconnect required');}});
+    source.onerror=()=>{if(current===generation){bound=false;hold('transport unavailable; native EventSource reconnect retains its cursor; repository execution unchanged');}};
+  }catch(err){if(current===generation)hold(err.message);}
+}
+document.getElementById('reconnect').onclick=connect;connect();
 </script></body></html>

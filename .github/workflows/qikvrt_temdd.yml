@@ -1,14 +1,39 @@
 name: QIKVRT TEMDD conformance
 on:
   pull_request:
-    paths: ['spec/temdd/**','examples/temdd/**','schemas/temdd-*','tools/qikvrt_temdd.py','tools/qikvrt_temdd_conformance.py','tests/test_temdd.py','tests/temdd/**','src/temdd_core.c','include/temdd_core.h','tests/test_temdd_core.c','runtime/temdd/**','runtime/m68000/temdd_transition.s','formalization/TEMDDCore.lean','.github/workflows/qikvrt_temdd.yml']
+    paths: ['spec/temdd/**','examples/temdd/**','schemas/temdd-*','tools/qikvrt_temdd.py','tools/qikvrt_temdd_conformance.py','tests/test_temdd.py','tests/temdd/**','src/temdd_core.c','include/temdd_core.h','tests/test_temdd_core.c','runtime/temdd/**','runtime/m68000/temdd_transition.s','formalization/TEMDDCore.lean','src/qikvrt_temdd_event_ledger.py','src/qikvrt_effect_ack_http_terminal.py','tests/test_temdd_event_ledger.py','docs/terminal/temdd/**','deploy/universal-terminal/**','Makefile','.github/workflows/qikvrt_temdd.yml']
   push: {branches: [main]}
 permissions: {contents: read}
 jobs:
  conformance:
   runs-on: ubuntu-24.04
+  timeout-minutes: 15
   steps:
    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+     with:
+      ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      persist-credentials: false
+   - uses: actions/setup-python@v6
+     with:
+      python-version: '3.12.13'
+   - uses: actions/setup-node@v6
+     with:
+      node-version: '24.x'
+      package-manager-cache: false
+   - name: Fresh exact-head persistent producer and browser regressions
+     env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+     shell: bash
+     run: |
+      set -euo pipefail
+      test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+      git diff --exit-code
+      python3 -B tools/qikvrt_tool_cache.py verify
+      python3 --version
+      node --version
+      make temdd-event-ledger-test 2>&1 | tee "$RUNNER_TEMP/temdd-producer-tests.log"
+      git diff --exit-code
+      printf 'HEAD=%s\nTREE=%s\nEVIDENCE_TRANSFER=DENY\nSCOPE=producer-regression-only\nDOD=NOT_PROVEN\n' "$EXPECTED_HEAD" "$(git rev-parse 'HEAD^{tree}')" | tee "$RUNNER_TEMP/temdd-producer-binding.txt"
    - name: Python parser T01-T12 and corpus
      run: |
       python3 -B -m unittest tests.test_temdd
@@ -30,3 +55,41 @@ jobs:
      run: grep -q 'successorRequired' runtime/temdd/TEMDDRuntime.st
    - name: Lean obligation source admission
      run: grep -q 'missing_effect_readback_not_done' formalization/TEMDDCore.lean
+   - name: Materialize bounded integrity candidate without adopting or promoting
+     shell: bash
+     run: |
+      set -euo pipefail
+      python3 -B tools/qikvrt_integrity.py generate
+      python3 -B tools/qikvrt_integrity.py verify
+      python3 - <<'PYCODE'
+      import hashlib, json, os, shutil, subprocess
+      from pathlib import Path
+      def git(*args):
+          return subprocess.check_output(['git', *args], text=True).strip()
+      allow = ['REPOSITORY_FILE_MANIFEST.json', 'REPOSITORY_FILE_MANIFEST.sha256', 'SHA256SUMS.txt']
+      changed = git('diff', '--name-only').splitlines()
+      assert set(changed) <= set(allow), changed
+      assert not git('diff', '--cached', '--name-only')
+      out = Path(os.environ['RUNNER_TEMP']) / 'temdd-integrity'
+      out.mkdir()
+      files = {}
+      for name in allow:
+          shutil.copyfile(name, out / name)
+          files[name] = {'sha256': hashlib.sha256(Path(name).read_bytes()).hexdigest(), 'blob': git('hash-object', name)}
+      receipt = {'schema': 'qikvrt_temdd_integrity_candidate_v1', 'repository': os.environ['GITHUB_REPOSITORY'],
+                 'parent_head': git('rev-parse', 'HEAD'), 'parent_tree': git('rev-parse', 'HEAD^{tree}'),
+                 'run_id': os.environ['GITHUB_RUN_ID'], 'allowlist': allow, 'files': files,
+                 'state': 'MATERIALIZED_WORKTREE_ONLY', 'adopted': False, 'p2_pass': False,
+                 'evidence_transfer': 'DENY', 'dod': False}
+      (out / 'receipt.json').write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
+      PYCODE
+   - name: Preserve exact-head focused evidence and bounded integrity candidate
+     if: always()
+     uses: actions/upload-artifact@v4
+     with:
+      name: temdd-producer-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}
+      path: |
+       ${{ runner.temp }}/temdd-producer-tests.log
+       ${{ runner.temp }}/temdd-producer-binding.txt
+       ${{ runner.temp }}/temdd-integrity/
+      if-no-files-found: error
