@@ -154,7 +154,9 @@ SHA-256. Any disagreement stops the next mutation and remains
 The same pull-request head may be reviewed again only when its causal evidence
 fingerprint changed, for example because a required workflow attempt, active
 writer, discussion thread or applicable gate changed. An identical fingerprint
-is an idempotent `D0=0 NOOP`, never a duplicate receipt.
+suppresses a duplicate ledger write. It must preserve the receipt's derived
+`d0` and `next_action` in downstream feedback; storage deduplication never
+discharges unfinished subject work.
 
 A `WAIT` observation records volatile workflow progress as an artifact but is
 not eligible for immutable-ledger persistence or PR projection. A later native
@@ -210,9 +212,17 @@ only `REQUEST_HISTORY_PRESERVING_READY_RECLASSIFICATION_AUTHORITY`, bound to
 the trusted `github-actions[bot]` self-heal PR-body marker, same-repository
 `automation/self-heal-*` head, unchanged marker-body digest and exact base/head.
 
+TEMDD exclusion rules: a pending queue obligation, open issue, open pull
+request, or required change not yet integrated into Main excludes completion
+of its work scope and excludes NOOP as that scope's next action. Duplicate
+delivery must not cause duplicate mutations. It must retain the outstanding
+causal action, or an explicit blocker with its owner and resumption condition.
+These exclusions do not authorize closing issues, integrating arbitrary
+branches, bypassing review, polling, or manufacturing repository events.
+
 The causal review states are fixed:
 
-- `D0=0 NOOP`: the identical exact receipt is already persisted, or no new review action exists;
+- `D0=0 NOOP`: only operation-local deduplication or absence of an eligible event; never the next action or terminal disposition of unfinished subject work;
 - `D0=1 HOLD`: an applicable gate is active or adverse, a finding or unresolved thread remains, the receipt is invalid, or the ledger compare-and-swap conflicts;
 - `D0=2 REOBSERVE`: exact evidence is missing, stale, untrusted, zero-job, or the base, head, tree, scope or diff drifted;
 - `D0=3 REQUEST_AUTHORITY`: the Mesh disposition supports continuation, but an exact independent Code-Owner disposition or another required authority is missing or stale.

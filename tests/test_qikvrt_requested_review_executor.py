@@ -11,6 +11,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from unittest import mock
 
@@ -1774,6 +1775,50 @@ class RequestedReviewExecutorTests(unittest.TestCase):
                 observed = MODULE._canonical_git_diff(base, head, cwd=repository)
 
             self.assertEqual(observed, expected)
+
+    def test_duplicate_ledger_write_preserves_unfinished_subject_continuation(self):
+        # Execute the actual workflow branch: storage deduplication must not
+        # erase the next action projected to the still-open pull request.
+        text = WORKFLOW.read_text(encoding="utf-8")
+        start = text.index("                  if plan['action'] == 'NOOP_IDENTICAL_RECEIPT':")
+        end = text.index("                  elif plan['action'] == 'APPEND_FAST_FORWARD':", start)
+        branch = compile(textwrap.dedent(text[start:end]), str(WORKFLOW), "exec")
+        for d0, action in (
+            (1, "WAIT_FOR_SINGLE_WRITER_LEASE"),
+            (1, "WAIT_FOR_EXACT_HEAD_GATE"),
+            (1, "REQUEST_HISTORY_PRESERVING_READY_RECLASSIFICATION_AUTHORITY"),
+            (3, "REQUEST_EXACT_HEAD_CODE_OWNER_REOBSERVATION"),
+        ):
+            for corrupt in (False, True):
+                with self.subTest(action=action, corrupt=corrupt):
+                    report = {"persisted": False, "state": "HOLD_UNVERIFIED"}
+                    blobs = {"receipt": b"receipt", "manifest": b"manifest"}
+                    if corrupt:
+                        blobs["receipt"] = b"different receipt"
+                    write = mock.Mock(side_effect=AssertionError("duplicate must not write"))
+                    namespace = {
+                        "plan": {"action": "NOOP_IDENTICAL_RECEIPT"},
+                        "report": report,
+                        "receipt": {"derived_action": {"d0": d0, "next_action": action}},
+                        "receipt_path": "receipt", "diff_path": "manifest",
+                        "receipt_bytes": b"receipt", "manifest_bytes": b"manifest",
+                        "diff_bytes": b"diff", "ledger_head": MAIN_SHA,
+                        "blob_at": lambda path, commit: blobs[path],
+                        "transport_at": lambda commit: b"diff",
+                        "LedgerHold": RuntimeError, "gh": write,
+                    }
+                    if corrupt:
+                        with self.assertRaisesRegex(RuntimeError, "LEDGER_BLOB_READBACK_MISMATCH"):
+                            exec(branch, namespace)
+                        self.assertFalse(report["persisted"])
+                    else:
+                        exec(branch, namespace)
+                        self.assertTrue(report["persisted"])
+                        self.assertTrue(report["duplicate"])
+                        self.assertEqual(report["d0"], d0)
+                        self.assertEqual(report["next_action"], action)
+                        self.assertEqual(report["state"], "HOLD_UNVERIFIED")
+                    write.assert_not_called()
 
     def test_append_only_ledger_planner_covers_root_duplicate_append_and_collision(self):
         receipt = b'{"receipt":1}\n'

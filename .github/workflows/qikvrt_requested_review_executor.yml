@@ -574,7 +574,10 @@ jobs:
                           raise LedgerHold('LEDGER_BLOB_READBACK_MISMATCH')
                       report.update(
                           persisted=True,duplicate=True,ledger_commit=ledger_head,
-                          d0=0,next_action='NOOP_IDENTICAL_RECEIPT_ALREADY_PERSISTED',
+                          # Deduplicate the ledger write, never the unfinished
+                          # subject's causal continuation or review obligation.
+                          d0=receipt['derived_action']['d0'],
+                          next_action=receipt['derived_action']['next_action'],
                       )
                   elif plan['action'] == 'APPEND_FAST_FORWARD':
                       parent=gh('GET',f'repos/{repo}/git/commits/{ledger_head}')
