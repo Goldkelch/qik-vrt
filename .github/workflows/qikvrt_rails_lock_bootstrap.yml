@@ -8,53 +8,104 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: qikvrt-rails-lock-bootstrap
+  cancel-in-progress: false
+
 jobs:
   resolve-lock:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      BUNDLE_IGNORE_CONFIG: '1'
+      BUNDLE_WITHOUT: ''
+      BUNDLE_WITH: test
+      BUNDLE_FROZEN: 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Bind bootstrap subject
+      - name: Bind frozen lock and bootstrap subject
         shell: bash
         env:
           EXPECTED_HEAD: ${{ github.sha }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          printf 'HEAD=%s\nTREE=%s\n' "$EXPECTED_HEAD" "$(git rev-parse 'HEAD^{tree}')"
-      - name: Set up exact Ruby for dependency resolution only
+          mkdir -p .qikvrt/runtime/rails-bootstrap
+          printf 'HEAD=%s\nTREE=%s\n' "$EXPECTED_HEAD" "$(git rev-parse 'HEAD^{tree}')" | tee .qikvrt/runtime/rails-bootstrap/subject.txt
+          cd deploy/vercel-monitor
+          printf '%s\n' 'baa929b751cbd35b0f5809f0219c45f846f8164a09071d6ff38b7825fe224c32  Gemfile' '5be1a34fe3e9e52f89e15d1450101fce02c0d5ab1c53635af9b626e98598ff97  Gemfile.lock' | sha256sum -c -
+      - name: Set up exact Ruby for dependency verification only
         uses: ruby/setup-ruby@bec3f19a76460dbe12f60def7d1a77585f07516c
         with:
           ruby-version: '3.3.8'
           bundler: '2.5.22'
           bundler-cache: false
-      - name: Resolve, install and test deterministic Rails lock candidate
+      - name: Install frozen graph and preserve verified package inventory
         working-directory: deploy/vercel-monitor
         shell: bash
         env:
-          SECRET_KEY_BASE: qikvrt-rails-smoke-only-not-production-0000000000000000000000000000000000000000000000000000000000000000
+          BUNDLE_PATH: ${{ runner.temp }}/qikvrt-rails-bundle
         run: |
           set -euo pipefail
           test "$(ruby -e 'print RUBY_VERSION')" = '3.3.8'
           test "$(bundle --version)" = 'Bundler version 2.5.22'
-          rm -f Gemfile.lock
-          bundle _2.5.22_ lock
-          test -s Gemfile.lock
-          grep -F 'railties (8.1.3.1)' Gemfile.lock
-          grep -F 'BUNDLED WITH' Gemfile.lock
-          sha256sum Gemfile Gemfile.lock
-          bundle _2.5.22_ install --jobs 4 --retry 3
+          bundle _2.5.22_ install --jobs 4 --retry 0
           bundle _2.5.22_ check
-          bundle _2.5.22_ exec ruby test/megast_test.rb --seed 1079
-          bundle _2.5.22_ exec ruby test/rails_smoke_test.rb
-      - name: Preserve resolved lock candidate
+          bundle _2.5.22_ cache
+          bundle _2.5.22_ exec ruby -rjson -rdigest -e '
+            gems = Bundler.load.specs.sort_by(&:name).map do |s|
+              f = File.join("vendor/cache", "#{s.full_name}.gem")
+              raise "missing cached package: #{s.full_name}" unless File.file?(f)
+              {name: s.name, version: s.version.to_s, platform: s.platform.to_s,
+               file: File.basename(f), bytes: File.size(f), sha256: Digest::SHA256.file(f).hexdigest,
+               licenses: s.licenses, homepage: s.homepage,
+               dependencies: s.runtime_dependencies.map { |d| {name: d.name, requirement: d.requirement.to_s} }}
+            end
+            File.write("vendor/gem-inventory.json", JSON.pretty_generate({schema: "qikvrt_rails_gem_inventory_v1", ruby: RUBY_VERSION, bundler: Bundler::VERSION, gems: gems}) + "\n")
+          '
+          (cd vendor/cache && gem fetch bundler --version 2.5.22 --clear-sources --source https://rubygems.org)
+          sha256sum vendor/cache/*.gem > vendor/gem-packages.sha256
+          printf '%s\n' '5be1a34fe3e9e52f89e15d1450101fce02c0d5ab1c53635af9b626e98598ff97  Gemfile.lock' | sha256sum -c -
+      - name: Run both real Ruby and Rails suites on frozen input
+        working-directory: deploy/vercel-monitor
+        shell: bash
+        env:
+          BUNDLE_PATH: ${{ runner.temp }}/qikvrt-rails-bundle
+          SECRET_KEY_BASE: qikvrt-rails-smoke-only-not-production-0000000000000000000000000000000000000000000000000000000000000000
+        run: |
+          set -euo pipefail
+          bundle _2.5.22_ exec ruby test/megast_test.rb --seed 1079 | tee ../../.qikvrt/runtime/rails-bootstrap/core.txt
+          bundle _2.5.22_ exec ruby test/rails_smoke_test.rb --seed 1079 | tee ../../.qikvrt/runtime/rails-bootstrap/smoke.txt
+          git diff --exit-code -- Gemfile Gemfile.lock
+      - name: Export exact integration-source bytes for offline verification
+        shell: bash
+        env:
+          INTEGRATION_HEAD: 8c7d4ae1a819e0ed1f7b56d574adb34fd097a9b4
+          INTEGRATION_TREE: 3d963234e94a236288681ca51e1ca40c42af9a7a
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$INTEGRATION_HEAD"
+          test "$(git rev-parse "$INTEGRATION_HEAD^{tree}")" = "$INTEGRATION_TREE"
+          out=.qikvrt/runtime/rails-bootstrap
+          git archive --format=tar --output="$out/integration-source.tar" "$INTEGRATION_HEAD"
+          git ls-tree -r "$INTEGRATION_HEAD" > "$out/integration-tree.tsv"
+          printf 'HEAD=%s\nTREE=%s\n' "$INTEGRATION_HEAD" "$INTEGRATION_TREE" > "$out/integration-subject.txt"
+          sha256sum "$out/integration-source.tar" > "$out/integration-source.tar.sha256"
+      - name: Preserve frozen lock, package inputs and scoped diagnostics
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: qikvrt-rails-lock-${{ github.sha }}
+          name: qikvrt-rails-admission-inputs-${{ github.sha }}
           path: |
             deploy/vercel-monitor/Gemfile
             deploy/vercel-monitor/Gemfile.lock
+            deploy/vercel-monitor/vendor/cache/*.gem
+            deploy/vercel-monitor/vendor/gem-inventory.json
+            deploy/vercel-monitor/vendor/gem-packages.sha256
+            .qikvrt/runtime/rails-bootstrap/
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
