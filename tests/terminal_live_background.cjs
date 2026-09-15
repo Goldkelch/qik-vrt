@@ -34,6 +34,64 @@ async function harness() {
   await settle(); await settle();
   return {stored,sources,context,failStore:()=>{failNext=true;},fetches:()=>fetches};
 }
+async function contentHarness() {
+  class Element {
+    constructor(tag) { this.tagName=tag; this.children=[]; this.dataset={}; this.attributes={}; this.style={setProperty(){}}; this.listeners={}; this.disabled=false; this.scrollHeight=0; this.scrollTop=0; this.clientHeight=0; this.classList={toggle(){}}; this._text=''; }
+    setAttribute(k,v) { this.attributes[k]=String(v); if(k==='id') this.id=v; }
+    appendChild(node) { node.parentNode=this; this.children.push(node); return node; }
+    append(...nodes) { for(const node of nodes) this.appendChild(node); }
+    insertBefore(node,old) { node.parentNode=this; this.children.splice(this.children.indexOf(old),0,node); }
+    removeChild(node) { this.children.splice(this.children.indexOf(node),1); node.parentNode=null; }
+    get firstElementChild() { return this.children[0]; }
+    get firstChild() { return this.children[0]; }
+    get childElementCount() { return this.children.length; }
+    set textContent(value) { this._text=String(value); this.children=[]; }
+    get textContent() { return this._text+this.children.map(x=>x.textContent).join(''); }
+    set innerHTML(text) { // Only the existing static bootstrap template is parsed by this double.
+      for(const match of text.matchAll(/<([a-z]+)[^>]*data-(role|act)="([^"]+)"[^>]*>/g)) {
+        const node=new Element(match[1]); node.attributes['data-'+match[2]]=match[3];
+        if(match[0].includes('disabled')) node.disabled=true;
+        this.appendChild(node);
+      }
+    }
+    addEventListener(name,fn) { this.listeners[name]=fn; }
+    querySelector(selector) {
+      const match=selector.match(/^\[([^=]+)=["']?([^\]"']+)["']?\]$/);
+      const predicate=match ? n=>n.attributes[match[1]]===match[2] : n=>selector==='#'+n.id;
+      const visit=node=>{if(predicate(node))return node; for(const item of node.children){const found=visit(item);if(found)return found;}return null;};
+      return visit(this);
+    }
+  }
+  const body=new Element('body');
+  const document={body,createElement:tag=>new Element(tag),getElementById:id=>body.querySelector('#'+id)};
+  const stored={}; const listeners=[]; let sends=0;
+  const browser={runtime:{sendMessage:async()=>{sends++;return {ok:false,reason:'fixture baseline',ordinary_release:false};}},storage:{
+    onChanged:{addListener:fn=>listeners.push(fn)},local:{get:async()=>JSON.parse(JSON.stringify(stored))}}};
+  const context=vm.createContext({browser,document,console,location:{href:'https://example.invalid/fixture'}});
+  vm.runInContext(fs.readFileSync('browser/firefox/qikvrt-terminal/content.js','utf8'),context);
+  await settle(); await settle();
+  assert.equal(listeners.length,1,'content script has no push listener');
+  const host=document.getElementById('qikvrt-ai-terminal-host');
+  const journal=host.querySelector('[data-role=live-events]');
+  assert.ok(journal,'visible receipt journal missing');
+  const calls=sends;
+  const push=(records,state='EVENT')=>{for(const listener of listeners) listener({qikvrtLiveEvents:{newValue:records},qikvrtLiveEventState:{newValue:state}},'local');};
+  const first=event(1); first.payload.message='<img src=x onerror=alert(1)>';
+  push([first]); const original=journal.firstChild;
+  push([first,event(2),event(3)]);
+  assert.equal(journal.childElementCount,3,'three events must produce three visible appends');
+  assert.equal(journal.firstChild,original,'existing DOM receipt must not be replaced');
+  assert.equal(sends,calls,'visible append must not send a prompt or GitHub query');
+  assert.ok(journal.textContent.includes(first.payload.message),'receipt raw data must remain inspectable');
+  assert.ok(journal.textContent.includes('a'.repeat(40)),'full source head must remain inspectable');
+  push([first,event(2),event(3)]);
+  assert.equal(journal.childElementCount,3,'replayed window must not duplicate appends');
+  push([first,event(2),event(3)],'RECONNECTING');
+  assert.ok(host.querySelector('[data-role=live-state]').textContent.includes('unterbrochen'));
+  assert.equal(host.querySelector('[data-act=commit]').disabled,true,'monitor cannot authorize Commit');
+  console.log('CONTENT_APPEND_TESTS=PASS (append/order/dedup/raw/text-only/stale/no-effect)');
+}
+
 (async () => {
   assert.match(wire,/event: qikvrt\\n/,'test must consume the actual relay event name');
   const h=await harness();
@@ -59,5 +117,9 @@ async function harness() {
   const fresh=await harness();
   fresh.failStore(); fresh.sources[0].emit('qikvrt',event(1)); await settle(); await settle();
   assert.equal(fresh.stored.qikvrtLastEventId,undefined,'cursor acknowledged failed persistence');
+  fresh.sources[0].emit('qikvrt',event(2)); await settle(); await settle();
+  assert.equal(fresh.stored.qikvrtLastEventId,undefined,'a later event skipped failed persistence');
+  assert.equal(fresh.sources[0].closed,true,'failed persistence must stop this cursor source');
+  await contentHarness();
   console.log('BACKGROUND_EVENT_TESTS=PASS (payload/order/dedup/id/repository/collision/storage)');
 })().catch(error=>{console.error(error);process.exitCode=1;});
