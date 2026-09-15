@@ -1,0 +1,30 @@
+name: QIKVRT TEMDD conformance
+on:
+  pull_request:
+    paths:
+      - 'spec/temdd/**'
+      - 'examples/temdd/**'
+      - 'schemas/temdd-*'
+      - 'tools/qikvrt_temdd.py'
+      - 'tests/test_temdd.py'
+      - '.github/workflows/qikvrt_temdd.yml'
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  conformance:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Python reference conformance
+        run: |
+          python3 -B -m unittest tests.test_temdd
+          python3 -B tools/qikvrt_temdd.py examples/temdd/qikvrt_convergence_v0_1.temdd > /tmp/temdd-ir.json
+          python3 - <<'PY'
+          import json
+          x=json.load(open('/tmp/temdd-ir.json'))
+          required={'ZERO_BUGS','ALL_PULL_REQUESTS_REGARDED','ALL_BRANCHES_REGARDED','ALL_PRODUCTIVE_BRANCHES_MERGED','FRESH_EXACT_MAIN_VALIDATION_PASS','FRESH_EFFECT_READBACK'}
+          assert required == set(x['dod'])
+          assert x['subject']['binding']=='exact'
+          PY
