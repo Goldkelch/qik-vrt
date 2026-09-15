@@ -23,6 +23,45 @@ evidence for a later decision; it does not replace the decision.
 
 ## State transition
 
+### Stable knowledge and return to readiness
+
+Ingolf Lohmann's 2026-09-15 Definition of Done requires the system to recognize
+when learning or correction is needed and when the accepted knowledge must
+remain unchanged. Stability is the default. Extension and correction remain
+possible through evidence-bound, reviewed successors. The assertion that a
+high-quality system changes less often is a design preference here; no measured
+frequency or universal change-detection theorem is asserted.
+
+The original state means readiness for the next authorized input. It does not
+mean erasing the answer, the effect, the responsibility record, or the history.
+For a cycle with accepted knowledge K, working state W and evidence history H,
+the target is ready W and preserved K unless an applicable, separately reviewed
+learning transition has been admitted. New evidence extends H; historical
+observations remain bound to their own subjects. Present decisions use present
+bindings, and accepted corrections govern successor states prospectively.
+
+The existing proposal runtime makes this contract executable within its local
+observation-synthesis scope. Conflicting proposals or reported BLOCK findings
+select `REVIEW_POSSIBLE_CORRECTION`; UNKNOWN or CONTINUE findings select
+`RESOLVE_UNCERTAINTY`; other proposals select `REVIEW_POSSIBLE_CHANGE`. With no
+proposal and no unresolved finding, it selects `PRESERVE`. These signals are
+attributed observations, not certified learning needs or authority to mutate.
+Conflicts take routing priority without removing any other unresolved finding.
+No branch changes accepted knowledge automatically.
+
+The runtime returns `READY` only after it has read back its two new output files
+and confirmed that the tracked commit, index and content diff stayed unchanged.
+The returned receipt binds both output hashes. A completed invocation remains
+separate from an unresolved proposal or repository obligation. `READY` therefore
+neither establishes an empty queue nor cancels pending review, Main integration
+or external readback. Each unresolved input retains its next action. No polling
+loop, automatic learning, merge or publication is introduced by this contract.
+
+The implementation preserves the existing fail-closed EFFECT_ACK boundary.
+An accepted successor must pass the ordinary exact-head validation and review
+path before adoption. A copied receipt, repeated assertion, changed timestamp,
+or successful transport cannot substitute for that path.
+
 ```text
 authorized observation
   -> schema validation

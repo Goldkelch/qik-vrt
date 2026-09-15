@@ -122,7 +122,7 @@ def load_no_duplicates(payload: bytes, label: str) -> Any:
         block(f"{label}: invalid UTF-8 JSON: {exc}")
 
 
-def fixed_git(root: Path, *args: str) -> str:
+def fixed_git(root: Path, *args: str, raw: bool = False) -> str:
     completed = subprocess.run(
         ["git", "-C", str(root), *args],
         check=True,
@@ -130,11 +130,18 @@ def fixed_git(root: Path, *args: str) -> str:
         stderr=subprocess.PIPE,
         text=True,
     )
-    return completed.stdout.strip()
+    return completed.stdout if raw else completed.stdout.strip()
 
 
 def tracked_state(root: Path) -> str:
-    return fixed_git(root, "status", "--porcelain=v1", "--untracked-files=no")
+    # Status labels alone miss another edit to an already dirty file. Include
+    # the actual diff, index and commit, without invoking configured diff tools.
+    return canonical_bytes({
+        "commit": fixed_git(root, "rev-parse", "HEAD"),
+        "index": fixed_git(root, "ls-files", "--stage", raw=True),
+        "diff": fixed_git(root, "diff", "--binary", "--no-ext-diff",
+                          "--no-textconv", "HEAD", "--", raw=True),
+    }).decode("utf-8")
 
 
 def reject_symlinked_output_base(root: Path) -> None:
@@ -496,6 +503,22 @@ def main() -> None:
     if set(policy.get("forbidden_actions", [])) != required_prohibitions:
         block("policy: forbidden action set is incomplete or ambiguous")
 
+    stability = policy.get("stability_contract", {})
+    for key, expected in {
+        "default_knowledge_action": "PRESERVE",
+        "return_state": "READY",
+        "return_requires_output_readback": True,
+        "return_requires_tracked_state_preserved": True,
+        "unknown_need_permits_mutation": False,
+        "reviewed_successor_required_for_learning": True,
+        "history_is_append_only": True,
+        "readiness_implies_repository_completion": False,
+    }.items():
+        if type(stability.get(key)) is not type(expected) or stability[key] != expected:
+            block(f"policy: stability contract invariant failed: {key}")
+
+    tracked_before = tracked_state(root)
+
     entries = sorted(observations_dir.iterdir(), key=lambda path: path.name)
     if not entries:
         block("no observations found")
@@ -538,7 +561,6 @@ def main() -> None:
     if len(distinct_observer_identifiers) < threshold["minimum_distinct_observer_identifiers"]:
         block("minimum distinct-observer-identifier count not met")
 
-    tracked_before = tracked_state(root)
     generated_at = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     aggregate_input = "".join(
         f"{item['file']}\0{item['sha256']}\n" for item in evidence_inputs
@@ -628,6 +650,30 @@ def main() -> None:
         )
 
     mandatory_checks = policy["mandatory_checks_before_implementation"]
+    # These are attributed signals in the supplied observation scope, not an
+    # oracle deciding truth or permission to change the accepted knowledge.
+    if conflicts or finding_counts["BLOCK"]:
+        disposition = "REVIEW_POSSIBLE_CORRECTION"
+        next_action = "REVIEW_BOUND_CONFLICTS_AND_FINDINGS"
+    elif finding_counts["UNKNOWN"] or finding_counts["CONTINUE"]:
+        disposition = "RESOLVE_UNCERTAINTY"
+        next_action = "ACQUIRE_MISSING_SCOPE_BOUND_EVIDENCE"
+    elif proposals:
+        disposition = "REVIEW_POSSIBLE_CHANGE"
+        next_action = "REVIEW_BOUND_CHANGE_PROPOSALS"
+    else:
+        disposition = "PRESERVE"
+        next_action = "ACCEPT_NEXT_AUTHORIZED_INPUT"
+    adaptation = {
+        "decision": disposition,
+        "knowledge_action": stability["default_knowledge_action"],
+        "scope": sorted({item["subject"] for item in observations}),
+        "need_for_change_certified": False,
+        "mutation_authorized": False,
+        "continuation_required": disposition != "PRESERVE",
+        "next_action": next_action,
+        "repository_backlog_assessed": False,
+    }
     proposal = {
         "schema": policy["output_schemas"]["proposal"],
         "run_id": run_id,
@@ -648,6 +694,7 @@ def main() -> None:
             "conflicting_proposal_ids": conflicts,
         },
         "proposals": proposals,
+        "adaptation": adaptation,
         "mandatory_checks": [
             {"check": check, "status": "PENDING_SEPARATE_REVIEW"}
             for check in mandatory_checks
@@ -700,6 +747,10 @@ def main() -> None:
     evidence_path = output_dir / "evidence.json"
     proposal_path = output_dir / "proposal.json"
 
+    if (evidence_path.read_bytes() != evidence_payload
+            or proposal_path.read_bytes() != proposal_payload):
+        block("persisted output differs from the bound synthesis")
+
     tracked_after = tracked_state(root)
     if tracked_after != tracked_before:
         block("tracked repository state changed during proposal generation")
@@ -713,6 +764,15 @@ def main() -> None:
                 "evidence": str(evidence_path.relative_to(root)),
                 "proposal": str(proposal_path.relative_to(root)),
                 "evidence_sha256": evidence_digest,
+                "proposal_sha256": sha256(proposal_payload),
+                "cycle": {
+                    "state": stability["return_state"],
+                    "completed_scope": "LOCAL_OBSERVATION_SYNTHESIS",
+                    "outputs_read_back": True,
+                    "tracked_state_preserved": True,
+                    "adaptation": adaptation,
+                    "repository_completion": "NOT_ASSESSED",
+                },
             },
             sort_keys=True,
             separators=(",", ":"),
