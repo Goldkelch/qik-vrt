@@ -430,6 +430,7 @@ case "$PROFILE" in
     audio) check_audio_profile ;;
     publication) check_publication_profile ;;
     smalltalk) check_smalltalk_profile ;;
+    rails) check_rails_profile ;;
     all)
         check_core_profile
         check_ietf_profile
@@ -437,11 +438,8 @@ case "$PROFILE" in
         check_audio_profile
         check_publication_profile
         check_smalltalk_profile
+        check_rails_profile
         ;;
 esac
 
 exit "$OVERALL"
-
-if [ "$PROFILE" = rails ] || [ "$PROFILE" = all ]; then
-    check_rails_profile
-fi
