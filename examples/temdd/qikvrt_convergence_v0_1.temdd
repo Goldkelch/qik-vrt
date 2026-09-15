@@ -1,0 +1,10 @@
+temdd 0.1;
+authority owner = "Goldkelch/qik-vrt";
+subject convergence {
+ repository = "Goldkelch/qik-vrt";
+ binding = exact;
+}
+request finish_qikvrt { target = QIKVRT_DOD; }
+on event { follow exact; classify causal; }
+on blocker { learn smallest_sound_successor; execute successor; }
+until { ZERO_BUGS && ALL_PULL_REQUESTS_REGARDED && ALL_BRANCHES_REGARDED && ALL_PRODUCTIVE_BRANCHES_MERGED && FRESH_EXACT_MAIN_VALIDATION_PASS && FRESH_EFFECT_READBACK; }
