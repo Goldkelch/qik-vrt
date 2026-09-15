@@ -5,6 +5,9 @@ on:
   pull_request:
     paths:
       - "browser/firefox/qikvrt-terminal/**"
+      - "tools/qikvrt_firefox_package.py"
+      - "tests/test_qikvrt_firefox_i18n.py"
+      - "tests/firefox_i18n_behavior.cjs"
       - "state/delivery/ACTIVE_DELIVERY_OBLIGATIONS_V1.json"
       - "state/delivery/requests/ARXIV_PLANCK_TICK_GAP_LAW_V1.json"
       - "state/delivery/requests/WIKIPEDIA_LEAN_LAKE_PROOF_STATUS_V1.json"
@@ -14,6 +17,9 @@ on:
     branches: [main]
     paths:
       - "browser/firefox/qikvrt-terminal/**"
+      - "tools/qikvrt_firefox_package.py"
+      - "tests/test_qikvrt_firefox_i18n.py"
+      - "tests/firefox_i18n_behavior.cjs"
       - "state/delivery/**"
       - "tests/test_qikvrt_authenticated_web_delivery_proxy.py"
       - ".github/workflows/qikvrt_authenticated_web_delivery_proxy.yml"
@@ -58,19 +64,15 @@ jobs:
           PYTHONNOUSERSITE: "1"
         run: |
           set -euo pipefail
-          python3 -B -m unittest -v tests.test_qikvrt_authenticated_web_delivery_proxy
+          python3 -B -m unittest -v tests.test_qikvrt_authenticated_web_delivery_proxy tests.test_qikvrt_firefox_i18n
 
       - name: Build deterministic Firefox adapter package
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p /tmp/qikvrt-authenticated-web-delivery
-          (
-            cd browser/firefox/qikvrt-terminal
-            zip -X -9 /tmp/qikvrt-authenticated-web-delivery/qikvrt-authenticated-web-delivery.xpi \
-              manifest.json background.js content.js authenticated_delivery.js review_effect.js \
-              terminal.css options.html options.js README.md
-          )
+          python3 -B tools/qikvrt_firefox_package.py \
+            --output /tmp/qikvrt-authenticated-web-delivery/qikvrt-authenticated-web-delivery.xpi
           sha256sum /tmp/qikvrt-authenticated-web-delivery/qikvrt-authenticated-web-delivery.xpi \
             > /tmp/qikvrt-authenticated-web-delivery/qikvrt-authenticated-web-delivery.xpi.sha256
           test -s /tmp/qikvrt-authenticated-web-delivery/qikvrt-authenticated-web-delivery.xpi

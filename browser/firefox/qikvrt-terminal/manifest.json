@@ -1,9 +1,14 @@
 {
   "manifest_version": 3,
   "name": "QIKVRT AI Terminal",
-  "version": "1.1.0",
-  "description": "Source-bound QIKVRT terminal with EFFECT_ACK gating, explicit audio/video interaction and authenticated delivery adapters.",
-  "permissions": ["storage", "alarms", "activeTab", "scripting"],
+  "version": "1.2.0",
+  "description": "__MSG_extensionDescription__",
+  "permissions": [
+    "storage",
+    "alarms",
+    "activeTab",
+    "scripting"
+  ],
   "host_permissions": [
     "https://api.github.com/*",
     "https://github.com/Goldkelch/qik-vrt/*",
@@ -14,9 +19,13 @@
     "http://127.0.0.1:8771/*",
     "http://localhost:8771/*"
   ],
-  "optional_host_permissions": ["https://*/*"],
+  "optional_host_permissions": [
+    "https://*/*"
+  ],
   "background": {
-    "scripts": ["background.js"],
+    "scripts": [
+      "background.js"
+    ],
     "persistent": false
   },
   "content_scripts": [
@@ -25,13 +34,21 @@
         "https://github.com/Goldkelch/qik-vrt/blob/main/AI*",
         "https://goldkelch.github.io/qik-vrt/*"
       ],
-      "js": ["content.js"],
-      "css": ["terminal.css"],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "terminal.css"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://github.com/Goldkelch/qik-vrt/pull/*/files*"],
-      "js": ["review_effect.js"],
+      "matches": [
+        "https://github.com/Goldkelch/qik-vrt/pull/*/files*"
+      ],
+      "js": [
+        "review_effect.js"
+      ],
       "run_at": "document_idle"
     },
     {
@@ -40,7 +57,9 @@
         "https://*.wikipedia.org/*",
         "https://auth.wikimedia.org/*"
       ],
-      "js": ["authenticated_delivery.js"],
+      "js": [
+        "authenticated_delivery.js"
+      ],
       "run_at": "document_idle"
     }
   ],
@@ -53,5 +72,6 @@
       "id": "qikvrt-ai-terminal@goldkelch.local",
       "strict_min_version": "121.0"
     }
-  }
+  },
+  "default_locale": "en"
 }
