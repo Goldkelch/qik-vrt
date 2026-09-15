@@ -1,0 +1,3 @@
+# TEMDD security model v0.1
+
+TEMDD separates observation, decision, authorization and effect. Parsing is deterministic and has no ambient authority. A source program cannot acquire credentials, elevate authority, convert model output into evidence, or claim an effect from a transport acknowledgement. Backends must fail closed on unknown critical states and preserve the exact subject. External credentials remain runtime capabilities outside source text and are admitted only at an explicit authority/effect boundary. Replays are observations unless an independently authorized effect is committed and freshly read back.
