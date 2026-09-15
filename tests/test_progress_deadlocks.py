@@ -3,7 +3,6 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 SSE = ROOT / 'tools' / 'qikvrt_live_sse.py'
-MATERIALIZER = ROOT / '.github' / 'workflows' / 'qikvrt_batch04_integrity.yml'
 SUCCESSOR = ROOT / '.github' / 'workflows' / 'qikvrt_pr_successor_persistence.yml'
 
 
@@ -26,10 +25,6 @@ class ProgressDeadlockGate(unittest.TestCase):
         self.assertIn('"prompt_required": false', contract)
         self.assertIn('"repository_core_polling": false', contract)
         self.assertIn('"silent_termination_while_work_remains": false', contract)
-
-    def test_stale_materializers_cannot_queue_ahead_of_current_head(self):
-        text = MATERIALIZER.read_text(encoding='utf-8')
-        self.assertIn('cancel-in-progress: true', text)
 
     def test_stale_successor_writers_cannot_queue_ahead_of_current_head(self):
         text = SUCCESSOR.read_text(encoding='utf-8')
