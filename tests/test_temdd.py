@@ -18,4 +18,6 @@ class TEMDDTests(unittest.TestCase):
   with self.assertRaises(ValueError): parse(GOOD.replace('on event { follow exact; classify causal; }','').replace('on blocker { learn smallest_sound_successor; execute successor; }',''))
  def test_qikvrt_dod_is_complete(self):
   with self.assertRaises(ValueError): parse(GOOD.replace('CUSTOM_DOD','QIKVRT_DOD'))
+ def test_duplicate_dod_blocks(self):
+  with self.assertRaises(ValueError): parse(GOOD.replace('ZERO_BUGS &&','ZERO_BUGS && ZERO_BUGS &&'))
 if __name__=='__main__': unittest.main()
