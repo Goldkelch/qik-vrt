@@ -1,0 +1,6 @@
+{
+ "schema":"temdd_effect_model_v0_1",
+ "states":["REQUESTED","PREPARED","AUTHORIZED","COMMITTED","READ_BACK","ACKNOWLEDGED","HOLD_UNVERIFIED"],
+ "invariants":{"transport_ack_is_effect_ack":false,"result_is_effect":false,"commit_is_done":false,"readback_required":true,"unknown_critical_state":"HOLD_UNVERIFIED"},
+ "effect_ack_constructor_requires":["exact_subject","authority","committed_effect","fresh_readback","expected_observed_equivalence"]
+}
