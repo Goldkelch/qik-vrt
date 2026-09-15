@@ -7,6 +7,8 @@ from __future__ import annotations
 import pathlib
 import unittest
 
+from tests.test_qikvrt_repository_dod import RepositoryDodTests
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PAGE = ROOT / "docs/terminal/index.html"
