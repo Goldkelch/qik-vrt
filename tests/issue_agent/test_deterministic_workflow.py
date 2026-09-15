@@ -20,7 +20,7 @@ class DeterministicIssueWorkflowTest(unittest.TestCase):
         text = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("git merge-base --is-ancestor", text)
         self.assertIn("issue branch advanced before history-preserving persistence", text)
-        self.assertIn("Dispatch and reobserve the exact issue completion authority receipt", text)
+        self.assertIn("Dispatch one exact issue completion handoff", text)
         self.assertNotIn("git push --force", text)
         self.assertNotIn("git push --force-with-lease", text)
 

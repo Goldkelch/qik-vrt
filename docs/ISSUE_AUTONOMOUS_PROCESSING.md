@@ -36,6 +36,20 @@ The workflow uses GitHub's ephemeral `GITHUB_TOKEN` with only the repository per
 
 Run **Autonomous issue processing** with the issue number when an explicit native dispatch is required for an issue that predates the workflow. Normal progression remains event-driven; no polling loop or blind retry is introduced.
 
+After persisting the issue candidate, the processor sends exactly one native
+dispatch to the existing completion-authority observer, binding issue number,
+pull-request number and head. It rereads the unchanged candidate and records
+`HOLD_UNVERIFIED / AWAIT_EXACT_OBSERVER_RECEIPT`; dispatch acceptance does not
+complete the issue or its review/Main-integration obligation. It does not scan
+workflow runs, sleep, impose a queue deadline or retry an uncertain dispatch.
+
+The observer owns the receiving event and its completion, including delayed
+execution. It rejects a mismatched PR/head, binds the live base SHA, publishes
+the existing issue receipt and reads back its complete body and signer. It
+reobserves the same repository/PR/base/head before and after publication.
+Only that exact receipt supplies the observer result; required review and
+protected Main adoption remain separate native actions.
+
 ## Evidence location
 
 Each processing run writes:

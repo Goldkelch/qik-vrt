@@ -239,7 +239,7 @@ jobs:
           printf 'head=%s\n' "$candidate_head" >> "$GITHUB_OUTPUT"
           printf 'pr_number=%s\n' "$pr_number" >> "$GITHUB_OUTPUT"
 
-      - name: Dispatch and reobserve the exact issue completion authority receipt
+      - name: Dispatch one exact issue completion handoff
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ steps.candidate.outputs.issue_number }}
@@ -260,32 +260,21 @@ jobs:
           test "$(jq -r .head.sha <<<"$pr")" = "$EXPECTED_HEAD"
           test "$(jq -r '.head.repo.full_name // empty' <<<"$pr")" = "$REPOSITORY"
 
-          title="Issue agent completion authority observer #$ISSUE_NUMBER"
-          before="$(gh api "repos/$REPOSITORY/actions/workflows/issue-agent-autofinish.yml/runs?event=workflow_dispatch&branch=main&per_page=100" \
-            | jq --arg title "$title" '[.workflow_runs[] | select(.display_title == $title) | .id]')"
+          # One existing native dispatch transfers the exact subject. The
+          # receiver owns completion and receipt readback, even after queueing.
           gh workflow run issue-agent-autofinish.yml --repo "$REPOSITORY" --ref main \
-            -f "issue_number=$ISSUE_NUMBER" -f "expected_head=$EXPECTED_HEAD"
-
-          run_id=""
-          for _ in $(seq 1 24); do
-            candidate="$(gh api "repos/$REPOSITORY/actions/workflows/issue-agent-autofinish.yml/runs?event=workflow_dispatch&branch=main&per_page=100" \
-              | jq -r --argjson before "$before" --arg title "$title" \
-                '[.workflow_runs[] | select(.display_title == $title and (.id as $id | $before | index($id) | not))][0].id // empty')"
-            if test -n "$candidate"; then
-              status="$(gh api "repos/$REPOSITORY/actions/runs/$candidate" --jq .status)"
-              if test "$status" = completed; then run_id="$candidate"; break; fi
-            fi
-            sleep 5
-          done
-          test -n "$run_id"
-          test "$(gh api "repos/$REPOSITORY/actions/runs/$run_id" --jq .conclusion)" = success
-          gh api --paginate "repos/$REPOSITORY/issues/$ISSUE_NUMBER/comments?per_page=100" \
-            | jq -e --arg head "$EXPECTED_HEAD" --arg run "$run_id" \
-              '.[] | select(.user.login == "github-actions[bot]") | select(.body | contains("qikvrt-issue-agent-completion-authority:v1:")) | select(.body | contains("- exact head: " + $head)) | select(.body | contains("- observer workflow run: " + $run))' \
-            >/dev/null
+            -f "issue_number=$ISSUE_NUMBER" -f "expected_head=$EXPECTED_HEAD" \
+            -f "expected_pr=$EXPECTED_PR"
           pr_after="$(gh api "repos/$REPOSITORY/pulls/$EXPECTED_PR")"
           test "$(jq -r .state <<<"$pr_after")" = open
           test "$(jq -r .base.ref <<<"$pr_after")" = main
           test "$(jq -r .head.ref <<<"$pr_after")" = "$branch"
           test "$(jq -r .head.sha <<<"$pr_after")" = "$EXPECTED_HEAD"
           test "$(jq -r '.head.repo.full_name // empty' <<<"$pr_after")" = "$REPOSITORY"
+          {
+            printf '%s\n' 'HOLD_UNVERIFIED: AWAIT_EXACT_OBSERVER_RECEIPT'
+            printf 'Repository: %s; issue: %s; PR: %s; head: %s\n' \
+              "$REPOSITORY" "$ISSUE_NUMBER" "$EXPECTED_PR" "$EXPECTED_HEAD"
+            printf '%s\n' 'Dispatch was accepted. The existing observer must publish and verify its exact receipt.'
+            printf '%s\n' 'Outstanding review and Main-integration work remains open; no completion is inferred.'
+          } | tee -a "$GITHUB_STEP_SUMMARY"

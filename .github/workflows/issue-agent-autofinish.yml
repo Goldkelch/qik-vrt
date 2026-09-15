@@ -14,6 +14,10 @@ on:
         description: Optional exact candidate head supplied by an event handoff
         required: false
         type: string
+      expected_pr:
+        description: Optional exact pull request supplied by the issue processor
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -36,6 +40,7 @@ jobs:
     env:
       AUTHORITY_REPOSITORY: Goldkelch/qik-vrt
       REQUESTED_ISSUE: ${{ inputs.issue_number }}
+      EXPECTED_PR: ${{ inputs.expected_pr || '' }}
       EVENT_NAME: ${{ github.event_name }}
       EVENT_PR: ${{ github.event.pull_request.number || '' }}
       EVENT_HEAD_REF: ${{ github.event.pull_request.head.ref || '' }}
@@ -55,6 +60,9 @@ jobs:
               ;;
             workflow_dispatch)
               [[ "$REQUESTED_ISSUE" =~ ^[1-9][0-9]*$ ]]
+              if test -n "$EXPECTED_PR"; then
+                [[ "$EXPECTED_PR" =~ ^[1-9][0-9]*$ ]]
+              fi
               issue_number="$REQUESTED_ISSUE"
               ;;
             *)
@@ -77,6 +85,7 @@ jobs:
       AUTHORITY_REPOSITORY: Goldkelch/qik-vrt
       REQUESTED_ISSUE: ${{ needs.bind_issue.outputs.issue_number }}
       EXPECTED_HEAD: ${{ inputs.expected_head || github.event.pull_request.head.sha || '' }}
+      EXPECTED_PR: ${{ inputs.expected_pr || github.event.pull_request.number || '' }}
       EVENT_NAME: ${{ github.event_name }}
       EVENT_PR: ${{ github.event.pull_request.number || '' }}
       EVENT_HEAD_REF: ${{ github.event.pull_request.head.ref || '' }}
@@ -107,6 +116,12 @@ jobs:
             *) exit 0 ;;
           esac
           test "$issue_numbers" = "$REQUESTED_ISSUE"
+          if test -n "$EXPECTED_PR"; then
+            [[ "$EXPECTED_PR" =~ ^[1-9][0-9]*$ ]]
+          fi
+          if test -n "$EXPECTED_HEAD"; then
+            [[ "$EXPECTED_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          fi
 
           publish_receipt() {
             local issue="$1"
@@ -128,37 +143,53 @@ jobs:
             fi
             readback="$(gh api "repos/${AUTHORITY_REPOSITORY}/issues/comments/$existing_comment")"
             test "$(jq -r .id <<<"$readback")" = "$existing_comment"
-            jq -e --arg marker "$marker" '(.body // "") | contains($marker) and contains("REQUEST_AUTHORITY")' \
+            jq -e --rawfile body "$receipt_file" \
+              '.user.login == "github-actions[bot]" and .body == $body' \
               <<<"$readback" >/dev/null
+          }
+
+          assert_current_candidate() {
+            local observed
+            observed="$(gh api "repos/${AUTHORITY_REPOSITORY}/pulls/$pr_number")"
+            jq -e --arg repo "$AUTHORITY_REPOSITORY" --argjson pr "$pr_number" \
+              --arg branch "$branch" --arg head "$head_sha" --arg base "$base_sha" \
+              '.number == $pr and .state == "open" and .base.ref == "main" and
+               .base.sha == $base and .head.ref == $branch and .head.sha == $head and
+               .head.repo.full_name == $repo' <<<"$observed" >/dev/null
           }
 
           for issue in $issue_numbers; do
             [[ "$issue" =~ ^[1-9][0-9]*$ ]] || continue
             branch="issue-agent/$issue"
             pull="$(gh pr list --repo "$AUTHORITY_REPOSITORY" --state open --head "$branch" --limit 1 \
-              --json number,url,baseRefName,headRefName,headRefOid,isDraft,statusCheckRollup)"
+              --json number,url,baseRefName,baseRefOid,headRefName,headRefOid,isDraft,statusCheckRollup)"
             test "$(jq 'length' <<<"$pull")" -le 1
-            test "$(jq 'length' <<<"$pull")" = 1 || continue
+            test "$(jq 'length' <<<"$pull")" = 1
             pr_number="$(jq -r '.[0].number' <<<"$pull")"
             pr_url="$(jq -r '.[0].url' <<<"$pull")"
             base_ref="$(jq -r '.[0].baseRefName' <<<"$pull")"
+            base_sha="$(jq -r '.[0].baseRefOid' <<<"$pull")"
             head_ref="$(jq -r '.[0].headRefName' <<<"$pull")"
             head_sha="$(jq -r '.[0].headRefOid' <<<"$pull")"
             draft="$(jq -r '.[0].isDraft' <<<"$pull")"
             test "$base_ref" = main
             test "$head_ref" = "$branch"
             [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
+            [[ "$base_sha" =~ ^[0-9a-f]{40}$ ]]
             if test "$EVENT_NAME" = pull_request_target; then
               test "$pr_number" = "$EVENT_PR"
             fi
             if test -n "$EXPECTED_HEAD"; then
               test "$head_sha" = "$EXPECTED_HEAD"
             fi
+            if test -n "$EXPECTED_PR"; then
+              test "$pr_number" = "$EXPECTED_PR"
+            fi
             test "$(gh api "repos/${AUTHORITY_REPOSITORY}/git/ref/heads/$head_ref" --jq .object.sha)" = "$head_sha"
-            test "$(gh api "repos/${AUTHORITY_REPOSITORY}/pulls/$pr_number" --jq '.head.repo.full_name // empty')" = "$AUTHORITY_REPOSITORY"
+            assert_current_candidate
             failed="$(jq '[.[0].statusCheckRollup[]? | select((.conclusion // "") != "" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED"))] | length' <<<"$pull")"
             pending="$(jq '[.[0].statusCheckRollup[]? | select((.status // "") != "COMPLETED")] | length' <<<"$pull")"
-            fingerprint="$(printf '%s\0%s\0%s\0%s\0%s' "$issue" "$pr_number" "$head_sha" "$base_ref" "$draft" | sha256sum | cut -d' ' -f1)"
+            fingerprint="$(printf '%s\0%s\0%s\0%s\0%s\0%s' "$issue" "$pr_number" "$head_sha" "$base_ref" "$base_sha" "$draft" | sha256sum | cut -d' ' -f1)"
             publish_receipt "$issue" <<EOF
           <!-- qikvrt-issue-agent-completion-authority:v1:${fingerprint} -->
           REQUEST_AUTHORITY: exact issue-agent candidate requires the protected pull-request route.
@@ -166,6 +197,7 @@ jobs:
           - issue: #$issue
           - pull request: #$pr_number ($pr_url)
           - base: $base_ref
+          - exact base: $base_sha
           - exact head: $head_sha
           - observer workflow run: $GITHUB_RUN_ID
           - draft: $draft
@@ -174,4 +206,5 @@ jobs:
 
           This observer does not merge, reclassify a draft, push a ref, synchronize a mirror, create a tag, close an issue, publish, or claim PASS, FINAL_PASS, or EFFECT_ACK_DONE. A human-authorized protected-route action must reobserve this exact subject before any mutation.
           EOF
+            assert_current_candidate
           done
