@@ -1,0 +1,713 @@
+diff --git a/deploy/universal-terminal/Dockerfile b/deploy/universal-terminal/Dockerfile
+index 589c96ccd01447641fc478606fc18d4a41ff71bb..5af8027351dbcf9c94f694fa9cd4f47e0da85510 100644
+--- a/deploy/universal-terminal/Dockerfile
++++ b/deploy/universal-terminal/Dockerfile
+@@ -11,7 +11,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
+ 
+ RUN apt-get update && apt-get install -y --no-install-recommends \
+       ca-certificates firefox-esr python3 python3-minimal git zip \
+-      xvfb x11vnc novnc websockify dbus-x11 procps curl \
++      xvfb x11vnc novnc websockify dbus-x11 procps curl xterm \
+     && rm -rf /var/lib/apt/lists/*
+ 
+ WORKDIR /opt/qikvrt
+@@ -31,7 +31,8 @@ RUN mkdir -p /opt/qikvrt/runtime/bootstrap-profile/extensions /opt/qikvrt/runtim
+ 
+ COPY deploy/universal-terminal/entrypoint.sh /usr/local/bin/qikvrt-universal-terminal
+ COPY deploy/universal-terminal/runtime-health.sh /usr/local/bin/qikvrt-runtime-health
+-RUN chmod +x /usr/local/bin/qikvrt-universal-terminal /usr/local/bin/qikvrt-runtime-health
++RUN chmod +x /usr/local/bin/qikvrt-universal-terminal /usr/local/bin/qikvrt-runtime-health \
++    /opt/qikvrt/tools/qikvrt_live_tail_stream.py
+ 
+ VOLUME ["/var/lib/qikvrt/profile", "/var/lib/qikvrt/state"]
+ EXPOSE 6080
+diff --git a/deploy/universal-terminal/entrypoint.sh b/deploy/universal-terminal/entrypoint.sh
+index 81349289f955b60c63019c5094dc16ba33ceb655..f41b95cad69a050f55fe62d1f3bd2955e5db1205 100755
+--- a/deploy/universal-terminal/entrypoint.sh
++++ b/deploy/universal-terminal/entrypoint.sh
+@@ -8,6 +8,9 @@ HTTP_PORT="${QIKVRT_HTTP_PORT:-8771}"
+ NOVNC_PORT="${QIKVRT_NOVNC_PORT:-6080}"
+ DISPLAY_VALUE="${DISPLAY:-:99}"
+ START_URL="${QIKVRT_START_URL:-https://arxiv.org/}"
++LIVE_PR="${QIKVRT_LIVE_PR:-1096}"
++LIVE_CURSOR="$STATE_DIR/live-tail-cursor.json"
++LIVE_LOG="$STATE_DIR/live-tail.log"
+ 
+ mkdir -p /opt/qikvrt/runtime/logs "$PROFILE_DIR" "$STATE_DIR"
+ 
+@@ -21,6 +24,18 @@ python3 -B /opt/qikvrt/src/qikvrt_effect_ack_http_terminal.py \
+   > /opt/qikvrt/runtime/logs/effect-ack-http.log 2>&1 &
+ HTTP_PID=$!
+ 
++# The repository-native live journal is consumed continuously inside the Cloud
++# Transputer.  It is intentionally independent from the browser process: the
++# persistent cursor and append-only log survive Firefox reconnects/restarts.
++: > "$LIVE_LOG"
++python3 -u -B /opt/qikvrt/tools/qikvrt_live_tail_stream.py \
++  --repo "${GITHUB_REPOSITORY:-Goldkelch/qik-vrt}" \
++  --pr "$LIVE_PR" \
++  --cursor "$LIVE_CURSOR" \
++  --follow \
++  >> "$LIVE_LOG" 2>&1 &
++TAIL_PID=$!
++
+ Xvfb "$DISPLAY_VALUE" -screen 0 1440x900x24 -nolisten tcp \
+   > /opt/qikvrt/runtime/logs/xvfb.log 2>&1 &
+ XVFB_PID=$!
+@@ -44,15 +59,23 @@ websockify --web=/usr/share/novnc/ "$NOVNC_PORT" localhost:5900 \
+   > /opt/qikvrt/runtime/logs/novnc.log 2>&1 &
+ NOVNC_PID=$!
+ 
++# Render the live append-only journal visibly inside the same X11 desktop as
++# Firefox.  xterm is part of the terminal image contract and follows the file,
++# so the user sees transitions without refreshing a snapshot.
++xterm -display "$DISPLAY_VALUE" -geometry 180x22+0+0 -T 'QIK-VRT LIVE · tail -f' \
++  -e sh -c "printf '\033[1;36mQIK-VRT UNIVERSAL TERMINAL · LIVE EVIDENCE STREAM\033[0m\n'; exec tail -n 80 -F '$LIVE_LOG'" \
++  > /opt/qikvrt/runtime/logs/live-tail-xterm.log 2>&1 &
++TAIL_UI_PID=$!
++
+ firefox-esr --no-remote --profile "$PROFILE_DIR" "$START_URL" \
+   > /opt/qikvrt/runtime/logs/firefox.log 2>&1 &
+ FIREFOX_PID=$!
+ 
+-python3 -B - "$STATE_DIR/runtime.json" "$RUNTIME_ID" "$PROFILE_DIR" "$START_URL" "$NOVNC_PORT" <<'PY'
++python3 -B - "$STATE_DIR/runtime.json" "$RUNTIME_ID" "$PROFILE_DIR" "$START_URL" "$NOVNC_PORT" "$LIVE_PR" <<'PY'
+ import json,sys,time
+-path,runtime_id,profile,start_url,novnc_port=sys.argv[1:]
++path,runtime_id,profile,start_url,novnc_port,live_pr=sys.argv[1:]
+ obj={
+-  'schema':'qikvrt_universal_terminal_runtime_state_v1',
++  'schema':'qikvrt_universal_terminal_runtime_state_v2',
+   'runtime_id':runtime_id,
+   'browser':'firefox-esr',
+   'profile_dir':profile,
+@@ -62,6 +85,13 @@ obj={
+   'started_at_unix':int(time.time()),
+   'authenticated_session_storage':'FIREFOX_PROFILE',
+   'adapter':'QIKVRT_FIREFOX_TERMINAL_PROXY_V1',
++  'live_evidence_stream':{
++    'enabled':True,
++    'pull_request':int(live_pr),
++    'cursor':'/var/lib/qikvrt/state/live-tail-cursor.json',
++    'append_log':'/var/lib/qikvrt/state/live-tail.log',
++    'visible_on_x11_surface':True,
++  },
+   'external_effect_claimed':False,
+   'pass':False,
+   'final_pass':False,
+@@ -71,13 +101,13 @@ open(path,'w',encoding='utf-8').write(json.dumps(obj,indent=2,sort_keys=True)+'\
+ PY
+ 
+ cleanup() {
+-  kill "$FIREFOX_PID" "$NOVNC_PID" "$VNC_PID" "$XVFB_PID" "$HTTP_PID" 2>/dev/null || true
++  kill "$FIREFOX_PID" "$TAIL_UI_PID" "$NOVNC_PID" "$VNC_PID" "$XVFB_PID" "$TAIL_PID" "$HTTP_PID" 2>/dev/null || true
+ }
+ trap cleanup INT TERM EXIT
+ 
+-printf '%s\n' "QIKVRT universal terminal ready: runtime=${RUNTIME_ID} noVNC=0.0.0.0:${NOVNC_PORT} effect_ack=127.0.0.1:${HTTP_PORT} profile=${PROFILE_DIR}"
++printf '%s\n' "QIKVRT universal terminal ready: runtime=${RUNTIME_ID} noVNC=0.0.0.0:${NOVNC_PORT} effect_ack=127.0.0.1:${HTTP_PORT} live_pr=${LIVE_PR} live_tail=${LIVE_LOG} profile=${PROFILE_DIR}"
+ 
+-while kill -0 "$HTTP_PID" 2>/dev/null && kill -0 "$FIREFOX_PID" 2>/dev/null && kill -0 "$NOVNC_PID" 2>/dev/null; do
++while kill -0 "$HTTP_PID" 2>/dev/null && kill -0 "$FIREFOX_PID" 2>/dev/null && kill -0 "$NOVNC_PID" 2>/dev/null && kill -0 "$TAIL_PID" 2>/dev/null && kill -0 "$TAIL_UI_PID" 2>/dev/null; do
+   sleep 1
+ done
+ 
+diff --git a/policy/UNIVERSAL_TERMINAL_EVIDENCE_ROUTER_V1.json b/policy/UNIVERSAL_TERMINAL_EVIDENCE_ROUTER_V1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..8ab2d57ac551e76dfc92013edd775fb748e8ab70
+--- /dev/null
++++ b/policy/UNIVERSAL_TERMINAL_EVIDENCE_ROUTER_V1.json
+@@ -0,0 +1,69 @@
++{
++  "schema": "qikvrt_universal_terminal_evidence_router_v1",
++  "contract_id": "universal-terminal-evidence-router-v1",
++  "purpose": "Permit recursive route learning over addressable evidence relations without inventing, compressing, transferring, or upgrading evidence.",
++  "relation_objects": {
++    "addressable": true,
++    "provenance_required": true,
++    "exact_subject_binding_required": true,
++    "recursive_mesh_learning_allowed": true
++  },
++  "routing_logic": {
++    "candidate_derivation": "UT(A,B) AND UT(B,C) => candidateRoute(A,C)",
++    "admissibility": "candidateRoute(A,C) AND V(A,B) AND V(B,C) AND B_exact AND P_preserved => admissibleRoute(A,C)",
++    "forbidden_evidence_transitivity": "E(A,B) AND E(B,C) !=> E(A,C)",
++    "route_compression": "ALLOWED_AFTER_FRESH_VALIDATION",
++    "evidence_compression": "FORBIDDEN",
++    "predecessor_evidence_transfer": false
++  },
++  "temporal_semantics": {
++    "evidence_history": "MONOTONIC_APPEND_ONLY",
++    "assertion_validity": "NON_MONOTONIC",
++    "routing_knowledge": "MONOTONIC_WHERE_PROVENANCE_REMAINS_ADDRESSABLE",
++    "current_admissibility": "FRESH_VALIDATION_REQUIRED",
++    "stale_evidence": "RETAIN_ADDRESSABLE",
++    "stale_as_current": "FORBIDDEN",
++    "interpretation": "E_(t+1) may contain more historical evidence while containing no additional currently valid assertion."
++  },
++  "epistemic_type_boundary": [
++    "REACHABLE_NE_OBSERVED",
++    "OBSERVED_NE_VALID",
++    "VALID_NE_PROVED",
++    "PROVED_NE_EFFECT"
++  ],
++  "recursive_cycle": [
++    "REQUEST",
++    "DISCOVER_ADDRESSABLE_EVIDENCE_GRAPH",
++    "DERIVE_CANDIDATE_ROUTES",
++    "SELECT_MINIMUM_COST_CANDIDATE",
++    "REOBSERVE_REQUIRED_EXACT_SUBJECTS",
++    "VALIDATE_PROOF_PROVENANCE_CURRENT_VALIDITY",
++    "CLASSIFY_ADMISSIBILITY",
++    "TRAVERSE_REQUIRED_EDGES_ONLY",
++    "READBACK",
++    "MATERIALIZE_IMMUTABLE_RECEIPTS",
++    "APPEND_DELTA_E",
++    "UPDATE_ROUTING_KNOWLEDGE",
++    "EXPOSE_NEW_LIVE_STATE",
++    "RETURN"
++  ],
++  "optimization": {
++    "objective": "MINIMUM_COST_CURRENTLY_ADMISSIBLE_TRAVERSAL",
++    "cached_candidate_route_is_proof_receipt": false,
++    "acceptance_oracle": "A learned shorter admissible route may reduce required traversals but MUST NOT reduce the set of provenance relations addressable for the decision."
++  },
++  "fail_closed": {
++    "head_or_tree_drift": "REVALIDATE_OR_HOLD",
++    "missing_provenance": "HOLD_UNVERIFIED",
++    "stale_required_edge": "HOLD_UNVERIFIED",
++    "invalid_proof": "HOLD_UNVERIFIED",
++    "effect_without_readback": "UNPROVEN",
++    "success_is_effect": false
++  },
++  "completion_claims": {
++    "PASS": false,
++    "FINAL_PASS": false,
++    "EFFECT_ACK_DONE": false,
++    "MAIN_INTEGRATION": false
++  }
++}
+diff --git a/policy/UNIVERSAL_TERMINAL_LIVE_TAIL_V1.md b/policy/UNIVERSAL_TERMINAL_LIVE_TAIL_V1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..2d446290d6f87fad4b23622d1dcd90d69d5e0e6e
+--- /dev/null
++++ b/policy/UNIVERSAL_TERMINAL_LIVE_TAIL_V1.md
+@@ -0,0 +1,131 @@
++# QIK-VRT Universal Terminal Live Tail V2
++
++Status: evolving repository-native execution and presentation contract.
++Supersedes the V1 snapshot-oriented presentation semantics while preserving its evidence boundaries.
++
++## Purpose
++
++`tail -f` denotes synchronous continuation from a persistent evidence cursor. It is not a dashboard refresh, snapshot with a LIVE label, asynchronous watcher, polling task, or background substitute.
++
++The terminal MUST emit only newly observed material transitions after its cursor, execute admissible consequences, read back their effects, advance the cursor, and immediately continue while another causal event is observable.
++
++## Persistent cursor
++
++The cursor is an addressable information object containing at least:
++
++```text
++last_event_identity
++last_observed_main_HEAD/TREE
++last_observed_PR_HEAD/TREE map
++last_observed_workflow terminal states
++last_observed_branch disposition state
++last_DOD_vector
++```
++
++A resumed invocation starts AFTER this cursor. It MUST NOT redraw the complete state unless explicitly requested or reconstruction is necessary after cursor invalidation.
++
++## Append-only output semantics
++
++Each emitted record is a delta, not a replacement snapshot:
++
++```text
++TIMESTAMP  TYPE       SUBJECT              TRANSITION / EVIDENCE
++          MUTATION   PR#N                  old_HEAD -> new_HEAD
++          PASS       exact HEAD/TREE       newly satisfied gate
++          BLOCK      exact HEAD/TREE       first causal blocker
++          EFFECT     exact subject         fresh effect readback
++          DOD        final Main            changed D.o.D. component
++```
++
++Visual vocabulary MAY use color, but textual TYPE is mandatory:
++
++- GREEN / PASS
++- YELLOW / ACTIVE
++- RED / BLOCK
++- BLUE / EVIDENCE or MUTATION
++- PURPLE / EFFECT
++- WHITE / NOT_ADMISSIBLE
++
++Color is never the sole information carrier.
++
++## Execution loop
++
++```text
++CURSOR := persisted_cursor
++
++LOOP:
++  OBSERVE events strictly after CURSOR
++  if material event exists:
++      EMIT delta only
++      BIND exact subject HEAD/TREE
++      CLASSIFY evidence and admissibility
++      EXECUTE admissible repository-native consequence when available
++      READBACK resulting effect/state
++      MATERIALIZE resulting receipt/evidence
++      ADVANCE CURSOR
++      CONTINUE LOOP immediately
++  else:
++      END current synchronous invocation at EVENT_GATE
++
++STOP permanently only if QIKVRT_DOD == DONE
++```
++
++A chat transport may terminate an invocation when no further event is presently observable. That transport boundary MUST NOT be represented as completion, NOOP, or a repository halt. The next invocation resumes after the persisted cursor.
++
++## Event-driven rule
++
++`tail -f` MUST NOT be implemented by an asynchronous scheduled substitute. Repository-native systems may generate asynchronous events, but the terminal consumes causal events synchronously when invoked and advances from event to event.
++
++No repeated unchanged-state output is useful evidence. An unchanged observation MAY be recorded only when a contract explicitly requires fresh negative readback or freshness proof.
++
++## Evidence boundaries
++
++```text
++PREDECESSOR_EVIDENCE_TRANSFER = false
++reachable != observed != valid != proved != effect
++route != evidence
++SUCCESS != EFFECT
++```
++
++HEAD/TREE mutation resets every mutation-dependent validation component.
++
++Relations, routes, cursors and routing decisions are addressable information objects. Routing shortcuts preserve the complete underlying provenance path; they never compress, fabricate, or transitively manufacture evidence.
++
++## D.o.D. vector
++
++The cursor tracks changes to:
++
++```text
++ZERO_BUGS
++ALL_PULL_REQUESTS_REGARDED
++ALL_BRANCHES_REGARDED
++ALL_PRODUCTIVE_BRANCHES_MERGED
++MAIN_EXACT_VALIDATION
++EFFECT_READBACK
++```
++
++The tail emits a DOD record only when one of these components changes.
++
++`D.o.D. == DONE` is admissible iff all components are freshly true together for the same final Main HEAD/TREE and no subject mutation occurred between their required observations.
++
++Unresolved productive work excludes NOOP.
++
++## Continuous improvement
++
++The tail itself is subject to evidence-driven improvement. New versions may improve event compression, human readability, proof-state visualization, routing visualization, accessibility, latency, machine-readable projections, cursor recovery, and causal prioritization.
++
++Improvements MUST NOT regress:
++
++- append-only evidence history;
++- exact-subject binding;
++- persistent cursor semantics;
++- provenance reconstruction;
++- accessibility;
++- repository-native autonomy;
++- fail-closed behavior;
++- historical-evidence/current-admissibility separation;
++- routing/evidence separation;
++- SUCCESS/EFFECT separation;
++- QIKVRT_DOD.
++
++Presentation optimization changes distance to information, never the evidence required to justify it.
+diff --git a/tests/test_qikvrt_evidence_router.py b/tests/test_qikvrt_evidence_router.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..57f6b17854dc5c0497d21ae57d40c0c778c3514a
+--- /dev/null
++++ b/tests/test_qikvrt_evidence_router.py
+@@ -0,0 +1,96 @@
++import unittest
++
++from tools.qikvrt_evidence_router import (
++    CandidateRoute,
++    Relation,
++    best_admissible_route,
++    candidate_route,
++    evidence_transitive,
++    validate_candidate,
++)
++
++
++class EvidenceRouterTest(unittest.TestCase):
++    def relation(self, source, target, receipt, cost=1, **state):
++        return Relation(
++            source=source,
++            target=target,
++            receipt=receipt,
++            exact_subject=f"{source}-{target}@exact",
++            provenance=f"receipt://{receipt}",
++            cost=cost,
++            **state,
++        )
++
++    def test_routing_composes_but_evidence_never_does(self):
++        ab = self.relation("A", "B", "ab")
++        bc = self.relation("B", "C", "bc")
++        candidate = candidate_route(ab, bc)
++        self.assertEqual(candidate.nodes, ("A", "B", "C"))
++        self.assertEqual(candidate.receipts, ("ab", "bc"))
++        self.assertFalse(evidence_transitive(ab, bc))
++
++    def test_fresh_observed_valid_proved_relations_are_admissible(self):
++        state = dict(observed=True, valid=True, proved=True)
++        ab = self.relation("A", "B", "ab", **state)
++        bc = self.relation("B", "C", "bc", **state)
++        route = validate_candidate(candidate_route(ab, bc), [ab, bc])
++        self.assertEqual(route.exact_subjects, ("A-B@exact", "B-C@exact"))
++        self.assertEqual(route.provenance, ("receipt://ab", "receipt://bc"))
++
++    def test_stale_history_remains_addressable_but_not_admissible(self):
++        ab = self.relation("A", "B", "ab", observed=True, valid=False, proved=True)
++        bc = self.relation("B", "C", "bc", observed=True, valid=True, proved=True)
++        with self.assertRaisesRegex(ValueError, "NOT_CURRENTLY_VALID"):
++            validate_candidate(candidate_route(ab, bc), [ab, bc])
++        self.assertEqual(ab.receipt, "ab")
++        self.assertEqual(ab.provenance, "receipt://ab")
++
++    def test_reachable_is_not_observed_or_proved(self):
++        ab = self.relation("A", "B", "ab", valid=True, proved=True)
++        bc = self.relation("B", "C", "bc", observed=True, valid=True, proved=True)
++        with self.assertRaisesRegex(ValueError, "NOT_FRESHLY_OBSERVED"):
++            validate_candidate(candidate_route(ab, bc), [ab, bc])
++
++    def test_missing_proof_fails_closed(self):
++        ab = self.relation("A", "B", "ab", observed=True, valid=True, proved=False)
++        bc = self.relation("B", "C", "bc", observed=True, valid=True, proved=True)
++        with self.assertRaisesRegex(ValueError, "NOT_PROVED"):
++            validate_candidate(candidate_route(ab, bc), [ab, bc])
++
++    def test_subject_drift_fails_closed(self):
++        state = dict(observed=True, valid=True, proved=True)
++        ab = self.relation("A", "B", "ab", **state)
++        bc = self.relation("B", "C", "bc", **state)
++        drifted = CandidateRoute(nodes=("A", "X", "C"), receipts=("ab", "bc"), cost=2)
++        with self.assertRaisesRegex(ValueError, "SUBJECT_DRIFT"):
++            validate_candidate(drifted, [ab, bc])
++
++    def test_duplicate_receipt_identity_is_rejected(self):
++        state = dict(observed=True, valid=True, proved=True)
++        ab = self.relation("A", "B", "same", **state)
++        bc = self.relation("B", "C", "same", **state)
++        candidate = CandidateRoute(nodes=("A", "B", "C"), receipts=("same", "same"), cost=2)
++        with self.assertRaisesRegex(ValueError, "IDENTITY_AMBIGUOUS"):
++            validate_candidate(candidate, [ab, bc])
++
++    def test_best_path_optimizes_traversal_without_dropping_provenance(self):
++        state = dict(observed=True, valid=True, proved=True)
++        ab = self.relation("A", "B", "ab", cost=4, **state)
++        bc = self.relation("B", "C", "bc", cost=4, **state)
++        ax = self.relation("A", "X", "ax", cost=1, **state)
++        xc = self.relation("X", "C", "xc", cost=1, **state)
++        slow = candidate_route(ab, bc)
++        fast = candidate_route(ax, xc)
++        selected = best_admissible_route([slow, fast], [ab, bc, ax, xc])
++        self.assertEqual(selected.candidate.nodes, ("A", "X", "C"))
++        self.assertEqual(selected.provenance, ("receipt://ax", "receipt://xc"))
++        self.assertEqual(len(selected.candidate.receipts), len(selected.provenance))
++
++    def test_relation_requires_addressable_provenance(self):
++        with self.assertRaisesRegex(ValueError, "ADDRESSABLE_PROVENANCE_REQUIRED"):
++            Relation("A", "B", "", "A-B@exact", "receipt://missing")
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/test_qikvrt_live_tail_stream.py b/tests/test_qikvrt_live_tail_stream.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..921160c7fc4ea94e8df3b911f1c051cb5d8d9c18
+--- /dev/null
++++ b/tests/test_qikvrt_live_tail_stream.py
+@@ -0,0 +1,43 @@
++#!/usr/bin/env python3
++import importlib.util
++import pathlib
++import tempfile
++import unittest
++
++ROOT = pathlib.Path(__file__).resolve().parents[1]
++spec = importlib.util.spec_from_file_location("tail", ROOT / "tools/qikvrt_live_tail_stream.py")
++tail = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(tail)
++
++
++class LiveTailTests(unittest.TestCase):
++    def test_only_events_after_cursor_are_emitted(self):
++        body = """<!-- qikvrt-universal-terminal-live-surface-v1 -->
++## Live event journal
++- `2026-09-15T13:00:00Z` **OBSERVE** · `PR #1096 @ aaa` · opened · event `pull_request:1:1`
++- `2026-09-15T13:01:00Z` **EFFECT** · `PR #1096 @ aaa` · CI → success (u) · event `workflow_run:2:1`
++- `2026-09-15T13:02:00Z` **CLASSIFY** · `PR #1096 @ aaa` · gate → failure (u) · event `workflow_run:3:1`
++"""
++        items = tail.events(body)
++        self.assertEqual([x["event"] for x in tail.unseen(items, "workflow_run:2:1")], ["workflow_run:3:1"])
++
++    def test_missing_old_cursor_fails_closed(self):
++        body = "- `2026-09-15T13:02:00Z` **OBSERVE** · `PR #1 @ a` · x · event `e:3:1`"
++        with self.assertRaises(SystemExit) as cm:
++            tail.unseen(tail.events(body), "e:1:1")
++        self.assertEqual(str(cm.exception), "CURSOR_EVENT_NOT_IN_VISIBLE_JOURNAL")
++
++    def test_cursor_is_atomic_and_reconstructible(self):
++        with tempfile.TemporaryDirectory() as d:
++            path = pathlib.Path(d) / "cursor.json"
++            expected = {"schema": "qikvrt_live_tail_cursor_v1", "last_event": "e:1:1"}
++            tail.save_cursor(path, expected)
++            self.assertEqual(tail.load_cursor(path), expected)
++
++    def test_surface_selection_uses_marker(self):
++        comments = [{"body": "other"}, {"body": tail.MARKER + "\n## Live event journal"}]
++        self.assertIs(tail.find_surface(comments), comments[1])
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tools/qikvrt_evidence_router.py b/tools/qikvrt_evidence_router.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..47408a2e8c403e377ac37b7eb0b540b1a252e3e4
+--- /dev/null
++++ b/tools/qikvrt_evidence_router.py
+@@ -0,0 +1,94 @@
++#!/usr/bin/env python3
++"""Pure fail-closed routing core for addressable QIK-VRT evidence relations."""
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import Iterable
++
++
++@dataclass(frozen=True, order=True)
++class Relation:
++    source: str
++    target: str
++    receipt: str
++    exact_subject: str
++    provenance: str
++    cost: int = 1
++    observed: bool = False
++    valid: bool = False
++    proved: bool = False
++
++    def __post_init__(self) -> None:
++        if not all((self.source, self.target, self.receipt, self.exact_subject, self.provenance)):
++            raise ValueError("ADDRESSABLE_PROVENANCE_REQUIRED")
++        if self.cost < 0:
++            raise ValueError("NONNEGATIVE_COST_REQUIRED")
++
++
++@dataclass(frozen=True)
++class CandidateRoute:
++    nodes: tuple[str, ...]
++    receipts: tuple[str, ...]
++    cost: int
++
++
++@dataclass(frozen=True)
++class AdmissibleRoute:
++    candidate: CandidateRoute
++    exact_subjects: tuple[str, ...]
++    provenance: tuple[str, ...]
++
++
++def candidate_route(a_to_b: Relation, b_to_c: Relation) -> CandidateRoute:
++    if a_to_b.target != b_to_c.source:
++        raise ValueError("RELATIONS_NOT_COMPOSABLE")
++    return CandidateRoute(
++        nodes=(a_to_b.source, a_to_b.target, b_to_c.target),
++        receipts=(a_to_b.receipt, b_to_c.receipt),
++        cost=a_to_b.cost + b_to_c.cost,
++    )
++
++
++def validate_candidate(candidate: CandidateRoute, relations: Iterable[Relation]) -> AdmissibleRoute:
++    relations = tuple(relations)
++    by_receipt = {relation.receipt: relation for relation in relations}
++    if len(by_receipt) != len(relations):
++        raise ValueError("RECEIPT_IDENTITY_AMBIGUOUS")
++    selected = []
++    for receipt in candidate.receipts:
++        relation = by_receipt.get(receipt)
++        if relation is None:
++            raise ValueError("REQUIRED_RELATION_MISSING")
++        if not relation.observed:
++            raise ValueError("REQUIRED_RELATION_NOT_FRESHLY_OBSERVED")
++        if not relation.valid:
++            raise ValueError("REQUIRED_RELATION_NOT_CURRENTLY_VALID")
++        if not relation.proved:
++            raise ValueError("REQUIRED_RELATION_NOT_PROVED")
++        selected.append(relation)
++    nodes = tuple([selected[0].source] + [relation.target for relation in selected]) if selected else ()
++    if nodes != candidate.nodes:
++        raise ValueError("CANDIDATE_SUBJECT_DRIFT")
++    return AdmissibleRoute(
++        candidate=candidate,
++        exact_subjects=tuple(relation.exact_subject for relation in selected),
++        provenance=tuple(relation.provenance for relation in selected),
++    )
++
++
++def evidence_transitive(*_relations: Relation) -> bool:
++    """Evidence transitivity is intentionally never inferred."""
++    return False
++
++
++def best_admissible_route(candidates: Iterable[CandidateRoute], relations: Iterable[Relation]) -> AdmissibleRoute:
++    relations = tuple(relations)
++    admissible = []
++    for candidate in candidates:
++        try:
++            admissible.append(validate_candidate(candidate, relations))
++        except ValueError:
++            continue
++    if not admissible:
++        raise ValueError("NO_ADMISSIBLE_ROUTE")
++    return min(admissible, key=lambda route: (route.candidate.cost, route.candidate.nodes, route.candidate.receipts))
+diff --git a/tools/qikvrt_live_tail_stream.py b/tools/qikvrt_live_tail_stream.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..8e5f13cc9f6adf020e5ae82d9bfadaadcd87f951
+--- /dev/null
++++ b/tools/qikvrt_live_tail_stream.py
+@@ -0,0 +1,130 @@
++#!/usr/bin/env python3
++"""Consume the repository-native Universal Terminal journal as an append-only stream.
++
++The producer is qikvrt_live_status_watch.yml.  This client never invents events:
++it reads the marker comment, advances a persistent cursor by event identity and
++prints only unseen journal records.  With --follow it waits for repository-native
++journal mutations using conditional HTTP reads rather than repainting snapshots.
++"""
++from __future__ import annotations
++
++import argparse
++import json
++import os
++import re
++import sys
++import time
++import urllib.error
++import urllib.request
++from pathlib import Path
++
++MARKER = "<!-- qikvrt-universal-terminal-live-surface-v1 -->"
++EVENT_RE = re.compile(r"^- `(?P<time>[^`]+)` \*\*(?P<verb>[^*]+)\*\* · `(?P<subject>[^`]+)` · (?P<detail>.*?) · event `(?P<event>[^`]+)`$")
++
++
++def api(url: str, token: str, etag: str | None = None):
++    headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "qikvrt-live-tail-v1"}
++    if token:
++        headers["Authorization"] = f"Bearer {token}"
++    if etag:
++        headers["If-None-Match"] = etag
++    req = urllib.request.Request(url, headers=headers)
++    try:
++        with urllib.request.urlopen(req, timeout=30) as r:
++            return r.status, r.headers.get("ETag"), json.load(r)
++    except urllib.error.HTTPError as exc:
++        if exc.code == 304:
++            return 304, etag, None
++        raise
++
++
++def load_cursor(path: Path) -> dict:
++    if not path.exists():
++        return {"schema": "qikvrt_live_tail_cursor_v1", "last_event": None}
++    data = json.loads(path.read_text(encoding="utf-8"))
++    if data.get("schema") != "qikvrt_live_tail_cursor_v1":
++        raise SystemExit("CURSOR_SCHEMA_INVALID")
++    return data
++
++
++def save_cursor(path: Path, cursor: dict) -> None:
++    path.parent.mkdir(parents=True, exist_ok=True)
++    tmp = path.with_suffix(path.suffix + ".tmp")
++    tmp.write_text(json.dumps(cursor, sort_keys=True, indent=2) + "\n", encoding="utf-8")
++    os.replace(tmp, path)
++
++
++def find_surface(comments: list[dict]) -> dict | None:
++    surfaces = [c for c in comments if MARKER in (c.get("body") or "")]
++    return surfaces[-1] if surfaces else None
++
++
++def events(body: str) -> list[dict]:
++    out = []
++    for line in body.splitlines():
++        m = EVENT_RE.match(line.strip())
++        if m:
++            out.append(m.groupdict())
++    return out
++
++
++def unseen(items: list[dict], last_event: str | None) -> list[dict]:
++    if last_event is None:
++        return items
++    for i, item in enumerate(items):
++        if item["event"] == last_event:
++            return items[i + 1 :]
++    # The producer intentionally bounds the visible journal.  Losing the cursor
++    # from that window must fail closed rather than replaying unrelated history.
++    raise SystemExit("CURSOR_EVENT_NOT_IN_VISIBLE_JOURNAL")
++
++
++def emit(item: dict, jsonl: bool) -> None:
++    if jsonl:
++        print(json.dumps(item, sort_keys=True), flush=True)
++    else:
++        print(f'{item["time"]}  {item["verb"]:<9}  {item["subject"]}  {item["detail"]}  [{item["event"]}]', flush=True)
++
++
++def main() -> int:
++    p = argparse.ArgumentParser()
++    p.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", "Goldkelch/qik-vrt"))
++    p.add_argument("--pr", type=int, required=True)
++    p.add_argument("--cursor", type=Path, default=Path(".qikvrt/live-tail-cursor.json"))
++    p.add_argument("--follow", action="store_true")
++    p.add_argument("--interval", type=float, default=2.0)
++    p.add_argument("--jsonl", action="store_true")
++    args = p.parse_args()
++    if args.interval < 1.0:
++        raise SystemExit("INTERVAL_MINIMUM_ONE_SECOND")
++
++    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
++    url = f"https://api.github.com/repos/{args.repo}/issues/{args.pr}/comments?per_page=100"
++    cursor = load_cursor(args.cursor)
++    etag = None
++
++    while True:
++        status, etag, payload = api(url, token, etag)
++        if status != 304:
++            surface = find_surface(payload)
++            if surface is None:
++                raise SystemExit("LIVE_SURFACE_NOT_FOUND")
++            fresh = unseen(events(surface.get("body") or ""), cursor.get("last_event"))
++            for item in fresh:
++                emit(item, args.jsonl)
++                cursor = {
++                    "schema": "qikvrt_live_tail_cursor_v1",
++                    "repository": args.repo,
++                    "pull_request": args.pr,
++                    "last_event": item["event"],
++                    "last_subject": item["subject"],
++                    "observed_at": item["time"],
++                }
++                save_cursor(args.cursor, cursor)
++        if not args.follow:
++            return 0
++        time.sleep(args.interval)
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
