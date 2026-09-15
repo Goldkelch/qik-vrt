@@ -231,6 +231,9 @@ require(proposal["limitations"]["independence_verified"] is False, "output limit
 require(proposal["proposals"][0]["supporting_observer_identifier_count"] == 2, "identifier support count mismatch")
 require(proposal["proposals"][0]["content_match"] is True, "identical proposal content marked conflicting")
 require(proposal["evidence_sha256"] == hashlib.sha256(evidence_payload).hexdigest(), "evidence binding mismatch")
+require(proposal["adaptation"]["decision"] == "REVIEW_POSSIBLE_CHANGE", "change signal lost")
+require(proposal["adaptation"]["knowledge_action"] == "PRESERVE", "unreviewed learning")
+require(proposal["adaptation"]["continuation_required"] is True, "proposal lost its continuation")
 
 recorded = {item["file"]: item["sha256"] for item in evidence["observations"]}
 for path in observation_paths:
@@ -257,7 +260,95 @@ if proposal["collective_summary"]["conflicting_proposal_ids"] != ["review-bounde
     raise SystemExit("conflict summary mismatch")
 if proposal["effect_ack"]["state"] != "EFFECT_ACK_CONTINUE":
     raise SystemExit("conflict changed the fail-closed effect state")
+if proposal["adaptation"]["decision"] != "REVIEW_POSSIBLE_CORRECTION":
+    raise SystemExit("conflict did not retain a correction review")
 PY
+
+# A successful local cycle returns to readiness without certifying that the
+# repository has learned, that a proposal is admitted, or that its backlog is empty.
+for finding in PASS UNKNOWN CONTINUE BLOCK; do
+  cycle_input="$scratch/cycle-$finding"
+  mkdir -p "$cycle_input"
+  python3 -B - "$happy" "$cycle_input" "$finding" <<'PY'
+import json
+from pathlib import Path
+import sys
+source, target, status = sys.argv[1:]
+for path in Path(source).glob('*.json'):
+    item = json.loads(path.read_text())
+    item['recommendations'] = []
+    item['findings'][0]['status'] = status
+    (Path(target) / path.name).write_text(json.dumps(item) + '\n')
+PY
+  cycle_output="$root/.qikvrt/evidence/collective-adaptive/${test_run_prefix}-cycle-$finding"
+  outputs+=("$cycle_output")
+  "$runtime" --observations "$cycle_input" --output "$cycle_output" >"$scratch/cycle-$finding.stdout"
+  python3 -B - "$cycle_output" "$scratch/cycle-$finding.stdout" "$finding" <<'PY'
+import hashlib
+import json
+from pathlib import Path
+import sys
+output, receipt_path, finding = sys.argv[1:]
+receipt = json.loads(Path(receipt_path).read_text())
+cycle = receipt['cycle']
+expected = {'PASS': 'PRESERVE', 'BLOCK': 'REVIEW_POSSIBLE_CORRECTION',
+            'UNKNOWN': 'RESOLVE_UNCERTAINTY', 'CONTINUE': 'RESOLVE_UNCERTAINTY'}[finding]
+assert cycle['state'] == 'READY'
+assert cycle['outputs_read_back'] and cycle['tracked_state_preserved']
+assert cycle['repository_completion'] == 'NOT_ASSESSED'
+assert receipt['effect_ack_state'] == 'EFFECT_ACK_CONTINUE'
+adaptation = cycle['adaptation']
+assert adaptation['decision'] == expected
+assert adaptation['knowledge_action'] == 'PRESERVE'
+assert adaptation['continuation_required'] == (finding != 'PASS')
+assert not adaptation['mutation_authorized']
+assert not adaptation['need_for_change_certified']
+assert not adaptation['repository_backlog_assessed']
+for name in ('evidence', 'proposal'):
+    data = (Path(output) / (name + '.json')).read_bytes()
+    assert hashlib.sha256(data).hexdigest() == receipt[name + '_sha256']
+assert json.loads((Path(output) / 'proposal.json').read_text())['adaptation'] == adaptation
+PY
+done
+
+# Alter an already dirty tracked file between the two snapshots. Its porcelain
+# label stays M; a label-only check would incorrectly emit READY.
+drift_root="$scratch/drift-repository"
+drift_bin="$scratch/drift-bin"
+mkdir -p "$drift_root/tools" "$drift_root/policy" "$drift_bin"
+cp "$runtime" "$drift_root/tools/qikvrt_adaptive_runtime.sh"
+cp "$policy" "$drift_root/policy/COLLECTIVE_ADAPTIVE_COGNITION.json"
+echo baseline >"$drift_root/tracked.txt"
+git -C "$drift_root" init -q
+git -C "$drift_root" add .
+git -C "$drift_root" -c user.name=Fixture -c user.email=fixture@example.invalid commit -qm fixture
+echo 'first-dirty-value ' >"$drift_root/tracked.txt"
+python3 -B - "$drift_bin/git" "$(command -v git)" "$drift_root" <<'PY'
+from pathlib import Path
+import sys
+target, real_git, root = sys.argv[1:]
+script = '''#!/usr/bin/env python3
+import os
+from pathlib import Path
+import sys
+root = Path(ROOT)
+if 'ls-files' in sys.argv:
+    counter = root / 'counter'
+    if counter.exists():
+        (root / 'tracked.txt').write_text('first-dirty-value  \\n')
+    counter.write_text('observed')
+os.execv(REAL_GIT, [REAL_GIT] + sys.argv[1:])
+'''.replace('ROOT', repr(root)).replace('REAL_GIT', repr(real_git))
+Path(target).write_text(script)
+Path(target).chmod(0o755)
+PY
+if PATH="$drift_bin:$PATH" "$drift_root/tools/qikvrt_adaptive_runtime.sh" \
+  --observations "$happy" --output .qikvrt/evidence/collective-adaptive/drift \
+  >"$scratch/drift.stdout" 2>"$scratch/drift.stderr"; then
+  fail "already-dirty content drift returned READY"
+fi
+grep -q '^BLOCK: tracked repository state changed' "$scratch/drift.stderr" || fail "content drift not detected"
+[[ ! -s "$scratch/drift.stdout" ]] || fail "blocked drift emitted a success receipt"
 
 single="$scratch/single"
 mkdir -p "$single"

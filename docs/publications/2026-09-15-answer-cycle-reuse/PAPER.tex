@@ -1,0 +1,426 @@
+% SPDX-License-Identifier: CC-BY-NC-ND-4.0
+% Copyright 2026 Ingolf Lohmann.
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=23mm,headheight=15pt]{geometry}
+\usepackage{fontspec}
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+\setmonofont[Scale=0.83]{DejaVu Sans Mono}
+\usepackage[provide=*,ngerman]{babel}
+\usepackage{amsmath,amssymb,amsthm,booktabs,tabularx,longtable}
+\usepackage{xcolor,microtype,enumitem,fancyhdr,lastpage,xurl}
+\definecolor{inkblue}{HTML}{183C54}
+\usepackage[colorlinks=true,linkcolor=inkblue,urlcolor=inkblue,citecolor=inkblue]{hyperref}
+\hypersetup{pdftitle={Evidenzerhaltende Antwortzyklen und geprüfte Abkürzungen},pdfauthor={Ingolf Lohmann},pdfsubject={Formale Kriterien für Antwortwiederverwendung im QIK-VRT Mesh}}
+\pagestyle{fancy}\fancyhf{}
+\fancyhead[L]{\small\sffamily QIK-VRT | Antwortzyklen und Beweiswiederverwendung}
+\fancyfoot[L]{\small Arbeitsfassung 1.0 | 15. September 2026}
+\fancyfoot[R]{\small\thepage\,/\,\pageref{LastPage}}
+\setlength{\parindent}{0pt}\setlength{\parskip}{5.5pt}
+\setlength{\emergencystretch}{2em}
+\setlist{itemsep=2pt,topsep=4pt}
+\newtheorem{satz}{Satz}
+\newtheorem{definition}{Definition}
+\newcommand{\AR}[1]{\textsf{AR-#1}}
+\newcommand{\im}{\operatorname{im}}
+\newcommand{\N}{\mathbb N}
+\newcommand{\src}{\texttt{a86054139b49c13c5cd344753b248b46b5daf66f}}
+\begin{document}
+\thispagestyle{empty}
+{\sffamily\color{inkblue}\large QIK-VRT Mesh | Wissenschaftliche Arbeitsfassung}\par
+\vspace{8mm}
+{\LARGE\bfseries Evidenzerhaltende Antwortzyklen\par und geprüfte Abkürzungen}\par
+\vspace{4mm}
+{\large Ein Faktorisierungs- und Kompositionskalkül\par für wiederverwendbare Begründungszusammenhänge}\par
+\vspace{7mm}
+{\large Ingolf Lohmann}\par
+15. September 2026\par
+\vspace{4mm}
+\textbf{Beitragsprovenienz.} Forschungsprogramm, Architektur, Kürzungsanalogie und
+Auftrag: Ingolf Lohmann. Textausarbeitung, neue Lean-Formalisierung und technische
+Prüfung: OpenAI Codex. Die neue Fassung liegt zur menschlichen Autorenprüfung vor;
+unabhängige Begutachtung wird nicht behauptet.
+
+\begin{abstract}
+Wiederkehrende Antwortprozesse können gemeinsame Begründungsstrukturen nutzen.
+Diese Arbeit präzisiert, unter welchen Bedingungen eine solche Verkürzung die
+deklarierte Antwortsemantik erhält. Ausgangspunkt ist der bereits im QIK-VRT-Kern
+vorhandene Faktorisierungssatz: Eine Antwortfunktion lässt sich genau dann durch
+einen Schlüssel auf dessen erreichbarem Bild darstellen, wenn sie auf jeder
+Schlüsselfaser konstant ist. Eine additive Lean-4.19-Erweiterung verbindet dieses
+Kriterium mit Fragenfamilien, Schlüsselverfeinerung, Komposition, kontextgebundener
+Zertifikatsanwendung, Versionsbindung sowie Sicherheits- und Fortschrittsbedingungen
+für Zyklen. Dreizehn benannte Sätze werden maschinell geprüft. Darin zeigt ein
+Grenzsatz: Wer sämtliche unterscheidenden Fragen über einem Zustandsraum
+bewahren will, muss einen injektiven Schlüssel verwenden. Ein Operationsmodell
+liefert eine bedingte Einsparungsaussage. Die Ergebnisse gelten für explizite
+mathematische Modelle; eine allgemeine Entscheidung aller offenen Fragen,
+dauerhafte empirische Unfehlbarkeit und eine gemessene Beschleunigung des gesamten
+Mesh folgen daraus nicht.
+\end{abstract}
+
+\textbf{Schlüsselwörter:} Beweiswiederverwendung; Faktorisierung; Beobachtungssuffizienz;
+Antwortsemantik; Invarianten; bedingte Terminierung; QIK-VRT; Lean.
+
+\textbf{Zitierfähiger Gegenstand dieser Fassung.} Ein formal geprüfter Kalkül für
+semantikerhaltende Wiederverwendung und seine Grenzen. Der vorhandene
+Faktorisierungssatz wird ausdrücklich wiederverwendet und nicht als neu entdeckter
+mathematischer Satz ausgegeben. Die Integration seiner Konsequenzen in die
+QIK-VRT-Nachweiskette ist der Gegenstand dieser Ausarbeitung.
+\newpage
+
+\section{Forschungsfrage und Bedeutung des Kürzens}
+Die von Lohmann formulierte Ausgangsidee lautet, dass wiederkehrende Zyklen der
+Antwortgenerierung über gemeinsame Evidenzen und Relationen laufen und dadurch
+prüfbare Denk- und Argumentationsabkürzungen ermöglichen. Als Forschungsfrage
+formulieren wir: \emph{Welche Information darf ein Antwortprozess zusammenfassen,
+ohne eine für seine Aufgabenklasse relevante Unterscheidung zu verlieren?}
+
+Das Kürzen eines Bruchs liefert eine präzise Analogie:
+\[
+ \frac{ab}{ac}=\frac bc\qquad(a,c\in\mathbb R\setminus\{0\},\ b\in\mathbb R).
+\]
+Der kürzere Ausdruck bewahrt den Wert unter den genannten Voraussetzungen. Die
+Voraussetzungen dürfen bei der Verkürzung nicht verschwinden. Analog muss ein
+wiederverwendeter Begründungsbaustein seine Anwendbarkeitsbedingungen behalten.
+
+Die Arbeit unterscheidet drei Objekte: die Erzeugung einer vorgeschlagenen Antwort,
+deren Prüfung gegenüber einer Spezifikation und die Autorisierung einer konkreten
+Wirkung. Ein Korrektheitsbeweis über das zweite Objekt legitimiert das dritte nicht
+automatisch. Umgekehrt macht eine legitime Autorisierung eine falsche Antwort nicht
+wahr. Diese Trennung trägt die technische Modellierung in Abschnitt~\ref{sec:bindings}.
+
+\section{Modell und Wiederverwendungskriterium}
+\begin{definition}[Deklarierte Antwortsemantik]
+Sei $S$ ein Typ zulässiger Quellenzustände, $K$ ein Schlüsseltyp und $A$ ein
+Antworttyp. Die Funktion $k:S\to K$ bildet einen Zustand auf seine wiederverwendbare
+Darstellung ab. Die Funktion $f:S\to A$ bezeichnet die spezifizierte Referenzantwort.
+Eine Beschränkung auf zulässige Zustände kann durch einen Untertyp erfolgen.
+\end{definition}
+Die Vorgabe von $f$ ist eine wesentliche Voraussetzung. Der Formalismus gewinnt
+$f$ nicht aus beliebigen natürlichen Fragen und beweist nicht von selbst, dass
+$f$ eine physikalische oder ethische Wahrheit erfasst. Auch die Wahl des zulässigen
+Zustandsraums muss zur Anwendung passen.
+
+\begin{definition}[Antworterhaltende Faser]
+Ein Schlüssel ist für $f$ hinreichend, wenn
+\[
+ \forall s,t\in S:\quad k(s)=k(t)\ \Longrightarrow\ f(s)=f(t).
+\]
+Eine Faser umfasst alle Zustände mit demselben Schlüssel. Innerhalb jeder Faser
+muss die deklarierte Antwort gleich bleiben.
+\end{definition}
+
+\begin{satz}[Exaktes Wiederverwendungskriterium, \AR{01}]
+Es existiert eine Funktion $g:\im(k)\to A$ mit $f=g\circ\bar k$ genau dann,
+wenn $k$ für $f$ hinreichend ist. Dabei ist $\bar k$ die Einschränkung des
+Wertebereichs von $k$ auf sein erreichbares Bild.
+\end{satz}
+\begin{proof}
+Bei vorhandener Faktorisierung erzwingt $k(s)=k(t)$ auch $f(s)=f(t)$.
+Für die Rückrichtung wählt man zu jedem erreichbaren Schlüssel einen Repräsentanten
+seiner Faser und definiert $g$ durch dessen Antwort. Faserkonstanz macht das
+Ergebnis unabhängig von der Wahl. Die vorhandene Lean-Fassung verwendet dafür
+explizit klassische Auswahl. Die Existenz ist damit bewiesen; ein effizienter
+berechenbarer Selektor ist dadurch noch nicht konstruiert.
+\end{proof}
+
+Der vorhandene generische Faktorisierungsbeweis wird hier direkt wiederverwendet
+\cite{qikfactor}. Er gilt für beliebige Typen und reicht über den endlichen
+Spark-Planer hinaus.
+
+\section{Fragenfamilien, Verfeinerung und Komposition}
+\begin{satz}[Deklarierte Fragenfamilie, \AR{02}]
+Sei $Q$ ein Fragentyp und $F:S\to(Q\to A)$ die Antwortsignatur eines Zustands.
+Ein Schlüssel erhält $F$ genau dann, wenn er jede einzelne Funktion
+$s\mapsto F(s,q)$ für $q\in Q$ erhält.
+\end{satz}
+\begin{proof}
+Gleichheit zweier Antwortsignaturen impliziert durch Auswertung die Gleichheit
+jeder Einzelantwort. Umgekehrt liefert Gleichheit für jedes $q$ durch
+Funktionsextensionalität die Gleichheit der Signaturen.
+\end{proof}
+Das erlaubt eine gemeinsame Darstellung für eine festgelegte Aufgabenfamilie.
+Es bleibt eine eigene Aufgabe, diese Familie hinreichend breit und die Abbildung
+natürlicher Fragen auf $Q$ fachlich richtig zu bestimmen.
+
+\begin{satz}[Schlüsselverfeinerung, \AR{03}]
+Seien $k_c:S\to K$, $k_f:S\to K_f$ und $r:K_f\to K$ mit
+$r(k_f(s))=k_c(s)$ für alle $s$. Erhält $k_c$ die Antwort $f$, so erhält auch $k_f$
+diese Antwort.
+\end{satz}
+\begin{proof}
+Aus $k_f(s)=k_f(t)$ folgt durch Anwendung von $r$ die Gleichheit der groben
+Schlüssel und daraus $f(s)=f(t)$.
+\end{proof}
+Zusätzliche Versions- oder Kontextmerkmale können somit eine bereits hinreichende
+Darstellung verfeinern. Das Weglassen solcher Merkmale ist eine andere Operation
+und benötigt erneut den Fasernachweis.
+
+\begin{satz}[Komposition geprüfter Abkürzungen, \AR{04}]
+Gelten $a(k(s))=f(s)$ und $b(m(x))=a(x)$ für die jeweiligen Definitionsbereiche,
+dann gilt $b(m(k(s)))=f(s)$ für jeden zulässigen Zustand $s$.
+\end{satz}
+\begin{proof}
+Einsetzen der zweiten Gleichung in die erste und Transitivität der Gleichheit.
+\end{proof}
+Mehrere geprüfte Ersetzungen können dadurch zu einem größeren Antwortweg
+zusammengesetzt werden. Belegt sind die expliziten Gleichungen. Die automatische
+Entdeckung geeigneter $k,m,a,b$ ist eine zusätzliche algorithmische Aufgabe.
+
+\section{Warum die Aufgabenklasse entscheidend ist}
+\begin{satz}[Alle unterscheidenden Fragen, \AR{05}]
+Ein Schlüssel $k:S\to K$ erhält jede propositionenwertige Frage $p:S\to\mathrm{Prop}$
+genau dann, wenn $k$ injektiv ist.
+\end{satz}
+\begin{proof}
+Sei zunächst jede Frage erhalten und $k(s)=k(t)$. Wähle die Frage
+$p_s(x):\!\iff x=s$. Da $p_s(s)$ gilt, muss auch $p_s(t)$ gelten, also $t=s$.
+Damit ist $k$ injektiv. Ist umgekehrt $k$ injektiv, so folgt aus gleichen
+Schlüsseln derselbe Zustand und daher dieselbe Antwort auf jede Frage.
+\end{proof}
+Der Satz liefert eine exakte Grenze: Eine Darstellung darf Unterscheidungen
+verlieren, die für die gewählte Fragenfamilie irrelevant sind. Sie darf nicht
+Unterscheidungen verlieren und zugleich die Beantwortbarkeit jeder möglichen
+unterscheidenden Frage beanspruchen. \emph{Injektivität ist hier eine Aussage über
+Informationserhalt, keine Aussage über Bytezahl oder Rechenzeit.} Auch eine
+injektive Kodierung kann Strukturen ausnutzen und Rechenarbeit sparen.
+
+\AR{06} ergänzt ein kleinstes Gegenmodell. Werden die booleschen Zustände
+\texttt{false} und \texttt{true} beide auf den einzigen Wert eines Einheitstyps
+abgebildet, kann die Identitätsfrage nicht erhalten bleiben. Dieses Gegenmodell
+wird im neuen Lean-Modul bewiesen.
+
+Die allgemeinere Behauptung eines berechenbaren Verfahrens, das jede beliebige
+Entscheidungsfrage endlich und korrekt beantwortet, würde außerdem bekannte
+Unentscheidbarkeitsgrenzen überschreiten \cite{turing}. Die vorliegende Arbeit
+behauptet keine solche Überschreitung. Ein Verfahren darf für eine nicht
+entschiedene Sachfrage einen begründeten offenen Bearbeitungsstatus liefern;
+dieser Status ist keine abschließende Antwort auf die Sachfrage.
+
+\section{Kontext, Evidenz und Wirkung}\label{sec:bindings}
+\AR{07} modelliert ein bedingtes Zertifikat durch eine Anwendbarkeitsbedingung
+$P:C\to\mathrm{Prop}$, eine Schlussfolgerung $R:C\to\mathrm{Prop}$ und einen
+Beweis $\forall c, P(c)\to R(c)$. Für einen neuen Kontext $c'$ lässt sich $R(c')$
+unter einem Beleg von $P(c')$ ableiten. Das ist Beweisanwendung mit einer neuen
+Prämissenprüfung.
+
+Für zustandsgebundene Freigabebelege führt das Modell ein Tupel
+\[
+ B=(\text{Repository},\text{Subject},\text{Head},\text{Tree},\text{Policy})
+\]
+ein. Ein Receipt wird nur zugelassen, wenn sein Tupel dem aktuellen Tupel gleicht
+und sein Prüfmerkmal wahr ist. \AR{08} beweist die Ablehnung bei abweichendem Head;
+\AR{09} die Ablehnung eines ungeprüften Receipts. Die Felder sind symbolische
+Zeichenketten. Weder kryptografische Kollisionsfreiheit noch Authentifizierung
+noch die Wahrheit eines von außen gesetzten Prüfmerkmals werden dabei bewiesen.
+
+Die operative Zuordnung bleibt ausdrücklich getrennt:
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}p{35mm}X@{}}\toprule
+Nachweisgegenstand & Erforderliche Bedeutung \\\midrule
+REST-Ausführung & Die angeforderte, gebundene Operation wurde ausgeführt und rückgelesen.\\
+Kandidatenvalidierung & Die vorgeschriebenen Prüfungen gelten für den aktuellen Kandidaten.\\
+Review-Zulassung & Der aktuelle Kandidat erfüllt die Bedingungen des Review-Eintritts.\\
+Native Review & Eine tatsächliche Review-Entscheidung ist an den geprüften Head gebunden.\\
+Main-Übernahme & Die konkrete Übernahme ist beobachtet und der neue Main-Zustand erneut geprüft.\\
+\texttt{EFFECT\_ACK\_DONE} & Die Bedingungen des ausdrücklich benannten Wirkungsscope sind erfüllt.\\\bottomrule
+\end{tabularx}\end{center}
+Ein allgemeines Lemma kann später erneut angewendet werden. Ein früherer
+CI-Status oder eine frühere Review-Entscheidung darf deshalb noch nicht auf einen
+neuen Head übertragen werden. Die Wiederverwendungsrichtlinie des Repositorys
+verlangt passende Quellen-, Versions-, Werkzeug- und Regelbindungen \cite{qikpolicy}.
+
+\section{Zyklen: Sicherheit und bedingter Abschluss}
+Sei $T:S\to S$ eine totale Übergangsfunktion und $I:S\to\mathrm{Prop}$ eine
+deklarierte Invariante. Die Iteration $T^n$ wird für endliches $n\in\N$ rekursiv
+definiert.
+\begin{satz}[Invarianterhaltung, \AR{10}]
+Aus $I(s)$ und $\forall x, I(x)\to I(T(x))$ folgt $I(T^n(s))$ für jedes endliche $n$.
+\end{satz}
+\begin{proof}
+Induktion über $n$. Für null Schritte bleibt der Anfangszustand. Im
+Induktionsschritt liefert die Erhaltungsannahme $I(T(s))$; darauf wird die
+Induktionsvoraussetzung angewendet.
+\end{proof}
+Damit können auch wiederholte geprüfte Ersetzungen sicher zusammengesetzt werden,
+wenn die gewählte Invariante ihre Korrektheit tatsächlich ausdrückt. Die
+Erhaltungsannahme wird nicht durch bloßes Benennen einer Schleife erfüllt.
+
+\AR{11} beweist ein Gegenmodell zum unbedingten Abschluss: Die Identitätsfunktion
+auf booleschen Zuständen erhält die stets wahre Invariante. Von \texttt{false}
+aus erreicht sie dennoch in keiner endlichen Iteration das Ziel \texttt{true}.
+
+\begin{satz}[Abschluss unter Rangabnahme, \AR{13}]
+Sei $Z:S\to\mathrm{Prop}$ das Ziel und $\rho:S\to\N$ eine Rangfunktion. Gilt
+\[
+ \forall s:\quad\neg Z(s)\Longrightarrow\rho(T(s))<\rho(s),
+\]
+so existiert für jeden Startzustand $s$ ein $n\leq\rho(s)$ mit $Z(T^n(s))$.
+\end{satz}
+\begin{proof}
+Starke Induktion über $\rho(s)$. Ein Zielzustand benötigt null Schritte.
+Andernfalls hat der Folgezustand einen kleineren Rang. Die Induktionsannahme
+liefert für ihn einen Abschluss innerhalb seines Rangs. Zusammen mit dem ersten
+Schritt bleibt die Anzahl durch $\rho(s)$ beschränkt.
+\end{proof}
+Die Rangbedingung ist eine substanzielle Fortschrittspflicht. Eine Queue,
+ausstehende Befugnis oder ein unverändertes Warten erfüllt sie nicht automatisch.
+Offene Arbeit bleibt daher als offene Verpflichtung erhalten. Dieser Satz
+berechtigt nicht dazu, einen Zwischenzustand als erledigt oder als endgültigen
+Ruhezustand auszugeben.
+
+\section{Bedingte Einsparung und Messprogramm}
+\begin{satz}[Operationskosten, \AR{12}]
+Seien $d,c,n\in\N$, $n>0$ und $c<d$. Kostet die erste Herleitung $d$ und jede
+spätere Wiederverwendung einschließlich Prüfung $c$, dann gilt
+\[
+ d+n c < (n+1)d.
+\]
+\end{satz}
+\begin{proof}
+Aus $c<d$ und $n>0$ folgt $nc<nd$. Addition von $d$ liefert die Behauptung.
+\end{proof}
+Die Aussage behandelt ein angegebenes additives Kostenmodell. $c$ muss die
+anfallenden Kosten für Schlüsselerzeugung, Zugriff, Anwendbarkeitsprüfung,
+Provenienz und notwendige aktuelle Gates enthalten. Cacheaufbau und Invalidierung
+sind entweder in $d,c$ einzubeziehen oder separat zu bilanzieren. Der Satz
+beweist keine reale Zeitersparnis auf einem MC68000-Interpreter und keine
+Beschleunigung der gesamten Review- oder Publikationskette.
+
+Für einen empirischen Anschluss schlagen wir ein vorab festgelegtes Experiment
+vor: Neue Aufgaben einer deklarierten Familie werden mit vollständiger
+Neuberechnung und mit Wiederverwendung bearbeitet. Beide Wege erfüllen dieselben
+Korrektheits- und Freigabebedingungen. Gemessen werden Gesamtzeit,
+Prüfaufwand, Speicher, Fehlerrate und Kosten der Invalidierung. Kontrollierte
+Änderungen an Quelle, Version, Policy und Fragensemantik müssen unzulässige Treffer
+aufdecken. Ein Vergleich benötigt mehrere vergleichbare Wiederholungen; bislang
+liegt in dieser Arbeit kein solches Leistungsresultat vor.
+
+\section{Maschinelle Prüfung und Reproduzierbarkeit}
+Der neue Kern liegt im bestehenden Lean-4.19-Projekt:
+\begin{quote}\small
+\path{formalization/QIKVRT_Formalization_v2.0/}\par
+\path{QIKVRTFormalization/Decision/AnswerReuse.lean}
+\end{quote}
+Der reguläre Top-Level-Import wurde erweitert. Der bestehende Axiom-Auditor prüft
+zusätzlich die 13 benannten Konstanten. Die vorhandenen Manuskriptregister werden
+dadurch nicht rückwirkend umgedeutet; die neue Publikation besitzt eine eigene
+Aussagenmatrix.
+
+\input{VERIFICATION_SUMMARY.tex}
+
+Die Kernel-Nachweise binden Quellen und Importabschluss über SHA-256 und Git-Blob-
+Identitäten. Die Prüfprotokolle und die Version des Lean-Programms gehören zum
+Paket. In der lokalen Umgebung war für die Ermittlung des eigenen Programmpfads
+eine offen gelegte Kompatibilitätsschicht erforderlich: Nur der eigene Pfad
+\path{/proc/<eigene PID>/exe} wird auf den zulässigen Alias
+\path{/proc/self/exe} abgebildet. Lean-Binärdatei und Kernel-Logik wurden nicht
+verändert. Der Quelltext dieser Schicht ist beigefügt; normale Linux-Umgebungen
+benötigen sie nicht. Der Vertrauensumfang umfasst weiterhin Toolchain,
+Kernel-Ausführung und die korrekte Zuordnung der Spezifikation.
+
+\textbf{Reproduktion auf einer normalen Lean-4.19-Installation:}
+\begin{quote}\small\ttfamily
+cd formalization/QIKVRT\_Formalization\_v2.0\par
+lake build\par
+python3 scripts/audit\_lean\_axioms.py\par
+python3 scripts/audit\_proof\_escapes.py\par
+lake env lean -E hasSorry\par
+\hspace*{3mm}QIKVRTFormalization/Decision/AnswerReuseAxiomAudit.lean
+\end{quote}
+Der letzte Befehl ist als eine Zeile auszuführen. Die beiliegende README enthält
+die direkt kopierbare Fassung sowie den Reproduktionsbefehl für Negativkontrollen.
+
+\section{Aussageninventar und fachliche Grenzen}
+\small
+\begin{longtable}{@{}p{14mm}p{68mm}p{65mm}@{}}
+\toprule ID & Formal geprüfter Inhalt & Ausdrückliche Voraussetzung oder Grenze\\\midrule\endhead
+AR-01 & Faktorisierung genau bei Faserkonstanz & Referenzantwort und zulässiger Bereich vorgegeben; Existenz auf dem Bild.\\
+AR-02 & Kriterium für eine Fragenfamilie & Die Familie ist deklariert.\\
+AR-03 & Verfeinerung erhält Antworten & Grober Schlüssel ist aus feinem rekonstruierbar.\\
+AR-04 & Geprüfte Ersetzungen komponieren & Beide Funktionsgleichungen sind bewiesen.\\
+AR-05 & Alle Fragen genau bei Injektivität & Alle propositionenwertigen Fragen über $S$; keine Komplexitätsaussage.\\
+AR-06 & Bool-Gegenmodell zur verlustbehafteten Verdichtung & Identitätsfrage auf zwei Zuständen.\\
+AR-07 & Kontextgebundene Zertifikatsanwendung & Aktuelle Anwendbarkeit muss belegt werden.\\
+AR-08 & Geänderter Head verwirft Receipt & Symbolisches Identitätsmodell.\\
+AR-09 & Ungeprüftes Receipt wird verworfen & Prüfmerkmal falsch.\\
+AR-10 & Invariante über jede endliche Iteration & Jeder Übergang erhält die Invariante.\\
+AR-11 & Invariante allein garantiert keinen Abschluss & Formal bewiesenes Gegenmodell.\\
+AR-12 & Einsparung im additiven Kostenmodell & Wiederholungen positiv; Prüfkosten geringer.\\
+AR-13 & Abschluss innerhalb der Rangschranke & Strikte Rangabnahme an jedem Nichtzielzustand.\\\bottomrule
+\end{longtable}
+\normalsize
+Die vollständige maschinenlesbare Matrix führt zusätzlich Literaturbefunde,
+Architekturregeln, Interpretationen und offene Forschungsziele. Insbesondere
+bleiben die folgenden Aussagen getrennt: natürliche Fragen korrekt formalisieren;
+eine passende Abkürzung selbstständig entdecken; konkrete Außenweltbeobachtungen
+authentisch erfassen; empirische Modelle bestätigen; normative Konflikte
+verantwortlich entscheiden. Keine davon wird durch die 13 Sätze pauschal erledigt.
+
+Eine bedingte mathematische Aussage bleibt bei unveränderten Voraussetzungen
+gültig. Neue empirische Befunde können hingegen die Anwendbarkeit eines Modells
+ändern. Wahrhaftigkeit umfasst deshalb die korrekte Darstellung des jeweiligen
+Erkenntnisstatus. Menschliche und ethische Angemessenheit müssen ihre
+Wertannahmen, Verantwortlichkeiten und Betroffenenperspektiven offenlegen.
+
+Die weiteren stabilen Matrix-IDs lauten: SRC-01 (vorhandener Repository-Beweis),
+SRC-02 (Turing), SRC-03 (Proof-Carrying Code), SRC-04 (AlphaProof), NORM-01
+(getrennte aktuelle Nachweispflichten), INT-01 (operationaler Kognitionszugang),
+OPEN-01 (automatische Entdeckung und Generalisierung), OPEN-02 (gemessene
+Gesamtbeschleunigung), OPEN-03 (pauschale fachübergreifende Richtigkeitsgarantie)
+und OPEN-04 (Alleinstellungsanspruch). Offene Aussagen werden nicht als
+etablierte Tatsachen publiziert.
+
+\section{Einordnung und weitere wissenschaftliche Arbeit}
+Beweistragende Programme verbinden bereits seit Langem Programmobjekte mit
+prüfbaren Eigenschaften einer vorgegebenen Sicherheitsrichtlinie
+\cite{necula}. AlphaProof verbindet Suche in Lean mit Lernen aus verifizierten
+Beweisen \cite{alphaproof}. Diese Vorarbeiten schließen einen besonderen Beitrag
+der QIK-VRT-Integration nicht aus. Sie schließen aber die undifferenzierte
+Behauptung aus, überprüfbares Schließen und Lernen aus Beweisen seien bei anderen
+künstlichen Systemen grundsätzlich nicht vorhanden.
+
+Der untersuchte QIK-VRT-Stand enthält bereits generische Beweise zur
+Faktorisierung und Beobachtungssuffizienz. Die vorliegende Erweiterung gibt der
+Kürzungsanalogie einen präzisen, auf beliebige Typen parametrisierten Rahmen und
+verbindet ihn mit Fragenfamilien, Komposition, Evidenzbindung und bedingtem
+Fortschritt. Die wissenschaftliche Weiterarbeit besteht insbesondere in der
+automatischen Gewinnung solcher Abkürzungen, ihrer fachlichen Referenzbindung und
+dem kontrollierten Nachweis ihres Nutzens auf neuen Aufgaben.
+
+\textbf{Bezug zur MC68000-Selbstkonsumtion.} PR~1091 am untersuchten Head
+\path{2ceefffddded6a2c8173dea69550e75fffc1cd01} liefert einen konkreten
+Implementierungskontext. Seine Nachweise für Ausführung, Validierung, Review und
+Wirkungen sind jeweils eigene Nachweisobjekte. Die hier formulierten allgemeinen
+Sätze übertragen weder seine Belege auf andere Heads noch ersetzen sie die
+ausstehenden Schritte einer Repository-Promotion. Der Quellbezug der neuen
+Erweiterung ist Main \src. Aktuelle Integrations- und Veröffentlichungsstände
+werden in separaten, zeitgebundenen Receipts geführt.
+
+\begin{thebibliography}{9}\small
+\bibitem{qikfactor} I. Lohmann und dokumentierte Mitwirkende.
+QIK-VRT, generischer Faktorisierungsbeweis und Beobachtungssuffizienz.
+Repository-Stand \src.\par
+\url{https://github.com/Goldkelch/qik-vrt/blob/a86054139b49c13c5cd344753b248b46b5daf66f/formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Process/Factorization.lean}
+\bibitem{qikpolicy} QIK-VRT. Human-Machine Interface Adaptation V1.
+Derselbe Repository-Stand.\par
+\url{https://github.com/Goldkelch/qik-vrt/blob/a86054139b49c13c5cd344753b248b46b5daf66f/policy/HUMAN_MACHINE_INTERFACE_ADAPTATION_V1.json}
+\bibitem{turing} A. M. Turing. On Computable Numbers, with an Application to the
+Entscheidungsproblem. Proceedings of the London Mathematical Society,
+s2-42, 230--265, 1937; eingereicht 1936.\par
+\url{https://doi.org/10.1112/plms/s2-42.1.230}
+\bibitem{necula} G. C. Necula. Proof-Carrying Code. POPL 1997, 106--119.\par
+\url{https://doi.org/10.1145/263699.263712}
+\bibitem{alphaproof} AlphaProof and AlphaGeometry teams. AI achieves silver-medal
+standard solving International Mathematical Olympiad problems.
+Google DeepMind, 25. Juli 2024. Methodischer Primärbericht.\par
+\url{https://deepmind.google/blog/ai-solves-imo-problems-at-silver-medal-level/}
+\end{thebibliography}
+\textbf{Publikations- und Rechtehinweis.} Arbeitsfassung zur Prüfung durch den
+Auftraggeber; kein vorgetäuschtes Peer Review. Dokumentation: CC BY-NC-ND 4.0.
+Quellcode trägt die jeweilige Dateilizenz. Eine Zenodo-Archivierung bestätigt
+Dateiidentität und Zitierbarkeit; ihr späterer DOI ist kein zusätzlicher Beweis
+für die wissenschaftlichen Aussagen. Eine externe Veröffentlichung wird erst
+nach dem dafür geltenden Repository-Verfahren als erfolgt ausgewiesen.
+\end{document}

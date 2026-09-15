@@ -26,6 +26,7 @@ import QIKVRTFormalization.QuantumFoundations.MeasurementIndependence
 import QIKVRTFormalization.Hardware.AuthorityMirrorWitness
 import QIKVRTFormalization.Hardware.D3FixedPoint
 import QIKVRTFormalization.Decision.ObservationSufficiency
+import QIKVRTFormalization.Decision.AnswerReuse
 
 /-!
 Top-level import for the checked QIK-VRT formalization v2 tranches.

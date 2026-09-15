@@ -48,6 +48,20 @@ WORLD_FORMULA_EXPECTED = {
 }
 EFFECT_ACK_AUDIT_SOURCE = ROOT / "QIKVRTEffectAck" / "AxiomAudit.lean"
 EFFECT_ACK_MATRIX = ROOT / "effect_ack" / "DRAFT01_CLAIM_MATRIX.json"
+ANSWER_REUSE_AUDIT_SOURCE = (
+    ROOT / "QIKVRTFormalization" / "Decision" / "AnswerReuseAxiomAudit.lean"
+)
+ANSWER_REUSE_EXPECTED = {
+    "QIKVRT.V2.AnswerReuse." + name
+    for name in (
+        "answer_reuse_iff", "question_family_iff", "refinement_preserves_answers",
+        "shortcuts_compose", "every_question_iff_injective",
+        "collapsed_bool_cannot_preserve_identity", "contextual_reuse",
+        "changed_head_rejects", "unchecked_receipt_rejects",
+        "finite_cycle_preserves", "invariant_does_not_imply_completion",
+        "reuse_cost_strictly_less", "completion_of_decreasing_rank",
+    )
+}
 FOUNDATIONAL_AXIOMS = {"propext", "Classical.choice", "Quot.sound"}
 EFFECT_ACK_SUPPLEMENTAL = {
     "QIKVRT.EffectAck.V1.Claims.claimIds_count": set(),
@@ -167,6 +181,8 @@ def main() -> int:
         (MANUSCRIPT_AUDIT_SOURCE, manuscript_policy, False),
         (EFFECT_ACK_AUDIT_SOURCE, effect_policy, True),
         (WORLD_FORMULA_AUDIT_SOURCE, world_formula_policy, True),
+        (ANSWER_REUSE_AUDIT_SOURCE,
+         {name: set(FOUNDATIONAL_AXIOMS) for name in ANSWER_REUSE_EXPECTED}, False),
     )
     seen: set[str] = set()
     violations: list[str] = []

@@ -7,8 +7,28 @@
     "classification": "policy_json"
   },
   "schema": "qikvrt_collective_adaptive_cognition_policy_v1",
-  "policy_version": "1.0.0",
+  "policy_version": "1.1.0",
   "mode": "MEASURE_HASH_PROPOSE_ONLY",
+  "stability_contract": {
+    "default_knowledge_action": "PRESERVE",
+    "return_state": "READY",
+    "return_requires_output_readback": true,
+    "return_requires_tracked_state_preserved": true,
+    "unknown_need_permits_mutation": false,
+    "reviewed_successor_required_for_learning": true,
+    "history_is_append_only": true,
+    "readiness_implies_repository_completion": false,
+    "decision_scope": "SUPPLIED_HASH_BOUND_OBSERVATIONS_ONLY",
+    "possible_change_requires": [
+      "attributed_finding_and_measurement_references",
+      "explicit_target_scope_and_applicability",
+      "reviewed_correction_extension_or_requirement",
+      "all_mandatory_checks_on_the_new_exact_head"
+    ],
+    "temporal_rule": "Preserve historical evidence as observed; assess the present exact subject; apply accepted learning prospectively through a versioned successor. No retroactive evidence transfer.",
+    "stability_frequency": "PREFERRED_DEFAULT_NOT_AN_EMPIRICAL_FREQUENCY_CLAIM",
+    "open_work_rule": "Unresolved input, proposal, issue, queue item or unintegrated change retains an executable continuation or an explicit event-bound external blocker. An unchanged knowledge state is not a repository NOOP or DONE."
+  },
   "observation_schema": "qikvrt_collective_observation_v1",
   "output_schemas": {
     "evidence": "qikvrt_collective_adaptive_evidence_v1",

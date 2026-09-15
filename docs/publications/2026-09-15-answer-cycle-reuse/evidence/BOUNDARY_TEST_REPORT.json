@@ -1,0 +1,75 @@
+{
+  "schema": "qikvrt_answer_reuse_boundary_report_v1",
+  "publication_id": "qikvrt-answer-cycle-reuse-v1",
+  "state": "VERIFIED",
+  "negative_controls": [
+    {
+      "name": "false_statement",
+      "source": "example : False := by exact True.intro\n",
+      "source_sha256": "f017a41bf1f77249bae26b3f70eb564926da41fa4becddd751313de0bd5ae5fa",
+      "argv": [
+        "lake",
+        "env",
+        "lean",
+        "-E",
+        "hasSorry",
+        "/tmp/qikvrt-answer-reuse-pn54xmdw/false_statement.lean"
+      ],
+      "exit_code": 1,
+      "log": "negative-false_statement.log",
+      "output_sha256": "bfde96cefc89ea3b02ef0e3082583ca978abc3ae6e09397626d808f9a749b5cb"
+    },
+    {
+      "name": "proof_hole",
+      "source": "example : False := by sorry\n",
+      "source_sha256": "33282dc03af5bd50a08ba427d1d14e3ec3689ab6872498cf0e4234b5ebaf21ab",
+      "argv": [
+        "lake",
+        "env",
+        "lean",
+        "-E",
+        "hasSorry",
+        "/tmp/qikvrt-answer-reuse-pn54xmdw/proof_hole.lean"
+      ],
+      "exit_code": 1,
+      "log": "negative-proof_hole.log",
+      "output_sha256": "ffd90bf5fcb3429fe72f85a1b500fa28862af98d1d01e71ac62b9017cae39c01"
+    },
+    {
+      "name": "missing_applicability",
+      "source": "import QIKVRTFormalization.Decision.AnswerReuse\nopen QIKVRT.V2.AnswerReuse\nexample (c : ConditionalCertificate Bool) (s : Bool) : c.conclusion s := by\n  exact contextual_reuse c s\n",
+      "source_sha256": "daca2222da704e93250efd0e671f3602661db717fadcaf201aea34f8685bc8ef",
+      "argv": [
+        "lake",
+        "env",
+        "lean",
+        "-E",
+        "hasSorry",
+        "/tmp/qikvrt-answer-reuse-pn54xmdw/missing_applicability.lean"
+      ],
+      "exit_code": 1,
+      "log": "negative-missing_applicability.log",
+      "output_sha256": "e36cf5d2010ff3ac705f93f2e13309fc233a7a07740b73037548b875e7177f82"
+    },
+    {
+      "name": "missing_progress",
+      "source": "import QIKVRTFormalization.Decision.AnswerReuse\nopen QIKVRT.V2.AnswerReuse\nexample (s : Bool) : Exists (fun n => iterate id n s = true) := by\n  exact completion_of_decreasing_rank id (fun b => b = true) (fun _ => 1)\n",
+      "source_sha256": "7a9cb610498273bfa8fb258bbe540c85518361f82d27244f66b1d7942f7cb2cb",
+      "argv": [
+        "lake",
+        "env",
+        "lean",
+        "-E",
+        "hasSorry",
+        "/tmp/qikvrt-answer-reuse-pn54xmdw/missing_progress.lean"
+      ],
+      "exit_code": 1,
+      "log": "negative-missing_progress.log",
+      "output_sha256": "46fbfd578ff67b6d0f71419ca83ead9710134b93dcba585c2217f1109586e2a7"
+    }
+  ],
+  "formal_countermodels": [
+    "QIKVRT.V2.AnswerReuse.collapsed_bool_cannot_preserve_identity",
+    "QIKVRT.V2.AnswerReuse.invariant_does_not_imply_completion"
+  ]
+}
