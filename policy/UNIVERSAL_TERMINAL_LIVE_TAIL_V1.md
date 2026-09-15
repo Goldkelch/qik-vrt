@@ -1,94 +1,131 @@
-# QIK-VRT Universal Terminal Live Tail V1
+# QIK-VRT Universal Terminal Live Tail V2
 
-Status: evolving repository-native presentation contract.
+Status: evolving repository-native execution and presentation contract.
+Supersedes the V1 snapshot-oriented presentation semantics while preserving its evidence boundaries.
 
 ## Purpose
 
-`tail -f` denotes the synchronous Universal-Terminal presentation of the current QIK-VRT evidence state. It is not a request to create an asynchronous watcher, polling task, or background substitute.
+`tail -f` denotes synchronous continuation from a persistent evidence cursor. It is not a dashboard refresh, snapshot with a LIVE label, asynchronous watcher, polling task, or background substitute.
 
-The presentation MUST remain human-readable, machine-connectable, exact-subject-bound, fail-closed, and open to continuous evidence-driven improvement.
+The terminal MUST emit only newly observed material transitions after its cursor, execute admissible consequences, read back their effects, advance the cursor, and immediately continue while another causal event is observable.
 
-## Canonical reading order
+## Persistent cursor
 
-Every live-tail frame SHOULD present, in this order:
-
-1. **LIVE SUBJECT** — Authority, Main HEAD/TREE, active PR HEAD/TREE subjects, and current D.o.D. state.
-2. **LIVE EVENT STREAM** — only material transitions since the preceding observed state; mutations are shown as `OLD -> NEW`.
-3. **EVIDENCE BOUNDARY** — what is freshly established, what is historical, and what cannot transfer to the new subject.
-4. **D.o.D. RADAR** — ZERO_BUGS, ALL_PULL_REQUESTS_REGARDED, ALL_BRANCHES_REGARDED, ALL_PRODUCTIVE_BRANCHES_MERGED, fresh exact-Main validation, and fresh EFFECT readback.
-5. **CAUSAL FRONT** — the shortest currently admissible next transition(s), preserving full provenance.
-6. **NEXT** — the next repository-native event/action to follow.
-
-## Visual state vocabulary
-
-- GREEN / PASS: freshly established for the displayed exact subject.
-- YELLOW / ACTIVE: running, queued, or requiring fresh validation.
-- RED / BLOCKER: known unsatisfied condition preventing progression.
-- BLUE / EVIDENCE: newly observed evidence or material event.
-- WHITE / NOT ADMISSIBLE: a later phase that cannot yet be entered.
-
-Color MUST NOT be the only carrier of meaning; every state also has a textual label.
-
-## Tail semantics
+The cursor is an addressable information object containing at least:
 
 ```text
-OBSERVE current exact state
--> process material event
--> follow legitimate successor
--> reobserve exact HEAD/TREE
--> classify
--> execute admissible next action
--> read back effect
--> expose updated LIVE_STATE
--> repeat
+last_event_identity
+last_observed_main_HEAD/TREE
+last_observed_PR_HEAD/TREE map
+last_observed_workflow terminal states
+last_observed_branch disposition state
+last_DOD_vector
 ```
 
-A HEAD/TREE mutation resets all mutation-dependent validation. `PREDECESSOR_EVIDENCE_TRANSFER=false` remains invariant.
+A resumed invocation starts AFTER this cursor. It MUST NOT redraw the complete state unless explicitly requested or reconstruction is necessary after cursor invalidation.
 
-`tail -f` MUST NOT be reinterpreted as an asynchronous scheduled task. Event-driven repository mechanisms may themselves run asynchronously, but the Universal-Terminal tail presents and follows their causal results synchronously when invoked.
+## Append-only output semantics
 
-## Evidence and routing semantics
-
-The live tail implements the Universal-Terminal evidence-router distinctions:
+Each emitted record is a delta, not a replacement snapshot:
 
 ```text
+TIMESTAMP  TYPE       SUBJECT              TRANSITION / EVIDENCE
+          MUTATION   PR#N                  old_HEAD -> new_HEAD
+          PASS       exact HEAD/TREE       newly satisfied gate
+          BLOCK      exact HEAD/TREE       first causal blocker
+          EFFECT     exact subject         fresh effect readback
+          DOD        final Main            changed D.o.D. component
+```
+
+Visual vocabulary MAY use color, but textual TYPE is mandatory:
+
+- GREEN / PASS
+- YELLOW / ACTIVE
+- RED / BLOCK
+- BLUE / EVIDENCE or MUTATION
+- PURPLE / EFFECT
+- WHITE / NOT_ADMISSIBLE
+
+Color is never the sole information carrier.
+
+## Execution loop
+
+```text
+CURSOR := persisted_cursor
+
+LOOP:
+  OBSERVE events strictly after CURSOR
+  if material event exists:
+      EMIT delta only
+      BIND exact subject HEAD/TREE
+      CLASSIFY evidence and admissibility
+      EXECUTE admissible repository-native consequence when available
+      READBACK resulting effect/state
+      MATERIALIZE resulting receipt/evidence
+      ADVANCE CURSOR
+      CONTINUE LOOP immediately
+  else:
+      END current synchronous invocation at EVENT_GATE
+
+STOP permanently only if QIKVRT_DOD == DONE
+```
+
+A chat transport may terminate an invocation when no further event is presently observable. That transport boundary MUST NOT be represented as completion, NOOP, or a repository halt. The next invocation resumes after the persisted cursor.
+
+## Event-driven rule
+
+`tail -f` MUST NOT be implemented by an asynchronous scheduled substitute. Repository-native systems may generate asynchronous events, but the terminal consumes causal events synchronously when invoked and advances from event to event.
+
+No repeated unchanged-state output is useful evidence. An unchanged observation MAY be recorded only when a contract explicitly requires fresh negative readback or freshness proof.
+
+## Evidence boundaries
+
+```text
+PREDECESSOR_EVIDENCE_TRANSFER = false
 reachable != observed != valid != proved != effect
 route != evidence
 SUCCESS != EFFECT
 ```
 
-Relations and routing decisions are addressable information objects. A routing shortcut MUST preserve access to the complete underlying provenance path and MUST NOT compress, fabricate, or transfer evidence.
+HEAD/TREE mutation resets every mutation-dependent validation component.
 
-## D.o.D. termination condition
+Relations, routes, cursors and routing decisions are addressable information objects. Routing shortcuts preserve the complete underlying provenance path; they never compress, fabricate, or transitively manufacture evidence.
 
-The tail may display `D.o.D. == DONE` only when the following are freshly true together for the same final repository state:
+## D.o.D. vector
+
+The cursor tracks changes to:
 
 ```text
 ZERO_BUGS
-AND ALL_PULL_REQUESTS_REGARDED
-AND ALL_BRANCHES_REGARDED
-AND ALL_PRODUCTIVE_BRANCHES_MERGED
-AND fresh exact-Main validation == PASS
-AND fresh EFFECT readback == PASS
+ALL_PULL_REQUESTS_REGARDED
+ALL_BRANCHES_REGARDED
+ALL_PRODUCTIVE_BRANCHES_MERGED
+MAIN_EXACT_VALIDATION
+EFFECT_READBACK
 ```
 
-Any mutation of the final subject invalidates mutation-dependent parts of that conjunction and requires fresh observation.
+The tail emits a DOD record only when one of these components changes.
 
-Unresolved productive work excludes `NOOP`.
+`D.o.D. == DONE` is admissible iff all components are freshly true together for the same final Main HEAD/TREE and no subject mutation occurred between their required observations.
+
+Unresolved productive work excludes NOOP.
 
 ## Continuous improvement
 
-This presentation contract is deliberately evolvable. Improvements MAY add clearer visual hierarchy, more useful event compression, better routing views, accessibility, machine-readable projections, latency information, proof-state visualization, or additional evidence relations.
+The tail itself is subject to evidence-driven improvement. New versions may improve event compression, human readability, proof-state visualization, routing visualization, accessibility, latency, machine-readable projections, cursor recovery, and causal prioritization.
 
-An improvement MUST NOT regress:
+Improvements MUST NOT regress:
 
+- append-only evidence history;
 - exact-subject binding;
+- persistent cursor semantics;
 - provenance reconstruction;
 - accessibility;
 - repository-native autonomy;
-- fail-closed semantics;
-- separation of historical evidence from current admissibility;
-- separation of SUCCESS from EFFECT;
-- the QIKVRT_DOD conjunction.
+- fail-closed behavior;
+- historical-evidence/current-admissibility separation;
+- routing/evidence separation;
+- SUCCESS/EFFECT separation;
+- QIKVRT_DOD.
 
-Presentation optimization is therefore itself evidence-driven: improve the view without weakening the evidence model.
+Presentation optimization changes distance to information, never the evidence required to justify it.
