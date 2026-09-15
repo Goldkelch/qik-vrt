@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann. Dispatch correction/regressions: ChatGPT.
 name: QIKVRT Rails runtime admission
 
 on:
@@ -6,6 +8,10 @@ on:
 
 permissions:
   contents: write
+
+concurrency:
+  group: qikvrt-rails-runtime-admission
+  cancel-in-progress: false
 
 jobs:
   admit:
@@ -16,6 +22,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 2
+          persist-credentials: false
       - name: Bind exact source
         run: |
           set -euo pipefail
@@ -39,18 +46,53 @@ jobs:
           rp=root/'runtime/toolchains/CACHE_REGISTRY.json'
           r=json.loads(rp.read_text()); c=r['components']
           auth=['runtime/toolchains/TOOLCHAIN.lock.tsv','runtime/toolchains/CACHE_REGISTRY.json','deploy/vercel-monitor/Gemfile','deploy/vercel-monitor/Gemfile.lock','tools/bootstrap-runtime.sh','.github/workflows/qikvrt_ci.yml']
-          c['ruby']={'version':'3.3.8','profiles':['rails','all'],'cache_class':'hosted-toolcache','provider':'ruby/setup-ruby','cache_locations':['github-hosted-toolcache:Ruby/3.3.8'],'authority_files':auth,'verification':['ruby -e exact RUBY_VERSION','real Rails suite execution'],'trusted_save':False}
-          c['bundler']={'version':'2.5.22','profiles':['rails','all'],'cache_class':'ecosystem-cache','provider':'ruby/setup-ruby bundler-cache','cache_locations':['github-actions-cache:bundler/deploy/vercel-monitor/Gemfile.lock'],'authority_files':auth,'verification':['bundle --version exact 2.5.22','bundle check with BUNDLE_FROZEN=true'],'trusted_save':True}
-          c['rails']={'version':'8.1.3.1','profiles':['rails','all'],'cache_class':'ecosystem-cache','provider':'Bundler exact Gemfile.lock closure','cache_locations':['github-actions-cache:bundler/deploy/vercel-monitor/Gemfile.lock'],'authority_files':auth,'verification':['Gemfile.lock contains railties 8.1.3.1','bundle check frozen','megast_test.rb','rails_smoke_test.rb'],'trusted_save':True}
+          c.setdefault('ruby',{'version':'3.3.8','profiles':['rails','all'],'cache_class':'hosted-toolcache','provider':'ruby/setup-ruby','cache_locations':['github-hosted-toolcache:Ruby/3.3.8'],'authority_files':auth,'verification':['ruby -e exact RUBY_VERSION','real Rails suite execution'],'trusted_save':False})
+          c.setdefault('bundler',{'version':'2.5.22','profiles':['rails','all'],'cache_class':'ecosystem-cache','provider':'ruby/setup-ruby bundler-cache','cache_locations':['github-actions-cache:bundler/deploy/vercel-monitor/Gemfile.lock'],'authority_files':auth,'verification':['bundle --version exact 2.5.22','bundle check with BUNDLE_FROZEN=true'],'trusted_save':True})
+          c.setdefault('rails',{'version':'8.1.3.1','profiles':['rails','all'],'cache_class':'ecosystem-cache','provider':'Bundler exact Gemfile.lock closure','cache_locations':['github-actions-cache:bundler/deploy/vercel-monitor/Gemfile.lock'],'authority_files':auth,'verification':['Gemfile.lock contains railties 8.1.3.1','bundle check frozen','megast_test.rb','rails_smoke_test.rb'],'trusted_save':True})
+          for name,version in [('ruby','3.3.8'),('bundler','2.5.22'),('rails','8.1.3.1')]:
+              assert c[name]['version']==version,(name,c[name]['version'])
+              assert 'rails' in c[name]['profiles'],name
           rp.write_text(json.dumps(r,indent=2,sort_keys=True,ensure_ascii=False)+'\n')
           bp=root/'tools/bootstrap-runtime.sh'; b=bp.read_text()
           b=b.replace('--profile core|ietf|formal|audio|publication|smalltalk|all]', '--profile core|ietf|formal|audio|publication|smalltalk|rails|all]')
           b=b.replace('core|ietf|formal|audio|publication|smalltalk|all) ;;', 'core|ietf|formal|audio|publication|smalltalk|rails|all) ;;')
           if 'check_rails_profile()' not in b:
               fn='''\ncheck_rails_profile() {\n    command -v ruby >/dev/null 2>&1 || { mark_continue "rails: Ruby 3.3.8 is absent"; return; }\n    [ "$(ruby -e 'print RUBY_VERSION')" = "3.3.8" ] || { mark_continue "rails: Ruby 3.3.8 required"; return; }\n    command -v bundle >/dev/null 2>&1 || { mark_continue "rails: Bundler 2.5.22 is absent"; return; }\n    [ "$(bundle --version)" = "Bundler version 2.5.22" ] || { mark_continue "rails: Bundler 2.5.22 required"; return; }\n    (cd "$ROOT/deploy/vercel-monitor" && BUNDLE_FROZEN=true bundle check) || { mark_continue "rails: frozen Gemfile.lock closure is not installed"; return; }\n    printf '%s\\n' "PASS: Rails runtime Ruby 3.3.8 / Bundler 2.5.22 / frozen dependency closure"\n}\n'''
+              assert b.count('\ncheck_core_profile() {')==1
               b=b.replace('\ncheck_core_profile() {',fn+'\ncheck_core_profile() {')
-              b += '\nif [ "$PROFILE" = rails ] || [ "$PROFILE" = all ]; then\n    check_rails_profile\nfi\n'
+          # Repair both an unmaterialized input and an existing unreachable tail.
+          legacy='\nif [ "$PROFILE" = rails ] || [ "$PROFILE" = all ]; then\n    check_rails_profile\nfi\n'
+          assert b.count(legacy)<=1
+          b=b.replace(legacy,'')
+          if '    rails) check_rails_profile ;;' not in b:
+              assert b.count('    smalltalk) check_smalltalk_profile ;;')==1
+              b=b.replace('    smalltalk) check_smalltalk_profile ;;','    smalltalk) check_smalltalk_profile ;;\n    rails) check_rails_profile ;;')
+          if '        check_smalltalk_profile\n        check_rails_profile\n' not in b:
+              assert b.count('        check_smalltalk_profile\n')==1
+              b=b.replace('        check_smalltalk_profile\n','        check_smalltalk_profile\n        check_rails_profile\n')
+          assert b.index('    rails) check_rails_profile ;;') < b.index('exit "$OVERALL"')
           bp.write_text(b)
+          PY
+          sh -n tools/bootstrap-runtime.sh
+          python3 - <<'PY'
+          # Isolated control-flow tests only. These doubles never count as Rails P2.
+          import os,pathlib,subprocess,tempfile
+          source=pathlib.Path('tools/bootstrap-runtime.sh').read_text()
+          with tempfile.TemporaryDirectory(prefix='qikvrt-rails-dispatch-') as d:
+              root=pathlib.Path(d)
+              (root/'tools').mkdir();(root/'bin').mkdir();(root/'deploy/vercel-monitor').mkdir(parents=True)
+              script=root/'tools/bootstrap-runtime.sh';script.write_text(source)
+              (root/'tools/bootstrap-gh.sh').write_text('#!/bin/sh\nexit 0\n')
+              (root/'bin/ruby').write_text('#!/bin/sh\nprintf "%s" "${TEST_RUBY_VERSION:-3.3.8}"\n')
+              (root/'bin/bundle').write_text('#!/bin/sh\nif [ "$1" = --version ]; then printf "Bundler version %s\\n" "${TEST_BUNDLER_VERSION:-2.5.22}"; else exit "${TEST_CLOSURE_RC:-0}"; fi\n')
+              for p in (root/'bin').iterdir(): p.chmod(0o755)
+              env=os.environ.copy();env['PATH']=str(root/'bin')+':'+env['PATH']
+              cases=[('valid',{},0),('wrong_ruby',{'TEST_RUBY_VERSION':'3.2.0'},20),('wrong_bundler',{'TEST_BUNDLER_VERSION':'0.0.0'},20),('missing_closure',{'TEST_CLOSURE_RC':'1'},20)]
+              for name,extra,expected in cases:
+                  result=subprocess.run(['sh',str(script),'--check-only','--profile','rails'],env={**env,**extra},text=True,capture_output=True,timeout=10)
+                  assert result.returncode==expected,(name,result.returncode,result.stdout,result.stderr)
+                  assert ('PASS: Rails runtime' in result.stdout) if expected==0 else ('rails:' in result.stderr),(name,result.stdout,result.stderr)
+                  print('CONTROL_REGRESSION='+name+' VERIFIED; not real Rails evidence')
           PY
           python3 tools/qikvrt_tool_cache.py render
           python3 tools/qikvrt_tool_cache.py verify
@@ -59,16 +101,19 @@ jobs:
       - name: Persist runtime successor without workflow mutation
         env:
           GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: ${{ github.sha }}
         run: |
           set -euo pipefail
           git config user.name qikvrt-rails-runtime-admission
           git config user.email qikvrt-rails-runtime-admission@users.noreply.github.com
           git add -- runtime/toolchains/TOOLCHAIN.lock.tsv runtime/toolchains/CACHE_REGISTRY.json runtime/toolchains/CACHE_COVERAGE.json tools/bootstrap-runtime.sh REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
-          if git diff --cached --quiet --exit-code; then echo STATE=NOOP; exit 0; fi
-          git commit -m 'fix(rails): persist Ruby Bundler Rails runtime cache contract'
+          if git diff --cached --quiet --exit-code; then echo STATE=UNCHANGED_PROJECTION_NOT_COMPLETION; exit 0; fi
+          git commit -m 'fix(rails): persist reachable Ruby Bundler Rails runtime cache contract'
           result="$(git rev-parse HEAD)"
           gh auth setup-git
+          remote="$(git ls-remote origin refs/heads/feat/megast-rails-vercel-20260915 | awk '{print $1}')"
+          test "$remote" = "$EXPECTED_HEAD"
           git push origin "HEAD:feat/megast-rails-vercel-20260915"
           remote="$(git ls-remote origin refs/heads/feat/megast-rails-vercel-20260915 | awk '{print $1}')"
           test "$remote" = "$result"
-          printf 'RESULT_HEAD=%s\nRESULT_TREE=%s\n' "$result" "$(git rev-parse 'HEAD^{tree}')"
+          printf 'RESULT_HEAD=%s\nRESULT_TREE=%s\nP2_TRANSFERRED=false\nMAIN_MUTATED=false\nDEPLOYMENT=false\n' "$result" "$(git rev-parse 'HEAD^{tree}')"
