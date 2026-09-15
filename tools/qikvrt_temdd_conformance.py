@@ -9,13 +9,13 @@ def successor(subject,mutation): return subject+'@successor:'+mutation
 def done(predicates): return all(bool(predicates.get(x,False)) for x in DOD)
 def check():
  s='repo@head/tree'; t=successor(s,'m1'); e=Evidence(s,'validation')
- assert admits(e,s,'validation') and not admits(e,t,'validation') # T01/T02
- assert 'TRANSPORT_ACK'!='EFFECT_ACK' and 'RESULT'!='EFFECT' # T03/T04
- assert {'HOLD','CONTINUE'}.isdisjoint({'NOOP','DONE'}) # T05
- assert not done({x:True for x in DOD if x!='ALL_PULL_REQUESTS_REGARDED'}) # T06
- assert not admits(Evidence(s,'authority',False),s,'authority') # T07/T09
- assert not done({**{x:True for x in DOD},'FRESH_EFFECT_READBACK':False}) # T08/T12
- assert 'UNKNOWN' not in {'EFFECT_ACK','DONE'} # T10
- assert t!=s and not admits(e,t,'validation') # T11
+ assert admits(e,s,'validation') and not admits(e,t,'validation')
+ assert 'TRANSPORT_ACK'!='EFFECT_ACK' and 'RESULT'!='EFFECT'
+ assert {'HOLD','CONTINUE'}.isdisjoint({'NOOP','DONE'})
+ assert not done({x:True for x in DOD if x!='ALL_PULL_REQUESTS_REGARDED'})
+ assert not admits(Evidence(s,'authority',False),s,'authority')
+ assert not done({**{x:True for x in DOD},'FRESH_EFFECT_READBACK':False})
+ assert 'UNKNOWN' not in {'EFFECT_ACK','DONE'}
+ assert t!=s and not admits(e,t,'validation')
  print('TEMDD_CONFORMANCE T01-T12 PASS')
 if __name__=='__main__': check()
