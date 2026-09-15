@@ -17,12 +17,43 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
+          persist-credentials: false
+      - name: Bind literal source and verify runtime authorities
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          test "$(git rev-parse HEAD)" = "$expected"
+          mkdir -p .qikvrt/runtime/ci-diagnostics
+          printf 'HEAD=%s\nTREE=%s\n' "$expected" "$(git rev-parse 'HEAD^{tree}')" \
+            | tee .qikvrt/runtime/ci-diagnostics/SUBJECT.txt
+          python3 -B tools/qikvrt_tool_cache.py verify
+      - name: Provision pinned Ruby and Bundler
+        uses: ruby/setup-ruby@bec3f19a76460dbe12f60def7d1a77585f07516c
+        with:
+          ruby-version: '3.3.8'
+          bundler: '2.6.9'
+          bundler-cache: false
+          working-directory: deploy/vercel-monitor
+      - name: Derive frozen Rails runtime through existing bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh tools/bootstrap-runtime.sh --install --accept-third-party --profile rails \
+            2>&1 | tee .qikvrt/runtime/ci-diagnostics/RAILS_BOOTSTRAP.log
+          sh tools/bootstrap-runtime.sh --check-only --profile rails
+      - name: Execute both real Ruby and production Rails suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          make megast-rails-test 2>&1 | tee .qikvrt/runtime/ci-diagnostics/RAILS_TESTS.log
       - name: Full compile, launcher, protocol, handler, security and TCP/IP tests
         id: full_test
         continue-on-error: true
@@ -67,6 +98,15 @@ jobs:
             audit/ci-diagnostics/MAKE_TEST_DIAGNOSTICS.log
           cat "$diagnostics/MAKE_TEST_DIAGNOSTICS.log"
           exit "$status"
+      - name: Reobserve unchanged literal candidate after tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          test "$(git rev-parse HEAD)" = "$expected"
+          git status --porcelain=v1 --untracked-files=all > .qikvrt/runtime/ci-diagnostics/FINAL_WORKTREE.txt
+          test ! -s .qikvrt/runtime/ci-diagnostics/FINAL_WORKTREE.txt
+          python3 -B tools/qikvrt_integrity.py verify
       - name: Upload audit
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -76,6 +116,7 @@ jobs:
           path: |
             audit/**
             .qikvrt/**
+            !.qikvrt/toolchains/**
           if-no-files-found: warn
           include-hidden-files: true
       - name: Enforce full repository test result
@@ -184,177 +225,3 @@ jobs:
           path: ${{ env.EVIDENCE_ROOT }}
           retention-days: 30
           if-no-files-found: error
-
-  # Bounded preparation on the owner's existing repair branch. Never review/P2.
-  rails-lock-candidate:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/repair/pr1095-rails-runtime-admission-20260915'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    env:
-      RAILS_EVIDENCE: /tmp/qikvrt-rails-resolution
-      BUNDLE_GEMFILE: ${{ github.workspace }}/deploy/vercel-monitor/Gemfile
-      BUNDLE_PATH: /tmp/qikvrt-rails-resolution-gems
-      BUNDLE_IGNORE_CONFIG: '1'
-      BUNDLE_WITHOUT: ''
-      BUNDLE_WITH: test
-      BUNDLE_RETRY: '0'
-      BUNDLE_JOBS: '4'
-    steps:
-      - name: Check out exact isolated resolver subject
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Bind source and declare bounded resolver profile before execution
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = '${{ github.sha }}'
-          git merge-base --is-ancestor 8c7d4ae1a819e0ed1f7b56d574adb34fd097a9b4 HEAD
-          python3 -B tools/qikvrt_tool_cache.py verify
-          python3 -B - <<'PY'
-          import hashlib, json, os, pathlib, shutil, subprocess
-          root = pathlib.Path('.')
-          out = pathlib.Path(os.environ['RAILS_EVIDENCE'])
-          out.mkdir(parents=True, exist_ok=True)
-          paths = [
-              'AI', 'AI_CONTEXT.json', 'AGENTS.md', 'Makefile',
-              '.github/workflows/qikvrt_ci.yml',
-              '.github/workflows/qikvrt_autonomous_exact_head_verify.yml',
-              'runtime/CACHE_POLICY.md', 'runtime/toolchains/TOOLCHAIN.lock.tsv',
-              'runtime/toolchains/CACHE_REGISTRY.json', 'runtime/toolchains/CACHE_COVERAGE.json',
-              'tools/bootstrap-runtime.sh', 'tools/ai_runtime_bootloader.py',
-              'tools/qikvrt_tool_cache.py', 'tests/test_qikvrt_tool_cache.py',
-              'tests/test_runtime_bootstrap.sh', 'tests/test_ai_runtime_bootloader.py',
-              'tests/test_megast_rails_gate.py',
-              'state/work_units/MEGAST_RAILS_VERCEL_20260915_V1.json',
-          ]
-          paths += [str(p) for p in root.glob('deploy/vercel-monitor/**/*') if p.is_file()]
-          records = {}
-          for name in sorted(set(paths)):
-              p = root / name
-              if not p.is_file():
-                  continue
-              target = out / 'source' / name
-              target.parent.mkdir(parents=True, exist_ok=True)
-              shutil.copyfile(p, target)
-              data = p.read_bytes()
-              records[name] = {'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest(),
-                  'git_blob': subprocess.check_output(['git', 'rev-parse', 'HEAD:' + name], text=True).strip()}
-          head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
-          tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip()
-          subject = {'schema': 'qikvrt_rails_resolution_subject_v1', 'head': head, 'tree': tree,
-              'run_id': os.environ['GITHUB_RUN_ID'], 'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
-              'event': os.environ['GITHUB_EVENT_NAME'], 'source_files': records,
-              'predecessor_evidence_transfer': False, 'production_runtime_admitted': False,
-              'P2': False, 'P3': False, 'merge': False, 'deploy': False, 'effect_ack_done': False}
-          (out / 'SUBJECT.json').write_text(json.dumps(subject, sort_keys=True, indent=2) + '\n')
-          lock = root / 'runtime/toolchains/TOOLCHAIN.lock.tsv'
-          registry_path = root / 'runtime/toolchains/CACHE_REGISTRY.json'
-          registry = json.loads(registry_path.read_text())
-          rows = {
-              'ruby': ('3.3.8', 'Ruby_OR_BSD-2-Clause', 'hosted-toolcache', 'ruby/setup-ruby@bec3f19a76460dbe12f60def7d1a77585f07516c'),
-              'bundler': ('2.6.9', 'MIT', 'ecosystem-cache', 'pinned ruby/setup-ruby Bundler provision'),
-              'railties': ('8.1.3.1', 'MIT_AND_TRANSITIVE_LICENSES', 'ecosystem-cache', 'RubyGems HTTPS; real Bundler checksum-lock derivation'),
-          }
-          text = lock.read_text()
-          for name, (version, license_name, cache_class, provider) in rows.items():
-              if name in registry['components']:
-                  raise SystemExit('BLOCK: resolver declaration already exists; reobserve instead of overwriting')
-              text += '\t'.join([name, version, 'ubuntu-24.04-x86_64', 'NO_BUNDLED_ARCHIVE',
-                                  'VERSION_AND_PROVIDER_CONTRACT', license_name, 'rails_resolution_candidate']) + '\n'
-              registry['components'][name] = {
-                  'version': version, 'profiles': ['rails-resolution-candidate'],
-                  'cache_class': cache_class, 'cache_locations': ['runner-temporary:rails-resolution/' + name],
-                  'provider': provider, 'trusted_save': False,
-                  'authority_files': ['runtime/toolchains/TOOLCHAIN.lock.tsv',
-                      '.github/workflows/qikvrt_ci.yml', 'deploy/vercel-monitor/Gemfile'],
-                  'verification': ['exact reported runtime version', 'Bundler checksummed lock',
-                      'frozen dependency installation', 'both real Ruby/Rails suites'],
-                  'license': license_name, 'provenance': 'Owner-requested native isolated resolution; no source vendoring',
-                  'failure_recovery': 'Retain logs and candidate bytes; no ref write, downgrade, blind retry or P2 claim',
-                  'progress': 'GitHub Actions step transitions and preserved exact-source artifact',
-                  'admission_boundary': 'Resolver candidate only; final bootstrap and exact-head P2 remain required',
-              }
-          lock.write_text(text)
-          registry_path.write_text(json.dumps(registry, sort_keys=True, indent=2) + '\n')
-          PY
-          python3 -B tools/qikvrt_tool_cache.py render
-          python3 -B tools/qikvrt_tool_cache.py verify
-      - name: Provision exact resolver Ruby and Bundler
-        uses: ruby/setup-ruby@bec3f19a76460dbe12f60def7d1a77585f07516c
-        with:
-          ruby-version: '3.3.8'
-          bundler: '2.6.9'
-          bundler-cache: false
-          working-directory: deploy/vercel-monitor
-      - name: Resolve actual Gemfile with checksums, without changing its pins
-        shell: bash
-        run: |
-          set -euo pipefail
-          exec > >(tee "$RAILS_EVIDENCE/resolve.log") 2>&1
-          ruby --version
-          bundle _2.6.9_ --version
-          ruby -e 'abort "Ruby drift" unless RUBY_VERSION == "3.3.8"; gem "bundler", "=2.6.9"; require "bundler"; abort "Bundler drift" unless Bundler::VERSION == "2.6.9"'
-          test ! -e deploy/vercel-monitor/Gemfile.lock
-          sha256sum deploy/vercel-monitor/Gemfile > "$RAILS_EVIDENCE/gemfile.before.sha256"
-          bundle _2.6.9_ lock --add-checksums --add-platform x86_64-linux
-          sha256sum -c "$RAILS_EVIDENCE/gemfile.before.sha256"
-          sha256sum deploy/vercel-monitor/Gemfile.lock > "$RAILS_EVIDENCE/lock.before.sha256"
-          grep -q '^CHECKSUMS$' deploy/vercel-monitor/Gemfile.lock
-          cat deploy/vercel-monitor/Gemfile.lock
-      - name: Install frozen closure and execute BOTH real suites through the Make gate
-        shell: bash
-        env:
-          BUNDLE_FROZEN: 'true'
-        run: |
-          set -euo pipefail
-          exec > >(tee "$RAILS_EVIDENCE/real-suites.log") 2>&1
-          bundle _2.6.9_ install
-          bundle _2.6.9_ check
-          make megast-rails-test
-          sha256sum -c "$RAILS_EVIDENCE/lock.before.sha256"
-          ruby -rjson -rbundler/setup - <<'RB' > "$RAILS_EVIDENCE/gem-license-metadata.json"
-          require 'bundler'
-          data = Bundler.load.specs.sort_by(&:name).map do |spec|
-            {name: spec.name, version: spec.version.to_s, platform: spec.platform.to_s,
-             licenses: spec.licenses, homepage: spec.homepage}
-          end
-          puts JSON.pretty_generate({ruby: RUBY_VERSION, bundler: Bundler::VERSION, gems: data,
-                                     scope: 'upstream gemspec metadata; not an independent rights opinion'})
-          RB
-      - name: Preserve candidate bytes and precise limits, even on failure
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$RAILS_EVIDENCE/candidate"
-          for file in runtime/toolchains/TOOLCHAIN.lock.tsv runtime/toolchains/CACHE_REGISTRY.json runtime/toolchains/CACHE_COVERAGE.json deploy/vercel-monitor/Gemfile.lock; do
-            if [ -f "$file" ]; then
-              mkdir -p "$RAILS_EVIDENCE/candidate/$(dirname "$file")"
-              cp "$file" "$RAILS_EVIDENCE/candidate/$file"
-            fi
-          done
-          git diff --stat > "$RAILS_EVIDENCE/worktree-delta.txt"
-          python3 -B - <<'PY'
-          import hashlib, json, os, pathlib
-          out = pathlib.Path(os.environ['RAILS_EVIDENCE'])
-          entries = {str(p.relative_to(out)): {'bytes': p.stat().st_size,
-              'sha256': hashlib.sha256(p.read_bytes()).hexdigest()}
-              for p in sorted(out.rglob('*')) if p.is_file()}
-          (out / 'ARTIFACT_MANIFEST.json').write_text(json.dumps({'files': entries,
-              'ref_mutation': False, 'candidate_worktree_is_final_head': False,
-              'P2': False, 'P3': False, 'effect_ack_done': False}, sort_keys=True, indent=2) + '\n')
-          PY
-      - name: Upload exact-source Rails resolution candidate
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: qikvrt-rails-resolution-${{ github.sha }}
-          path: ${{ env.RAILS_EVIDENCE }}
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 30

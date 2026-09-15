@@ -39,28 +39,43 @@ artifact. No new image is relabeled as the original.
 
 ## Tests and runtime admission
 
-Core descriptor and actual WEBrick-to-Rack bridge tests, without Rails:
+The complete `Gemfile.lock` was actually derived by Bundler 2.6.9 on Ruby 3.3.8
+from the unchanged Gemfile in GitHub Actions run 34969076014. Its SHA-256 is
+`b28e08a527254ea645ae5c2771b55e4538111b2dc399c95247a8fbf6be741c8b`.
+The original resolution and failure log remain historical, not final-head P2.
+The pin is Rails/railties 8.1.3.1; no dependency downgrade was performed.
+
+From the repository root, with Ruby 3.3.8 and Bundler 2.6.9 provided by the
+pinned CI action or a separately verified operator installation:
 
 ```sh
-cd deploy/vercel-monitor
-ruby test/megast_test.rb --seed 1079
+sh tools/bootstrap-runtime.sh --install --accept-third-party --profile rails
+make megast-rails-test
+make test
 ```
 
-The real Rails boot/routing test is separate and never skips missing dependencies:
+Installation is explicit; neither test target resolves nor installs gems.
+The existing bootstrap validates the declared byte authorities, verifies cached
+`.gem` archives against the lock, derives a fresh frozen bundle and verifies it.
+It never restores an installed executable bundle from a shared cache. A local
+receipt outside the tool cache binds installed bytes; check-only verifies those
+bytes before loading them. Missing runtime is CONTINUE/20 and fails the Make gate;
+corrupt cache, source drift or failed installation is BLOCK, with rollback.
+The existing cache verifier covers Ruby, Bundler and the complete Rails closure
+through its checksummed lock authority. Locked platforms other than Linux x86_64
+are resolver data, not a claim of runtime validation on those platforms.
 
-```sh
-bundle exec ruby test/rails_smoke_test.rb
-```
+Both original test suites are mandatory. The production-mode Rails smoke test
+creates a random `SECRET_KEY_BASE` only inside its test process, keeps host
+rejection and missing-public-delivery checks, and exercises the real
+WEBrick-to-Rails handler. It never writes or logs the key. The application has
+**no built-in production secret**: the intended Vercel environment must supply
+its own `SECRET_KEY_BASE`; that configuration is a separate deployment gate.
+No CI/test secret is suitable for production or persisted in Git/cache.
 
-The optional Rails candidate uses Ruby 3.3.x and pins `railties` to 8.1.3.1.
-Before admitting it to P2 or deploying, use the repository's existing tool-cache
-and bootstrap mechanism to register/provision the Ruby/Bundler/Rails profile,
-resolve and review the full transitive `Gemfile.lock`, verify cache coverage,
-and run BOTH test suites on the final exact candidate. The local core test used
-Ruby 3.3.8. Rails/Rack dependencies were unavailable in this execution sandbox;
-full Rails boot, the repository bootloader, full `make test`, integrity
-materialization and a Vercel build have NOT been verified here. The Gemfile is
-not represented as a complete transitive dependency lock.
+Cold and warm installs execute the same source/checksum/runtime checks. Green
+scoped suites do not replace full literal-head P2, Vercel build-only evidence,
+native review, Main adoption or independently observed external effects.
 
 ## Public delivery and Main continuation
 

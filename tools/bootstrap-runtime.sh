@@ -23,11 +23,12 @@ usage() {
     cat <<'EOF'
 Usage: tools/bootstrap-runtime.sh [--check-only] [--install]
        [--accept-third-party]
-       [--profile core|ietf|formal|audio|publication|smalltalk|all]
+       [--profile core|ietf|formal|audio|publication|smalltalk|rails|all]
        [--cache-dir PATH]
 
 Every profile checks GitHub CLI first. Only the verified GitHub CLI and
-xml2rfc environments have an automatic install path. Other profile tools are
+xml2rfc and frozen Rails gem environments have an explicit install path.
+Ruby/Bundler are provided by the pinned CI action or the operator. Other tools are
 operator-managed and produce a precise CONTINUE when absent. Default: check.
 
 Exit status: 0 PASS, 20 CONTINUE (runtime absent), 1 BLOCK, 2 usage error.
@@ -91,7 +92,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$PROFILE" in
-    core|ietf|formal|audio|publication|smalltalk|all) ;;
+    core|ietf|formal|audio|publication|smalltalk|rails|all) ;;
     *) usage >&2; exit 2 ;;
 esac
 if [ "$MODE" = install ] && [ "$ACCEPT_THIRD_PARTY" -ne 1 ]; then
@@ -397,6 +398,164 @@ check_smalltalk_profile() {
     fi
 }
 
+# Rails reuses this bootstrap's explicit-install, symlink and rollback contract.
+rails_bundle() {
+    BUNDLE_GEMFILE="$RAILS_APP/Gemfile" BUNDLE_PATH="$RAILS_BUNDLE" \
+        BUNDLE_CACHE_PATH="$RAILS_VERIFIED_CACHE" BUNDLE_FROZEN=true \
+        BUNDLE_IGNORE_CONFIG=1 BUNDLE_WITHOUT= BUNDLE_WITH=test \
+        BUNDLE_DISABLE_CHECKSUM_VALIDATION=false BUNDLE_RETRY=0 \
+        RUBYOPT= RUBYLIB= "$RAILS_RUBY" -S bundle _2.6.9_ "$@"
+}
+
+rails_verify_archives() {
+    python3 -B - "$RAILS_LOCK" "$1" "$2" <<'PY'
+import hashlib, pathlib, re, shutil, sys
+lock, source, destination = map(pathlib.Path, sys.argv[1:])
+expected = {name + '-' + version + '.gem': digest for name, version, digest in
+    re.findall(r'^  ([a-zA-Z0-9_-]+) \(([^)]+)\) sha256=([0-9a-f]{64})$', lock.read_text(), re.M)}
+if not expected:
+    raise SystemExit('BLOCK: checksummed Gemfile.lock required')
+destination.mkdir(parents=True, exist_ok=True)
+count = 0
+for path in sorted(source.iterdir()):
+    if path.is_symlink() or not path.is_file() or path.name not in expected:
+        raise SystemExit('BLOCK: unexpected or linked gem cache entry: ' + path.name)
+    data = path.read_bytes()
+    if hashlib.sha256(data).hexdigest() != expected[path.name]:
+        raise SystemExit('BLOCK: gem cache checksum mismatch: ' + path.name)
+    target = destination / path.name
+    if target.exists() and target.read_bytes() != data:
+        raise SystemExit('BLOCK: conflicting verified gem bytes: ' + path.name)
+    if not target.exists():
+        with target.open('xb') as stream:
+            stream.write(data)
+    count += 1
+print('RAILS_STEP verified-gem-archives=' + str(count))
+PY
+}
+
+rails_runtime_receipt() {
+    python3 -B - "$1" "$RAILS_BUNDLE" "$RAILS_RECEIPT" "$RAILS_LOCK" <<'PY'
+import hashlib, json, os, pathlib, sys
+mode = sys.argv[1]
+bundle, receipt, lock = map(pathlib.Path, sys.argv[2:])
+files = {}
+for path in sorted(bundle.rglob('*')):
+    if path.is_symlink():
+        raise SystemExit('BLOCK: linked installed gem path: ' + str(path))
+    if path.is_file():
+        files[str(path.relative_to(bundle))] = {
+            'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+            'mode': path.stat().st_mode & 0o777}
+if not files:
+    raise SystemExit('BLOCK: installed Rails bundle is empty')
+value = {'schema': 'qikvrt_local_rails_derivation_v1', 'bundle_path': str(bundle.resolve()),
+    'lock_sha256': hashlib.sha256(lock.read_bytes()).hexdigest(),
+    'ruby': '3.3.8', 'bundler': '2.6.9', 'files': files,
+    'scope': 'local fresh derivation; not shared-cache authority or final-head P2',
+    'effect_ack_done': False}
+if mode == 'write':
+    receipt.parent.mkdir(parents=True, exist_ok=True)
+    temporary = receipt.with_suffix('.tmp')
+    temporary.write_text(json.dumps(value, sort_keys=True) + '\n')
+    os.replace(temporary, receipt)
+elif mode == 'verify':
+    if json.loads(receipt.read_text()) != value:
+        raise SystemExit('BLOCK: installed Rails bytes differ from local derivation receipt')
+else:
+    raise SystemExit('BLOCK: unsupported Rails receipt operation')
+print('RAILS_STEP local-derivation-' + mode + ' files=' + str(len(files)))
+PY
+}
+
+check_rails_profile() {
+    RAILS_APP="$ROOT/deploy/vercel-monitor"
+    RAILS_LOCK="$RAILS_APP/Gemfile.lock"
+    RAILS_ROOT="$CACHE_DIR/rails"
+    RAILS_BUNDLE="$RAILS_ROOT/bundle"
+    RAILS_RECEIPT="$ROOT/.qikvrt/runtime/rails/environment.json"
+    [ -s "$RAILS_LOCK" ] || fail "rails: complete checksummed Gemfile.lock required"
+    python3 -B "$ROOT/tools/qikvrt_tool_cache.py" verify || fail "rails: declared byte authorities failed"
+    rails_lock_sha=$(hash_file "$RAILS_LOCK")
+    rails_expected_sha=$(awk -F '\t' '$1 == "railties" {print $5}' "$ROOT/runtime/toolchains/TOOLCHAIN.lock.tsv")
+    [ "$rails_lock_sha" = "$rails_expected_sha" ] || fail "rails: Gemfile.lock differs from toolchain authority"
+    [ "$(awk -F '\t' '$1 == "ruby" {print $2}' "$ROOT/runtime/toolchains/TOOLCHAIN.lock.tsv")" = 3.3.8 ] || fail "rails: Ruby declaration drift"
+    [ "$(awk -F '\t' '$1 == "bundler" {print $2}' "$ROOT/runtime/toolchains/TOOLCHAIN.lock.tsv")" = 2.6.9 ] || fail "rails: Bundler declaration drift"
+    [ "$(awk -F '\t' '$1 == "railties" {print $2}' "$ROOT/runtime/toolchains/TOOLCHAIN.lock.tsv")" = 8.1.3.1 ] || fail "rails: Rails declaration drift"
+    RAILS_RUBY=$(command -v "${RUBY:-ruby}" || true)
+    if [ -z "$RAILS_RUBY" ]; then
+        mark_continue "rails: Ruby 3.3.8 must be provided by the pinned setup-ruby action or operator"
+        return
+    fi
+    RUBYOPT= RUBYLIB= "$RAILS_RUBY" -e 'abort "Ruby version drift" unless RUBY_VERSION == "3.3.8"' || fail "rails: exact Ruby 3.3.8 required"
+    if ! RUBYOPT= RUBYLIB= "$RAILS_RUBY" -e 'gem "bundler", "=2.6.9"; require "bundler"; abort unless Bundler::VERSION == "2.6.9"'; then
+        mark_continue "rails: Bundler 2.6.9 must be provided by the pinned setup-ruby action or operator"
+        return
+    fi
+    RAILS_ARCHIVES="$RAILS_ROOT/archives/$rails_lock_sha"
+    RAILS_VERIFIED_CACHE="$RAILS_ARCHIVES"
+    reject_symlink_chain "$RAILS_BUNDLE"
+    reject_symlink_chain "$RAILS_ARCHIVES"
+    reject_symlink_chain "$RAILS_RECEIPT"
+    printf '%s\n' "RAILS_STEP exact-runtime Ruby=3.3.8 Bundler=2.6.9 lock=$rails_lock_sha"
+    if [ "$MODE" != install ]; then
+        if [ ! -d "$RAILS_BUNDLE" ] || [ ! -f "$RAILS_RECEIPT" ]; then
+            mark_continue "rails: fresh --install --accept-third-party --profile rails derivation required"
+            return
+        fi
+        rails_runtime_receipt verify || fail "rails: unverified installed bundle"
+        rails_bundle check || fail "rails: frozen dependency closure not satisfied"
+        printf '%s\n' "PASS: rails exact runtime and installed-byte readback"
+        return
+    fi
+
+    mkdir -p "$RAILS_ROOT"
+    TMP_DIR=$(mktemp -d "$RAILS_ROOT/.install.XXXXXX") || fail "rails: staging creation failed"
+    RAILS_VERIFIED_CACHE="$TMP_DIR/verified-gems"
+    mkdir "$RAILS_VERIFIED_CACHE"
+    if [ -d "$RAILS_ARCHIVES" ]; then
+        rails_verify_archives "$RAILS_ARCHIVES" "$RAILS_VERIFIED_CACHE" || fail "rails: cached source archives failed verification"
+    else
+        [ ! -e "$RAILS_ARCHIVES" ] || fail "rails: source archive cache is not a directory"
+        printf '%s\n' "RAILS_STEP cold-source-cache"
+    fi
+    # Never execute a restored installed bundle. Derive afresh at its final path;
+    # the existing cleanup trap restores the previous bundle on any failure.
+    VENV_PATH="$RAILS_BUNDLE"
+    INSTALL_IN_PROGRESS=1
+    if [ -e "$RAILS_BUNDLE" ]; then
+        [ -d "$RAILS_BUNDLE" ] || fail "rails: bundle path is not a directory"
+        VENV_BACKUP="$TMP_DIR/previous-bundle"
+        mv "$RAILS_BUNDLE" "$VENV_BACKUP"
+    fi
+    printf '%s\n' "RAILS_STEP fresh-frozen-install"
+    rails_bundle install --jobs 4 --retry 0 || fail "rails: frozen installation failed"
+    rails_bundle check || fail "rails: dependency self-test failed"
+    BUNDLE_GEMFILE="$RAILS_APP/Gemfile" BUNDLE_PATH="$RAILS_BUNDLE" \
+        BUNDLE_FROZEN=true BUNDLE_IGNORE_CONFIG=1 BUNDLE_WITHOUT= \
+        RUBYOPT= RUBYLIB= "$RAILS_RUBY" -rbundler/setup -e \
+        'require "rails"; abort "Rails version drift" unless Rails::VERSION::STRING == "8.1.3.1"' || fail "rails: actual Rails load failed"
+    [ "$(hash_file "$RAILS_LOCK")" = "$rails_lock_sha" ] || fail "rails: frozen install changed the lock"
+    for source_cache in "$RAILS_BUNDLE"/ruby/*/cache; do
+        [ -d "$source_cache" ] || continue
+        rails_verify_archives "$source_cache" "$RAILS_VERIFIED_CACHE" || fail "rails: downloaded archive verification failed"
+    done
+    mkdir -p "$RAILS_ARCHIVES"
+    rails_verify_archives "$RAILS_VERIFIED_CACHE" "$RAILS_ARCHIVES" || fail "rails: verified archive retention failed"
+    mkdir -p "$(dirname "$RAILS_RECEIPT")"
+    BUNDLE_GEMFILE="$RAILS_APP/Gemfile" BUNDLE_PATH="$RAILS_BUNDLE" \
+        BUNDLE_FROZEN=true BUNDLE_IGNORE_CONFIG=1 BUNDLE_WITHOUT= \
+        RUBYOPT= RUBYLIB= "$RAILS_RUBY" -rjson -rbundler/setup -e \
+        'puts JSON.pretty_generate(Bundler.load.specs.sort_by(&:name).map { |s| {name:s.name, version:s.version.to_s, platform:s.platform.to_s, licenses:s.licenses, homepage:s.homepage} })' \
+        > "$(dirname "$RAILS_RECEIPT")/gem-license-metadata.json" || fail "rails: gem metadata readback failed"
+    rails_runtime_receipt write || fail "rails: installed-byte receipt failed"
+    VENV_BACKUP=
+    INSTALL_IN_PROGRESS=0
+    rm -rf -- "$TMP_DIR"
+    TMP_DIR=
+    printf '%s\n' "PASS: fresh checksummed Rails 8.1.3.1 bundle; project tests still required"
+}
+
 check_publication_profile() {
     missing=
     for tool in xelatex pdftotext pdftoppm; do
@@ -421,6 +580,7 @@ case "$PROFILE" in
     audio) check_audio_profile ;;
     publication) check_publication_profile ;;
     smalltalk) check_smalltalk_profile ;;
+    rails) check_rails_profile ;;
     all)
         check_core_profile
         check_ietf_profile
@@ -428,6 +588,7 @@ case "$PROFILE" in
         check_audio_profile
         check_publication_profile
         check_smalltalk_profile
+        check_rails_profile
         ;;
 esac
 

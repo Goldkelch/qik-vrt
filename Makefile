@@ -3,6 +3,7 @@
 
 PYTHON ?= python3
 RUBY ?= ruby
+QIKVRT_TOOLCHAIN_CACHE ?= $(CURDIR)/.qikvrt/toolchains
 CC ?= cc
 EFFECT_ACK_C90_CFLAGS ?= -std=c90 -pedantic -Wall -Wextra -Werror
 
@@ -37,8 +38,9 @@ tool-cache-contract:
 megast-rails-test: tool-cache-contract
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tests/test_megast_rails_gate.py
 	@test -s deploy/vercel-monitor/Gemfile.lock || { echo "BLOCK: reviewed Mega ST Rails Gemfile.lock and runtime/cache profile required" >&2; exit 1; }
-	cd deploy/vercel-monitor && BUNDLE_GEMFILE=Gemfile BUNDLE_FROZEN=true BUNDLE_WITHOUT= $(RUBY) -rbundler/setup test/megast_test.rb
-	cd deploy/vercel-monitor && BUNDLE_GEMFILE=Gemfile BUNDLE_FROZEN=true BUNDLE_WITHOUT= $(RUBY) -rbundler/setup test/rails_smoke_test.rb
+	QIKVRT_TOOLCHAIN_CACHE="$(QIKVRT_TOOLCHAIN_CACHE)" RUBY="$(RUBY)" sh tools/bootstrap-runtime.sh --check-only --profile rails
+	cd deploy/vercel-monitor && BUNDLE_PATH="$(QIKVRT_TOOLCHAIN_CACHE)/rails/bundle" BUNDLE_GEMFILE=Gemfile BUNDLE_FROZEN=true BUNDLE_WITHOUT= $(RUBY) -rbundler/setup test/megast_test.rb
+	cd deploy/vercel-monitor && BUNDLE_PATH="$(QIKVRT_TOOLCHAIN_CACHE)/rails/bundle" BUNDLE_GEMFILE=Gemfile BUNDLE_FROZEN=true BUNDLE_WITHOUT= $(RUBY) -rbundler/setup test/rails_smoke_test.rb
 
 runtime-contract: tool-cache-contract
 	sh -n tools/bootstrap-gh.sh tools/bootstrap-runtime.sh

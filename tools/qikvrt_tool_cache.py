@@ -179,6 +179,19 @@ def validate_registry(
                     f"{component}: missing authority file: {authority}"
                 )
 
+        # Optional byte authorities bind derived closures before any runtime use.
+        byte_authorities = entry.get("sha256_authorities", {})
+        if not isinstance(byte_authorities, dict):
+            raise ContractError(f"{component}: sha256_authorities must be an object")
+        for authority, digest in byte_authorities.items():
+            if authority not in entry["authority_files"]:
+                raise ContractError(f"{component}: undeclared byte authority: {authority}")
+            if (not isinstance(digest, str) or len(digest) != 64
+                    or any(c not in "0123456789abcdef" for c in digest)):
+                raise ContractError(f"{component}: invalid SHA-256 for {authority}")
+            if sha256_bytes((ROOT / authority).read_bytes()) != digest:
+                raise ContractError(f"{component}: byte authority drift: {authority}")
+
         joined_locations = "\n".join(entry["cache_locations"]).lower()
         forbidden = sorted(
             token for token in FORBIDDEN_CACHE_TOKENS if token in joined_locations
