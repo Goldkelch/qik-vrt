@@ -2,8 +2,7 @@ name: QIKVRT Rails runtime admission
 
 on:
   push:
-    branches:
-      - feat/megast-rails-vercel-20260915
+    branches: [feat/megast-rails-vercel-20260915]
 
 permissions:
   contents: write
@@ -18,93 +17,55 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 2
       - name: Bind exact source
-        shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = '${{ github.sha }}'
           printf 'SOURCE_HEAD=%s\nSOURCE_TREE=%s\n' "$(git rev-parse HEAD)" "$(git rev-parse 'HEAD^{tree}')"
-      - name: Materialize Ruby Bundler Rails runtime/cache contract
-        shell: bash
+      - name: Materialize runtime cache contract only
         run: |
           set -euo pipefail
           python3 - <<'PY'
           import json
           from pathlib import Path
-
           root=Path('.')
           lock=root/'runtime/toolchains/TOOLCHAIN.lock.tsv'
           text=lock.read_text()
           rows={line.split('\t',1)[0] for line in text.splitlines() if line and not line.startswith('#')}
-          additions=[]
-          if 'ruby' not in rows:
-              additions.append('ruby\t3.3.8\tlinux-amd64\tNO_BUNDLED_ARCHIVE\tVERSION_CONTRACT_ONLY\tRUBY_LICENSE\tmegast_rails_runtime')
-          if 'bundler' not in rows:
-              additions.append('bundler\t2.5.22\truby-3.3.8\tGemfile.lock\tLOCK_BOUND_DEPENDENCY_CLOSURE\tMIT\tmegast_rails_dependency_runtime')
-          if 'rails' not in rows:
-              additions.append('rails\t8.1.3.1\truby-3.3.8\tdeploy/vercel-monitor/Gemfile.lock\tLOCK_BOUND_DEPENDENCY_CLOSURE\tMIT_AND_TRANSITIVE_GEM_LICENSES\tmegast_rails_application_runtime')
-          if additions:
-              lock.write_text(text.rstrip('\n')+'\n'+'\n'.join(additions)+'\n')
-
-          registry_path=root/'runtime/toolchains/CACHE_REGISTRY.json'
-          registry=json.loads(registry_path.read_text())
-          components=registry['components']
-          common_authority=['runtime/toolchains/TOOLCHAIN.lock.tsv','runtime/toolchains/CACHE_REGISTRY.json','deploy/vercel-monitor/Gemfile','deploy/vercel-monitor/Gemfile.lock','tools/bootstrap-runtime.sh','.github/workflows/qikvrt_ci.yml']
-          components['ruby']={
-              'version':'3.3.8','profiles':['rails','all'],'cache_class':'hosted-toolcache',
-              'provider':'ruby/setup-ruby','cache_locations':['github-hosted-toolcache:Ruby/3.3.8'],
-              'authority_files':common_authority,'verification':['ruby -e exact RUBY_VERSION','real Rails suite execution'],
-              'trusted_save':False}
-          components['bundler']={
-              'version':'2.5.22','profiles':['rails','all'],'cache_class':'ecosystem-cache',
-              'provider':'ruby/setup-ruby bundler-cache','cache_locations':['github-actions-cache:bundler/deploy/vercel-monitor/Gemfile.lock'],
-              'authority_files':common_authority,'verification':['bundle --version exact 2.5.22','bundle check with BUNDLE_FROZEN=true'],
-              'trusted_save':True}
-          components['rails']={
-              'version':'8.1.3.1','profiles':['rails','all'],'cache_class':'ecosystem-cache',
-              'provider':'Bundler exact Gemfile.lock closure','cache_locations':['github-actions-cache:bundler/deploy/vercel-monitor/Gemfile.lock'],
-              'authority_files':common_authority,'verification':['Gemfile.lock contains railties 8.1.3.1','bundle check frozen','megast_test.rb','rails_smoke_test.rb'],
-              'trusted_save':True}
-          registry_path.write_text(json.dumps(registry,indent=2,sort_keys=True,ensure_ascii=False)+'\n')
-
-          bootstrap=root/'tools/bootstrap-runtime.sh'
-          b=bootstrap.read_text()
+          add=[]
+          if 'ruby' not in rows: add.append('ruby\t3.3.8\tlinux-amd64\tNO_BUNDLED_ARCHIVE\tVERSION_CONTRACT_ONLY\tRUBY_LICENSE\tmegast_rails_runtime')
+          if 'bundler' not in rows: add.append('bundler\t2.5.22\truby-3.3.8\tGemfile.lock\tLOCK_BOUND_DEPENDENCY_CLOSURE\tMIT\tmegast_rails_dependency_runtime')
+          if 'rails' not in rows: add.append('rails\t8.1.3.1\truby-3.3.8\tdeploy/vercel-monitor/Gemfile.lock\tLOCK_BOUND_DEPENDENCY_CLOSURE\tMIT_AND_TRANSITIVE_GEM_LICENSES\tmegast_rails_application_runtime')
+          if add: lock.write_text(text.rstrip('\n')+'\n'+'\n'.join(add)+'\n')
+          rp=root/'runtime/toolchains/CACHE_REGISTRY.json'
+          r=json.loads(rp.read_text()); c=r['components']
+          auth=['runtime/toolchains/TOOLCHAIN.lock.tsv','runtime/toolchains/CACHE_REGISTRY.json','deploy/vercel-monitor/Gemfile','deploy/vercel-monitor/Gemfile.lock','tools/bootstrap-runtime.sh','.github/workflows/qikvrt_ci.yml']
+          c['ruby']={'version':'3.3.8','profiles':['rails','all'],'cache_class':'hosted-toolcache','provider':'ruby/setup-ruby','cache_locations':['github-hosted-toolcache:Ruby/3.3.8'],'authority_files':auth,'verification':['ruby -e exact RUBY_VERSION','real Rails suite execution'],'trusted_save':False}
+          c['bundler']={'version':'2.5.22','profiles':['rails','all'],'cache_class':'ecosystem-cache','provider':'ruby/setup-ruby bundler-cache','cache_locations':['github-actions-cache:bundler/deploy/vercel-monitor/Gemfile.lock'],'authority_files':auth,'verification':['bundle --version exact 2.5.22','bundle check with BUNDLE_FROZEN=true'],'trusted_save':True}
+          c['rails']={'version':'8.1.3.1','profiles':['rails','all'],'cache_class':'ecosystem-cache','provider':'Bundler exact Gemfile.lock closure','cache_locations':['github-actions-cache:bundler/deploy/vercel-monitor/Gemfile.lock'],'authority_files':auth,'verification':['Gemfile.lock contains railties 8.1.3.1','bundle check frozen','megast_test.rb','rails_smoke_test.rb'],'trusted_save':True}
+          rp.write_text(json.dumps(r,indent=2,sort_keys=True,ensure_ascii=False)+'\n')
+          bp=root/'tools/bootstrap-runtime.sh'; b=bp.read_text()
           b=b.replace('--profile core|ietf|formal|audio|publication|smalltalk|all]', '--profile core|ietf|formal|audio|publication|smalltalk|rails|all]')
           b=b.replace('core|ietf|formal|audio|publication|smalltalk|all) ;;', 'core|ietf|formal|audio|publication|smalltalk|rails|all) ;;')
           if 'check_rails_profile()' not in b:
-              marker='\ncheck_core_profile() {'
               fn='''\ncheck_rails_profile() {\n    command -v ruby >/dev/null 2>&1 || { mark_continue "rails: Ruby 3.3.8 is absent"; return; }\n    [ "$(ruby -e 'print RUBY_VERSION')" = "3.3.8" ] || { mark_continue "rails: Ruby 3.3.8 required"; return; }\n    command -v bundle >/dev/null 2>&1 || { mark_continue "rails: Bundler 2.5.22 is absent"; return; }\n    [ "$(bundle --version)" = "Bundler version 2.5.22" ] || { mark_continue "rails: Bundler 2.5.22 required"; return; }\n    (cd "$ROOT/deploy/vercel-monitor" && BUNDLE_FROZEN=true bundle check) || { mark_continue "rails: frozen Gemfile.lock closure is not installed"; return; }\n    printf '%s\\n' "PASS: Rails runtime Ruby 3.3.8 / Bundler 2.5.22 / frozen dependency closure"\n}\n'''
-              b=b.replace(marker,fn+marker)
-              # Invoke rails profile alongside the existing profile dispatcher without disturbing other profiles.
-              dispatch='''\nif [ "$PROFILE" = rails ] || [ "$PROFILE" = all ]; then\n    check_rails_profile\nfi\n'''
-              b=b+'\n'+dispatch
-          bootstrap.write_text(b)
-
-          ci=root/'.github/workflows/qikvrt_ci.yml'
-          c=ci.read_text()
-          needle='      - name: Full compile, launcher, protocol, handler, security and TCP/IP tests\n'
-          if 'name: Provision exact Mega ST Rails runtime' not in c:
-              setup='''      - name: Provision exact Mega ST Rails runtime\n        uses: ruby/setup-ruby@bec3f19a76460dbe12f60def7d1a77585f07516c\n        with:\n          ruby-version: '3.3.8'\n          bundler: '2.5.22'\n          bundler-cache: true\n          working-directory: deploy/vercel-monitor\n      - name: Verify frozen Mega ST Rails dependency closure\n        working-directory: deploy/vercel-monitor\n        env:\n          BUNDLE_FROZEN: 'true'\n        run: |\n          set -euo pipefail\n          test "$(ruby -e 'print RUBY_VERSION')" = '3.3.8'\n          test "$(bundle --version)" = 'Bundler version 2.5.22'\n          bundle check\n'''
-              c=c.replace(needle,setup+needle)
-          ci.write_text(c)
+              b=b.replace('\ncheck_core_profile() {',fn+'\ncheck_core_profile() {')
+              b += '\nif [ "$PROFILE" = rails ] || [ "$PROFILE" = all ]; then\n    check_rails_profile\nfi\n'
+          bp.write_text(b)
           PY
           python3 tools/qikvrt_tool_cache.py render
           python3 tools/qikvrt_tool_cache.py verify
           python3 tools/qikvrt_integrity.py generate
           python3 tools/qikvrt_integrity.py verify
-      - name: Persist only productive exact-source successor
-        shell: bash
+      - name: Persist runtime successor without workflow mutation
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if git diff --quiet --exit-code; then
-            echo 'STATE=NOOP'
-            exit 0
-          fi
           git config user.name qikvrt-rails-runtime-admission
           git config user.email qikvrt-rails-runtime-admission@users.noreply.github.com
-          git add -- runtime/toolchains/TOOLCHAIN.lock.tsv runtime/toolchains/CACHE_REGISTRY.json runtime/toolchains/CACHE_COVERAGE.json tools/bootstrap-runtime.sh .github/workflows/qikvrt_ci.yml REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
-          git commit -m 'fix(rails): admit Ruby Bundler Rails runtime cache contract'
+          git add -- runtime/toolchains/TOOLCHAIN.lock.tsv runtime/toolchains/CACHE_REGISTRY.json runtime/toolchains/CACHE_COVERAGE.json tools/bootstrap-runtime.sh REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          if git diff --cached --quiet --exit-code; then echo STATE=NOOP; exit 0; fi
+          git commit -m 'fix(rails): persist Ruby Bundler Rails runtime cache contract'
           result="$(git rev-parse HEAD)"
           gh auth setup-git
           git push origin "HEAD:feat/megast-rails-vercel-20260915"
