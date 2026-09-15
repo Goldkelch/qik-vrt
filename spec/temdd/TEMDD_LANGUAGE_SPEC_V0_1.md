@@ -28,5 +28,5 @@ TEMDD is event-driven. Scheduling and polling are outer-layer transports, not ke
 ## Bootstrap boundary
 v0.1 distinguishes BOOTSTRAP_CONFORMANT from STABLE_LANGUAGE. Stable status requires executable Smalltalk and M68000 gates, compiled Lean obligations, reproducible release, Main adoption and fresh production effect readback. Version labels and successful transport/build jobs cannot manufacture these claims. Intermediate states are observable but are not a return condition; the return condition is the full declared DoD.
 
-## Conformance keyword meanings
-MUST/MUST NOT define normative requirements; SHOULD expresses a strong recommendation that may be overridden only with recorded evidence; MAY is optional. Any implementation claiming TEMDD v0.1 conformance MUST satisfy the executable positive/negative corpus and T01-T12 checks for the features it claims.
+## Conformance keywords
+MUST/MUST NOT define normative requirements; SHOULD is a strong recommendation overridable only with recorded evidence; MAY is optional. Any implementation claiming TEMDD v0.1 conformance MUST satisfy the executable positive/negative corpus and T01-T12 checks for the features it claims.
