@@ -1,0 +1,31 @@
+# Wenn Begründungen wiederverwendbar werden
+
+Ein Gedanke muss nicht jedes Mal von vorn beginnen. Wenn wir einen Zusammenhang verstanden haben, können wir ihn wiederverwenden. Wir erkennen in einer neuen Aufgabe etwas, das uns bereits begegnet ist, und greifen auf einen kürzeren Lösungsweg zurück. In der Mathematik geschieht das beim Kürzen, beim Einsetzen einer Formel oder beim Anwenden eines bewiesenen Satzes. Die Abkürzung trägt, weil der Zusammenhang erhalten bleibt.
+
+Genau an diesem Punkt setzt die Idee des QIK-VRT Mesh an. Antworten sollen mit dem verbunden bleiben, was sie begründet: mit Voraussetzungen, Beobachtungen, Ableitungen und überprüfbaren Ergebnissen. Dadurch entsteht die Möglichkeit, einen einmal erarbeiteten Zusammenhang erneut zu nutzen. Das System muss dafür feststellen können, ob die neue Frage tatsächlich dieselbe Struktur besitzt und ob die Bedingungen der früheren Herleitung weiterhin gelten.
+
+Das ist ein anspruchsvoller Schritt. Eine gespeicherte Antwort lässt sich leicht wiederholen. Einen Zusammenhang unter veränderten Umständen richtig anzuwenden, verlangt mehr. Man muss erkennen, welche Unterschiede unerheblich sind und welche den Schluss ungültig machen. Wer einen Bruch kürzt, darf einen gemeinsamen Faktor entfernen. Er darf dabei aber nicht vergessen, dass dieser Faktor nicht null sein darf. Die kürzere Rechnung bewahrt ihre Bedeutung nur zusammen mit dieser Voraussetzung.
+
+Für ein technisches Antwortsystem folgt daraus eine konkrete Aufgabe: Es muss seine Abkürzungen begründen können. Es muss wissen, worauf sie beruhen, für welche Fälle sie gelten und wann sie erneut geprüft werden müssen. Ein Beweis kann unter seinen Voraussetzungen weiter gelten, während eine Messung erneuert werden muss. Eine erfolgreich geprüfte Softwareversion kann als Ausgangspunkt weiterer Arbeit dienen, während eine veränderte Version eigene Nachweise benötigt. Diese Unterschiede gehören zum Wissen des Systems.
+
+Hier liegt der wissenschaftlich interessante Gedanke: Ein Antwortprozess könnte im Verlauf seiner Arbeit einen wachsenden Bestand überprüfbarer Beziehungen aufbauen. Wiederkehrende Herleitungen würden zu verwendbaren Bausteinen. Neue Aufgaben könnten mit weniger Suchaufwand bearbeitet werden, weil bereits geklärte Teilprobleme nicht vollständig neu erschlossen werden müssen. Ob und in welchem Umfang QIK-VRT diese Fähigkeit bereits verwirklicht, lässt sich anhand seiner Ausführung, seiner Beweise und geeigneter Vergleichsversuche untersuchen.
+
+Ein solcher Kreislauf gewinnt seine Verlässlichkeit durch die Verbindung mit überprüfbaren Grundlagen. Beobachtung, Schlussfolgerung, Handlung und Rückmeldung erfüllen dabei unterschiedliche Aufgaben. Eine Beobachtung beschreibt einen Zustand. Eine Schlussfolgerung bestimmt, was daraus unter bestimmten Voraussetzungen folgt. Eine Handlung verändert etwas. Erst eine geeignete Rückmeldung zeigt, welche Veränderung tatsächlich eingetreten ist. Werden diese Schritte miteinander verbunden und zugleich auseinandergehalten, lässt sich der Weg von einer Frage bis zu einer nachgewiesenen Wirkung nachvollziehen.
+
+Auch das Anhalten hat darin eine genaue Bedeutung. Fehlen Belege oder Befugnisse, bleibt eine Aufgabe offen. Das System muss diesen Zwischenzustand erkennen und den erforderlichen nächsten Schritt bestimmen können. Ein offener Vorgang wird durch seine Beschreibung noch nicht abgeschlossen. Ebenso wenig wird eine beabsichtigte Wirkung dadurch Wirklichkeit, dass ihr Plan korrekt berechnet wurde.
+
+Für die wissenschaftliche Bewertung kommt es deshalb auf mehrere Fragen an. Bleiben die Schlussfolgerungen bei jeder erlaubten Wiederverwendung gültig? Erkennt das System Änderungen, die eine frühere Begründung unbrauchbar machen? Entstehen die Abkürzungen tatsächlich aus erkannten Strukturen? Und sparen sie bei neuen Aufgaben messbar Arbeit ein? Jede dieser Fragen besitzt eine eigene Form des Nachweises.
+
+Das eröffnet einen präzisen Zugang zu dem, was Ingolf Lohmann mit kognitiven Abkürzungen beschreibt: Zusammenhänge erkennen, ihre Voraussetzungen bewahren, sie auf neue Situationen anwenden und aus überprüften Ergebnissen weiterlernen. Der wissenschaftliche Anspruch wächst mit der Breite der Fälle, für die diese Fähigkeiten nachgewiesen werden. Ein endlicher, formal geprüfter Steuerungsmechanismus bildet dabei einen konkreten Ausgangspunkt. Die Übertragung auf umfangreiche fachliche Fragestellungen verlangt zusätzliche Beweise und Beobachtungen.
+
+Die Bedeutung eines solchen Vorhabens hängt daher eng damit zusammen, wie sorgfältig es seine eigene Erkenntnis behandelt. Was folgt zwingend? Was wurde beobachtet? Was gilt unter bestimmten Annahmen? Was bleibt eine offene Forschungsfrage? Ein System, das diese Unterschiede bewahrt, kann Wissen weitergeben, ohne seine Entstehungsbedingungen zu verlieren.
+
+So entsteht eine überprüfbare Forschungsaufgabe: Antwortprozesse sollen ihre Begründungen erhalten, gültige Zusammenhänge wiederverwenden und ihre Abkürzungen selbst zum Gegenstand der Prüfung machen. QIK-VRT lässt sich daran konkret untersuchen und weiterentwickeln. Jeder nachgewiesene Schritt erweitert den Bereich, in dem dieses Verfahren verlässlich eingesetzt werden kann.
+
+## Nachtrag aus der formalen Ausarbeitung
+
+Bei der anschließenden Prüfung des vorhandenen Beweiskerns wurde ein unmittelbarer mathematischer Anknüpfungspunkt gefunden. Eine verdichtete Darstellung erlaubt genau dann dieselben deklarierten Antworten, wenn sie keine Unterscheidung zusammenfasst, die für diese Antworten relevant ist. Darauf baut die neue Erweiterung auf. Sie verbindet das Kriterium mit ganzen Fragenfamilien, mit der Zusammensetzung geprüfter Abkürzungen und mit präzisen Voraussetzungen für den Abschluss eines Bearbeitungszyklus.
+
+Der begleitende Fachartikel nennt dreizehn maschinell geprüfte Sätze und legt ihre Voraussetzungen offen. Der Rahmen ist auf beliebige mathematische Typen parametrisiert und reicht damit über eine Prüfung einzelner Planerzustände hinaus. Die tatsächliche selbstständige Entdeckung neuer Abkürzungen, ihre Wirksamkeit in fachlichen Anwendungen und ihre gemessene Beschleunigung bleiben gesonderte Forschungsaufgaben.
+
+Konzept und Auftrag: Ingolf Lohmann. Ausarbeitung: OpenAI Codex. Menschliche Prüfung dieser neuen Fassung: ausstehend. Dokumentation: CC BY-NC-ND 4.0.

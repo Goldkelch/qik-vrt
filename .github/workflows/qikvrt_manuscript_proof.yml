@@ -7,6 +7,7 @@ on:
   push:
     paths:
       - "formalization/QIKVRT_Formalization_v2.0/**"
+      - "docs/publications/2026-09-15-answer-cycle-reuse/**"
       - "tools/qikvrt_canonical_temporal_memory_kernel_evidence.py"
       - "tools/qikvrt_survival_connectability_kernel_evidence.py"
       - "tests/test_survival_connectability_kernel_evidence_tool.py"
@@ -23,6 +24,7 @@ on:
   pull_request:
     paths:
       - "formalization/QIKVRT_Formalization_v2.0/**"
+      - "docs/publications/2026-09-15-answer-cycle-reuse/**"
       - "tools/qikvrt_canonical_temporal_memory_kernel_evidence.py"
       - "tools/qikvrt_survival_connectability_kernel_evidence.py"
       - "tests/test_survival_connectability_kernel_evidence_tool.py"
@@ -305,6 +307,15 @@ jobs:
           if-no-files-found: error
       - name: Audit legacy and EFFECT_ACK theorem dependencies
         run: python3 scripts/audit_lean_axioms.py
+      - name: Verify answer-reuse proofs and negative controls
+        run: python3 ../../docs/publications/2026-09-15-answer-cycle-reuse/verify_package.py
+      - name: Upload answer-reuse source-bound kernel evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-answer-reuse-kernel-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          path: formalization/QIKVRT_Formalization_v2.0/.lake/build/answer-reuse-evidence/
+          if-no-files-found: error
       - name: Verify canonical temporal-memory publication kernel plan
         run: |
           set -euo pipefail
