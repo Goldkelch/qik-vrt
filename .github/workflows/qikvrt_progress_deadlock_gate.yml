@@ -15,7 +15,15 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify declared runtime cache coverage
+        run: python3 -B tools/qikvrt_tool_cache.py verify
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
       - name: Compile progress-deadlock contracts
-        run: python3 -m py_compile tests/test_progress_deadlocks.py tests/test_terminal_monitor_stream_e2e.py tools/qikvrt_live_sse.py
+        run: python3 -m py_compile tests/test_progress_deadlocks.py tests/test_terminal_monitor_stream_e2e.py tools/qikvrt_live_sse.py tests/test_terminal_live_transport.py
       - name: Enforce progress-deadlock regressions
-        run: python3 -B -m unittest -v tests.test_progress_deadlocks tests.test_terminal_monitor_stream_e2e
+        run: python3 -B -m unittest -v tests.test_progress_deadlocks tests.test_terminal_monitor_stream_e2e tests.test_terminal_live_transport
