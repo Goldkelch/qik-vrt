@@ -15,8 +15,8 @@ class RecursiveEvidenceRouterTest(unittest.TestCase):
         self.b = Subject("B", "hb", "tb")
         self.c = Subject("C", "hc", "tc")
 
-    def edge(self, source, target, validity=Validity.VALID, receipt="proof"):
-        return EvidenceEdge(source, target, "x", (f"{source.node}->{target.node}",), "now", validity, receipt)
+    def edge(self, source, target, validity=Validity.VALID, receipt="proof", superseded_by=None):
+        return EvidenceEdge(source, target, "x", (f"{source.node}->{target.node}",), "now", validity, receipt, superseded_by)
 
     def test_two_edges_create_candidate_not_transferred_evidence(self):
         router = RecursiveEvidenceRouter([self.edge(self.a, self.b), self.edge(self.b, self.c)])
@@ -51,13 +51,15 @@ class RecursiveEvidenceRouterTest(unittest.TestCase):
         with self.assertRaises(NoAdmissibleRoute):
             router.traverse(self.a, self.b, "x", reobserve=lambda _: drifted, validate=lambda _: True)
 
-    def test_history_is_append_only(self):
-        valid = self.edge(self.a, self.b)
-        router = RecursiveEvidenceRouter([valid])
-        router.learn([self.edge(self.a, self.b, Validity.SUPERSEDED)])
+    def test_history_is_append_only_and_supersession_is_new_evidence(self):
+        historical = self.edge(self.a, self.b)
+        router = RecursiveEvidenceRouter([historical])
+        supersession = self.edge(self.a, self.b, Validity.SUPERSEDED, superseded_by="R42")
+        router.learn([supersession])
         self.assertEqual(2, len(router.edges))
         self.assertEqual(Validity.VALID, router.edges[0].validity)
         self.assertEqual(Validity.SUPERSEDED, router.edges[1].validity)
+        self.assertEqual("R42", router.edges[1].superseded_by)
 
 
 if __name__ == "__main__":
