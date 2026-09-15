@@ -64,6 +64,8 @@ jobs:
           detail=''
           source_id="$GITHUB_RUN_ID"
 
+          # Derive causal identity from the triggering payload whenever it exists.
+          # Repository reads are not authority for payload-bearing events.
           case "$EVENT_NAME" in
             pull_request)
               pr="$(jq -r '.pull_request.number' "$event")"
@@ -86,9 +88,11 @@ jobs:
               pr="$(jq -r '.issue.number' "$event")"
               body="$(jq -r '.comment.body' "$event")"
               if [[ "$body" == *"$MARKER"* ]]; then exit 0; fi
-              head="$(gh api "repos/$REPOSITORY/pulls/$pr" --jq '.head.sha')"
-              subject="PR #$pr @ $head"
-              detail="issue_comment by $(jq -r '.comment.user.login' "$event")"
+              # issue_comment does not carry the PR head. Do not spend an API read
+              # merely to manufacture an exact-head claim: project the event as
+              # PR-scoped and explicitly leave the head unbound.
+              subject="PR #$pr @ UNBOUND_EVENT_PAYLOAD"
+              detail="issue_comment by $(jq -r '.comment.user.login' "$event") · exact head unavailable in event payload"
               ;;
             workflow_run)
               pr="$(jq -r '.workflow_run.pull_requests[0].number // empty' "$event")"
@@ -101,19 +105,18 @@ jobs:
               subject="PR #$pr @ $head"
               case "$state" in
                 success) verb='EFFECT' ;;
-                # A workflow surface conclusion establishes an observation to
-                # classify.  It cannot establish that all issue, PR and branch
-                # carriers are exhausted, so it cannot authoritatively emit HOLD.
                 failure|cancelled|action_required|timed_out) verb='CLASSIFY' ;;
                 *) verb='OBSERVE' ;;
               esac
               detail="$name → $state ($run_url)"
               ;;
             workflow_dispatch)
+              # Manual dispatch contains no trustworthy head binding. Keep it
+              # explicitly unbound rather than consuming a read and pretending the
+              # later observation was part of the triggering event.
               pr="$DISPATCH_PR"
-              head="$(gh api "repos/$REPOSITORY/pulls/$pr" --jq '.head.sha')"
-              subject="PR #$pr @ $head"
-              detail='manual surface bind'
+              subject="PR #$pr @ UNBOUND_MANUAL_DISPATCH"
+              detail='manual surface event · exact head not carried by trigger'
               ;;
             *) exit 0 ;;
           esac
@@ -123,12 +126,13 @@ jobs:
           event_id="${EVENT_NAME}:${source_id}:${GITHUB_RUN_ATTEMPT}"
           line="- \`$now\` **$verb** · \`$subject\` · $detail · event \`$event_id\`"
 
+          # One unavoidable read locates/preserves the persistent projection.
+          # After that, perform exactly one write (PATCH existing or POST new).
           comments="$(gh api "repos/$REPOSITORY/issues/$pr/comments?per_page=100")"
           comment_id="$(printf '%s' "$comments" | jq -r --arg marker "$MARKER" '.[] | select(.body | contains($marker)) | .id' | tail -n 1)"
 
           if [ -n "$comment_id" ]; then
             old="$(printf '%s' "$comments" | jq -r --argjson id "$comment_id" '.[] | select(.id == $id) | .body')"
-            # append-only bounded projection; retain the most recent 120 event lines
             journal="$(printf '%s\n' "$old" | awk '/^## Live event journal/{f=1;next} f && /^- `/{print}' | tail -n 119)"
           else
             journal=''
@@ -140,7 +144,7 @@ jobs:
 
           This comment is an **event-driven projection**. It does not poll. Each eligible repository event performs one bounded update and exits.
 
-          **Current exact subject:** \`$subject\`
+          **Current event subject:** \`$subject\`
           **Last event:** \`$event_id\`
           **Last transition:** **$verb**
           **Observed at:** \`$now\`
@@ -149,7 +153,7 @@ jobs:
           $journal
           $line
 
-          _Causality is derived from exact-subject/event receipts; timestamps are display metadata only. TRANSPORT_ACK != EFFECT_ACK._"
+          _Exact heads are asserted only when carried by the triggering payload. Unbound events cannot authorize head-specific progression. TRANSPORT_ACK != EFFECT_ACK._"
 
           if [ -n "$comment_id" ]; then
             gh api --method PATCH "repos/$REPOSITORY/issues/comments/$comment_id" -f body="$body" >/dev/null

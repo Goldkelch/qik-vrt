@@ -99,5 +99,69 @@ class RepositoryTerminalTests(unittest.TestCase):
         self.assertIn(marker, pathlib.Path(__file__).read_text(encoding="utf-8"))
 
 
+class CloudSurfaceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        from html.parser import HTMLParser
+
+        class Elements(HTMLParser):
+            def __init__(self):
+                super().__init__(convert_charrefs=True)
+                self.elements = []
+
+            def handle_starttag(self, tag, attrs):
+                self.elements.append((tag, dict(attrs)))
+
+        self.page = (ROOT / "docs/AI/index.html").read_text(encoding="utf-8")
+        parser = Elements()
+        parser.feed(self.page)
+        self.elements = parser.elements
+        self.links = {attrs.get("id"): attrs for tag, attrs in self.elements if tag == "a"}
+
+    def test_primary_link_opens_the_real_browser_with_gateway_websocket_path(self) -> None:
+        from urllib.parse import parse_qs, urlsplit
+        target = urlsplit(self.links["cloudFirefox"]["href"])
+        self.assertEqual(target.scheme, "https")
+        self.assertEqual(target.netloc, "universal-terminal-production.up.railway.app")
+        self.assertEqual(target.path, "/qik-vrt/mesh/v1/terminal/vnc.html")
+        self.assertEqual(parse_qs(target.query)["path"], ["qik-vrt/mesh/v1/terminal/websockify"])
+        self.assertEqual(parse_qs(target.query)["autoconnect"], ["true"])
+
+    def test_repository_console_is_secondary_and_explicitly_read_only(self) -> None:
+        self.assertEqual(self.links["repositoryReader"]["href"], "../terminal/")
+        self.assertIn("führt keine Befehle aus", self.page)
+        self.assertNotEqual(self.links["cloudFirefox"]["href"], "../terminal/")
+
+    def test_no_redirect_background_requests_or_automatic_shared_desktop(self) -> None:
+        self.assertFalse(any(tag in {"script", "iframe", "object", "embed", "form", "input"}
+                             for tag, _attrs in self.elements))
+        self.assertFalse(any(tag == "meta" and attrs.get("http-equiv", "").lower() == "refresh"
+                             for tag, attrs in self.elements))
+        self.assertFalse(any(key.lower().startswith("on") for _tag, attrs in self.elements for key in attrs))
+
+    def test_external_links_are_explicit_and_do_not_share_opener_or_referrer(self) -> None:
+        for tag, attrs in self.elements:
+            if tag == "a" and attrs.get("href", "").startswith("https://"):
+                self.assertEqual(attrs.get("target"), "_blank")
+                self.assertTrue({"noopener", "noreferrer"}.issubset(set(attrs.get("rel", "").split())))
+
+    def test_runtime_links_use_actual_mesh_proxy_routes(self) -> None:
+        from urllib.parse import urlsplit
+        for element, route in {
+            "runtimeHealth": "/qik-vrt/mesh/v1/healthz",
+            "runtimeState": "/qik-vrt/mesh/v1/effect-ack/terminal/state",
+            "effectCapabilities": "/qik-vrt/mesh/v1/effect-ack/.well-known/effect-ack",
+        }.items():
+            target = urlsplit(self.links[element]["href"])
+            self.assertEqual(target.netloc, "universal-terminal-production.up.railway.app")
+            self.assertEqual(target.path, route)
+
+    def test_shared_session_and_unproven_continuation_remain_visible(self) -> None:
+        self.assertIn("Bestehende gemeinsame Instanz, keine neue private Sitzung.", self.page)
+        self.assertIn("Das Öffnen dieses Browsers startet oder bestätigt sie nicht.", self.page)
+        self.assertIn("HOLD_UNVERIFIED", self.page)
+        self.assertIn("NOOP_EXCLUDED", self.page)
+        self.assertEqual(self.links["cloudFirefox"]["aria-describedby"], "sessionBoundary")
+
+
 if __name__ == "__main__":
     unittest.main()
