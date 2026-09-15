@@ -72,7 +72,21 @@ jobs:
           mkdir -p .qikvrt/seed-workflow
           {
             sh tools/qikvrt_seed_mesh_maintenance.sh
+
+            # Revalidation uses exit 10 for the expected fail-closed CONTINUE
+            # state (for example, a stale but otherwise valid node).  That
+            # state is dashboard input, not a workflow execution failure.
+            set +e
             sh tools/qikvrt_seed_node_revalidation.sh
+            revalidate_rc=$?
+            set -e
+            case "$revalidate_rc" in
+              0|10) ;;
+              *) exit "$revalidate_rc" ;;
+            esac
+
+            # Always render the dashboard for PASS or CONTINUE.  The generated
+            # revalidation receipt preserves the non-PASS state explicitly.
             sh tools/qikvrt_seed_dashboard_publish.sh
           } 2>&1 | tee .qikvrt/seed-workflow/dashboard.log
       - name: Preserve local dashboard evidence without mutating the repository
