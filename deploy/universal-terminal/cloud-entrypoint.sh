@@ -28,7 +28,7 @@ emit_health() {
   tmp=/tmp/qikvrt-mesh-health.json.tmp
   commit="${RAILWAY_GIT_COMMIT_SHA:-${QIKVRT_EXACT_HEAD:-unknown}}"
   cat > "$tmp" <<EOF
-{"schema":"qikvrt_cloud_transputer_mesh_health_v1","state":"$state","commit":"$commit","roles":{"terminal":"READY","gateway":"READY","m68k":"READY","smtp":"READY","dns":"READY","snmp":"READY"},"optional":{"ssh":"${SSH_STATE:-DISABLED}","sql":"${SQL_STATE:-DISABLED}","mirror":"${MIRROR_STATE:-DISABLED}"},"effect_ack":"NOT_IMPLIED"}
+{"schema":"qikvrt_cloud_transputer_mesh_health_v1","state":"$state","commit":"$commit","roles":{"terminal":"READY","gateway":"READY","m68k":"READY","smtp":"READY","dns":"READY","snmp":"READY","live_sse":"READY"},"optional":{"ssh":"${SSH_STATE:-DISABLED}","sql":"${SQL_STATE:-DISABLED}","mirror":"${MIRROR_STATE:-DISABLED}"},"effect_ack":"NOT_IMPLIED"}
 EOF
   mv "$tmp" /tmp/qikvrt-mesh-health.json
   chmod 0644 /tmp/qikvrt-mesh-health.json
@@ -39,6 +39,16 @@ EOF
 # the container namespace; Compose remains the fixed-IP multi-container form.
 export QIKVRT_HTTP_HOST=127.0.0.1
 export QIKVRT_START_URL="${QIKVRT_CLOUD_START_URL:-http://127.0.0.1:8080/qik-vrt/mesh/v1/}"
+
+# The Firefox extension consumes the same append-only repository event journal
+# through a loopback-only SSE relay. Start it before Firefox so browser startup
+# never falls back to a timer/polling transport.
+LIVE_EVENTS="${QIKVRT_LIVE_EVENTS_PATH:-/opt/qikvrt/state/live/QIKVRT_LIVE_EVENTS.jsonl}"
+[ -f "$LIVE_EVENTS" ] || { echo "BLOCK: live event journal unavailable: $LIVE_EVENTS" >&2; exit 1; }
+python3 -B /opt/qikvrt/tools/qikvrt_live_sse.py \
+  --events "$LIVE_EVENTS" --host 127.0.0.1 --port 8787 &
+LIVE_SSE_PID=$!
+register_pid live-sse "$LIVE_SSE_PID"
 
 /usr/local/bin/qikvrt-universal-terminal &
 TERMINAL_PID=$!
@@ -130,7 +140,7 @@ while :; do
   sleep 1
 done
 
-printf '%s\n' "QIKVRT cloud Transputer Mesh ready: terminal+gateway+m68k+smtp+dns+snmp"
+printf '%s\n' "QIKVRT cloud Transputer Mesh ready: terminal+gateway+m68k+smtp+dns+snmp+live-sse"
 printf '%s\n' "QIKVRT Mesh health: http://0.0.0.0:8080/qik-vrt/mesh/v1/healthz"
 
 while :; do

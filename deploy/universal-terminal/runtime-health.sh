@@ -6,6 +6,17 @@ NOVNC_PORT="${QIKVRT_NOVNC_PORT:-6080}"
 STATE_DIR="${QIKVRT_STATE_DIR:-/var/lib/qikvrt/state}"
 
 curl --max-time 2 -fsS "http://127.0.0.1:${HTTP_PORT}/.well-known/effect-ack" >/dev/null
+python3 -B - <<'PY'
+import http.client
+conn = http.client.HTTPConnection("127.0.0.1", 8787, timeout=2)
+try:
+    conn.request("GET", "/events")
+    response = conn.getresponse()
+    assert response.status == 200, response.status
+    assert (response.getheader("Content-Type") or "").lower().startswith("text/event-stream")
+finally:
+    conn.close()
+PY
 pgrep -af 'firefox|firefox-esr' >/dev/null
 # A profile error dialog is also a live Firefox process, but not a browser.
 # Require its real X11 Navigator window; CI separately drives and reads it.
