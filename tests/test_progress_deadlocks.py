@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import unittest
 
 # Admit the shared scope regressions through the existing make test gate.
@@ -8,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SSE = ROOT / 'tools' / 'qikvrt_live_sse.py'
 SUCCESSOR = ROOT / '.github' / 'workflows' / 'qikvrt_pr_successor_persistence.yml'
 FIREFOX_BACKGROUND = ROOT / 'browser' / 'firefox' / 'qikvrt-terminal' / 'background.js'
+BINARY_CLOSURE = ROOT / 'policy' / 'QIKVRT_BINARY_PROGRESS_CLOSURE_V1.json'
 
 
 class ProgressDeadlockGate(unittest.TestCase):
@@ -45,6 +47,42 @@ class ProgressDeadlockGate(unittest.TestCase):
     def test_stale_successor_writers_cannot_queue_ahead_of_current_head(self):
         text = SUCCESSOR.read_text(encoding='utf-8')
         self.assertIn('cancel-in-progress: true', text)
+
+    def test_progress_state_is_binary_and_total(self):
+        contract = json.loads(BINARY_CLOSURE.read_text(encoding='utf-8'))
+        self.assertEqual(contract['states'], {
+            '0': 'TERMINAL_NO_WORK',
+            '1': 'CONTINUATION_REQUIRED',
+        })
+        self.assertIn('work_remaining => continuation_required', contract['invariants'])
+        self.assertIn('continuation_required => admissible_action_count == 1', contract['invariants'])
+
+    def test_stale_integrity_cannot_end_in_hold_without_action(self):
+        contract = json.loads(BINARY_CLOSURE.read_text(encoding='utf-8'))
+        self.assertIn(
+            'stale_canonical_integrity && state == HOLD && action == NONE',
+            contract['forbidden_states'],
+        )
+        self.assertIn(
+            'stale_canonical_integrity => action == CANONICAL_INTEGRITY_CLOSURE',
+            contract['invariants'],
+        )
+
+    def test_reset_is_a_transition_and_requires_fresh_validation(self):
+        contract = json.loads(BINARY_CLOSURE.read_text(encoding='utf-8'))
+        self.assertIn('reset && terminal', contract['forbidden_states'])
+        self.assertIn(
+            'successor_created => fresh_successor_local_validation_required',
+            contract['invariants'],
+        )
+
+    def test_event_wait_without_subscription_is_a_deadlock(self):
+        contract = json.loads(BINARY_CLOSURE.read_text(encoding='utf-8'))
+        self.assertIn('event_required && subscription == NONE', contract['forbidden_states'])
+        self.assertEqual(
+            contract['closure']['authority_gap'],
+            'subscribe_to_native_event_then_reobserve_exact_subject',
+        )
 
 
 if __name__ == '__main__':
