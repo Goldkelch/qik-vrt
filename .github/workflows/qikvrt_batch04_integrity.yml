@@ -1,5 +1,5 @@
-# Reuses the isolated qikvrt_batch04_integrity.yml materializer pattern.
-# Executor-only configuration; never adopted into PR #1110.
+# Read-only completion of the existing isolated PR #1110 executor.
+# Corrects only the auxiliary seed-test invocation; never adopted into PR #1110.
 name: QIKVRT repository evidence materialization
 
 on:
@@ -17,11 +17,13 @@ env:
   EXPECTED_HEAD: 8ba7d7419422823db855e02e0f77ca3885956534
   EXPECTED_TREE: 870a1a1840c97102bda2ab8deebb3f891aab16e7
   RESULT_REF: repair/pr1110-integrity-result-8ba7d741
+  SUCCESSOR_HEAD: 3e80a6426bacc9e438ab0ad937f82ff76e2db10e
+  SUCCESSOR_TREE: 9784cf2a204673056209cd63af815a59df9c9fa3
   PYTHONDONTWRITEBYTECODE: '1'
   PYTHONNOUSERSITE: '1'
 
 jobs:
-  materialize:
+  validate:
     if: >-
       github.repository == 'Goldkelch/qik-vrt' &&
       github.event_name == 'push' &&
@@ -30,101 +32,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
-      contents: write
-    outputs:
-      head: ${{ steps.persist.outputs.head }}
-      tree: ${{ steps.persist.outputs.tree }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: ${{ env.EXPECTED_HEAD }}
-          fetch-depth: 2
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
-        with:
-          python-version: '3.12'
-      - name: Bind literal input and prove only the six specified omissions
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
-          test "$(git ls-remote origin refs/pull/1110/head | awk 'NR==1 {print $1}')" = "$EXPECTED_HEAD"
-          test "$(git ls-remote --heads origin "refs/heads/$RESULT_REF" | awk 'NR==1 {print $1}')" = "$EXPECTED_HEAD"
-          test -z "$(git status --porcelain)"
-          python3 -B tools/qikvrt_tool_cache.py verify
-          python3 -B - <<'PY'
-          import json, pathlib, sys
-          sys.path.insert(0, 'tools')
-          import qikvrt_integrity as integrity
-          expected_paths = {
-              'contracts/QIKVRT_THREE_PHASE_MESH_SEED_MVP_V1.json',
-              'tests/test_three_phase_mesh_seed_mvp.py',
-              'src/qikvrt_evidence_router.py',
-              'tests/test_qikvrt_evidence_router_library.py',
-              'examples/evidence_router_sieve.py',
-              'docs/EVIDENCE_ROUTER_LIBRARY.md',
-          }
-          old = json.loads(pathlib.Path('REPOSITORY_FILE_MANIFEST.json').read_text())
-          new = integrity.build_outputs()[3]
-          before = {item['path']: item for item in old['files']}
-          after = {item['path']: item for item in new['files']}
-          added, removed = set(after)-set(before), set(before)-set(after)
-          changed = {path for path in set(before)&set(after) if before[path] != after[path]}
-          print(json.dumps({'added': sorted(added), 'removed': sorted(removed), 'changed': sorted(changed)}, sort_keys=True))
-          if added != expected_paths or removed or changed:
-              raise SystemExit('BLOCK: omission scope differs from the authorized six paths')
-          PY
-      - name: Generate canonical trio and check its integrity contract
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -B tools/qikvrt_integrity.py generate
-          python3 -B tools/qikvrt_integrity.py verify
-          python3 -B -m unittest discover -s tests -p test_integrity.py -v
-      - name: Persist a sole-parent three-file successor to the isolated result ref
-        id: persist
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          python3 -B - <<'PY'
-          import subprocess
-          allowed = {'REPOSITORY_FILE_MANIFEST.json', 'REPOSITORY_FILE_MANIFEST.json.sha256', 'SHA256SUMS.txt'}
-          changed = set(subprocess.check_output(['git', 'diff', '--name-only', '-z']).decode().split('\0')) - {''}
-          if changed != allowed:
-              raise SystemExit('BLOCK: expected exactly the canonical trio, got ' + repr(sorted(changed)))
-          if subprocess.check_output(['git', 'ls-files', '--others', '--exclude-standard', '-z']):
-              raise SystemExit('BLOCK: unexpected untracked paths')
-          PY
-          test "$(git ls-remote origin refs/pull/1110/head | awk 'NR==1 {print $1}')" = "$EXPECTED_HEAD"
-          test "$(git ls-remote --heads origin "refs/heads/$RESULT_REF" | awk 'NR==1 {print $1}')" = "$EXPECTED_HEAD"
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
-          git diff --cached --check
-          git -c core.hooksPath=/dev/null commit -m 'fix(integrity): persist the six omitted PR #1110 paths' -m 'Canonical regeneration only; source and workflow bytes unchanged. PREDECESSOR_EVIDENCE_TRANSFER=false. Fresh successor validation required. No P2, review, Main, deployment or EFFECT claim.'
-          test "$(git show -s --format=%P HEAD)" = "$EXPECTED_HEAD"
-          head=$(git rev-parse HEAD)
-          tree=$(git rev-parse HEAD^{tree})
-          git push origin "HEAD:refs/heads/$RESULT_REF"
-          test "$(git ls-remote --heads origin "refs/heads/$RESULT_REF" | awk 'NR==1 {print $1}')" = "$head"
-          printf 'head=%s\ntree=%s\n' "$head" "$tree" >> "$GITHUB_OUTPUT"
-          printf 'SUCCESSOR_HEAD=%s\nSUCCESSOR_TREE=%s\nPARENT=%s\n' "$head" "$tree" "$EXPECTED_HEAD"
-          echo 'PREDECESSOR_EVIDENCE_TRANSFER=false; P2=NOT_ESTABLISHED; REVIEW=NOT_ADVANCED; MAIN=NOT_MUTATED; DEPLOYMENT=NOT_PERFORMED; EFFECT=NOT_ESTABLISHED'
-
-  validate:
-    needs: materialize
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
       contents: read
-    env:
-      SUCCESSOR_HEAD: ${{ needs.materialize.outputs.head }}
-      SUCCESSOR_TREE: ${{ needs.materialize.outputs.tree }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ needs.materialize.outputs.head }}
+          ref: ${{ env.SUCCESSOR_HEAD }}
           fetch-depth: 2
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
@@ -141,11 +53,29 @@ jobs:
           test "$(git rev-parse HEAD^{tree})" = "$SUCCESSOR_TREE"
           test "$(git show -s --format=%P HEAD)" = "$EXPECTED_HEAD"
           test "$(git ls-remote --heads origin "refs/heads/$RESULT_REF" | awk 'NR==1 {print $1}')" = "$SUCCESSOR_HEAD"
+          test "$(git ls-remote origin refs/pull/1110/head | awk 'NR==1 {print $1}')" = "$SUCCESSOR_HEAD"
+          printf 'HEAD=%s\nTREE=%s\nPARENT=%s\n' "$SUCCESSOR_HEAD" "$SUCCESSOR_TREE" "$EXPECTED_HEAD"
           test -z "$(git status --porcelain)"
           python3 -B tools/qikvrt_tool_cache.py verify
           python3 -B tools/qikvrt_integrity.py verify
           python3 -B -m unittest discover -s tests -p test_integrity.py -v
-          python3 -B -m unittest discover -s tests -p test_three_phase_mesh_seed_mvp.py -v
+          python3 -B - <<'PYTEST'
+          import runpy
+          suite = runpy.run_path('tests/test_three_phase_mesh_seed_mvp.py')
+          expected = {
+              'test_three_distinct_phases_form_closed_seed_cycle',
+              'test_fail_closed_evidence_semantics_are_explicit',
+              'test_each_phase_requires_independent_readback_or_fresh_validation',
+              'test_mvp_requires_all_three_phases_and_edges',
+          }
+          actual = {name for name in suite if name.startswith('test_')}
+          if actual != expected:
+              raise SystemExit('BLOCK: seed regression test inventory drift')
+          for name in sorted(expected):
+              suite[name]()
+              print('PASS ' + name)
+          print('PASS: 4/4 seed contract regression functions executed')
+          PYTEST
           python3 -B -m unittest discover -s tests -p test_qikvrt_evidence_router_library.py -v
           python3 -B tools/qikvrt_integrity.py verify
           test -z "$(git status --porcelain)"
@@ -158,7 +88,7 @@ jobs:
           if changed != allowed:
               raise SystemExit('BLOCK: successor changed paths outside canonical trio')
           pr_head = git('ls-remote', 'origin', 'refs/pull/1110/head').split()[0]
-          if pr_head not in {os.environ['EXPECTED_HEAD'], os.environ['SUCCESSOR_HEAD']}:
+          if pr_head != os.environ['SUCCESSOR_HEAD']:
               raise SystemExit('BLOCK: PR head drift')
           out = pathlib.Path(os.environ['RUNNER_TEMP'])/'pr1110-integrity-readback'
           files = []
@@ -168,6 +98,8 @@ jobs:
               shutil.copyfile(name, out/name)
           receipt = {
               'schema': 'qikvrt_pr1110_integrity_scoped_readback_v1',
+              'materializer_run_id': '35163546216',
+              'validation_runner_correction': 'execute all four plain seed test functions; zero-test result not accepted',
               'repository': 'Goldkelch/qik-vrt', 'pull_request': 1110,
               'head': git('rev-parse', 'HEAD'), 'tree': git('rev-parse', 'HEAD^{tree}'),
               'parent': git('show', '-s', '--format=%P', 'HEAD'),
@@ -191,7 +123,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: pr1110-integrity-${{ needs.materialize.outputs.head }}-attempt-${{ github.run_attempt }}
+          name: pr1110-integrity-${{ env.SUCCESSOR_HEAD }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/pr1110-integrity-readback/
           if-no-files-found: error
           retention-days: 30
