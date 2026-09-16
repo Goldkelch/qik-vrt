@@ -1,0 +1,168 @@
+diff --git a/HANDOVER.md b/HANDOVER.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..899dc6c185df63184fb6f98b2559372be3f816c6
+--- /dev/null
++++ b/HANDOVER.md
+@@ -0,0 +1,76 @@
++# QIK-VRT Repository Handover Protocol
++
++Copyright (c) 2026 Ingolf Lohmann.
++
++This document makes operational stewardship transferable without silently transferring intellectual-property rights, commercial rights, credentials, or historical evidence.
++
++## 1. Transfer modes
++
++A handover MUST name its mode explicitly:
++
++- `STEWARDSHIP`: operational maintenance is delegated; ownership/licensing remain unchanged.
++- `PERSONAL_SUCCESSION`: repository stewardship is transferred to a named successor under a separate written rights/authority instrument where required.
++- `COMMERCIAL`: commercial exploitation requires a separate written commercial agreement from the rights holder, consistent with `LICENSE`, `QIKVRT_LICENSE_AND_RIGHTS.md`, and `COMMERCIAL_USE_POLICY.md`.
++- `ARCHIVAL`: custody is transferred for preservation/read-only continuity without operational or commercial authority.
++
++Repository possession, GitHub ownership, a fork, credentials, CI success, or an EFFECT_ACK does not by itself change copyright or license rights.
++
++## 2. Transfer bundle
++
++A transfer candidate MUST bind at minimum:
++
++- exact repository URL, commit SHA, and tree SHA;
++- complete license map and third-party notices;
++- open PR and non-Main branch disposition ledger;
++- current build/test/runtime instructions and supported environments;
++- deployment/service inventory, including external providers and domains;
++- automation/ruleset inventory and required GitHub App/Actions permissions;
++- credential *names and purposes only*, never credential values;
++- backup/restore and disaster-recovery procedure;
++- publication/DOI and other external-record obligations;
++- known defects, holds, unresolved claims, and current D.o.D. state;
++- named outgoing and incoming authority plus effective time, when an actual transfer occurs.
++
++## 3. Secret and identity boundary
++
++Secrets MUST NOT be committed, exported in the bundle, copied through receipts, or inferred from historical logs. Transfer uses credential rotation/re-issuance at each provider. The incoming operator proves access using non-secret readbacks. Personal credentials of the outgoing operator are revoked only after successor credentials and rollback access have been independently verified.
++
++## 4. Evidence boundary
++
++Historical evidence remains historical. A new owner/operator MUST establish fresh successor-local evidence for privileged effects, deployments, ruleset administration, publication, and Main validation. `TRANSPORT_ACK != EFFECT_ACK`; possession of the repository is not evidence of operational effect.
++
++## 5. Authority matrix
++
++The handover record MUST distinguish these authorities rather than collapsing them into "owner":
++
++| Authority | Examples |
++|---|---|
++| IP/licensing | copyright, commercial license, trademarks |
++| Repository | GitHub owner/admin, rulesets, CODEOWNERS |
++| Release | Main integration, tags, releases |
++| Runtime | Railway/Vercel/domain/DNS administration |
++| Publication | Zenodo/arXiv/other external records |
++| Security | secret rotation, incident response |
++
++No authority is implied from another authority unless a separate instrument explicitly binds them.
++
++## 6. Acceptance protocol
++
++An actual handover is complete only when a transfer receipt records:
++
++1. exact source HEAD/TREE;
++2. selected transfer mode;
++3. applicable written rights instrument(s);
++4. incoming identities/roles;
++5. fresh clone/build/test from successor-controlled infrastructure;
++6. fresh administrative readback for required repository policy;
++7. fresh runtime/deployment readback where runtime authority is transferred;
++8. fresh backup restore test;
++9. credential rotation completion without exposing secret values;
++10. outgoing/incoming acknowledgement of the same receipt.
++
++Until all applicable items are satisfied, the repository remains `HANDOVER_NOT_EFFECTIVE`.
++
++## 7. Fail-closed rule
++
++Ambiguous ownership, missing rights, unknown third-party provenance, missing credentials, unresolved security findings, or inability to reproduce the exact transfer candidate MUST result in HOLD. A handover must never weaken repository protection merely to make transfer easier.
+diff --git a/state/HANDOVER_READINESS.json b/state/HANDOVER_READINESS.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..622ec05dc503df3652c060f0b84d58cdc5c60eec
+--- /dev/null
++++ b/state/HANDOVER_READINESS.json
+@@ -0,0 +1,34 @@
++{
++  "schema": "qikvrt-handover-readiness-v1",
++  "status": "HANDOVER_NOT_EFFECTIVE",
++  "supported_modes": ["STEWARDSHIP", "PERSONAL_SUCCESSION", "COMMERCIAL", "ARCHIVAL"],
++  "rights": {
++    "commercial_use_requires_separate_written_agreement": true,
++    "repository_possession_implies_rights_transfer": false,
++    "license_map": "LICENSE",
++    "commercial_policy": "COMMERCIAL_USE_POLICY.md"
++  },
++  "required_evidence": [
++    "exact_head_tree",
++    "license_and_third_party_inventory",
++    "pr_disposition_ledger",
++    "branch_disposition_ledger",
++    "build_test_runtime_reproduction",
++    "authority_matrix",
++    "provider_and_deployment_inventory",
++    "credential_name_purpose_inventory_without_values",
++    "successor_credential_rotation_readback",
++    "backup_restore_test",
++    "known_defect_and_hold_ledger",
++    "fresh_successor_main_validation",
++    "fresh_successor_effect_readback",
++    "outgoing_incoming_same_receipt_ack"
++  ],
++  "secret_policy": {
++    "export_secret_values": false,
++    "commit_secret_values": false,
++    "rotate_or_reissue_on_transfer": true
++  },
++  "evidence_transfer": false,
++  "fail_closed": true
++}
+diff --git a/tests/test_handover_readiness.py b/tests/test_handover_readiness.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..5d0bd449718c8db70135d6a1e51b9acf9868ab69
+--- /dev/null
++++ b/tests/test_handover_readiness.py
+@@ -0,0 +1,7 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++import unittest
++from tools.qikvrt_handover_selftest import check
++class HandoverReadiness(unittest.TestCase):
++    def test_handover_preparation_is_complete_and_fail_closed(self):
++        check()
++if __name__ == '__main__': unittest.main()
+diff --git a/tools/qikvrt_handover_selftest.py b/tools/qikvrt_handover_selftest.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..2bd51cf3edae6d12726583c930cffde033eb180c
+--- /dev/null
++++ b/tools/qikvrt_handover_selftest.py
+@@ -0,0 +1,27 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++"""Fail-closed structural self-test for repository handover preparation."""
++from __future__ import annotations
++import json
++from pathlib import Path
++
++ROOT=Path(__file__).resolve().parents[1]
++REQUIRED_FILES=["HANDOVER.md","LICENSE","COMMERCIAL_USE_POLICY.md","QIKVRT_LICENSE_AND_RIGHTS.md","state/HANDOVER_READINESS.json"]
++REQUIRED_MODES={"STEWARDSHIP","PERSONAL_SUCCESSION","COMMERCIAL","ARCHIVAL"}
++REQUIRED_EVIDENCE={"exact_head_tree","license_and_third_party_inventory","pr_disposition_ledger","branch_disposition_ledger","build_test_runtime_reproduction","authority_matrix","provider_and_deployment_inventory","credential_name_purpose_inventory_without_values","successor_credential_rotation_readback","backup_restore_test","known_defect_and_hold_ledger","fresh_successor_main_validation","fresh_successor_effect_readback","outgoing_incoming_same_receipt_ack"}
++
++def check()->None:
++    missing=[p for p in REQUIRED_FILES if not (ROOT/p).is_file()]
++    if missing: raise SystemExit(f"BLOCK handover files missing: {missing}")
++    state=json.loads((ROOT/"state/HANDOVER_READINESS.json").read_text(encoding="utf-8"))
++    if state.get("status") != "HANDOVER_NOT_EFFECTIVE": raise SystemExit("BLOCK preparation must not claim an effective transfer")
++    if set(state.get("supported_modes",[])) != REQUIRED_MODES: raise SystemExit("BLOCK transfer modes incomplete")
++    if set(state.get("required_evidence",[])) != REQUIRED_EVIDENCE: raise SystemExit("BLOCK transfer evidence contract incomplete")
++    if state.get("evidence_transfer") is not False or state.get("fail_closed") is not True: raise SystemExit("BLOCK evidence/fail-closed boundary weakened")
++    secret=state.get("secret_policy",{})
++    if secret.get("export_secret_values") is not False or secret.get("commit_secret_values") is not False or secret.get("rotate_or_reissue_on_transfer") is not True: raise SystemExit("BLOCK secret-transfer boundary weakened")
++    handover=(ROOT/"HANDOVER.md").read_text(encoding="utf-8")
++    for token in ("STEWARDSHIP","PERSONAL_SUCCESSION","COMMERCIAL","ARCHIVAL","HANDOVER_NOT_EFFECTIVE","TRANSPORT_ACK != EFFECT_ACK"):
++        if token not in handover: raise SystemExit(f"BLOCK handover protocol missing {token}")
++    print("PASS handover preparation structurally complete and fail-closed; no transfer claimed")
++
++if __name__=="__main__": check()
