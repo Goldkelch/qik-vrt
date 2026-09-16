@@ -1,0 +1,66 @@
+name: QIKVRT trusted exact-subject P2
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Exact pull request number
+        required: true
+        type: string
+      expected_head:
+        description: Exact pull request head SHA
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  p2:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.actor != 'dependabot[bot]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.pull_request.number }}
+      EXPECTED_HEAD: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_head || github.event.pull_request.head.sha }}
+    steps:
+      - name: Bind exact current PR subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$PR_NUMBER" in (*[!0-9]*|'') echo 'BLOCK: invalid PR number' >&2; exit 2;; esac
+          case "$EXPECTED_HEAD" in (*[!0-9a-f]*|'') echo 'BLOCK: invalid expected head' >&2; exit 2;; esac
+          test "${#EXPECTED_HEAD}" -eq 40
+          observed="$(gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" --jq '.head.sha')"
+          if [ "$observed" != "$EXPECTED_HEAD" ]; then
+            echo "BLOCK: exact subject mismatch expected=$EXPECTED_HEAD observed=$observed" >&2
+            exit 2
+          fi
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_HEAD }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Execute fresh exact-head P2
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
+          python3 tools/qikvrt_integrity.py verify
+          make test
+          python3 tools/qikvrt_integrity.py verify
+          echo "P2_EXECUTED exact_subject=$PR_NUMBER@$EXPECTED_HEAD result=PASS"
