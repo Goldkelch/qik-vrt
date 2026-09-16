@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  actions: write
+  pull-requests: read
 
 concurrency:
   group: qikvrt-pr-successor-${{ github.event.pull_request.number }}
@@ -21,8 +23,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
+      GH_TOKEN: ${{ github.token }}
       TARGET_REF: ${{ github.event.pull_request.head.ref }}
       EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      REPOSITORY: ${{ github.repository }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -39,7 +44,7 @@ jobs:
           python3 tools/qikvrt_integrity.py verify
           make test
           python3 tools/qikvrt_integrity.py verify
-      - name: Persist exact-head successor
+      - name: Persist exact-head successor and continue fresh validation
         shell: bash
         run: |
           set -euo pipefail
@@ -58,9 +63,19 @@ jobs:
             exit 0
           fi
           git commit -m 'ci: persist PR canonical integrity successor'
+          successor_head="$(git rev-parse --verify HEAD^{commit})"
+          test "$successor_head" != "$source_head"
           remote_head_after="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')"
           if [ "$remote_head_after" != "$source_head" ]; then
             echo "BLOCK: target ref advanced during persistence" >&2
             exit 2
           fi
           git push origin "HEAD:$TARGET_REF"
+          observed="$(gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" --jq '.head.sha')"
+          if [ "$observed" != "$successor_head" ]; then
+            echo "BLOCK: pushed successor not independently readable as current PR head" >&2
+            exit 2
+          fi
+          gh workflow run qikvrt_requested_review_executor.yml --repo "$REPOSITORY" \
+            -f "pr=$PR_NUMBER" -f "head=$successor_head" -f "fingerprint="
+          echo "CONTINUE: persisted successor $successor_head -> fresh exact-head requested-review execution"
