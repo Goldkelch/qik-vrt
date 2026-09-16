@@ -72,8 +72,30 @@ jobs:
           mkdir -p .qikvrt/seed-workflow
           {
             sh tools/qikvrt_seed_mesh_maintenance.sh
+
+            # Revalidation is deliberately tri-state.  Exit 10 means the
+            # registry was successfully evaluated but at least one authorized
+            # node is currently STALE/UNKNOWN/etc.  That state belongs on the
+            # dashboard; it is not an execution failure and must not prevent
+            # dashboard materialization.  Any other non-zero exit remains a
+            # hard fail-closed error.
+            set +e
             sh tools/qikvrt_seed_node_revalidation.sh
+            revalidation_rc=$?
+            set -e
+            case "$revalidation_rc" in
+              0|10) ;;
+              *) exit "$revalidation_rc" ;;
+            esac
+
             sh tools/qikvrt_seed_dashboard_publish.sh
+
+            # Preserve the operational distinction after the dashboard and
+            # receipts exist. CONTINUE remains visible in the generated state;
+            # SUCCESS is not promoted to EFFECT or EFFECT_ACK_DONE here.
+            if [ "$revalidation_rc" -eq 10 ]; then
+              printf '%s\n' 'QIKVRT_SEED_DASHBOARD CONTINUE represented in dashboard evidence'
+            fi
           } 2>&1 | tee .qikvrt/seed-workflow/dashboard.log
       - name: Preserve local dashboard evidence without mutating the repository
         if: always()
