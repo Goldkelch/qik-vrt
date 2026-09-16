@@ -1,0 +1,86 @@
+name: QIKVRT PR integrity successor persistence
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-pr-integrity-persist-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  persist-integrity-successor:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]' &&
+      github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      TARGET_REF: ${{ github.event.pull_request.head.ref }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.EXPECTED_HEAD }}
+          fetch-depth: 2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Bind exact PR head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
+          remote="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR==1 {print $1}')"
+          test "$remote" = "$EXPECTED_HEAD"
+      - name: Materialize canonical integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/qikvrt_integrity.py generate
+          python3 tools/qikvrt_integrity.py verify
+      - name: Persist exactly canonical integrity delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          allowed='^(REPOSITORY_FILE_MANIFEST\.json|REPOSITORY_FILE_MANIFEST\.json\.sha256|SHA256SUMS\.txt)$'
+          changed="$(git status --porcelain=v1 | sed -E 's/^.. //' || true)"
+          if [ -z "$changed" ]; then
+            echo 'Canonical integrity already current.'
+            exit 0
+          fi
+          while IFS= read -r path; do
+            printf '%s\n' "$path" | grep -Eq "$allowed" || {
+              echo "BLOCK: non-integrity materialization delta: $path" >&2
+              exit 2
+            }
+          done <<< "$changed"
+          remote="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR==1 {print $1}')"
+          test "$remote" = "$EXPECTED_HEAD" || {
+            echo 'BLOCK: PR head advanced before persistence' >&2
+            exit 2
+          }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git diff --cached --quiet && exit 0
+          git commit -m 'ci: persist canonical PR integrity successor'
+          remote="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR==1 {print $1}')"
+          test "$remote" = "$EXPECTED_HEAD" || {
+            echo 'BLOCK: PR head advanced during persistence' >&2
+            exit 2
+          }
+          git push origin "HEAD:$TARGET_REF"
+      - name: Fresh successor readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR==1 {print $1}')"
+          test -n "$remote"
+          echo "source_head=$EXPECTED_HEAD"
+          echo "successor_head=$remote"
