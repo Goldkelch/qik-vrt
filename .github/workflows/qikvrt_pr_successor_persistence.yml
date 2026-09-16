@@ -70,11 +70,29 @@ jobs:
             exit 2
           fi
           git push origin "HEAD:$TARGET_REF"
-          observed="$(gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" --jq '.head.sha')"
-          if [ "$observed" != "$successor_head" ]; then
-            echo "BLOCK: pushed successor not independently readable as current PR head" >&2
+
+          # Git's ref update and GitHub's PR projection are not one atomic read surface.
+          # First prove the pushed branch ref, then bound observation of the same PR head.
+          pushed_ref="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')"
+          if [ "$pushed_ref" != "$successor_head" ]; then
+            echo "BLOCK: pushed successor not independently readable as branch ref" >&2
             exit 2
           fi
+
+          observed=''
+          for attempt in 1 2 3 4 5 6 7 8; do
+            observed="$(gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" --jq '.head.sha')"
+            if [ "$observed" = "$successor_head" ]; then
+              break
+            fi
+            echo "OBSERVE: PR projection attempt $attempt/8 still $observed; awaiting $successor_head"
+            sleep 1
+          done
+          if [ "$observed" != "$successor_head" ]; then
+            echo "BLOCK: PR projection did not converge to pushed successor within bounded readback" >&2
+            exit 2
+          fi
+
           gh workflow run qikvrt_requested_review_executor.yml --repo "$REPOSITORY" \
             -f "pr=$PR_NUMBER" -f "head=$successor_head" -f "fingerprint="
           echo "CONTINUE: persisted successor $successor_head -> fresh exact-head requested-review execution"
