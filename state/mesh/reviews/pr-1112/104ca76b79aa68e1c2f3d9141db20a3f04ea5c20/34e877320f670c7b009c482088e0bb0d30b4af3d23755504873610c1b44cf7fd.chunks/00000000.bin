@@ -1,0 +1,204 @@
+diff --git a/.github/workflows/qikvrt_trusted_exact_subject_p2.yml b/.github/workflows/qikvrt_trusted_exact_subject_p2.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..577a28236a9a5a5b7646b60f129e626d2b793f34
+--- /dev/null
++++ b/.github/workflows/qikvrt_trusted_exact_subject_p2.yml
+@@ -0,0 +1,66 @@
++name: QIKVRT trusted exact-subject P2
++
++on:
++  pull_request:
++    branches: [main]
++    types: [opened, synchronize, reopened]
++  workflow_dispatch:
++    inputs:
++      pr:
++        description: Exact pull request number
++        required: true
++        type: string
++      expected_head:
++        description: Exact pull request head SHA
++        required: true
++        type: string
++
++permissions:
++  contents: read
++  pull-requests: read
++
++jobs:
++  p2:
++    if: >-
++      github.event_name == 'workflow_dispatch' ||
++      (github.event.pull_request.head.repo.full_name == github.repository &&
++       github.actor != 'dependabot[bot]')
++    runs-on: ubuntu-24.04
++    timeout-minutes: 30
++    env:
++      GH_TOKEN: ${{ github.token }}
++      REPOSITORY: ${{ github.repository }}
++      PR_NUMBER: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.pull_request.number }}
++      EXPECTED_HEAD: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_head || github.event.pull_request.head.sha }}
++    steps:
++      - name: Bind exact current PR subject
++        shell: bash
++        run: |
++          set -euo pipefail
++          case "$PR_NUMBER" in (*[!0-9]*|'') echo 'BLOCK: invalid PR number' >&2; exit 2;; esac
++          case "$EXPECTED_HEAD" in (*[!0-9a-f]*|'') echo 'BLOCK: invalid expected head' >&2; exit 2;; esac
++          test "${#EXPECTED_HEAD}" -eq 40
++          observed="$(gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" --jq '.head.sha')"
++          if [ "$observed" != "$EXPECTED_HEAD" ]; then
++            echo "BLOCK: exact subject mismatch expected=$EXPECTED_HEAD observed=$observed" >&2
++            exit 2
++          fi
++      - name: Check out exact candidate head
++        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
++        with:
++          ref: ${{ env.EXPECTED_HEAD }}
++          fetch-depth: 2
++          persist-credentials: false
++      - name: Set up Python
++        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
++        with:
++          python-version: '3.12'
++      - name: Execute fresh exact-head P2
++        shell: bash
++        run: |
++          set -euo pipefail
++          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
++          python3 tools/qikvrt_integrity.py verify
++          make test
++          python3 tools/qikvrt_integrity.py verify
++          echo "P2_EXECUTED exact_subject=$PR_NUMBER@$EXPECTED_HEAD result=PASS"
+diff --git a/tests/test_trusted_exact_subject_p2_bootstrap.py b/tests/test_trusted_exact_subject_p2_bootstrap.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..9e327ceda67cf8313be230a1b3e26077d60c1425
+--- /dev/null
++++ b/tests/test_trusted_exact_subject_p2_bootstrap.py
+@@ -0,0 +1,17 @@
++from pathlib import Path
++import unittest
++
++WORKFLOW = Path(__file__).resolve().parents[1] / '.github/workflows/qikvrt_trusted_exact_subject_p2.yml'
++
++class BootstrapCarrierTests(unittest.TestCase):
++    def test_read_only_exact_subject_execution(self):
++        text = WORKFLOW.read_text(encoding='utf-8')
++        self.assertIn('expected_head:', text)
++        self.assertIn('pulls/$PR_NUMBER', text)
++        self.assertIn('ref: ${{ env.EXPECTED_HEAD }}', text)
++        self.assertIn('make test', text)
++        self.assertNotIn('git push', text)
++        self.assertNotIn('contents: write', text)
++
++if __name__ == '__main__':
++    unittest.main()
+diff --git a/tests/test_trusted_exact_subject_p2_bootstrap_contract.py b/tests/test_trusted_exact_subject_p2_bootstrap_contract.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..c29784fe95d70c7462c49e9db3612e2959935aa9
+--- /dev/null
++++ b/tests/test_trusted_exact_subject_p2_bootstrap_contract.py
+@@ -0,0 +1,15 @@
++from pathlib import Path
++import unittest
++
++WORKFLOW = Path(__file__).resolve().parents[1] / '.github/workflows/qikvrt_trusted_exact_subject_p2.yml'
++
++class ExactSubjectBootstrapContract(unittest.TestCase):
++    def test_p2_has_binary_executed_result(self):
++        text = WORKFLOW.read_text(encoding='utf-8')
++        self.assertIn('BLOCK: exact subject mismatch', text)
++        self.assertIn('P2_EXECUTED', text)
++        self.assertIn('result=PASS', text)
++        self.assertNotIn('exit 0 # noop', text.lower())
++
++if __name__ == '__main__':
++    unittest.main()
+diff --git a/tests/test_trusted_exact_subject_p2_contract.py b/tests/test_trusted_exact_subject_p2_contract.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..673c414d0231673623bea9e3fe2589117a280d8e
+--- /dev/null
++++ b/tests/test_trusted_exact_subject_p2_contract.py
+@@ -0,0 +1,39 @@
++from pathlib import Path
++import unittest
++
++ROOT = Path(__file__).resolve().parents[1]
++WORKFLOW = ROOT / '.github' / 'workflows' / 'qikvrt_trusted_exact_subject_p2.yml'
++
++
++class TrustedExactSubjectP2ContractTests(unittest.TestCase):
++    def setUp(self):
++        self.text = WORKFLOW.read_text(encoding='utf-8')
++
++    def test_dispatch_requires_pr_and_expected_head(self):
++        self.assertIn('pr:', self.text)
++        self.assertIn('expected_head:', self.text)
++        self.assertIn('required: true', self.text)
++
++    def test_exact_pr_head_is_independently_read_back(self):
++        self.assertIn('pulls/$PR_NUMBER', self.text)
++        self.assertIn("--jq '.head.sha'", self.text)
++        self.assertIn('observed', self.text)
++        self.assertIn('EXPECTED_HEAD', self.text)
++
++    def test_checkout_and_execution_are_exact_head_bound(self):
++        self.assertIn('ref: ${{ env.EXPECTED_HEAD }}', self.text)
++        self.assertIn('git rev-parse --verify HEAD^{commit}', self.text)
++        self.assertIn('python3 tools/qikvrt_integrity.py verify', self.text)
++        self.assertIn('make test', self.text)
++
++    def test_validation_carrier_has_no_write_authority(self):
++        self.assertIn('contents: read', self.text)
++        self.assertIn('pull-requests: read', self.text)
++        self.assertNotIn('contents: write', self.text)
++        self.assertNotIn('pull-requests: write', self.text)
++        self.assertNotIn('git push', self.text)
++        self.assertNotIn('gh pr review', self.text)
++
++
++if __name__ == '__main__':
++    unittest.main()
+diff --git a/tests/test_trusted_exact_subject_p2_identity.py b/tests/test_trusted_exact_subject_p2_identity.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..9c579d5b3b9d37654166baaaa93e184d808fc9a4
+--- /dev/null
++++ b/tests/test_trusted_exact_subject_p2_identity.py
+@@ -0,0 +1,16 @@
++from pathlib import Path
++import unittest
++
++WORKFLOW = Path(__file__).resolve().parents[1] / '.github/workflows/qikvrt_trusted_exact_subject_p2.yml'
++
++class ExactSubjectIdentityTests(unittest.TestCase):
++    def test_identity_is_bound_before_checkout(self):
++        text = WORKFLOW.read_text(encoding='utf-8')
++        bind = text.index('Bind exact current PR subject')
++        checkout = text.index('Check out exact candidate head')
++        execute = text.index('Execute fresh exact-head P2')
++        self.assertLess(bind, checkout)
++        self.assertLess(checkout, execute)
++
++if __name__ == '__main__':
++    unittest.main()
+diff --git a/tests/test_trusted_exact_subject_p2_permissions.py b/tests/test_trusted_exact_subject_p2_permissions.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..2060a279dbba07920db165e819a0ebd2d804fce0
+--- /dev/null
++++ b/tests/test_trusted_exact_subject_p2_permissions.py
+@@ -0,0 +1,15 @@
++from pathlib import Path
++import unittest
++
++WORKFLOW = Path(__file__).resolve().parents[1] / '.github/workflows/qikvrt_trusted_exact_subject_p2.yml'
++
++class ExactSubjectPermissionTests(unittest.TestCase):
++    def test_carrier_cannot_mutate_repository_or_review(self):
++        text = WORKFLOW.read_text(encoding='utf-8')
++        self.assertIn('contents: read', text)
++        self.assertIn('pull-requests: read', text)
++        for forbidden in ('contents: write', 'pull-requests: write', 'statuses: write', 'git push', 'gh pr review'):
++            self.assertNotIn(forbidden, text)
++
++if __name__ == '__main__':
++    unittest.main()
