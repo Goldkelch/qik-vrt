@@ -1,0 +1,25 @@
+{
+  "schema": "QIKVRT_TRUSTED_EXACT_SUBJECT_P2_V1",
+  "purpose": "Provide a trusted, read-only, exact-subject-addressable P2 execution carrier without candidate self-bootstrap or Main mutation.",
+  "inputs": ["pr", "expected_head"],
+  "required_binding": [
+    "GET pull request",
+    "observed_pr_head == expected_head",
+    "checkout expected_head",
+    "checkout_head == expected_head"
+  ],
+  "p2": [
+    "repository_integrity_verify",
+    "make_test",
+    "repository_integrity_verify"
+  ],
+  "result": ["PASS", "CONCRETE_FAIL"],
+  "forbidden": [
+    "candidate mutation",
+    "review submission",
+    "Main mutation",
+    "predecessor evidence transfer",
+    "EFFECT claim",
+    "NOOP with work remaining"
+  ]
+}
