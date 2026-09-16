@@ -1,0 +1,43 @@
+{
+  "schema": "QIKVRT_INTELLIGENCE_DEVELOPMENT_ENVIRONMENT_V1",
+  "name": "QIK-VRT Intelligence Development Environment Framework",
+  "subject_binding": ["repository", "head_sha", "tree_sha", "event_sha256", "metagrammar_sha256"],
+  "perspectives": {
+    "python": {
+      "role": "semantic_tooling_orchestration",
+      "api": "/qik-vrt/ide/v1/python",
+      "required_operations": ["observe", "validate", "test", "analyze", "materialize", "receipt"]
+    },
+    "c90": {
+      "role": "portable_deterministic_core",
+      "api": "/qik-vrt/ide/v1/c90",
+      "required_operations": ["observe", "validate", "compile", "test", "execute", "receipt"]
+    },
+    "smalltalk": {
+      "role": "object_event_reflective_system",
+      "api": "/qik-vrt/ide/v1/smalltalk",
+      "required_operations": ["observe", "inspect", "reflect", "adapt", "test", "receipt"]
+    },
+    "m68k": {
+      "role": "high_performance_machine_state_primitives",
+      "api": "/qik-vrt/ide/v1/m68k",
+      "api_kind": "static_rest_projection",
+      "required_operations": ["capabilities", "vectors", "execute", "benchmark", "receipt"]
+    }
+  },
+  "perspective_receipt": {
+    "required": ["language", "head_sha", "tree_sha", "input_sha256", "contract_sha256", "assertions", "counterexamples", "artifacts", "effect_boundary", "receipt_sha256"]
+  },
+  "fusion": {
+    "endpoint": "/qik-vrt/ide/v1/fusion",
+    "rule": "NO_MAJORITY_OVERRIDE_OF_COUNTEREVIDENCE",
+    "conflict": "HOLD_UNVERIFIED",
+    "output": "NEW_CANDIDATE_ONLY",
+    "predecessor_evidence_transfer": false,
+    "requires_fresh_validation": true
+  },
+  "main": {
+    "integration_requires": ["four_current_perspective_receipts", "fusion_receipt", "fresh_candidate_validation"],
+    "success_is_effect": false
+  }
+}
