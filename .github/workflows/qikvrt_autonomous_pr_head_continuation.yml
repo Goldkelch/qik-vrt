@@ -4,6 +4,8 @@ name: QIKVRT autonomous PR-head continuation
 
 on:
   workflow_dispatch:
+  pull_request:
+    types: [opened, reopened, synchronize]
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review, review_requested]
   workflow_run:
@@ -27,11 +29,15 @@ permissions:
   statuses: write
 
 concurrency:
-  group: qikvrt-autonomous-pr-head-continuation-${{ github.repository }}
+  group: qikvrt-autonomous-pr-head-continuation-${{ github.repository }}${{ github.event_name == 'pull_request' && format('-candidate-{0}', github.event.pull_request.number) || '' }}
+  # queue:max prevents single-pending replacement; capacity is bounded at 100.
+  # Overflow/manual cancellation still requires the adverse-state classifier.
+  queue: max
   cancel-in-progress: false
 
 jobs:
   continue-one-stalled-internal-pr:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -252,7 +258,13 @@ jobs:
 
           if [ -z "$selected_pr" ]; then
             echo "selected=false" >> "$GITHUB_OUTPUT"
-            if jq -e 'select(.d0 == 1)' "$root/decisions.jsonl" >/dev/null 2>&1; then
+            if jq -se 'any(.[]; .reason == "ZERO_JOB_CANCELLED")' "$root/decisions.jsonl" >/dev/null; then
+              jq -n \
+                --arg event "$GITHUB_EVENT_NAME" \
+                '{d0:1,state:"HOLD",event:$event,productive_effect:false,effect_ack:"NOT_REQUIRED",reason:"ZERO_JOB_CANCELLED",first_causal_blocker:"CONTINUATION_CHAIN_DROPS_BEFORE_EXECUTION"}' \
+                > "$root/decision-receipt.json"
+              echo "HOLD/D0=1: continuation cancelled before any job was created"
+            elif jq -se 'any(.[]; .d0 == 1)' "$root/decisions.jsonl" >/dev/null; then
               jq -n \
                 --arg event "$GITHUB_EVENT_NAME" \
                 '{d0:1,state:"HOLD",event:$event,productive_effect:false,effect_ack:"NOT_REQUIRED",reason:"NO_REOBSERVE_EDGE_WITH_ACTIVE_OR_ADVERSE_WORK"}' \
@@ -380,3 +392,88 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
           path: .qikvrt/autonomous-pr-head-continuation
+
+  # PR code is observed with read-only authority. The trusted dispatcher above
+  # continues to execute Main, never this unreviewed checkout with a write token.
+  continue-candidate-pr-head:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_HEAD }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Verify exact candidate regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
+          python3 -B tools/qikvrt_tool_cache.py verify
+          python3 -B -m unittest -v \
+            tests.test_qikvrt_pr_head_recovery \
+            tests.test_qikvrt_autonomous_pr_head_continuation
+      - name: Execute read-only current-head continuation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=.qikvrt/continuation-candidate
+          mkdir -p "$root"
+          live="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
+          test "$live" = "$EXPECTED_HEAD"
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" > "$root/run.json"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs?per_page=100" > "$root/jobs.json"
+          jq -e --arg head "$EXPECTED_HEAD" --argjson run "$GITHUB_RUN_ID" \
+            '.id == $run and .head_sha == $head and .event == "pull_request"' "$root/run.json" >/dev/null
+          jq -e --arg job "$GITHUB_JOB" \
+            '[.jobs[] | select(.name == $job and .status == "in_progress" and .started_at != null)
+              | select(any(.steps[]; .name == "Verify exact candidate regression" and .conclusion == "success"))] | length == 1' \
+            "$root/jobs.json" >/dev/null
+          jq -n --slurpfile run "$root/run.json" --slurpfile jobs "$root/jobs.json" \
+            '[$run[0] | {id,name,status,conclusion,created_at,jobs_total:$jobs[0].total_count}]' \
+            > "$root/observations.json"
+          python3 -B tools/qikvrt_pr_head_recovery.py classify \
+            --input "$root/observations.json" --output "$root/decision.json"
+          # This event-local observation is active work, not global P2 or an effect.
+          jq -e '.d0 == 1 and .reason == "ACTIVE_WORKFLOW" and .productive_effect == false' \
+            "$root/decision.json" >/dev/null
+          live="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
+          test "$live" = "$EXPECTED_HEAD"
+          jq -n --arg head "$EXPECTED_HEAD" --arg tree "$(git rev-parse HEAD^{tree})" \
+            --arg workflow_sha "$GITHUB_WORKFLOW_SHA" --arg job "$GITHUB_JOB" \
+            --argjson run "$GITHUB_RUN_ID" --argjson attempt "$GITHUB_RUN_ATTEMPT" \
+            --slurpfile jobs "$root/jobs.json" --slurpfile decision "$root/decision.json" \
+            '{scope:"READ_ONLY_CANDIDATE_CONTINUATION",head_sha:$head,tree_sha:$tree,
+              workflow_sha:$workflow_sha,run_id:$run,run_attempt:$attempt,
+              job_id:([$jobs[0].jobs[] | select(.name == $job)][0].id),
+              execution_observed:true,final_job_conclusion:"REQUIRES_EXTERNAL_READBACK",
+              decision:$decision[0],predecessor_evidence_transfer:false,
+              productive_effect:false,effect_ack:"NOT_REQUIRED"}' > "$root/receipt.json"
+          cat "$root/receipt.json"
+      - name: Preserve candidate execution evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-continuation-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .qikvrt/continuation-candidate
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30

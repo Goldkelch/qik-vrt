@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import unittest
 
+# Admit the permanent regression in the existing canonical make/workflow suite.
+from tests.test_continuation_zero_job_cancelled_regression import (
+    ContinuationZeroJobCancelledRegression,
+)
+
 from tools.qikvrt_pr_head_recovery import RecoveryDecision, classify_observations
 
 

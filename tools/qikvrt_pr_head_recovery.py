@@ -166,6 +166,11 @@ def classify_observations(
 
     if active_workflows:
         return decision(1, "HOLD", "ACTIVE_WORKFLOW")
+    # A completed cancellation with no created jobs is not successful progress,
+    # even when a separate verifier has published a green exact-head status.
+    if any(item.status == "completed" and item.conclusion == "cancelled"
+           and item.jobs_total == 0 for item in latest):
+        return decision(1, "HOLD", "ZERO_JOB_CANCELLED")
     if normalized_status == "pending":
         return decision(1, "HOLD", "TRUSTED_EXACT_HEAD_VERIFICATION_PENDING")
     if normalized_status in {"failure", "error"}:
