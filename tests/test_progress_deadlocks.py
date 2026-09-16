@@ -1,6 +1,9 @@
 from pathlib import Path
 import unittest
 
+# Admit the shared scope regressions through the existing make test gate.
+from tests.test_qikvrt_evidence_scope import EvidenceScopeTests
+
 ROOT = Path(__file__).resolve().parents[1]
 SSE = ROOT / 'tools' / 'qikvrt_live_sse.py'
 SUCCESSOR = ROOT / '.github' / 'workflows' / 'qikvrt_pr_successor_persistence.yml'

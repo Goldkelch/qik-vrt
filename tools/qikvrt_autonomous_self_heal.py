@@ -13,6 +13,11 @@ import sys
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
+try:
+    from tools.qikvrt_evidence_scope import bind_local_result
+except ModuleNotFoundError:
+    from qikvrt_evidence_scope import bind_local_result
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
 DELEGATION = (
@@ -248,15 +253,28 @@ def candidate_identity(base_revision: str, fingerprint: str) -> str:
 def observed_base_revision() -> str:
     result = run(("git", "rev-parse", "--verify", "HEAD^{commit}"), timeout=60)
     value = result.stdout.strip()
-    if result.returncode or len(value) != 40:
+    if result.returncode or len(value) != 40 or any(c not in "0123456789abcdef" for c in value):
         raise SelfHealBlock(result.stderr.strip() or "cannot bind current HEAD")
     return value
+
+
+def observed_source_subject() -> tuple[str, str]:
+    """Read commit and tree from one Git object, never from event metadata."""
+    result = run(("git", "show", "-s", "--format=%H%n%T", "HEAD"), timeout=60)
+    values = result.stdout.strip().splitlines()
+    if result.returncode or len(values) != 2 or any(
+        len(value) != 40 or any(c not in "0123456789abcdef" for c in value)
+        for value in values
+    ):
+        raise SelfHealBlock("cannot bind current source head/tree")
+    return values[0], values[1]
 
 
 def repair_handler(handler: dict[str, Any]) -> dict[str, Any]:
     probe = run(tuple(handler["probe"]))
     if probe.returncode == 0:
-        return {"failure_class": handler["failure_class"], "state": "NOOP"}
+        return {"failure_class": handler["failure_class"], "state": "NOOP",
+                "state_scope": "LOCAL_REPAIR_HANDLER"}
     combined = probe.stdout + "\n" + probe.stderr
     signature = handler.get("failure_signature")
     if signature and signature not in combined:
@@ -276,7 +294,8 @@ def repair_handler(handler: dict[str, Any]) -> dict[str, Any]:
             f"repair failed for {handler['failure_class']}: "
             f"{repair.stderr.strip() or repair.stdout.strip()}"
         )
-    return {"failure_class": handler["failure_class"], "state": "REPAIRED"}
+    return {"failure_class": handler["failure_class"], "state": "REPAIRED",
+            "state_scope": "LOCAL_REPAIR_HANDLER"}
 
 
 def execute(apply: bool) -> dict[str, Any]:
@@ -287,7 +306,7 @@ def execute(apply: bool) -> dict[str, Any]:
     )
     if initial.returncode or initial.stdout.strip():
         raise SelfHealBlock("controller requires a clean repository")
-    base_revision = observed_base_revision()
+    base_revision, source_tree = observed_source_subject()
     boot = run(
         (
             "python3",
@@ -314,8 +333,10 @@ def execute(apply: bool) -> dict[str, Any]:
         if fingerprint is not None
         else None
     )
+    if observed_source_subject() != (base_revision, source_tree):
+        raise SelfHealBlock("source head/tree changed during local execution")
     state = "CANDIDATE_READY" if paths else "NOOP"
-    return {
+    return bind_local_result({
         "schema": "qikvrt_autonomous_self_heal_result_v1",
         "state": state,
         "observed_base_revision": base_revision,
@@ -336,7 +357,7 @@ def execute(apply: bool) -> dict[str, Any]:
             "FULL_SYNC": False,
             "SYMMETRIC_CANONICALITY": False,
         },
-    }
+    }, source_head=base_revision, source_tree=source_tree)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
