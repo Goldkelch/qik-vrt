@@ -1,0 +1,52 @@
+{
+  "contract": "QIKVRT_THREE_PHASE_MESH_SEED_MVP_V1",
+  "version": 1,
+  "purpose": "Bootstrap the new Mesh from three mutually checking minimal valuable phases without transferring predecessor evidence.",
+  "phases": {
+    "terminal": {
+      "node": "universal-terminal",
+      "route": ["/AI", "personal-firefox", "interaction", "effect-readback"],
+      "done_requires": ["exact_subject", "executed_interaction", "visible_effect", "independent_readback"]
+    },
+    "transputer": {
+      "node": "universal-cloud-transputer",
+      "route": ["request", "c90-qikvrt-carrier", "bounded-work-unit", "guest-execution", "result", "effect-readback"],
+      "done_requires": ["exact_subject", "executed_work_unit", "observable_result", "independent_readback"]
+    },
+    "router": {
+      "node": "evidence-router",
+      "route": ["discover", "candidate-route", "reobserve-exact-subjects", "validate", "traverse-minimal-edges", "materialize-receipts", "update-routing-knowledge"],
+      "done_requires": ["addressable_edges", "provenance_preserved", "fresh_validation", "no_evidence_transitivity"]
+    }
+  },
+  "seed_edges": [
+    {"from": "universal-terminal", "to": "universal-cloud-transputer"},
+    {"from": "universal-cloud-transputer", "to": "evidence-router"},
+    {"from": "evidence-router", "to": "universal-terminal"}
+  ],
+  "cross_checks": [
+    "terminal_receipt_is_router_input",
+    "transputer_receipt_is_router_input",
+    "router_route_is_reobserved_by_terminal",
+    "router_route_may_dispatch_only_freshly_validated_transputer_work",
+    "each_phase_may_test_itself_but_may_not_self-authorize_effect"
+  ],
+  "invariants": {
+    "predecessor_evidence_transfer": false,
+    "reachable_is_not_valid": true,
+    "valid_is_not_proved": true,
+    "proved_is_not_effect": true,
+    "transport_ack_is_not_effect_ack": true,
+    "evidence_history": "append-only",
+    "assertion_validity": "non-monotonic",
+    "current_admissibility": "fresh-validation-required"
+  },
+  "mvp_effect": "A request enters through /AI and Firefox, executes exactly one bounded Transputer work unit, returns its observable result to Firefox, and all three phases independently bind and read back the same exact-subject evidence chain.",
+  "effect_ack_done_requires": [
+    "terminal_phase_done",
+    "transputer_phase_done",
+    "router_phase_done",
+    "three_seed_edges_freshly_validated",
+    "end_to_end_effect_readback"
+  ]
+}
