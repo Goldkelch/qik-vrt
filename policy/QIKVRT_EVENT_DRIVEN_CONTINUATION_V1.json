@@ -1,0 +1,12 @@
+{
+  "schema": "qikvrt_event_driven_continuation_v1",
+  "version": "1.0",
+  "mode": "EVENT_DRIVEN",
+  "polling": "FORBIDDEN_IN_REPOSITORY_CORE",
+  "schedule": "OUTER_LAYER_ONLY",
+  "subject_binding": "EXACT_CURRENT_HEAD",
+  "predecessor_evidence_transfer": false,
+  "authority_boundary": {"native_review_required": true, "automation_may_synthesize_approval": false, "exact_head_approval_causes": "FRESH_REOBSERVATION_ONLY"},
+  "continuation": {"trigger_events": ["pull_request", "pull_request_review", "workflow_run"], "delegate": "QIKVRT requested review executor", "merge_capability": false, "contents_write_capability": false, "head_drift": "HOLD_UNVERIFIED"},
+  "completion_claims": {"PASS": false, "FINAL_PASS": false, "EFFECT_ACK_DONE": false}
+}

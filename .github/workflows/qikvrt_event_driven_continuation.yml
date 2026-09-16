@@ -1,0 +1,75 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT event-driven continuation
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize, review_requested, review_request_removed]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  workflow_run:
+    workflows:
+      - "QIKVRT CI"
+      - "QIKVRT repository evidence materialization"
+      - "QIKVRT Collective Proposal Review"
+      - "QIK-VRT global claim completion"
+      - "QIKVRT code-owner review observer"
+      - "QIKVRT requested review executor"
+    types: [completed]
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: qikvrt-event-driven-continuation-${{ github.repository }}-${{ github.event.pull_request.number || github.event.workflow_run.id || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  continue:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Check out trusted control plane
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Rebind exact event subject and wake trusted executor
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          event=json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+          name=os.environ["GITHUB_EVENT_NAME"]
+          repo=os.environ["REPOSITORY"]
+          def api(path): return json.loads(subprocess.check_output(["gh","api",path],text=True))
+          def dispatch(pr,head):
+              subprocess.check_call(["gh","workflow","run","qikvrt_requested_review_executor.yml","--repo",repo,"-f",f"pr={pr}","-f",f"head={head}","-f","fingerprint="])
+          pr=None; expected=None
+          if name in {"pull_request","pull_request_review"}:
+              obj=event.get("pull_request") or {}; pr=obj.get("number"); expected=(obj.get("head") or {}).get("sha")
+          elif name == "workflow_run":
+              run=event.get("workflow_run") or {}; prs=run.get("pull_requests") or []
+              if len(prs)==1: pr=prs[0].get("number"); expected=run.get("head_sha")
+          if not isinstance(pr,int) or not expected:
+              print("HOLD_UNVERIFIED: event is not bound to exactly one PR/head"); raise SystemExit(0)
+          current=api(f"repos/{repo}/pulls/{pr}"); head=(current.get("head") or {}).get("sha")
+          if head != expected:
+              print("HOLD_UNVERIFIED: subject mutated after triggering event"); raise SystemExit(0)
+          if current.get("state") != "open" or current.get("draft"):
+              print("HOLD_UNVERIFIED: subject is closed or draft"); raise SystemExit(0)
+          if name == "pull_request_review":
+              review=event.get("review") or {}
+              if review.get("state","").lower() != "approved" or review.get("commit_id") != head:
+                  print("HOLD_UNVERIFIED: review is not an exact-head APPROVED event"); raise SystemExit(0)
+          dispatch(pr,head)
+          print(f"CONTINUE: event -> fresh requested-review reobservation for #{pr}@{head}")
+          PY
