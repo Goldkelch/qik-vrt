@@ -41,7 +41,7 @@ jobs:
     env:
       EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
       EXPECTED_BASE: ${{ github.event.pull_request.base.sha }}
-      EVIDENCE_DIR: ${{ runner.temp }}/qikvrt-lean-v2-exact-subject
+      EVIDENCE_DIR: /tmp/qikvrt-lean-v2-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -220,6 +220,6 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: qikvrt-lean-v2-d3-m68000-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/qikvrt-lean-v2-exact-subject/
+          path: ${{ env.EVIDENCE_DIR }}/
           retention-days: 30
           if-no-files-found: error

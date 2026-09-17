@@ -67,6 +67,18 @@ class ExactSubjectKernelWorkflowTests(unittest.TestCase):
         self.assertNotIn("contents: write", self.workflow)
         self.assertNotIn("pull_request_target:", self.workflow)
 
+    def test_job_environment_uses_only_pre_runner_contexts(self):
+        import re
+        environment = self.workflow.split("    env:\n", 1)[1].split("    steps:\n", 1)[0]
+        allowed = {"github", "needs", "strategy", "matrix", "vars", "secrets", "inputs"}
+        for expression in re.findall(r"\$\{\{(.*?)\}\}", environment):
+            for context in re.findall(r"\b([A-Za-z_][A-Za-z_0-9]*)\.", expression):
+                # The only expressions used here are github.* chains.
+                if context not in {"event", "pull_request", "head", "base"}:
+                    self.assertIn(context, allowed)
+        self.assertNotIn("runner.", environment)
+        self.assertIn("path: ${{ env.EVIDENCE_DIR }}/", self.workflow)
+
     def test_megast_and_terminal_events_cover_pr_and_main(self):
         events = self.workflow.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
         pr, push = events.split("  push:", 1)
