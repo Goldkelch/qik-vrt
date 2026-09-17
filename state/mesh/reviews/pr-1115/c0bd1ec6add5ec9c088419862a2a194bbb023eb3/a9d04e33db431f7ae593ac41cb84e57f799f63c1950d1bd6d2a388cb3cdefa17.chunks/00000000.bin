@@ -1,0 +1,172 @@
+diff --git a/state/delivery/ACTIVE_DELIVERY_OBLIGATIONS_V1.json b/state/delivery/ACTIVE_DELIVERY_OBLIGATIONS_V1.json
+index 313884ac20d92a362ae200ccec0ffe83d0a788bc..08419b1f73b658c080357414665f1aad91e0304a 100644
+--- a/state/delivery/ACTIVE_DELIVERY_OBLIGATIONS_V1.json
++++ b/state/delivery/ACTIVE_DELIVERY_OBLIGATIONS_V1.json
+@@ -1,6 +1,6 @@
+ {
+   "schema": "qikvrt_active_delivery_obligations_v1",
+-  "version": "1.0",
++  "version": "1.1",
+   "repository": "Goldkelch/qik-vrt",
+   "policy": "policy/QIKVRT_REQUIREMENT_DELIVERY_DOD_V1.json",
+   "obligations": [
+@@ -8,86 +8,37 @@
+       "id": "LEAN_LAKE_PROOF_STATUS_TO_WIKIPEDIA_V1",
+       "source_requirement": "Canonical Lean/Lake proof-status and reproduction entrypoint",
+       "source_pr": 964,
+-      "required_main_paths": [
+-        "docs/LEAN_LAKE_PROOF_STATUS.md"
+-      ],
+-      "main_reobservation": {
+-        "required": true,
+-        "binding": "EXACT_MAIN_HEAD"
+-      },
+-      "delivery": {
+-        "platform": "wikipedia",
+-        "mode": "TRANSPARENT_COI_EDIT_REQUEST",
+-        "adapter": "QIKVRT_FIREFOX_TERMINAL_PROXY_V1",
+-        "request": "state/delivery/requests/WIKIPEDIA_LEAN_LAKE_PROOF_STATUS_V1.json",
+-        "effect_ack_required": true,
+-        "authoritative_readback": [
+-          "wikipedia_revision_or_edit_request_id",
+-          "page_or_talk_page_title",
+-          "timestamp"
+-        ]
+-      },
++      "required_main_paths": ["docs/LEAN_LAKE_PROOF_STATUS.md"],
++      "main_reobservation": {"required": true, "binding": "EXACT_MAIN_HEAD"},
++      "delivery": {"platform": "wikipedia", "mode": "TRANSPARENT_COI_EDIT_REQUEST", "adapter": "QIKVRT_FIREFOX_TERMINAL_PROXY_V1", "request": "state/delivery/requests/WIKIPEDIA_LEAN_LAKE_PROOF_STATUS_V1.json", "effect_ack_required": true, "authoritative_readback": ["wikipedia_revision_or_edit_request_id", "page_or_talk_page_title", "timestamp"]},
+       "completion": "PENDING"
+     },
+     {
+       "id": "PLANCK_TICK_GAP_LAW_TO_ZENODO_V1",
+       "source_requirement": "Planck-Tick Gap Law scientific publication",
+       "source_pr": 962,
+-      "required_main_paths": [
+-        "docs/research/2026-09-03-planck-tick-gap-law/QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex",
+-        "physics/planck_tick_gap_law_v1.json",
+-        "release/planck-tick-gap-law-zenodo-v1/ZENODO_METADATA.json"
+-      ],
+-      "main_reobservation": {
+-        "required": true,
+-        "binding": "EXACT_MAIN_HEAD"
+-      },
+-      "delivery": {
+-        "platform": "zenodo",
+-        "mode": "REPOSITORY_NATIVE_PUBLISHER_THEN_READBACK",
+-        "adapter": "qikvrt_planck_tick_gap_law_zenodo_publish.yml",
+-        "request": "state/delivery/requests/ZENODO_PLANCK_TICK_GAP_LAW_V1.json",
+-        "effect_ack_required": true,
+-        "authoritative_readback": [
+-          "record_id",
+-          "doi",
+-          "published_file_sha256",
+-          "published_at"
+-        ]
+-      },
++      "required_main_paths": ["docs/research/2026-09-03-planck-tick-gap-law/QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex", "physics/planck_tick_gap_law_v1.json", "release/planck-tick-gap-law-zenodo-v1/ZENODO_METADATA.json"],
++      "main_reobservation": {"required": true, "binding": "EXACT_MAIN_HEAD"},
++      "delivery": {"platform": "zenodo", "mode": "REPOSITORY_NATIVE_PUBLISHER_THEN_READBACK", "adapter": "qikvrt_planck_tick_gap_law_zenodo_publish.yml", "request": "state/delivery/requests/ZENODO_PLANCK_TICK_GAP_LAW_V1.json", "effect_ack_required": true, "authoritative_readback": ["record_id", "doi", "published_file_sha256", "published_at"]},
++      "completion": "PENDING"
++    },
++    {
++      "id": "ARXIV_AUTHOR_ACCOUNT_PROVISIONING_V1",
++      "source_requirement": "Reusable external account provisioning before authenticated arXiv delivery",
++      "required_main_paths": ["state/delivery/requests/ARXIV_ACCOUNT_PROVISIONING_V1.json"],
++      "main_reobservation": {"required": true, "binding": "EXACT_MAIN_HEAD"},
++      "delivery": {"platform": "arxiv", "mode": "ACCOUNT_PROVISIONING_THEN_AUTHORITATIVE_READBACK", "adapter": "QIKVRT_FIREFOX_TERMINAL_PROXY_V1", "request": "state/delivery/requests/ARXIV_ACCOUNT_PROVISIONING_V1.json", "effect_ack_required": true, "authoritative_readback": ["platform", "account_identity_non_secret", "account_status", "created_or_existing", "observed_at"]},
+       "completion": "PENDING"
+     },
+     {
+       "id": "PLANCK_TICK_GAP_LAW_TO_ARXIV_V1",
+       "source_requirement": "Planck-Tick Gap Law scientific publication",
+       "source_pr": 962,
+-      "required_main_paths": [
+-        "docs/research/2026-09-03-planck-tick-gap-law/QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex",
+-        "release/planck-tick-gap-law-arxiv-v1/ARXIV_SUBMISSION.md",
+-        "release/planck-tick-gap-law-arxiv-v1/SUBMISSION_CHECKLIST.md"
+-      ],
+-      "main_reobservation": {
+-        "required": true,
+-        "binding": "EXACT_MAIN_HEAD"
+-      },
+-      "delivery": {
+-        "platform": "arxiv",
+-        "mode": "AUTHENTICATED_WEB_SUBMISSION_THEN_READBACK",
+-        "adapter": "QIKVRT_FIREFOX_TERMINAL_PROXY_V1",
+-        "request": "state/delivery/requests/ARXIV_PLANCK_TICK_GAP_LAW_V1.json",
+-        "effect_ack_required": true,
+-        "authoritative_readback": [
+-          "submission_id",
+-          "submission_status",
+-          "submitted_at"
+-        ]
+-      },
++      "required_main_paths": ["docs/research/2026-09-03-planck-tick-gap-law/QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex", "release/planck-tick-gap-law-arxiv-v1/ARXIV_SUBMISSION.md", "release/planck-tick-gap-law-arxiv-v1/SUBMISSION_CHECKLIST.md"],
++      "main_reobservation": {"required": true, "binding": "EXACT_MAIN_HEAD"},
++      "delivery": {"platform": "arxiv", "mode": "AUTHENTICATED_WEB_SUBMISSION_THEN_READBACK", "adapter": "QIKVRT_FIREFOX_TERMINAL_PROXY_V1", "request": "state/delivery/requests/ARXIV_PLANCK_TICK_GAP_LAW_V1.json", "effect_ack_required": true, "authoritative_readback": ["submission_id", "submission_status", "submitted_at"]},
+       "completion": "PENDING"
+     }
+   ],
+-  "completion_claims": {
+-    "PASS": false,
+-    "FINAL_PASS": false,
+-    "EFFECT_ACK_DONE": false
+-  }
++  "completion_claims": {"PASS": false, "FINAL_PASS": false, "EFFECT_ACK_DONE": false}
+ }
+diff --git a/state/delivery/requests/ARXIV_ACCOUNT_PROVISIONING_V1.json b/state/delivery/requests/ARXIV_ACCOUNT_PROVISIONING_V1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..acfe8777b977ef8b59d4432afda9f25b943c252f
+--- /dev/null
++++ b/state/delivery/requests/ARXIV_ACCOUNT_PROVISIONING_V1.json
+@@ -0,0 +1,49 @@
++{
++  "schema": "qikvrt_external_delivery_request_v1",
++  "id": "ARXIV_ACCOUNT_PROVISIONING_V1",
++  "platform": "arxiv",
++  "authority": {
++    "product_owner": "Ingolf Lohmann",
++    "authorization": "AUTHORIZED_EXTERNAL_ACCOUNT_PROVISIONING_EFFECT"
++  },
++  "preconditions": {
++    "exact_main_reobservation_required": true,
++    "predecessor_evidence_transfer": false,
++    "existing_account_state_must_be_observed": true
++  },
++  "operation": {
++    "type": "AUTHENTICATED_ACCOUNT_PROVISIONING",
++    "adapter": "QIKVRT_FIREFOX_TERMINAL_PROXY_V1",
++    "target": "ARXIV_AUTHOR_ACCOUNT",
++    "intent": "CREATE_IF_ABSENT_ELSE_READBACK_EXISTING",
++    "human_identity_owner": "Ingolf Lohmann",
++    "secret_boundary": {
++      "password": "BROWSER_OR_HUMAN_OWNED",
++      "otp_totp": "BROWSER_OR_HUMAN_OWNED",
++      "captcha": "HUMAN_WHEN_REQUIRED",
++      "secret_values_in_receipts": false
++    },
++    "claim_boundaries": {
++      "account_created": false,
++      "account_verified": false,
++      "PASS": false,
++      "FINAL_PASS": false
++    }
++  },
++  "effect_ack": {
++    "required": true,
++    "readback_required": true,
++    "fields": [
++      "platform",
++      "account_identity_non_secret",
++      "account_status",
++      "created_or_existing",
++      "observed_at"
++    ]
++  },
++  "completion_claims": {
++    "PASS": false,
++    "FINAL_PASS": false,
++    "EFFECT_ACK_DONE": false
++  }
++}
