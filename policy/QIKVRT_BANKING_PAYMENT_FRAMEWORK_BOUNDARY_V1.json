@@ -1,0 +1,93 @@
+{
+  "schema": "qikvrt_banking_payment_framework_boundary_v1",
+  "version": "1.0",
+  "purpose": "General evidence/effect boundary for bank and payment rails while keeping authentication and account secrets outside repository evidence.",
+  "supported_framework_classes": {
+    "sepa": ["SCT", "SCT_INST", "SDD_CORE", "SDD_B2B"],
+    "swift": ["SWIFT_MESSAGING", "CORRESPONDENT_BANKING"],
+    "open_banking": ["PSD2_PIS", "PSD2_AIS", "OPEN_BANKING_API"],
+    "card_networks": ["CARD_PAYMENT_PROVIDER_TOKEN"],
+    "wallets": ["PROVIDER_WALLET_REFERENCE"],
+    "domestic_rails": ["ACH_CLASS", "FASTER_PAYMENTS_CLASS", "OTHER_PROVIDER_BOUND_RAIL"]
+  },
+  "data_classes": {
+    "authentication_secret": "NEVER_REPOSITORY_EVIDENCE",
+    "payment_instrument_secret": "NEVER_REPOSITORY_EVIDENCE",
+    "bank_account_identifier": "CONFIDENTIAL_DATA_NOT_PUBLIC_REPOSITORY_EVIDENCE",
+    "beneficiary_identifier": "CONFIDENTIAL_DATA_NOT_PUBLIC_REPOSITORY_EVIDENCE",
+    "provider_token": "ALLOW_ONLY_IF_PROVIDER_DOCUMENTS_REFERENCE_AS_NON_SECRET",
+    "masked_identifier": "ALLOW",
+    "transaction_reference": "ALLOW",
+    "receipt_reference": "ALLOW",
+    "amount_currency": "ALLOW_WHEN_REQUIRED_FOR_EFFECT_BINDING"
+  },
+  "secret_examples": [
+    "online_banking_password",
+    "PIN",
+    "TAN",
+    "OTP",
+    "TOTP",
+    "card_security_code",
+    "full_card_number_when_used_as_payment_credential",
+    "provider_session_secret",
+    "private_signing_key",
+    "client_secret"
+  ],
+  "confidential_identifier_examples": [
+    "IBAN",
+    "BBAN",
+    "bank_account_number",
+    "routing_number_plus_account_number",
+    "beneficiary_account_identifier"
+  ],
+  "execution": {
+    "prepare": "Bind exact debtor/payer role, creditor/payee role, amount, currency, purpose, rail, provider and owner authorization without exposing protected values.",
+    "authorize": "Use provider/bank-owned strong customer authentication or delegated authorization boundary.",
+    "commit": "Submit exactly one bound payment instruction unless provider idempotency semantics prove safe replay.",
+    "transport_ack": "Record only as transport acknowledgement.",
+    "effect_readback": "Reobserve provider/bank transaction state and intended resource/economic effect.",
+    "persist": "Persist non-secret receipt and effect evidence only.",
+    "revalidate": "Freshly bind evidence to the exact transaction/resource subject."
+  },
+  "sepa_specific": {
+    "credit_transfer": "Bind creditor, amount, currency, remittance purpose and provider transaction reference; do not equate accepted instruction with settlement.",
+    "instant_credit_transfer": "Require authoritative terminal status/readback; timeout or ambiguous status is HOLD_UNVERIFIED, never blind retry.",
+    "direct_debit": "Mandate existence and mandate reference are separate prerequisites; debit initiation does not prove final non-reversible effect.",
+    "refund_return_reversal": "Represent as successor transaction/effect, never mutate historical receipt into success."
+  },
+  "open_banking_specific": {
+    "consent": "Consent scope, provider and expiry are explicit evidence; credentials remain provider-owned.",
+    "payment_initiation": "PIS authorization is distinct from settlement readback.",
+    "account_information": "AIS data minimization applies; do not persist full account datasets merely to prove a payment effect."
+  },
+  "invariants": [
+    "TRANSPORT_ACK != EFFECT_ACK",
+    "AUTHORIZED != SETTLED",
+    "SUBMITTED != SETTLED",
+    "DEBITED != BENEFICIARY_CREDIT_CONFIRMED_UNLESS_PROVIDER_READBACK_ESTABLISHES_IT",
+    "TIMEOUT != FAILURE",
+    "TIMEOUT != SAFE_TO_RETRY",
+    "REFUND_OR_REVERSAL_IS_A_SUCCESSOR_EFFECT",
+    "PREDECESSOR_EVIDENCE_TRANSFER = false"
+  ],
+  "fail_closed": {
+    "missing_authorization": "HOLD",
+    "missing_or_expired_consent": "HOLD",
+    "ambiguous_provider_state": "HOLD_UNVERIFIED_AND_REOBSERVE",
+    "missing_effect_readback": "HOLD_UNVERIFIED",
+    "subject_or_amount_drift": "ABORT_AND_REBIND",
+    "secret_persistence_attempt": "REJECT",
+    "confidential_identifier_public_persistence_attempt": "REJECT"
+  },
+  "completion": {
+    "requires": [
+      "exact_instruction_bound",
+      "authorization_observed",
+      "provider_transaction_reference_observed",
+      "terminal_or_sufficient_effect_state_observed",
+      "target_resource_or_economic_effect_reobserved_when_applicable",
+      "non_secret_receipt_persisted",
+      "fresh_revalidation"
+    ]
+  }
+}
