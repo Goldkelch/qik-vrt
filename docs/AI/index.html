@@ -1,0 +1,67 @@
+<!--
+SPDX-License-Identifier: CC-BY-NC-ND-4.0
+Copyright (c) 2026 Ingolf Lohmann.
+-->
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+  <title>QIK-VRT /AI — Cloud-Transputer und Firefox</title>
+  <meta name="description" content="Einstieg in den vorhandenen QIK-VRT Cloud-Firefox, seine Laufzeitbeobachtung und die getrennte Repository-Leseschnittstelle.">
+  <style>
+    :root { color-scheme: dark; font-family: system-ui,sans-serif; background: #10141b; color: #f0f3f8; }
+    body { margin: 0; line-height: 1.6; }
+    main { max-width: 66rem; margin: auto; padding: 3rem 1.25rem; }
+    h1 { font-size: clamp(2rem,5vw,3.6rem); line-height: 1.15; margin: .6rem 0 1.5rem; }
+    h2 { font-size: 1.3rem; }
+    p { max-width: 70ch; }
+    a { color: #a9d7ff; text-underline-offset: .2em; overflow-wrap: anywhere; }
+    a:focus-visible { outline: 3px solid #fff; outline-offset: 5px; }
+    .eyebrow { font-size: .9rem; letter-spacing: .12em; text-transform: uppercase; }
+    .lead { font-size: 1.2rem; }
+    .launch { display: inline-block; padding: .9rem 1.25rem; border-radius: .5rem; background: #b6e3ff; color: #102335; font-weight: 700; text-decoration: none; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,19rem),1fr)); gap: 1.25rem; margin: 2.5rem 0; }
+    section { border: 1px solid #455262; border-radius: .6rem; padding: 1.5rem; }
+    .boundary { border-left: .3rem solid #ffd394; padding-left: 1rem; }
+    code { font-family: ui-monospace,monospace; overflow-wrap: anywhere; }
+    footer { border-top: 1px solid #455262; padding-top: 1.5rem; }
+  </style>
+</head>
+<body>
+<main id="main">
+  <p class="eyebrow">QIK-VRT · Universales Terminal · /AI</p>
+  <h1>Zum vorhandenen<br>Cloud-Firefox.</h1>
+  <p class="lead">Der Firefox-Browser ist die bedienbare Oberfläche des Cloud-Transputers. Dieser Einstieg öffnet den bestehenden Linux-/Firefox-Laufzeitpfad, nicht eine nachgebildete Konsole.</p>
+  <p><a id="cloudFirefox" class="launch" target="_blank" rel="noopener noreferrer" href="https://universal-terminal-production.up.railway.app/qik-vrt/mesh/v1/terminal/vnc.html?autoconnect=true&amp;resize=scale&amp;path=qik-vrt%2Fmesh%2Fv1%2Fterminal%2Fwebsockify" aria-describedby="sessionBoundary">Cloud-Firefox öffnen ↗</a></p>
+  <p id="sessionBoundary" class="boundary"><strong>Bestehende gemeinsame Instanz, keine neue private Sitzung.</strong> Eine individuelle Benutzerisolation und eine private Profilzuordnung sind hier noch nicht nachgewiesen. Keine persönlichen Zugangsdaten in eine gemeinsame Sitzung eingeben. Diese Seite lädt den entfernten Bildschirm nicht automatisch und fragt selbst keine Zugangsdaten ab.</p>
+  <div class="grid">
+    <section aria-labelledby="runtimeHeading">
+      <h2 id="runtimeHeading">Laufzeit direkt beobachten</h2>
+      <p><a id="runtimeHealth" target="_blank" rel="noopener noreferrer" href="https://universal-terminal-production.up.railway.app/qik-vrt/mesh/v1/healthz">Mesh-Laufzeitstatus abrufen ↗</a></p>
+      <p><a id="runtimeState" target="_blank" rel="noopener noreferrer" href="https://universal-terminal-production.up.railway.app/qik-vrt/mesh/v1/effect-ack/terminal/state">Terminalzustand zurücklesen ↗</a></p>
+      <p><a id="effectCapabilities" target="_blank" rel="noopener noreferrer" href="https://universal-terminal-production.up.railway.app/qik-vrt/mesh/v1/effect-ack/.well-known/effect-ack">Effect-Ack-Fähigkeiten lesen ↗</a></p>
+      <p>Jeder Link führt unmittelbar zur Laufzeit. Ein erfolgreicher HTTP-Aufruf oder ein sichtbarer Bildschirm ersetzt keinen frisch gebundenen Wirkungsnachweis.</p>
+    </section>
+    <section aria-labelledby="repositoryHeading">
+      <h2 id="repositoryHeading">Repository-Evidenz lesen</h2>
+      <p><a id="repositoryReader" href="../terminal/">Getrennte Repository-Lesekonsole öffnen</a></p>
+      <p>Diese Lesekonsole führt keine Befehle aus. Sie bleibt eine zusätzliche Evidenzansicht und wird nicht als Cloud-Firefox ausgegeben.</p>
+      <p><a href="https://github.com/Goldkelch/qik-vrt/blob/main/AI" target="_blank" rel="noopener noreferrer">Maschinen-Einstieg und Repository-Kontext ↗</a></p>
+    </section>
+  </div>
+  <section aria-labelledby="continuationHeading">
+    <h2 id="continuationHeading">Arbeitsfortsetzung ist ein eigener Laufzeitnachweis</h2>
+    <p>Die vorhandene Smalltalk-Ereignisfortsetzung verwendet ein dauerhaftes Journal und kausale Vorgänger. Ihre Integration, ihr laufender Verbraucher und produktive Folgeaktionen müssen gesondert nachgewiesen werden. Das Öffnen dieses Browsers startet oder bestätigt sie nicht.</p>
+    <p><a href="https://github.com/Goldkelch/qik-vrt/pull/1094" target="_blank" rel="noopener noreferrer">Vorhandene Ereignisfortsetzung ↗</a> · <a href="https://github.com/Goldkelch/qik-vrt/issues/1098" target="_blank" rel="noopener noreferrer">Offener Ende-zu-Ende-Arbeitsauftrag ↗</a></p>
+  </section>
+  <footer>
+    <p><code>HOLD_UNVERIFIED</code> · <code>TRANSPORT_ACK ≠ EFFECT_ACK</code> · <code>NOOP_EXCLUDED</code></p>
+    <p>Diese statische Seite enthält keinen eingebauten Grünstatus, keinen Status-Abfragetakt und keine Behauptung von Main-Integration oder <code>EFFECT_ACK_DONE</code>. Repository-Quelle, bereitgestellte Laufzeit, Benutzerisolation und tatsächliche Wirkung bleiben getrennt prüfbar.</p>
+    <p><a href="../">Zur QIK-VRT-Startseite</a></p>
+  </footer>
+</main>
+</body>
+</html>
