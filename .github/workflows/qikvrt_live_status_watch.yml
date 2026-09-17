@@ -86,7 +86,8 @@ jobs:
               pr="$(jq -r '.issue.number' "$event")"
               body="$(jq -r '.comment.body' "$event")"
               if [[ "$body" == *"$MARKER"* ]]; then exit 0; fi
-              head="$(gh api "repos/$REPOSITORY/pulls/$pr" --jq '.head.sha')"
+              head="$(jq -r '.issue.pull_request.url' "$event" | sed 's#https://api.github.com/##')"
+              head="$(gh api "$head" --jq '.head.sha')"
               subject="PR #$pr @ $head"
               detail="issue_comment by $(jq -r '.comment.user.login' "$event")"
               ;;
@@ -101,9 +102,6 @@ jobs:
               subject="PR #$pr @ $head"
               case "$state" in
                 success) verb='EFFECT' ;;
-                # A workflow surface conclusion establishes an observation to
-                # classify.  It cannot establish that all issue, PR and branch
-                # carriers are exhausted, so it cannot authoritatively emit HOLD.
                 failure|cancelled|action_required|timed_out) verb='CLASSIFY' ;;
                 *) verb='OBSERVE' ;;
               esac
@@ -123,12 +121,19 @@ jobs:
           event_id="${EVENT_NAME}:${source_id}:${GITHUB_RUN_ATTEMPT}"
           line="- \`$now\` **$verb** · \`$subject\` · $detail · event \`$event_id\`"
 
-          comments="$(gh api "repos/$REPOSITORY/issues/$pr/comments?per_page=100")"
+          # Read only the existing live-surface comment through the issue event's
+          # embedded comments URL.  This avoids a broad 100-comment listing on
+          # every event and bounds installation REST consumption.
+          comments_url="$(jq -r '.issue.comments_url // .pull_request.issue_url + "/comments" // empty' "$event")"
+          if [ -z "$comments_url" ] || [ "$comments_url" = null ]; then
+            comments_url="https://api.github.com/repos/$REPOSITORY/issues/$pr/comments"
+          fi
+          comments_path="${comments_url#https://api.github.com/}"
+          comments="$(gh api "$comments_path?per_page=20")"
           comment_id="$(printf '%s' "$comments" | jq -r --arg marker "$MARKER" '.[] | select(.body | contains($marker)) | .id' | tail -n 1)"
 
           if [ -n "$comment_id" ]; then
             old="$(printf '%s' "$comments" | jq -r --argjson id "$comment_id" '.[] | select(.id == $id) | .body')"
-            # append-only bounded projection; retain the most recent 120 event lines
             journal="$(printf '%s\n' "$old" | awk '/^## Live event journal/{f=1;next} f && /^- `/{print}' | tail -n 119)"
           else
             journal=''
