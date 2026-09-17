@@ -66,6 +66,17 @@ case "${QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION:-0}" in
     ;;
 esac
 
+# Every terminal mode owns the SSE child required by the shared health gate.
+# The default is durable runtime storage, never a baked-in historical journal.
+# An empty journal proves transport readiness only, not a live GitHub binding.
+LIVE_EVENTS="${QIKVRT_LIVE_EVENTS_PATH:-${STATE_DIR}/live/QIKVRT_LIVE_EVENTS.jsonl}"
+export QIKVRT_LIVE_EVENTS_PATH="$LIVE_EVENTS"
+python3 -B /opt/qikvrt/tools/qikvrt_live_sse.py \
+  --events "$LIVE_EVENTS" --initialize-journal --host 127.0.0.1 --port 8787 \
+  > /opt/qikvrt/runtime/logs/live-sse.log 2>&1 &
+LIVE_SSE_PID=$!
+PIDS="$PIDS ${LIVE_SSE_PID}"
+
 python3 -B /opt/qikvrt/src/qikvrt_effect_ack_http_terminal.py \
   --host "$HTTP_HOST" --port "$HTTP_PORT" \
   > /opt/qikvrt/runtime/logs/effect-ack-http.log 2>&1 &
