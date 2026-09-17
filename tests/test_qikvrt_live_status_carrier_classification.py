@@ -43,7 +43,8 @@ import subprocess
 import sys
 import tempfile
 
-MARKER = '<!-- qikvrt-universal-terminal-live-surface-v1 -->'
+MARKER = '<!-- qikvrt-universal-terminal-live-surface-v2 -->'
+LEGACY_MARKER = '<!-- qikvrt-universal-terminal-live-surface-v1 -->'
 HEAD = 'a' * 40
 TREE = 'b' * 40
 BOT = {'login': 'github-actions[bot]', 'type': 'Bot'}
@@ -121,6 +122,10 @@ class LiveStatusExecutionTests(unittest.TestCase):
         fake.write_text('#!' + sys.executable + '\n' + FAKE_GH, encoding='utf-8')
         fake.chmod(0o700)
         text = WORKFLOW.read_text(encoding='utf-8')
+        declared_markers = [line.strip().split(': ', 1)[1].strip("'")
+                            for line in text.splitlines() if line.strip().startswith('MARKER: ')]
+        self.assertEqual(len(declared_markers), 1)
+        self.declared_marker = declared_markers[0]
         self.assertEqual(text.count('        run: |\n'), 1)
         block = text.split('        run: |\n', 1)[1].split('\n      - ', 1)[0]
         self.shell = '\n'.join(line[10:] if line.startswith('          ') else line for line in block.splitlines()) + '\n'
@@ -142,7 +147,7 @@ class LiveStatusExecutionTests(unittest.TestCase):
         if comments is not None:
             (self.root / 'fixture.json').write_text(json.dumps({'comments': comments, **flags}), encoding='utf-8')
         (self.root / 'event.json').write_text(json.dumps(event if event is not None else self.event(kind)), encoding='utf-8')
-        env = {'PATH': str(self.root) + os.pathsep + os.environ['PATH'], 'HOME': str(self.root), 'FIXTURE_ROOT': str(self.root), 'REAL_JQ': shutil.which('jq'), 'REPOSITORY': 'Goldkelch/qik-vrt', 'GITHUB_EVENT_PATH': str(self.root / 'event.json'), 'EVENT_NAME': kind, 'DISPATCH_PR': '1105', 'MARKER': MARKER, 'GITHUB_RUN_ID': '700', 'GITHUB_RUN_ATTEMPT': str(attempt), 'RUNNER_TEMP': str(self.root)}
+        env = {'PATH': str(self.root) + os.pathsep + os.environ['PATH'], 'HOME': str(self.root), 'FIXTURE_ROOT': str(self.root), 'REAL_JQ': shutil.which('jq'), 'REPOSITORY': 'Goldkelch/qik-vrt', 'GITHUB_EVENT_PATH': str(self.root / 'event.json'), 'EVENT_NAME': kind, 'DISPATCH_PR': '1105', 'MARKER': self.declared_marker, 'GITHUB_RUN_ID': '700', 'GITHUB_RUN_ATTEMPT': str(attempt), 'RUNNER_TEMP': str(self.root)}
         return subprocess.run(['bash', '-e', '-o', 'pipefail'], input=self.shell, text=True, capture_output=True, timeout=20, env=env)
 
     def calls(self) -> list:
@@ -344,6 +349,44 @@ class LiveStatusExecutionTests(unittest.TestCase):
         self.assertNotEqual(again.returncode, 0)
         self.assertIn('conflicting source transition', again.stderr)
         self.assertEqual(len(self.writes()), 1)
+
+
+    def test_declared_marker_isolated_from_legacy_default_branch(self) -> None:
+        self.assertEqual(self.declared_marker, MARKER)
+        self.assertNotIn(LEGACY_MARKER, self.declared_marker)
+
+    def test_legacy_surface_is_not_adopted_or_copied(self) -> None:
+        legacy = self.comment(76, LEGACY_MARKER + '\n\n## Live event journal\n- `old` **EFFECT** · predecessor\n')
+        result = self.run_event('pull_request', comments=[legacy])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([x['method'] for x in self.writes()], ['POST'])
+        self.assertEqual(self.saved()['id'], 999)
+        self.assertTrue(self.saved()['body'].startswith(MARKER))
+        self.assertNotIn(LEGACY_MARKER, self.saved()['body'])
+        self.assertNotIn('**EFFECT**', self.saved()['body'])
+
+    def test_versioned_inventory_updates_only_current_surface(self) -> None:
+        legacy = self.comment(76, LEGACY_MARKER + '\nlegacy history')
+        result = self.run_event(comments=[legacy, self.comment()])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.writes(), [{'method': 'PATCH', 'endpoint': 'repos/Goldkelch/qik-vrt/issues/comments/77'}])
+        self.assertNotIn(LEGACY_MARKER, self.saved()['body'])
+
+    def test_legacy_writer_selector_cannot_select_new_surface(self) -> None:
+        legacy = self.comment(76, LEGACY_MARKER + '\nlegacy history')
+        result = self.run_event('pull_request', comments=[legacy])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # Execute Main a8605413's actual contains-marker selection. The v2
+        # body is last: if selected, a legacy event would overwrite it.
+        selected = subprocess.run(
+            ['jq', '-r', '--arg', 'marker', LEGACY_MARKER,
+             '.[] | select(.body | contains($marker)) | .id'],
+            input=json.dumps([legacy, self.saved()]), text=True,
+            capture_output=True, timeout=5, check=True,
+        )
+        self.assertEqual(selected.stdout.splitlines(), ['76'])
+        self.assertNotIn(str(self.saved()['id']), selected.stdout.splitlines())
+
 
 
 if __name__ == "__main__":

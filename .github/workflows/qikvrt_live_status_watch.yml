@@ -52,7 +52,10 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
           DISPATCH_PR: ${{ inputs.pr }}
-          MARKER: '<!-- qikvrt-universal-terminal-live-surface-v1 -->'
+          # Isolate exact-event receipts from the still-active default-branch
+          # legacy writer. Its contains-marker selector must not match this v2
+          # surface. Keep legacy history separate; do not copy its marker here.
+          MARKER: '<!-- qikvrt-universal-terminal-live-surface-v2 -->'
         shell: bash
         run: |
           set -euo pipefail
