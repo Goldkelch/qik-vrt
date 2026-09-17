@@ -124,3 +124,9 @@ smalltalk-test: tool-cache-contract effect-ack-core-test
 .PHONY: netboot-test
 netboot-test:
 	$(PYTHON) -B -m unittest tests.test_qikvrt_netboot -v
+
+.PHONY: cloud-carrier-live-sse-test
+cloud-carrier-live-sse-test: tool-cache-contract
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tests/test_cloud_carrier_live_sse_runtime.py -v
+
+test: cloud-carrier-live-sse-test
