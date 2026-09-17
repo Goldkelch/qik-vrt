@@ -1,0 +1,14 @@
+{
+  "schema":"QIKVRT_MONITORHOOK_V1",
+  "purpose":"universal_read_only_client_projection",
+  "endpoint":"/qik-vrt/ide/v1/monitorhook",
+  "methods":["GET","HEAD"],
+  "mutation_allowed":false,
+  "representations":["application/json","application/x-ndjson","text/event-stream"],
+  "cursor":{"field":"sequence","monotonic":true,"resume_query":"after"},
+  "event_required_fields":["sequence","observed_at","repository","head_sha","tree_sha","kind","state","subject","provenance","validity"],
+  "optional_fields":["receipts","proof_state","relations","effect_ack","supersedes"],
+  "semantics":{"evidence_history":"append_preserved","current_validity":"fresh","predecessor_evidence_transfer":false,"success_is_effect":false},
+  "cache":{"immutable_events":true,"live_projection":"no-store"},
+  "access":{"read":"public_or_policy_defined","write":"FORBIDDEN_ON_MONITORHOOK"}
+}
