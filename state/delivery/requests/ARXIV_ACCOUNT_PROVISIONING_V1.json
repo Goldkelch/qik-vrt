@@ -1,0 +1,49 @@
+{
+  "schema": "qikvrt_external_delivery_request_v1",
+  "id": "ARXIV_ACCOUNT_PROVISIONING_V1",
+  "platform": "arxiv",
+  "authority": {
+    "product_owner": "Ingolf Lohmann",
+    "authorization": "AUTHORIZED_EXTERNAL_ACCOUNT_PROVISIONING_EFFECT"
+  },
+  "preconditions": {
+    "exact_main_reobservation_required": true,
+    "predecessor_evidence_transfer": false,
+    "existing_account_state_must_be_observed": true
+  },
+  "operation": {
+    "type": "AUTHENTICATED_ACCOUNT_PROVISIONING",
+    "adapter": "QIKVRT_FIREFOX_TERMINAL_PROXY_V1",
+    "target": "ARXIV_AUTHOR_ACCOUNT",
+    "intent": "CREATE_IF_ABSENT_ELSE_READBACK_EXISTING",
+    "human_identity_owner": "Ingolf Lohmann",
+    "secret_boundary": {
+      "password": "BROWSER_OR_HUMAN_OWNED",
+      "otp_totp": "BROWSER_OR_HUMAN_OWNED",
+      "captcha": "HUMAN_WHEN_REQUIRED",
+      "secret_values_in_receipts": false
+    },
+    "claim_boundaries": {
+      "account_created": false,
+      "account_verified": false,
+      "PASS": false,
+      "FINAL_PASS": false
+    }
+  },
+  "effect_ack": {
+    "required": true,
+    "readback_required": true,
+    "fields": [
+      "platform",
+      "account_identity_non_secret",
+      "account_status",
+      "created_or_existing",
+      "observed_at"
+    ]
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
