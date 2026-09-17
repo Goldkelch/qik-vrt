@@ -1,0 +1,66 @@
+name: QIKVRT PR integrity persistence
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-pr-integrity-persistence-${{ github.head_ref }}
+  cancel-in-progress: false
+
+jobs:
+  persist:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]' &&
+      github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      TARGET_REF: ${{ github.head_ref }}
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.EXPECTED_HEAD }}
+          fetch-depth: 2
+      - name: Regenerate deterministic integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+      - name: Persist only canonical integrity delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_head="$(git rev-parse --verify HEAD^{commit})"
+          test "$source_head" = "$EXPECTED_HEAD"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 { print $1 }')"
+          if [ "$remote_head" != "$source_head" ]; then
+            echo "BLOCK: PR head advanced before integrity persistence" >&2
+            exit 2
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          if git diff --cached --quiet; then
+            echo "Canonical integrity is already persisted."
+            exit 0
+          fi
+          git commit -m "ci: persist canonical PR integrity"
+          remote_head_after="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 { print $1 }')"
+          if [ "$remote_head_after" != "$source_head" ]; then
+            echo "BLOCK: PR head advanced during integrity persistence" >&2
+            exit 2
+          fi
+          git push origin "HEAD:$TARGET_REF"
