@@ -1,0 +1,75 @@
+name: Publish legal open letter evidence dossier to Zenodo
+
+on:
+  push:
+    branches: [publication/legal-open-letter-evidence-dossier-2026-09-17]
+    paths: [release/legal-open-letter-zenodo-request.json]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+      TITLE: Offener Brief und rechtsstaatliches Evidenzdossier — Aufforderung zur unabhängigen juristischen Prüfung
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+      - name: Publish exact dossier and persist receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import hashlib,json,os,pathlib,subprocess,urllib.error,urllib.parse,urllib.request
+          marker_path=pathlib.Path('release/legal-open-letter-zenodo-request.json')
+          marker=json.loads(marker_path.read_text(encoding='utf-8'))
+          parent=subprocess.check_output(['git','rev-parse','HEAD^'],text=True).strip()
+          if marker.get('candidate_commit')!=parent: raise SystemExit('BLOCK: candidate commit mismatch')
+          changed=subprocess.check_output(['git','diff-tree','--no-commit-id','--name-only','-r','HEAD^','HEAD'],text=True).splitlines()
+          if changed!=[str(marker_path)]: raise SystemExit('BLOCK: authorization commit changed more than marker')
+          token=os.environ.get('ZENODO_ACCESS_TOKEN','')
+          if len(token)<20 or any(c.isspace() for c in token): raise SystemExit('BLOCK: ZENODO_ACCESS_TOKEN unavailable')
+          package=pathlib.Path('docs/legal/2026-09-17-open-letter-rule-of-law-evidence-dossier')
+          names=['OPEN_LETTER_DE.md','LEGAL_EVIDENCE_DOSSIER_DE.md','README.md','ZENODO_METADATA.json']
+          manifest=[]
+          for name in names:
+              data=(package/name).read_bytes(); manifest.append({'name':name,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()})
+          api='https://zenodo.org/api'; headers={'Authorization':'Bearer '+token,'Accept':'application/json','User-Agent':'qik-vrt-legal-dossier/1'}
+          def call(method,url,payload=None,ctype='application/json'):
+              data=None if payload is None else (payload if isinstance(payload,bytes) else json.dumps(payload,ensure_ascii=False).encode())
+              h=dict(headers); h['Content-Type']=ctype
+              req=urllib.request.Request(url,data=data,method=method,headers=h)
+              try:
+                  with urllib.request.urlopen(req,timeout=90) as r:
+                      raw=r.read(); return json.loads(raw) if raw else {}
+              except urllib.error.HTTPError as e:
+                  raise SystemExit(f'BLOCK: Zenodo HTTP {e.code}: '+e.read(4096).decode('utf-8','replace')[:1200])
+          title=os.environ['TITLE']; q=urllib.parse.quote(f'title:"{title}"')
+          deposits=call('GET',api+'/deposit/depositions?q='+q+'&size=100')
+          exact=[d for d in deposits if isinstance(d,dict) and ((d.get('metadata') or {}).get('title')==title)] if isinstance(deposits,list) else []
+          exact.sort(key=lambda d:int(d.get('id',0)),reverse=True)
+          dep=exact[0] if exact else call('POST',api+'/deposit/depositions',{})
+          depid=dep.get('id');
+          if not isinstance(depid,int): raise SystemExit('BLOCK: deposition id missing')
+          metadata={'metadata':{'title':title,'upload_type':'publication','publication_type':'other','description':'Persönlicher offener Brief von Ingolf Lohmann mit getrenntem Evidenzdossier für unabhängige rechtswissenschaftliche und anwaltliche Prüfung. Die Archivierung stellt weder Schuld noch Opferstatus, Rechtswidrigkeit staatlichen Handelns, religiöses Motiv oder behauptete Plattformkausalität fest.','creators':[{'name':'Lohmann, Ingolf'}],'language':'deu','license':'cc-by-4.0','keywords':['Menschenrechte','Rechtsstaat','Grundrechte','Evidenz','Polizeirecht','Strafprozessrecht','QIK-VRT'],'related_identifiers':[{'identifier':'https://github.com/Goldkelch/qik-vrt','relation':'isSupplementTo','scheme':'url'},{'identifier':'https://github.com/Goldkelch/qik-vrt/pull/1120','relation':'isSupplementTo','scheme':'url'}],'notes':'Archivierte Parteidarstellung und strukturierter Prüfauftrag. Keine gerichtliche Tatsachenfeststellung und keine Vorverurteilung.'}}
+          if not dep.get('submitted'):
+              dep=call('PUT',api+f'/deposit/depositions/{depid}',metadata)
+              bucket=(dep.get('links') or {}).get('bucket')
+              if not isinstance(bucket,str) or not bucket.startswith('https://zenodo.org/api/files/'): raise SystemExit('BLOCK: unsafe bucket')
+              for item in manifest: call('PUT',bucket+'/'+urllib.parse.quote(item['name']), (package/item['name']).read_bytes(),'application/octet-stream')
+              dep=call('POST',api+f'/deposit/depositions/{depid}/actions/publish')
+          doi=dep.get('doi') or (dep.get('metadata') or {}).get('doi')
+          record_url=(dep.get('links') or {}).get('record_html') or (dep.get('links') or {}).get('html')
+          if not isinstance(doi,str) or not doi.startswith('10.'): raise SystemExit('BLOCK: published DOI missing')
+          out=pathlib.Path('release/legal-open-letter-zenodo-receipt.json')
+          out.write_text(json.dumps({'schema':'qikvrt_legal_dossier_zenodo_receipt_v1','candidate_commit':parent,'deposition_id':depid,'doi':doi,'record_url':record_url,'files':manifest,'status':'PUBLISHED_FOR_INDEPENDENT_LEGAL_REVIEW'},ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          PY
+          git config user.name 'qik-vrt-zenodo-publication[bot]'
+          git config user.email 'qik-vrt-zenodo-publication[bot]@users.noreply.github.com'
+          git add release/legal-open-letter-zenodo-receipt.json
+          git commit -m 'zenodo: persist legal dossier publication receipt'
+          git push origin HEAD:publication/legal-open-letter-evidence-dossier-2026-09-17
