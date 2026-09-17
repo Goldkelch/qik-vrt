@@ -107,18 +107,20 @@ class MegaSTDistributionContract(unittest.TestCase):
         self.assertRegex(url.path, r'^/image/130/Pharo13\.0-SNAPSHOT\.build\.[0-9]+\.sha\.4f7563dfe5\.arch\.64bit\.zip$')
         self.assertEqual(image['file'], 'Pharo13.0-SNAPSHOT-64bit-4f7563dfe5.image')
         self.assertEqual(image['sha256'], '897668dd548864f74730065de3fa2b1f4b5d3636d4c7d14f91945f0a5ce22590')
-        self.assertEqual(lock['vm']['sha256'], '33501fd6c73932726dd751543f5dbb04495b976b6ed16990d820fbedb9fbf6ba')
+        self.assertEqual(lock['vm']['sha256'], '80b106bbfd27f4db997e15831978836157043541c1e2b1e29fe3f10839bf78de')
 
     def test_pharo_vm_uses_named_archive_without_changing_locked_bytes(self):
-        # The next actual execution, run 35214246138, passed image hashing and
-        # exposed the same mutable-alias failure at the independently pinned VM.
+        # Fresh bounded probes established that the old expected VM bytes are no
+        # longer served by either the named archive or the original stable alias.
+        # This candidate explicitly pins the repeatedly reobserved named archive;
+        # future upstream drift must still fail closed rather than self-repin.
         lock = json.loads((ROOT / 'runtime/toolchains/pharo-13.lock.json').read_text())
         vm = lock['vm']
         url = urlsplit(vm['url'])
         self.assertEqual(url.scheme, 'https')
         self.assertEqual(url.netloc, 'files.pharo.org')
         self.assertRegex(url.path, r'^/vm/pharo-spur64-headless/Linux-x86_64/PharoVM-v[0-9.]+\+[0-9]+\.[0-9a-f]+-Linux-x86_64-bin\.zip$')
-        self.assertEqual(vm['sha256'], '33501fd6c73932726dd751543f5dbb04495b976b6ed16990d820fbedb9fbf6ba')
+        self.assertEqual(vm['sha256'], '80b106bbfd27f4db997e15831978836157043541c1e2b1e29fe3f10839bf78de')
         self.assertEqual(vm['file'], 'bin/pharo')
 
     def test_changed_upstream_bytes_cannot_install_or_change_lock(self):
