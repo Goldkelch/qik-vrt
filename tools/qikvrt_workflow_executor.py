@@ -141,8 +141,10 @@ def _validate_contract_shape(contract: Mapping[str, Any], root: Path) -> None:
             raise ExecutorBlock(f"contract-required file is absent: {relative_path}")
     if executor.get("observation_mode") != "REPOSITORY_NATIVE_EXACT_HEAD_BOUND":
         raise ExecutorBlock("executor observation mode is not exact-head bound")
-    if executor.get("stateful_writes") != "ACTION_ARTIFACTS_ONLY":
-        raise ExecutorBlock("executor stateful write boundary is not artifact-only")
+    if executor.get("stateful_writes") != "EXECUTOR_ACTION_ARTIFACTS_ONLY":
+        raise ExecutorBlock("executor stateful write boundary is not executor-artifact-only")
+    if executor.get("repository_writer_inventory") != "dispatch_policy.writer_workflow_names":
+        raise ExecutorBlock("executor does not bind the repository writer inventory")
     if _string_list(executor.get("single_writer_order"), "executor single writer order") != [
         "AUTHORITY",
         "MIRROR",
@@ -183,6 +185,36 @@ def _validate_contract_shape(contract: Mapping[str, Any], root: Path) -> None:
             raise ExecutorBlock("authorized workflow has an unbounded event set")
         if item.get("external_effect") != "NONE" or item.get("is_writer") is not False:
             raise ExecutorBlock("authorized workflow exceeds the no-effect observer boundary")
+
+    operator_only = _mapping(
+        policy.get("operator_dispatch_only_workflows"), "operator dispatch-only workflows"
+    )
+    if operator_only.get("outside_self_heal_and_gatewatch") is not True:
+        raise ExecutorBlock("operator dispatch-only workflows must remain outside self-heal and gatewatch")
+    _string(operator_only.get("reason"), "operator dispatch-only reason")
+    operator_entries = operator_only.get("workflows")
+    if not isinstance(operator_entries, list) or not operator_entries:
+        raise ExecutorBlock("operator dispatch-only workflows must be a non-empty list")
+    authorized_names = {
+        _string(_mapping(entry, "authorized workflow").get("workflow_name"), "authorized workflow name")
+        for entry in allowed
+    }
+    operator_names: set[str] = set()
+    for entry in operator_entries:
+        item = _mapping(entry, "operator dispatch-only workflow")
+        path = _string(item.get("workflow_path"), "operator dispatch-only workflow path")
+        name = _string(item.get("workflow_name"), "operator dispatch-only workflow name")
+        if not path.startswith(".github/workflows/") or not (root / path).is_file():
+            raise ExecutorBlock("operator dispatch-only workflow path is invalid")
+        if name in operator_names or name in authorized_names:
+            raise ExecutorBlock("operator dispatch-only workflow overlaps an automated target")
+        operator_names.add(name)
+
+    reflexive = _mapping(contract.get("reflexive_deadlock_prevention"), "reflexive deadlock prevention")
+    gatewatch = _mapping(reflexive.get("gatewatch"), "gatewatch")
+    observed = set(_string_list(gatewatch.get("observed_workflow_names"), "gatewatch observed workflows"))
+    if operator_names & observed:
+        raise ExecutorBlock("operator dispatch-only workflow is incorrectly in gatewatch")
 
     boundaries = _mapping(contract.get("boundaries"), "executor boundaries")
     if boundaries.get("direct_repository_mutation") != "FORBIDDEN":

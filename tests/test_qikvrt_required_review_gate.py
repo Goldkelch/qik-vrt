@@ -20,6 +20,9 @@ SPEC.loader.exec_module(MODULE)
 
 class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
     head = "b" * 40
+    tree = "c" * 40
+    fingerprint = "d" * 64
+    ledger_commit = "e" * 40
     context = "QIKVRT required code-owner review"
 
     def pr(self, **overrides):
@@ -95,6 +98,115 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
             description=description,
         )
 
+    def executor_projection_eligibility(self, **overrides):
+        receipt = {
+            "persistence_eligible": True,
+            "state": "APPROVE",
+            "pr_number": 641,
+            "head_sha": self.head,
+            "tree_sha": self.tree,
+            "evidence_fingerprint": self.fingerprint,
+        }
+        ledger = {
+            "persisted": True,
+            "projection_current": True,
+            "ledger_commit": self.ledger_commit,
+        }
+        projection = {
+            "schema": MODULE.EXECUTOR_PROJECTION_SCHEMA,
+            "projection_permitted": True,
+            "mesh_disposition": "APPROVE",
+            "head_sha": self.head,
+            "tree_sha": self.tree,
+            "evidence_fingerprint": self.fingerprint,
+            "ledger_commit": self.ledger_commit,
+        }
+        selection = {
+            "artifact_pr_number": 641,
+            "artifact_head": self.head,
+            "artifact_fingerprint": self.fingerprint,
+        }
+        receipt.update(overrides.pop("receipt", {}))
+        ledger.update(overrides.pop("ledger", {}))
+        projection_value = overrides.pop("projection", projection)
+        selection.update(overrides.pop("selection", {}))
+        self.assertEqual(overrides, {})
+        return MODULE.executor_receipt_projection_eligibility(
+            receipt, ledger, projection_value, selection
+        )
+
+    def test_executor_receipt_requires_current_permitted_projection(self):
+        allowed = self.executor_projection_eligibility()
+        self.assertTrue(allowed["eligible"])
+        self.assertIsNone(allowed["first_blocker"])
+        self.assertTrue(allowed["projection_current"])
+
+        for name, overrides in {
+            "missing": {"projection": None},
+            "malformed": {"projection": "not-an-object"},
+            "false": {"projection": {"projection_permitted": False}},
+            "truthy-string": {"projection": {"projection_permitted": "true"}},
+            "head": {"projection": {"head_sha": "a" * 40}},
+            "tree": {"projection": {"tree_sha": "a" * 40}},
+            "fingerprint": {"projection": {"evidence_fingerprint": "a" * 64}},
+            "ledger": {"projection": {"ledger_commit": "a" * 40}},
+            "pr": {"selection": {"artifact_pr_number": 642}},
+        }.items():
+            with self.subTest(name=name):
+                if "projection" in overrides and isinstance(overrides["projection"], dict):
+                    projection = {
+                        "schema": MODULE.EXECUTOR_PROJECTION_SCHEMA,
+                        "projection_permitted": True,
+                        "mesh_disposition": "APPROVE",
+                        "head_sha": self.head,
+                        "tree_sha": self.tree,
+                        "evidence_fingerprint": self.fingerprint,
+                        "ledger_commit": self.ledger_commit,
+                    }
+                    projection.update(overrides["projection"])
+                    overrides = {**overrides, "projection": projection}
+                value = self.executor_projection_eligibility(**overrides)
+                self.assertFalse(value["eligible"])
+                self.assertEqual(
+                    value["first_blocker"], "EXECUTOR_PROJECTION_NOT_CURRENT"
+                )
+
+        contradictory = self.executor_projection_eligibility(
+            projection={
+                "schema": MODULE.EXECUTOR_PROJECTION_SCHEMA,
+                "projection_permitted": True,
+                "mesh_disposition": "HOLD",
+                "first_blocker": "CAUSAL_REOBSERVATION_DRIFT",
+                "head_sha": self.head,
+                "tree_sha": self.tree,
+                "evidence_fingerprint": self.fingerprint,
+                "ledger_commit": self.ledger_commit,
+            }
+        )
+        self.assertFalse(contradictory["eligible"])
+        self.assertEqual(
+            contradictory["first_blocker"], "EXECUTOR_PROJECTION_NOT_CURRENT"
+        )
+
+    def test_executor_receipt_precedence_rejects_nonpersisted_receipt(self):
+        value = self.executor_projection_eligibility(
+            receipt={"persistence_eligible": False},
+            projection={"projection_permitted": False},
+        )
+        self.assertFalse(value["eligible"])
+        self.assertEqual(
+            value["first_blocker"], "EXECUTOR_RECEIPT_NOT_CURRENT_PERSISTED"
+        )
+
+    def test_executor_receipt_nonobject_artifacts_seal_no_effect(self):
+        value = MODULE.executor_receipt_projection_eligibility(
+            [], ["not-a-ledger"], "not-a-projection", None
+        )
+        self.assertFalse(value["eligible"])
+        self.assertEqual(
+            value["first_blocker"], "EXECUTOR_RECEIPT_NOT_CURRENT_PERSISTED"
+        )
+
     def test_native_rule_must_enforce_all_freshness_requirements(self):
         weak = self.enforced_rules()
         weak[0]["parameters"]["require_code_owner_review"] = False
@@ -115,6 +227,24 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
     def test_no_review_is_pending_not_approval(self):
         result = self.evaluate([])
         self.assertEqual((result["gate_state"], result["first_blocker"]), ("pending", "CODE_OWNER_REVIEW_MISSING"))
+
+    def test_bounded_review_observation_holds_on_a_full_page(self):
+        complete = MODULE.bounded_review_observation([self.approval()])
+        self.assertTrue(complete["complete"])
+        self.assertIsNone(complete["first_blocker"])
+        self.assertEqual(complete["observed_count"], 1)
+
+        full = MODULE.bounded_review_observation(
+            [self.approval(id=index) for index in range(MODULE.REVIEW_OBSERVATION_PAGE_LIMIT)]
+        )
+        self.assertFalse(full["complete"])
+        self.assertEqual(
+            full["first_blocker"], MODULE.REVIEW_OBSERVATION_LIMIT_BLOCKER
+        )
+        self.assertEqual(len(full["reviews"]), MODULE.REVIEW_OBSERVATION_PAGE_LIMIT)
+
+        with self.assertRaises(MODULE.ReviewGateInputError):
+            MODULE.bounded_review_observation(["not-a-review"])
 
     def test_exact_head_approval_passes(self):
         result = self.evaluate([self.approval()])
@@ -191,26 +321,42 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
         self.assertIn("commits/{head}/status", workflow)
         self.assertIn("STATUS_PUBLICATION_NOOP", workflow)
         self.assertNotIn("\n  schedule:\n", workflow)
+        self.assertNotIn("workflow_dispatch:", workflow)
+        self.assertNotIn("inputs.", workflow)
         self.assertNotIn("pulls?state=open", workflow)
         self.assertIn("select_required_review_targets", workflow)
+        self.assertIn("select_required_review_event_target", workflow)
+        self.assertIn("pull_request_review:", workflow)
+        self.assertIn("pull_request_review_comment:", workflow)
+        self.assertIn("EVENT_NATIVE_HEAD: ${{ github.event.pull_request.head.sha || '' }}", workflow)
+        self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", workflow)
         self.assertIn("EVENT_WORKFLOW_RUN_HEAD: ${{ github.event.workflow_run.head_sha || '' }}", workflow)
         self.assertNotIn("EVENT_EXPECTED_HEAD: ${{ github.event.workflow_run.head_sha", workflow)
         self.assertIn("qikvrt-required-code-owner-selection-", workflow)
+        self.assertIn("bounded_review_observation", workflow)
+        self.assertNotIn("--paginate", workflow)
+        self.assertIn("validate_diff_transport_budget", workflow)
+        self.assertLess(
+            workflow.index("validate_diff_transport_budget(declared)"),
+            workflow.index("for item in declared.get('packets',[])"),
+        )
         self.assertLess(
             workflow.index("pr=gh_json(f'repos/{repo}/pulls/{number}')"),
             workflow.index("rules=gh_json(f'repos/{repo}/rules/branches/main')"),
         )
 
-    def test_target_selection_requires_one_exact_event_or_dispatch_subject(self):
-        dispatch = MODULE.select_required_review_targets(
+    def test_target_selection_requires_one_exact_native_event_subject(self):
+        manual = MODULE.select_required_review_targets(
             repository="example/qik-vrt",
             requested_pr="641",
             workflow_event="",
             workflow_run_head="",
             event_prs=[],
         )
-        self.assertEqual(dispatch["state"], "CANDIDATE")
-        self.assertEqual(dispatch["pr_numbers"], [641])
+        self.assertEqual(manual["state"], "INELIGIBLE_EVENT_TARGET")
+        self.assertEqual(
+            manual["first_blocker"], "MANUAL_REQUIRED_REVIEW_DISPATCH_FORBIDDEN"
+        )
 
         no_event = MODULE.select_required_review_targets(
             repository="example/qik-vrt",
@@ -295,6 +441,44 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
             result["first_blocker"], "WORKFLOW_RUN_PULL_REQUEST_HEAD_MISSING"
         )
         self.assertIsNone(result["expected_head"])
+
+    def test_direct_native_review_event_uses_payload_pr_and_head(self):
+        for event_name in ("pull_request_review", "pull_request_review_comment"):
+            with self.subTest(event_name=event_name):
+                result = MODULE.select_required_review_event_target(
+                    repository="example/qik-vrt",
+                    event_name=event_name,
+                    event_pr="641",
+                    event_head=self.head,
+                )
+                self.assertEqual(result["state"], "CANDIDATE")
+                self.assertEqual(result["source"], "NATIVE_REVIEW_EVENT")
+                self.assertEqual(result["pr_numbers"], [641])
+                self.assertEqual(result["expected_head"], self.head)
+                self.assertIsNone(result["workflow_run_head"])
+
+        missing_head = MODULE.select_required_review_event_target(
+            repository="example/qik-vrt",
+            event_name="pull_request_review",
+            event_pr="641",
+            event_head="",
+        )
+        self.assertEqual(missing_head["state"], "REOBSERVE_EXACT_EVENT_TARGET")
+        self.assertEqual(
+            missing_head["first_blocker"], "NATIVE_REVIEW_EVENT_HEAD_MISSING_OR_INVALID"
+        )
+        self.assertEqual(missing_head["status_publication"], "FORBIDDEN")
+
+        unsupported = MODULE.select_required_review_event_target(
+            repository="example/qik-vrt",
+            event_name="workflow_run",
+            event_pr="641",
+            event_head=self.head,
+        )
+        self.assertEqual(unsupported["state"], "INELIGIBLE_EVENT_TARGET")
+        self.assertEqual(
+            unsupported["first_blocker"], "UNSUPPORTED_NATIVE_REVIEW_EVENT"
+        )
 
 
 if __name__ == "__main__":

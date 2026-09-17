@@ -139,6 +139,51 @@ class MaterializationScopeTests(unittest.TestCase):
                 workflow,
             )
 
+    def test_content_disposition_recovery_is_offline_first_and_uploads_hold_evidence(self) -> None:
+        batch003 = BATCH003_WORKFLOW.read_text(encoding="utf-8")
+        batch04 = WORKFLOW.read_text(encoding="utf-8")
+        for workflow in (batch003, batch04):
+            self.assertIn("--ensure-current --receipt", workflow)
+            self.assertIn('statuses=("${PIPESTATUS[@]}")', workflow)
+            self.assertIn("if-no-files-found: error", workflow)
+            self.assertIn("Enforce a typed content-disposition HOLD after evidence upload", workflow)
+            self.assertLess(
+                workflow.index("Preserve"),
+                workflow.index("Enforce a typed content-disposition HOLD after evidence upload"),
+            )
+        source = (
+            ROOT / "tools/qikvrt_content_disposition_batch_003_remaining_archives.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("def materialize_atomically", source)
+        self.assertIn("restore_materialization_outputs(snapshot)", source)
+        self.assertIn("Existing materialized evidence verified without a live Zenodo read.", source)
+
+    def test_pull_request_materializers_have_no_write_credential(self) -> None:
+        for workflow_path in (BATCH003_WORKFLOW, WORKFLOW):
+            workflow = workflow_path.read_text(encoding="utf-8")
+            self.assertIn("permissions:\n  contents: read", workflow)
+            self.assertIn("verify-pr-readonly:", workflow)
+            self.assertIn("persist-credentials: false", workflow)
+            self.assertIn("--verify-current --receipt", workflow)
+            self.assertIn("steps.recovery_evidence.outcome == 'success'", workflow)
+            writer = workflow[workflow.index("  materialize:\n"):]
+            self.assertIn("permissions:\n      contents: write", writer)
+            self.assertIn("pull-requests: write", writer)
+        batch04 = WORKFLOW.read_text(encoding="utf-8")
+        pr_gates = batch04[batch04.index("Verify committed repository evidence and run complete read-only gates"):]
+        self.assertIn("tools/qikvrt_content_disposition_batch_003_dispatch.py --check-status-projection", pr_gates)
+        self.assertIn("make test", pr_gates)
+        self.assertIn("tools/qikvrt_integrity.py verify", pr_gates)
+
+    def test_materializer_hold_enforcement_requires_uploaded_evidence(self) -> None:
+        for workflow_path, upload_id in (
+            (BATCH003_WORKFLOW, "recovery_evidence"),
+            (WORKFLOW, "content_disposition_evidence"),
+        ):
+            workflow = workflow_path.read_text(encoding="utf-8")
+            self.assertIn(f"steps.{upload_id}.outcome == 'success'", workflow)
+            self.assertIn("outputs.exit_code != ''", workflow)
+
     def test_integrity_and_complete_gates_remain_unconditional(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         integrity = workflow.index("- name: Regenerate and verify repository integrity")

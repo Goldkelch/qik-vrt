@@ -9,6 +9,7 @@ on:
       - agent/manuscript-formalization-v2-completion
       - docs/information-effect-axis-v1
       - publication/pr966-p5-successor-v1
+      - agent/autonomy-root-cause-self-clean-v3
   pull_request:
     branches:
       - main
@@ -19,21 +20,150 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}
+  group: qikvrt-repository-evidence-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
+  verify-pr-readonly:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]'
+    permissions:
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.EXPECTED_HEAD }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Verify the exact pull-request head without a write credential
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_head="$(git rev-parse --verify HEAD^{commit})"
+          test "$source_head" = "$EXPECTED_HEAD"
+          printf 'head=%s\n' "$source_head" >> "$GITHUB_OUTPUT"
+      - name: Verify content-disposition recovery offline without a live repair
+        id: materialization
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact_root="$RUNNER_TEMP/qikvrt-content-disposition-pr-recovery"
+          mkdir -p "$artifact_root"
+          receipt="$artifact_root/RECOVERY_RECEIPT.json"
+          log="$artifact_root/materialization.log"
+          capture_hold() {
+            python3 - "$receipt" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          value = {
+              "schema": "qikvrt_remaining_archive_disposition_recovery_v1",
+              "state": "HOLD",
+              "verification_state": "HOLD_UNVERIFIED",
+              "failure_class": "CONTENT_DISPOSITION_EVIDENCE_CAPTURE_FAILED",
+              "first_blocker": "CONTENT_DISPOSITION_EVIDENCE_CAPTURE_FAILED",
+              "detail": "The read-only pull-request verifier did not preserve complete recovery evidence.",
+              "offline_materialization_verified": False,
+              "live_reobservation_attempted": False,
+              "live_materialization_invoked": False,
+              "public_get_retry_policy": {"attempts": 3, "backoff_seconds": [15, 45], "timeout_seconds": 240},
+              "external_effect": False,
+              "zenodo_mutation_attempted": False,
+              "d0": 2,
+              "continuation_required": True,
+              "next_action": "REOBSERVE_EXACT_PUBLIC_ZENODO_RECORDS_ON_A_FUTURE_CARRIER",
+              "hold_reason": {
+                  "reason_code": "CONTENT_DISPOSITION_EVIDENCE_CAPTURE_FAILED",
+                  "reason": "The read-only pull-request verifier did not preserve complete recovery evidence.",
+                  "subject": {"repository": "Goldkelch/qik-vrt", "kind": "zenodo_record_set", "identifier": "batch003-remaining-archives", "head_sha": None},
+                  "evidence_refs": ["workflow-log:batch04-content-disposition-pr"],
+                  "owner": {"role": "EXACT_SUBJECT_OBSERVER", "actor": "github-actions[bot]"},
+                  "retry_condition": {"event": "FUTURE_FRESH_CONTENT_DISPOSITION_CARRIER", "predicate": "the verifier can preserve a complete receipt and log"},
+                  "next_action": "REOBSERVE_EXACT_PUBLIC_ZENODO_RECORDS_ON_A_FUTURE_CARRIER",
+                  "d0": 2
+              },
+              "completion_claims": {"pass": False, "final_pass": False, "effect_ack_done": False, "proof_corpus_published_on_zenodo": False, "zenodo_mutation_authorized": False}
+          }
+          path.write_text(json.dumps(value, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+          PY
+          }
+          : > "$log"
+          set +e
+          python3 -B -m tools.qikvrt_content_disposition_batch_003_remaining_archives \
+            --verify-current --receipt "$receipt" --json >> "$log" 2>&1
+          effective_exit=$?
+          set -e
+          if [ ! -s "$receipt" ]; then
+            capture_hold
+            effective_exit=2
+          fi
+          if [ "$effective_exit" -eq 0 ]; then
+            set +e
+            python3 -B -m tools.qikvrt_content_disposition_batch_003_remaining_archives --check --json >> "$log" 2>&1
+            check_exit=$?
+            set -e
+            if [ "$check_exit" -ne 0 ]; then
+              capture_hold
+              effective_exit=2
+            fi
+          fi
+          printf 'exit_code=%s\n' "$effective_exit" >> "$GITHUB_OUTPUT"
+      - name: Preserve read-only pull-request content-disposition evidence
+        id: recovery_evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-content-disposition-pr-recovery-${{ steps.source.outputs.head }}
+          path: ${{ runner.temp }}/qikvrt-content-disposition-pr-recovery/**
+          retention-days: 30
+          if-no-files-found: error
+      - name: Enforce typed content-disposition HOLD after evidence upload
+        if: >-
+          always() && steps.materialization.outputs.exit_code != '' &&
+          steps.materialization.outputs.exit_code != '0' &&
+          steps.recovery_evidence.outcome == 'success'
+        env:
+          MATERIALIZATION_EXIT: ${{ steps.materialization.outputs.exit_code }}
+          RECOVERY_RECEIPT: ${{ runner.temp }}/qikvrt-content-disposition-pr-recovery/RECOVERY_RECEIPT.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$MATERIALIZATION_EXIT" =~ ^[1-9][0-9]*$ ]]
+          test -s "$RECOVERY_RECEIPT"
+          cat "$RECOVERY_RECEIPT" >&2
+          exit "$MATERIALIZATION_EXIT"
+      - name: Verify committed repository evidence and run complete read-only gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m tools.qikvrt_content_disposition_batch_003_remaining_archives --check --json
+          python3 -B tools/qikvrt_content_disposition_batch_003_dispatch.py --check-status-projection --json
+          python3 -B tools/qikvrt_integrity.py verify
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
   materialize:
     if: >-
-      (github.event_name == 'pull_request' &&
-       github.event.pull_request.head.repo.full_name == github.repository &&
-       github.actor != 'dependabot[bot]') ||
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' &&
-       github.actor != 'github-actions[bot]')
+      (github.event_name == 'push' && github.actor != 'github-actions[bot]')
+    permissions:
+      contents: write
+      pull-requests: write
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -173,11 +303,55 @@ jobs:
           python3 -B tests/test_formalization_v2_release_workflow.py
       - name: Refresh most advanced content-disposition status when present
         if: steps.scope.outputs.content_disposition == 'true'
+        id: content_disposition
         shell: bash
         run: |
           set -euo pipefail
+          artifact_root="$RUNNER_TEMP/qikvrt-content-disposition-recovery"
+          mkdir -p "$artifact_root"
+          receipt="$artifact_root/RECOVERY_RECEIPT.json"
+          log="$artifact_root/materialization.log"
+          materialization_exit=0
+          capture_hold() {
+            python3 - "$receipt" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          value = {
+              "schema": "qikvrt_remaining_archive_disposition_recovery_v1",
+              "state": "HOLD",
+              "verification_state": "HOLD_UNVERIFIED",
+              "failure_class": "CONTENT_DISPOSITION_EVIDENCE_CAPTURE_FAILED",
+              "first_blocker": "CONTENT_DISPOSITION_EVIDENCE_CAPTURE_FAILED",
+              "detail": "The content-disposition runner did not preserve a complete receipt and log before enforcement.",
+              "offline_materialization_verified": False,
+              "live_reobservation_attempted": False,
+              "live_materialization_invoked": False,
+              "public_get_retry_policy": {"attempts": 3, "backoff_seconds": [15, 45], "timeout_seconds": 240},
+              "external_effect": False,
+              "zenodo_mutation_attempted": False,
+              "d0": 2,
+              "continuation_required": True,
+              "next_action": "REOBSERVE_EXACT_PUBLIC_ZENODO_RECORDS_ON_A_FUTURE_CARRIER",
+              "hold_reason": {
+                  "reason_code": "CONTENT_DISPOSITION_EVIDENCE_CAPTURE_FAILED",
+                  "reason": "The content-disposition runner did not preserve a complete receipt and log before enforcement.",
+                  "subject": {"repository": "Goldkelch/qik-vrt", "kind": "zenodo_record_set", "identifier": "batch003-remaining-archives", "head_sha": None},
+                  "evidence_refs": ["workflow-log:batch04-content-disposition"],
+                  "owner": {"role": "EXACT_SUBJECT_OBSERVER", "actor": "github-actions[bot]"},
+                  "retry_condition": {"event": "FUTURE_FRESH_CONTENT_DISPOSITION_CARRIER", "predicate": "the runner can preserve a complete receipt and log"},
+                  "next_action": "REOBSERVE_EXACT_PUBLIC_ZENODO_RECORDS_ON_A_FUTURE_CARRIER",
+                  "d0": 2
+              },
+              "completion_claims": {"pass": False, "final_pass": False, "effect_ack_done": False, "proof_corpus_published_on_zenodo": False, "zenodo_mutation_authorized": False}
+          }
+          path.write_text(json.dumps(value, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+          PY
+          }
+          printf '%s\n' '{"schema":"qikvrt_remaining_archive_disposition_recovery_v1","state":"NOT_APPLICABLE","completion_claims":{"pass":false,"final_pass":false,"effect_ack_done":false,"proof_corpus_published_on_zenodo":false,"zenodo_mutation_authorized":false}}' > "$receipt"
           final_script="tools/qikvrt_content_disposition_batch_003_remaining_archives.py"
-          final_receipt="release/zenodo-corpus-proof-2026-07-28/canonical-union/retrospective-proof-corpus/RETROSPECTIVE_PROOF_CORPUS_RECEIPT.json"
           second_script="tools/qikvrt_content_disposition_batch_003_subject_172dd9bc2738fa43.py"
           recursive_probe="tools/qikvrt_batch003_subject_172dd_recursive_probe.py"
           second_report="$RUNNER_TEMP/SUBJECT-172dd9bc2738fa43_RECURSIVE_PUBLIC_ARCHIVE_PROBE.json"
@@ -187,32 +361,114 @@ jobs:
           dispatch_receipt="release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/dispatch/BATCH_003_DISPATCH_RECEIPT.json"
           post_script="tools/qikvrt_content_disposition_status_after_batch_002_acceptance_compat.py"
           post_receipt="release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/post-acceptance/POST_ACCEPTANCE_STATUS_PROJECTION.json"
-          if [ -f "$final_script" ] && [ -f "$final_receipt" ]; then
+          if [ -f "$final_script" ]; then
+            set +e
             python3 -B -m tools.qikvrt_content_disposition_batch_003_remaining_archives \
-              --materialize --json
-            python3 -B -m tools.qikvrt_content_disposition_batch_003_remaining_archives \
-              --check --json
-            python3 -B "$dispatch_script" --check-status-projection --json
+              --ensure-current --receipt "$receipt" --json \
+              | tee "$log"
+            statuses=("${PIPESTATUS[@]}")
+            set -e
+            materialization_exit="${statuses[0]}"
+            if [ "${statuses[1]}" -ne 0 ] || [ ! -s "$receipt" ]; then
+              capture_hold
+              materialization_exit=2
+            fi
+            if [ "$materialization_exit" -eq 0 ]; then
+              set +e
+              python3 -B "$dispatch_script" --check-status-projection --json >> "$log" 2>&1
+              dispatch_exit=$?
+              set -e
+              if [ "$dispatch_exit" -ne 0 ]; then
+                capture_hold
+                materialization_exit=2
+              fi
+            fi
           elif [ -f "$second_script" ] && [ -f "$recursive_probe" ]; then
-            python3 -B -m tools.qikvrt_batch003_subject_172dd_recursive_probe \
-              --output "$second_report"
-            python3 -B "$second_script" --report "$second_report" --materialize
-            python3 -B "$second_script" --check
+            set +e
+            (
+              set -euo pipefail
+              python3 -B -m tools.qikvrt_batch003_subject_172dd_recursive_probe \
+                --output "$second_report"
+              python3 -B "$second_script" --report "$second_report" --materialize
+              python3 -B "$second_script" --check
+            )
+            legacy_exit=$?
+            set -e
+            if [ "$legacy_exit" -ne 0 ]; then
+              capture_hold
+              materialization_exit=2
+            fi
           elif [ -f "$first_script" ] && [ -f "$first_work_unit" ]; then
-            python3 -B "$first_script" --verify-public-record --materialize
-            python3 -B "$first_script" --check
-            python3 -B -m unittest -v \
-              tests.test_content_disposition_batch_003_subject_2581811b342e505d \
-              tests.test_content_disposition_batch_003_dispatch
+            set +e
+            (
+              set -euo pipefail
+              python3 -B "$first_script" --verify-public-record --materialize
+              python3 -B "$first_script" --check
+              python3 -B -m unittest -v \
+                tests.test_content_disposition_batch_003_subject_2581811b342e505d \
+                tests.test_content_disposition_batch_003_dispatch
+            )
+            legacy_exit=$?
+            set -e
+            if [ "$legacy_exit" -ne 0 ]; then
+              capture_hold
+              materialization_exit=2
+            fi
           elif [ -f "$dispatch_script" ] && [ -f "$dispatch_receipt" ]; then
-            python3 -B "$dispatch_script" --materialize
-            python3 -B "$dispatch_script" --check-status-projection
+            set +e
+            (
+              set -euo pipefail
+              python3 -B "$dispatch_script" --materialize
+              python3 -B "$dispatch_script" --check-status-projection
+            )
+            legacy_exit=$?
+            set -e
+            if [ "$legacy_exit" -ne 0 ]; then
+              capture_hold
+              materialization_exit=2
+            fi
           elif [ -f "$post_script" ] && [ -f "$post_receipt" ]; then
-            python3 -B "$post_script" --materialize
-            python3 -B "$post_script" --check-status-projection
+            set +e
+            (
+              set -euo pipefail
+              python3 -B "$post_script" --materialize
+              python3 -B "$post_script" --check-status-projection
+            )
+            legacy_exit=$?
+            set -e
+            if [ "$legacy_exit" -ne 0 ]; then
+              capture_hold
+              materialization_exit=2
+            fi
           else
             echo "No current content-disposition status projector is present on this branch."
           fi
+          printf 'exit_code=%s\n' "$materialization_exit" >> "$GITHUB_OUTPUT"
+      - name: Preserve content-disposition recovery evidence
+        id: content_disposition_evidence
+        if: always() && steps.scope.outputs.content_disposition == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-content-disposition-recovery-${{ env.EXPECTED_HEAD }}
+          path: ${{ runner.temp }}/qikvrt-content-disposition-recovery/**
+          retention-days: 30
+          if-no-files-found: error
+      - name: Enforce a typed content-disposition HOLD after evidence upload
+        if: >-
+          always() && steps.scope.outputs.content_disposition == 'true' &&
+          steps.content_disposition.outputs.exit_code != '' &&
+          steps.content_disposition.outputs.exit_code != '0' &&
+          steps.content_disposition_evidence.outcome == 'success'
+        env:
+          MATERIALIZATION_EXIT: ${{ steps.content_disposition.outputs.exit_code }}
+          RECOVERY_RECEIPT: ${{ runner.temp }}/qikvrt-content-disposition-recovery/RECOVERY_RECEIPT.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$MATERIALIZATION_EXIT" =~ ^[1-9][0-9]*$ ]]
+          test -s "$RECOVERY_RECEIPT"
+          cat "$RECOVERY_RECEIPT" >&2
+          exit "$MATERIALIZATION_EXIT"
       - name: Provision and verify aphorism publication runtime when present
         if: steps.scope.outputs.aphorism == 'true'
         shell: bash
@@ -293,6 +549,8 @@ jobs:
           python3 tools/qikvrt_integrity.py verify
       - name: Commit materialized repository evidence
         if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -354,15 +612,106 @@ jobs:
             echo "Repository evidence is already current."
             exit 0
           fi
+          expected_tree="$(git write-tree)"
+          if [ "$TARGET_REF" = main ]; then
+            candidate_branch="automation/repository-evidence-${source_head:0:16}"
+            if git ls-remote --exit-code --heads origin "refs/heads/$candidate_branch" >/dev/null 2>&1; then
+              candidate_head="$(git ls-remote --heads origin "refs/heads/$candidate_branch" | awk 'NR == 1 { print $1 }')"
+              test -n "$candidate_head" || {
+                echo "HOLD_UNVERIFIED: existing repository-evidence candidate ref has no exact head" >&2
+                exit 2
+              }
+              git fetch --no-tags origin "refs/heads/$candidate_branch:refs/remotes/origin/$candidate_branch"
+              fetched_candidate_head="$(git rev-parse --verify "refs/remotes/origin/$candidate_branch^{commit}")"
+              test "$fetched_candidate_head" = "$candidate_head" || {
+                echo "HOLD_UNVERIFIED repository-evidence candidate ref advanced during exact reobservation" >&2
+                exit 2
+              }
+              remote_main_before_existing="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 { print $1 }')"
+              test "$remote_main_before_existing" = "$source_head" || {
+                echo "HOLD_UNVERIFIED main advanced before existing repository-evidence candidate reobservation" >&2
+                exit 2
+              }
+              pr_readback="$RUNNER_TEMP/qikvrt-repository-evidence-existing-pr-readback.json"
+              gh pr view "$candidate_branch" \
+                --repo "$GITHUB_REPOSITORY" \
+                --json number,url,isDraft,baseRefName,baseRefOid,headRefName,headRefOid > "$pr_readback"
+              receipt="$RUNNER_TEMP/qikvrt-repository-evidence-existing-pr-receipt.json"
+              python3 -B tools/qikvrt_candidate_pr_receipt.py \
+                --readback "$pr_readback" \
+                --expected-base "$source_head" \
+                --expected-head "$candidate_head" \
+                --expected-branch "$candidate_branch" \
+                --expected-tree "$expected_tree" \
+                --repository . \
+                --receipt "$receipt"
+              remote_main_after_existing="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 { print $1 }')"
+              test "$remote_main_after_existing" = "$source_head" || {
+                echo "HOLD_UNVERIFIED main advanced during existing repository-evidence candidate reobservation" >&2
+                exit 2
+              }
+              {
+                echo '### Reobserved existing repository-evidence draft candidate'
+                echo
+                cat "$receipt"
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            git switch -c "$candidate_branch"
+          fi
           git commit -m "ci: materialize repository evidence"
-          remote_head_after_commit="$(
-            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
-              awk 'NR == 1 { print $1 }'
-          )"
+          remote_head_after_commit="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 { print $1 }')"
           if [ "$remote_head_after_commit" != "$source_head" ]; then
             echo "BLOCK: target ref advanced while repository evidence was materialized" >&2
             echo "source_head=$source_head" >&2
             echo "remote_head_after_commit=$remote_head_after_commit" >&2
             exit 2
           fi
-          git push origin "HEAD:$TARGET_REF"
+          if [ "$TARGET_REF" = main ]; then
+            candidate_head="$(git rev-parse --verify HEAD^{commit})"
+            git push origin "HEAD:refs/heads/$candidate_branch"
+            remote_main_before_pr="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 { print $1 }')"
+            test "$remote_main_before_pr" = "$source_head" || {
+              echo "HOLD_UNVERIFIED main advanced before repository-evidence candidate pull request" >&2
+              exit 2
+            }
+            pr_body="$RUNNER_TEMP/qikvrt-repository-evidence-pr.md"
+            {
+              printf '%s\n' '<!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->' ''
+              printf '%s\n' 'Exact trusted-main repository-evidence candidate.' ''
+              printf '%s`%s`\n' '- observed main base: ' "$source_head"
+              printf '%s`%s`\n' '- candidate head: ' "$candidate_head"
+              printf '%s\n' '' "This workflow did not write protected \`main\`. The candidate requires its own exact-head checks and the protected pull-request route. No review, merge, release, publication, PASS, FINAL_PASS, or EFFECT_ACK_DONE is implied."
+            } > "$pr_body"
+            gh pr create \
+              --draft \
+              --base main \
+              --head "$candidate_branch" \
+              --title "ci: materialize repository evidence ${source_head:0:16}" \
+              --body-file "$pr_body"
+            pr_readback="$RUNNER_TEMP/qikvrt-repository-evidence-pr-readback.json"
+            gh pr view "$candidate_branch" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json number,url,isDraft,baseRefName,baseRefOid,headRefName,headRefOid > "$pr_readback"
+            receipt="$RUNNER_TEMP/qikvrt-repository-evidence-pr-receipt.json"
+            python3 -B tools/qikvrt_candidate_pr_receipt.py \
+              --readback "$pr_readback" \
+              --expected-base "$source_head" \
+              --expected-head "$candidate_head" \
+              --expected-branch "$candidate_branch" \
+              --expected-tree "$expected_tree" \
+              --repository . \
+              --receipt "$receipt"
+            remote_main_after_pr="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 { print $1 }')"
+            test "$remote_main_after_pr" = "$source_head" || {
+              echo "HOLD_UNVERIFIED main advanced during repository-evidence candidate pull-request creation" >&2
+              exit 2
+            }
+            {
+              echo '### Exact repository-evidence draft candidate receipt'
+              echo
+              cat "$receipt"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            git push origin "HEAD:$TARGET_REF"
+          fi

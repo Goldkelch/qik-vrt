@@ -99,9 +99,10 @@ class T(unittest.TestCase):
             self.assertEqual(m.projection_stage(), m.STAGE_FINAL_CORPUS)
             self.assertTrue(m._advanced_module().__name__.endswith("qikvrt_content_disposition_batch_003_all_subjects_compat"))
             workflow = (ROOT / ".github/workflows/qikvrt_batch04_integrity.yml").read_text(encoding="utf-8")
-            final_guard = 'if [ -f "$final_script" ] && [ -f "$final_receipt" ]; then'
+            final_guard = 'if [ -f "$final_script" ]; then'
             second_guard = 'elif [ -f "$second_script" ] && [ -f "$recursive_probe" ]; then'
             self.assertIn(final_guard, workflow)
+            self.assertNotIn('if [ -f "$final_script" ] && [ -f "$final_receipt" ]; then', workflow)
             self.assertIn(second_guard, workflow)
             self.assertLess(workflow.index(final_guard), workflow.index(second_guard))
 

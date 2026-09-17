@@ -19,7 +19,7 @@ class AutonomousRulesetEffectLoopContractTest(unittest.TestCase):
             self.text,
         )
         self.assertIn("types: [completed]", self.text)
-        self.assertIn("workflow_dispatch:", self.text)
+        self.assertNotIn("workflow_dispatch:", self.text)
         self.assertNotIn("schedule:", self.text)
 
     def test_consumes_exact_trusted_selection_artifact(self):
@@ -36,10 +36,46 @@ class AutonomousRulesetEffectLoopContractTest(unittest.TestCase):
 
     def test_reuses_full_current_ruleset_reconciler(self):
         self.assertIn("tools/qikvrt_ruleset_reconcile.py", self.text)
-        self.assertIn('--snapshot "$root/live-ruleset-before.json"', self.text)
         self.assertIn("--apply", self.text)
         self.assertIn("--receipt", self.text)
-        self.assertIn("rulesets/19344903", self.text)
+        self.assertNotIn('--snapshot "$root/live-ruleset-before.json"', self.text)
+        self.assertNotIn('gh api "repos/${REPOSITORY}/rulesets/19344903"', self.text)
+
+    def test_read_token_is_separate_from_admin_mutation_authority(self):
+        self.assertIn("GH_TOKEN: ${{ github.token }}", self.text)
+        self.assertIn(
+            "QIKVRT_RULESET_ADMIN_TOKEN: ${{ steps.app-token.outputs.token }}",
+            self.text,
+        )
+        self.assertIn("vars.QIKVRT_RULESET_APP_ID", self.text)
+        self.assertIn("secrets.QIKVRT_RULESET_APP_PRIVATE_KEY", self.text)
+        self.assertIn(
+            "actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349",
+            self.text,
+        )
+        self.assertIn("permission-administration: write", self.text)
+        self.assertNotIn("secrets.QIKVRT_RULESET_ADMIN_TOKEN", self.text)
+        self.assertNotIn(
+            "GH_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}",
+            self.text,
+        )
+
+    def test_app_provisioning_classifies_missing_authority_and_technical_failures(self):
+        self.assertIn("QIKVRT_RULESET_GITHUB_APP_CONFIGURATION_MISSING", self.text)
+        self.assertIn("QIKVRT_RULESET_GITHUB_APP_TOKEN_MINT_FAILED", self.text)
+        self.assertIn("QIKVRT_RULESET_AUTHORITY_STATE=REQUEST_AUTHORITY", self.text)
+        self.assertIn("QIKVRT_RULESET_AUTHORITY_STATE=HOLD", self.text)
+        self.assertIn('if [ "$observed_state" = HOLD ]; then', self.text)
+
+    def test_app_token_follows_exact_selection(self):
+        self.assertLess(
+            self.text.index("id: select"),
+            self.text.index("id: app-config"),
+        )
+        self.assertLess(
+            self.text.index("id: app-config"),
+            self.text.index("id: app-token"),
+        )
 
     def test_admin_authority_is_nonterminal_and_repository_routed(self):
         self.assertIn("QIKVRT_RULESET_ADMIN_TOKEN", self.text)
@@ -84,14 +120,8 @@ class AutonomousRulesetEffectLoopContractTest(unittest.TestCase):
             "steps.reconcile.outputs.effect_observed == 'false'",
             self.text,
         )
-        self.assertIn(
-            "qikvrt_required_review_gate.yml/dispatches",
-            self.text,
-        )
-        self.assertIn(
-            "ruleset CURRENT; exact-head gate reobservation dispatched",
-            self.text,
-        )
+        self.assertNotIn("qikvrt_required_review_gate.yml/dispatches", self.text)
+        self.assertIn("ruleset CURRENT; next native review event reobserves", self.text)
 
     def test_no_review_merge_or_publication_bypass_exists(self):
         self.assertNotIn("gh pr merge", self.text)

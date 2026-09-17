@@ -25,6 +25,12 @@ REQUIRED_NATIVE_STATUS_CHECKS = {
     ("test", 15368),
     ("QIKVRT required code-owner review", 15368),
 }
+REVIEW_OBSERVATION_PAGE_LIMIT = 100
+REVIEW_OBSERVATION_LIMIT_BLOCKER = "REVIEW_OBSERVATION_PAGE_LIMIT_REACHED"
+EXECUTOR_PROJECTION_SCHEMA = "qikvrt_mesh_review_repository_projection_v1"
+EXECUTOR_RECEIPT_ELIGIBILITY_SCHEMA = (
+    "qikvrt_native_account_review_receipt_eligibility_v1"
+)
 
 
 class ReviewGateInputError(ValueError):
@@ -73,6 +79,115 @@ def _selector_sha(value: Any) -> str | None:
     return value
 
 
+def bounded_review_observation(reviews: Any) -> dict[str, Any]:
+    """Classify one bounded native review page without guessing its successor.
+
+    The REST review endpoint is read once with its maximum page size.  An exact
+    full page may have a next page, so it is deliberately incomplete rather
+    than silently turning into an unbounded GitHub App read chain.
+    """
+    if not isinstance(reviews, Sequence) or isinstance(reviews, (str, bytes)):
+        raise ReviewGateInputError("bounded review observation is not a list")
+    if not all(isinstance(review, Mapping) for review in reviews):
+        raise ReviewGateInputError("bounded review observation contains a non-object")
+    complete = len(reviews) < REVIEW_OBSERVATION_PAGE_LIMIT
+    return {
+        "schema": "qikvrt_bounded_review_observation_v1",
+        "limit": REVIEW_OBSERVATION_PAGE_LIMIT,
+        "observed_count": len(reviews),
+        "complete": complete,
+        "first_blocker": None if complete else REVIEW_OBSERVATION_LIMIT_BLOCKER,
+        "reviews": [dict(review) for review in reviews],
+    }
+
+
+def _fingerprint(value: Any) -> str | None:
+    if not isinstance(value, str) or len(value) != 64:
+        return None
+    if any(character not in "0123456789abcdef" for character in value):
+        return None
+    return value
+
+
+def executor_receipt_projection_eligibility(
+    receipt: Any,
+    ledger: Any,
+    projection: Any,
+    selection: Any,
+) -> dict[str, Any]:
+    """Bind a planner candidate to its current trusted projection artifact.
+
+    A ledger append alone is insufficient after a strict post-mutation
+    reobservation has produced an explicit projection HOLD.  This helper is
+    intentionally diagnostic and non-throwing: malformed or missing evidence
+    seals the native-account route rather than making it infer an effect.
+    """
+    receipt_value = receipt if isinstance(receipt, Mapping) else {}
+    ledger_value = ledger if isinstance(ledger, Mapping) else {}
+    projection_value = projection if isinstance(projection, Mapping) else {}
+    selection_value = selection if isinstance(selection, Mapping) else {}
+
+    receipt_current = (
+        receipt_value.get("persistence_eligible") is True
+        and ledger_value.get("persisted") is True
+        and ledger_value.get("projection_current") is True
+    )
+    artifact_pr = _positive_pr_number(selection_value.get("artifact_pr_number"))
+    artifact_head = _selector_sha(selection_value.get("artifact_head"))
+    artifact_fingerprint = _fingerprint(
+        selection_value.get("artifact_fingerprint")
+    )
+    receipt_pr = _positive_pr_number(receipt_value.get("pr_number"))
+    receipt_head = _selector_sha(receipt_value.get("head_sha"))
+    receipt_tree = _selector_sha(receipt_value.get("tree_sha"))
+    receipt_fingerprint = _fingerprint(
+        receipt_value.get("evidence_fingerprint")
+    )
+    ledger_commit = _selector_sha(ledger_value.get("ledger_commit"))
+
+    projection_current = (
+        isinstance(projection, Mapping)
+        and projection_value.get("schema") == EXECUTOR_PROJECTION_SCHEMA
+        and projection_value.get("projection_permitted") is True
+        and projection_value.get("mesh_disposition") == receipt_value.get("state")
+        and projection_value.get("first_blocker") is None
+        and artifact_pr is not None
+        and receipt_pr == artifact_pr
+        and artifact_head is not None
+        and receipt_head == artifact_head
+        and receipt_tree is not None
+        and projection_value.get("head_sha") == receipt_head
+        and projection_value.get("tree_sha") == receipt_tree
+        and artifact_fingerprint is not None
+        and receipt_fingerprint == artifact_fingerprint
+        and projection_value.get("evidence_fingerprint") == receipt_fingerprint
+        and ledger_commit is not None
+        and projection_value.get("ledger_commit") == ledger_commit
+    )
+    eligible = receipt_current and projection_current
+    return {
+        "schema": EXECUTOR_RECEIPT_ELIGIBILITY_SCHEMA,
+        "eligible": eligible,
+        "first_blocker": (
+            None
+            if eligible
+            else (
+                "EXECUTOR_RECEIPT_NOT_CURRENT_PERSISTED"
+                if not receipt_current
+                else "EXECUTOR_PROJECTION_NOT_CURRENT"
+            )
+        ),
+        "receipt_current": receipt_current,
+        "projection_present": projection is not None,
+        "projection_permitted": (
+            projection_value.get("projection_permitted")
+            if isinstance(projection, Mapping)
+            else None
+        ),
+        "projection_current": projection_current,
+    }
+
+
 def _workflow_run_pr_subject(
     item: Mapping[str, Any], repository: str
 ) -> tuple[int | None, str | None, str | None]:
@@ -104,13 +219,60 @@ def _workflow_run_pr_subject(
     return number, candidate_head, None
 
 
+def select_required_review_event_target(
+    *,
+    repository: str,
+    event_name: str,
+    event_pr: Any,
+    event_head: Any,
+) -> dict[str, Any]:
+    """Bind one direct native review delivery without workflow-run metadata.
+
+    GitHub's workflow-run API does not reliably retain the pull-request
+    association for ``pull_request_review`` deliveries.  The original native
+    payload already carries the exact PR number and candidate head, so use it
+    only for the two direct review ingress classes and leave all later state to
+    the existing live PR/rules/reviews reobservation.
+    """
+    if not isinstance(repository, str) or repository.count("/") != 1:
+        raise ReviewGateInputError("selector repository is invalid")
+    name = event_name.strip() if isinstance(event_name, str) else ""
+    if name not in {"pull_request_review", "pull_request_review_comment"}:
+        return _selection(
+            "INELIGIBLE_EVENT_TARGET",
+            source="NATIVE_REVIEW_EVENT",
+            first_blocker="UNSUPPORTED_NATIVE_REVIEW_EVENT",
+        )
+    number = _positive_pr_number(event_pr)
+    if number is None:
+        return _selection(
+            "REOBSERVE_EXACT_EVENT_TARGET",
+            source="NATIVE_REVIEW_EVENT",
+            first_blocker="NATIVE_REVIEW_EVENT_PR_MISSING",
+        )
+    head = _selector_sha(event_head.strip()) if isinstance(event_head, str) else None
+    if head is None:
+        return _selection(
+            "REOBSERVE_EXACT_EVENT_TARGET",
+            source="NATIVE_REVIEW_EVENT",
+            first_blocker="NATIVE_REVIEW_EVENT_HEAD_MISSING_OR_INVALID",
+            pr_numbers=[number],
+        )
+    return _selection(
+        "CANDIDATE",
+        source="NATIVE_REVIEW_EVENT",
+        pr_numbers=[number],
+        expected_head=head,
+    )
+
+
 def select_required_review_targets(
     *,
     repository: str,
-    requested_pr: str,
     workflow_event: str,
     workflow_run_head: str,
     event_prs: Any,
+    requested_pr: str = "",
 ) -> dict[str, Any]:
     """Resolve exactly one status subject without a scheduled repository scan."""
     if not isinstance(repository, str) or repository.count("/") != 1:
@@ -124,15 +286,10 @@ def select_required_review_targets(
             workflow_run_head=run_head,
         )
     if requested_pr.strip():
-        number = _positive_pr_number(requested_pr)
-        if number is None:
-            return _selection(
-                "INELIGIBLE_EVENT_TARGET",
-                source="WORKFLOW_DISPATCH_PR",
-                first_blocker="INVALID_EXACT_PULL_REQUEST_NUMBER",
-            )
         return _selection(
-            "CANDIDATE", source="WORKFLOW_DISPATCH_PR", pr_numbers=[number]
+            "INELIGIBLE_EVENT_TARGET",
+            source="MANUAL_INPUT_FORBIDDEN",
+            first_blocker="MANUAL_REQUIRED_REVIEW_DISPATCH_FORBIDDEN",
         )
 
     if workflow_event in {"schedule", "workflow_dispatch"}:

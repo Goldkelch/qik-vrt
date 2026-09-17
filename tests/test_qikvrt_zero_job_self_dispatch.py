@@ -26,13 +26,14 @@ class ZeroJobSelfDispatchContractTests(unittest.TestCase):
         self.assertIn('test "$live_repo" = "$GITHUB_REPOSITORY"', self.text)
         self.assertIn('test "$base_ref" = main', self.text)
         self.assertIn('test "$live_head" = "$HEAD_SHA"', self.text)
-        self.assertIn('event_type:"qikvrt_autonomous_exact_head_verify"', self.text)
-        self.assertIn('reason:"ZERO_JOB_ACTION_REQUIRED"', self.text)
+        self.assertNotIn('event_type:"qikvrt_autonomous_exact_head_verify"', self.text)
+        self.assertIn("zero-job recovery awaits next native event", self.text)
 
     def test_never_converts_recovery_into_completion(self) -> None:
         self.assertNotIn("EFFECT_ACK_DONE=true", self.text)
         self.assertNotIn("FINAL_PASS=true", self.text)
-        self.assertIn("REOBSERVE/D0=2 dispatched", self.text)
+        self.assertIn("HOLD/D0=1", self.text)
+        self.assertNotIn("/dispatches", self.text)
 
 
 if __name__ == "__main__":

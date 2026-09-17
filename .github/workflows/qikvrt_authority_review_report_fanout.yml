@@ -10,7 +10,6 @@ on:
 permissions:
   actions: read
   contents: read
-  issues: write
   pull-requests: read
 
 concurrency:
@@ -19,18 +18,21 @@ concurrency:
 
 jobs:
   fanout:
-    if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'pull_request_review'
+    # A direct review event now reaches the trusted executor.  Its technical
+    # COMMENT/receipt is role-local evidence only; it must not newly activate
+    # a cross-repository repository_dispatch route.  Keep this legacy fanout
+    # sealed until a separately authorized, brokered cross-repository delivery
+    # design exists.  It is not an approval, publication, or effect adapter.
+    if: ${{ false }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
-      MESH_TOKEN: ${{ secrets.QIKVRT_MESH_TOKEN }}
       REPOSITORY: ${{ github.repository }}
       SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
-      SOURCE_HEAD: ${{ github.event.workflow_run.head_sha }}
-      SOURCE_PULL_REQUESTS: ${{ toJSON(github.event.workflow_run.pull_requests) }}
+      # A direct review run executes on refs/pull/<n>/merge.  Its head_sha is
+      # therefore an execution SHA, not the reviewed candidate head.  Bind the
+      # candidate only through the exact evidence artifact produced by this run.
     steps:
       - name: Check out trusted Authority main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -44,7 +46,11 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import hashlib, json, os, re, subprocess, sys
+          import hashlib, json, os, re, subprocess
+          from tools.qikvrt_authority_review_report_fanout import (
+              AuthorityReviewReportBindingError,
+              source_artifact_binding,
+          )
 
           def api(path):
               value=subprocess.check_output(
@@ -53,19 +59,24 @@ jobs:
               pages=json.loads(value)
               return [item for page in pages for item in page]
 
-          prs=json.loads(os.environ["SOURCE_PULL_REQUESTS"])
-          if not isinstance(prs,list) or len(prs) != 1:
-              raise SystemExit("HOLD_UNVERIFIED: workflow run must bind exactly one pull request")
-          number=prs[0].get("number")
-          if not isinstance(number,int) or number < 1:
-              raise SystemExit("HOLD_UNVERIFIED: workflow run pull-request number is invalid")
           repository=os.environ["REPOSITORY"]
+          source_run_id=int(os.environ["SOURCE_RUN_ID"])
+          artifacts=json.loads(subprocess.check_output(
+              ["gh","api",f"repos/{repository}/actions/runs/{source_run_id}/artifacts?per_page=100"],
+              text=True,
+          ))
+          try:
+              source=source_artifact_binding(artifacts=artifacts)
+          except AuthorityReviewReportBindingError as exc:
+              raise SystemExit(f"HOLD_UNVERIFIED: {exc}") from exc
+          number=source["pr_number"]
+          head=source["head_sha"]
+          fingerprint=source["evidence_fingerprint"]
           pr=json.loads(subprocess.check_output(
               ["gh","api",f"repos/{repository}/pulls/{number}"],text=True
           ))
-          head=pr.get("head",{}).get("sha")
-          if head != os.environ["SOURCE_HEAD"]:
-              raise SystemExit("HOLD_UNVERIFIED: workflow-run head differs from current pull-request head")
+          if pr.get("head",{}).get("sha") != head:
+              raise SystemExit("HOLD_UNVERIFIED: artifact-bound candidate head differs from current pull-request head")
           commit=json.loads(subprocess.check_output(
               ["gh","api",f"repos/{repository}/git/commits/{head}"],text=True
           ))
@@ -79,13 +90,16 @@ jobs:
               and review.get("commit_id") == head
           ]
           marker=re.compile(
-              r"<!-- qikvrt-mesh-review:v1 head=([0-9a-f]{40}) tree=([0-9a-f]{40}) "
+              r"\A<!-- qikvrt-mesh-review:v1 head=([0-9a-f]{40}) tree=([0-9a-f]{40}) "
               r"fingerprint=([0-9a-f]{64}) disposition=([A-Z_]+) -->"
           )
           bound=[]
           for review in candidates:
-              match=marker.search(review.get("body") or "")
-              if match and match.group(1) == head and match.group(2) == tree:
+              match=marker.match(review.get("body") or "")
+              if (
+                  match and match.group(1) == head and match.group(2) == tree
+                  and match.group(3) == fingerprint
+              ):
                   bound.append((review,match))
           if len(bound) != 1:
               raise SystemExit("HOLD_UNVERIFIED: exact Authority receipt is absent or ambiguous")
@@ -93,7 +107,7 @@ jobs:
           payload={
               "schema":"qikvrt_authority_review_report_v1",
               "authority_repository":repository,
-              "source_run_id":int(os.environ["SOURCE_RUN_ID"]),
+              "source_run_id":source_run_id,
               "pr_number":number,
               "head_sha":head,
               "tree_sha":tree,
@@ -112,76 +126,11 @@ jobs:
           PY
           cat /tmp/authority-review-report.json
 
-      - name: Deduplicate Authority report delivery
-        id: dedupe
-        shell: bash
-        run: |
-          set -euo pipefail
-          key="$(jq -r .dedupe_key /tmp/authority-review-report.json)"
-          pr="$(jq -r .pr_number /tmp/authority-review-report.json)"
-          existing="$(gh api --paginate "repos/$REPOSITORY/issues/$pr/comments?per_page=100" --jq ".[] | select((.body // \"\" | contains(\"qikvrt-authority-review-fanout:v1 key=$key\"))) | .id" | head -n 1)"
-          if [ -n "$existing" ]; then
-            echo "duplicate=true" >> "$GITHUB_OUTPUT"
-            echo "existing_comment=$existing" >> "$GITHUB_OUTPUT"
-          else
-            echo "duplicate=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Dispatch exact report to every active Registry node
-        if: steps.dedupe.outputs.duplicate != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "$MESH_TOKEN" || {
-            echo "HOLD_UNVERIFIED: QIKVRT_MESH_TOKEN is unavailable; no node report was attempted." >&2
-            exit 1
-          }
-          jq -e '
-            .node_count == (.nodes | length)
-            and (.nodes | all(
-              .effective_status == "ACTIVE"
-              and (.repository | type == "string")
-              and (.repository | test("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"))
-            ))
-          ' registry/NODEMESH_INDEX.json >/dev/null
-          jq -r '.nodes[] | select(.effective_status == "ACTIVE") | .repository' registry/NODEMESH_INDEX.json             | sort -u > /tmp/active-registry-nodes.txt
-          test -s /tmp/active-registry-nodes.txt || {
-            echo "HOLD_UNVERIFIED: Registry contains no active delivery nodes." >&2
-            exit 1
-          }
-          payload="$(jq -c . /tmp/authority-review-report.json)"
-          request="$(jq -cn --arg event_type qikvrt_authority_review_report_v1 --argjson client_payload "$payload" '{event_type:$event_type,client_payload:$client_payload}')"
-          : > /tmp/authority-review-delivery.jsonl
-          while IFS= read -r node; do
-            GH_TOKEN="$MESH_TOKEN" gh api --method POST "repos/$node/dispatches" --input - <<<"$request"
-            jq -cn --arg repository "$node" --arg state "DISPATCH_ACCEPTED" '{repository:$repository,state:$state}'               >> /tmp/authority-review-delivery.jsonl
-          done < /tmp/active-registry-nodes.txt
-
-      - name: Record one Authority delivery projection
-        if: steps.dedupe.outputs.duplicate != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          key="$(jq -r .dedupe_key /tmp/authority-review-report.json)"
-          pr="$(jq -r .pr_number /tmp/authority-review-report.json)"
-          nodes="$(jq -r .repository /tmp/authority-review-delivery.jsonl | paste -sd ', ' -)"
-          body="<!-- qikvrt-authority-review-fanout:v1 key=$key -->
-          Authority review report dispatch accepted for exact PR #$pr.
-
-          - dedupe key: `$key`
-          - active Registry nodes: `$nodes`
-          - receipt: `HOLD_UNVERIFIED`
-          - no merge, approval, Authority-main effect, publication, deployment, PASS, FINAL_PASS, or general EFFECT_ACK_DONE is implied."
-          gh api --method POST "repos/$REPOSITORY/issues/$pr/comments" -f body="$body"             > /tmp/authority-review-delivery-comment.json
-
-      - name: Preserve Authority report delivery receipt
+      - name: Preserve sealed Authority review report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: qikvrt-authority-review-report-${{ github.run_id }}
           if-no-files-found: warn
           retention-days: 90
-          path: |
-            /tmp/authority-review-report.json
-            /tmp/authority-review-delivery.jsonl
-            /tmp/authority-review-delivery-comment.json
+          path: /tmp/authority-review-report.json
