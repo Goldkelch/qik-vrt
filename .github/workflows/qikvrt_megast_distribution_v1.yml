@@ -80,23 +80,21 @@ jobs:
           python3 -B - <<'PY'
           import hashlib,json,pathlib,subprocess,tempfile
           lock=json.loads(pathlib.Path('runtime/toolchains/pharo-13.lock.json').read_text())
-          root='https://files.pharo.org/vm/pharo-spur64-headless/Linux-x86_64/'
-          names=[
-            'PharoVM-v12.0.3-beta+0.2aa4b7c-Linux-x86_64-bin.zip',
-            'PharoVM-v10.3.9+2.336b3a7-Linux-x86_64-bin.zip',
-            'PharoVM-v12.0.1-alpha+4.e9d1d652-Linux-x86_64-bin.zip',
+          sources=[
+            ('locked_vm_url',lock['vm']['url']),
+            ('original_vm_alias','https://files.pharo.org/get-files/130/pharo-vm-Linux-x86_64-stable.zip'),
           ]
           report={'schema':'qikvrt_dependency_identity_probe_v1','source_head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'source_tree':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip(),'expected_vm_sha256':lock['vm']['sha256'],'archive_execution':False,'lock_mutation':False,'effect_ack_done':False,'probes':[]}
           out=pathlib.Path('/tmp/qikvrt-dependency-diagnostics')
           out.mkdir(exist_ok=True)
-          for name in names:
-            url=root+name
-            entry={'url':url,'state':'NOT_MATCHED'}
+          for role,url in sources:
+            entry={'role':role,'url':url,'state':'FETCH_FAILED'}
             with tempfile.TemporaryDirectory() as tmp:
               archive=pathlib.Path(tmp)/'archive.zip'
               try:
-                result=subprocess.run(['curl','--fail','--silent','--show-error','--proto','=https','--connect-timeout','15','--max-time','120','--max-filesize','104857600','--output',str(archive),url],capture_output=True,timeout=125)
+                result=subprocess.run(['curl','--fail','--silent','--show-error','--location','--max-redirs','3','--proto','=https','--proto-redir','=https','--connect-timeout','15','--max-time','120','--max-filesize','104857600','--write-out','%{url_effective}','--output',str(archive),url],capture_output=True,timeout=125)
                 entry['fetch_exit']=result.returncode
+                entry['effective_url']=result.stdout.decode('utf-8',errors='replace').strip()
                 if result.returncode==0:
                   digest=hashlib.sha256()
                   with archive.open('rb') as stream:
