@@ -32,7 +32,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: qikvrt-live-terminal-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr || github.event.workflow_run.id || github.run_id }}
+  group: qikvrt-live-terminal-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr || github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.id || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -56,6 +56,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          rm -f -- "${RUNNER_TEMP:?}/qikvrt-live-status-readback.json"
 
           event="$GITHUB_EVENT_PATH"
           pr=''
@@ -162,10 +163,21 @@ jobs:
             echo 'BLOCK: live-surface inventory exceeds five pages; no write' >&2
             exit 1
           fi
-          # A rerun of the same source transition must not append or write again.
+          # Deduplication suppresses mutation, never the exact object readback.
+          # The same identifier with a different source payload is a conflict.
+          duplicate=false
           if printf '%s\n' "$old" | grep -Fq "· event \`$event_id\`"; then
-            echo "PROJECTION_ALREADY_PRESENT event=$event_id"
-            exit 0
+            expected="**$verb** · \`$subject\` · $detail · event \`$event_id\`"
+            matches="$(printf '%s\n' "$old" | awk -v suffix="$expected" '
+              /^- `/ && length($0) >= length(suffix) &&
+              substr($0, length($0)-length(suffix)+1) == suffix {n++}
+              END {print n+0}')"
+            identifiers="$(printf '%s\n' "$old" | grep -Fc "· event \`$event_id\`")"
+            if [ "$matches" -ne 1 ] || [ "$identifiers" -ne 1 ]; then
+              echo 'BLOCK: conflicting source transition; no write' >&2
+              exit 1
+            fi
+            duplicate=true
           fi
           tree="$(gh api "repos/$REPOSITORY/git/commits/$head" --jq '.tree.sha')"
           [[ "$tree" =~ ^[0-9a-f]{40}$ ]]
@@ -195,7 +207,9 @@ jobs:
 
           _Causality is derived from exact-subject/event receipts; timestamps are display metadata only. TRANSPORT_ACK != EFFECT_ACK._"
 
-          if [ -n "$comment_id" ]; then
+          if [ "$duplicate" = true ]; then
+            body="$old"
+          elif [ -n "$comment_id" ]; then
             gh api --method PATCH "repos/$REPOSITORY/issues/comments/$comment_id" -f body="$body" >/dev/null
           else
             comment_id="$(gh api --method POST "repos/$REPOSITORY/issues/$pr/comments" -f body="$body" --jq '.id')"
@@ -204,5 +218,46 @@ jobs:
           # the exact object once; errors, overwrite races and mismatch fail closed.
           [[ "$comment_id" =~ ^[1-9][0-9]*$ ]]
           readback="$(gh api "repos/$REPOSITORY/issues/comments/$comment_id")"
-          printf '%s' "$readback" | jq -e --argjson id "$comment_id" --arg body "$body" '.id == $id and .body == $body and .user.login == "github-actions[bot]" and .user.type == "Bot"' >/dev/null
+          printf '%s' "$readback" | jq -e --argjson id "$comment_id" --arg body "$body" --arg issue "https://api.github.com/repos/$REPOSITORY/issues/$pr" '.id == $id and .issue_url == $issue and .body == $body and .user.login == "github-actions[bot]" and .user.type == "Bot"' >/dev/null
+          export PROJECTION_REPO="$REPOSITORY" PROJECTION_PR="$pr"
+          export PROJECTION_HEAD="$head" PROJECTION_TREE="$tree"
+          export PROJECTION_EVENT="$event_id" PROJECTION_COMMENT="$comment_id"
+          export PROJECTION_BODY="$body" PROJECTION_DUPLICATE="$duplicate"
+          python3 -B - <<'PY_RECEIPT'
+          import hashlib,json,os,pathlib
+          env=os.environ
+          receipt={
+              'schema':'qikvrt_live_status_readback_v1',
+              'repository':env['PROJECTION_REPO'],
+              'pr_number':int(env['PROJECTION_PR']),
+              'source_head':env['PROJECTION_HEAD'],
+              'source_tree':env['PROJECTION_TREE'],
+              'event_id':env['PROJECTION_EVENT'],
+              'comment_id':int(env['PROJECTION_COMMENT']),
+              'body_sha256':hashlib.sha256(env['PROJECTION_BODY'].encode()).hexdigest(),
+              'run_id':int(env['GITHUB_RUN_ID']),
+              'run_attempt':int(env['GITHUB_RUN_ATTEMPT']),
+              'readback_verified':True,
+              'duplicate':env['PROJECTION_DUPLICATE']=='true',
+              'write_performed':env['PROJECTION_DUPLICATE']!='true',
+              'binding_scope':'HISTORICAL_EVENT_SOURCE',
+              'current_pr_or_main_validated':False,
+              'effect_ack_done':False,
+          }
+          path=pathlib.Path(env['RUNNER_TEMP'])/'qikvrt-live-status-readback.json'
+          data=json.dumps(receipt,sort_keys=True,indent=2)+'\n'
+          path.write_text(data,encoding='utf-8')
+          if path.read_text(encoding='utf-8') != data:
+              raise SystemExit('BLOCK: local readback receipt persistence mismatch')
+          PY_RECEIPT
+          if [ "$duplicate" = true ]; then
+            echo "PROJECTION_ALREADY_PRESENT event=$event_id"
+          fi
           printf 'PROJECTION_READBACK_OK head=%s tree=%s event=%s comment=%s\n' "$head" "$tree" "$event_id" "$comment_id"
+      - name: Preserve independently read-back event receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-live-status-readback-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qikvrt-live-status-readback.json
+          if-no-files-found: ignore
+          retention-days: 30

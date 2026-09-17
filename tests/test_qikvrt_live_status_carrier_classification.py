@@ -3,6 +3,7 @@
 # Copyright 2026 Ingolf Lohmann.
 from __future__ import annotations
 
+import hashlib
 import pathlib
 import unittest
 
@@ -92,11 +93,12 @@ elif method in ('PATCH', 'POST'):
     assert path == 'issues/1105/comments' or path.startswith('issues/comments/')
     if config.get('write_failed'): sys.exit(1)
     ident = int(path.rsplit('/', 1)[1]) if method == 'PATCH' else 999
-    result = {'id': ident, 'body': body, 'user': {'login': 'github-actions[bot]', 'type': 'Bot'}}
+    result = {'id': ident, 'body': body, 'user': {'login': 'github-actions[bot]', 'type': 'Bot'}, 'issue_url': 'https://api.github.com/repos/Goldkelch/qik-vrt/issues/1105'}
     saved.write_text(json.dumps(result))
 elif path.startswith('issues/comments/'):
     result = json.loads(saved.read_text())
     if config.get('readback_mismatch'): result['body'] = 'concurrent replacement'
+    if config.get('foreign_issue'): result['issue_url'] = 'https://api.github.com/repos/Goldkelch/qik-vrt/issues/999'
 else:
     raise AssertionError(path)
 text = json.dumps(result)
@@ -120,11 +122,11 @@ class LiveStatusExecutionTests(unittest.TestCase):
         fake.chmod(0o700)
         text = WORKFLOW.read_text(encoding='utf-8')
         self.assertEqual(text.count('        run: |\n'), 1)
-        block = text.split('        run: |\n', 1)[1]
+        block = text.split('        run: |\n', 1)[1].split('\n      - ', 1)[0]
         self.shell = '\n'.join(line[10:] if line.startswith('          ') else line for line in block.splitlines()) + '\n'
 
     def comment(self, ident: int = 77, body: str | None = None) -> dict:
-        return {'id': ident, 'body': body if body is not None else MARKER + '\n\n## Live event journal\n- `before` **OBSERVE** · old event\n', 'user': BOT}
+        return {'id': ident, 'body': body if body is not None else MARKER + '\n\n## Live event journal\n- `before` **OBSERVE** · old event\n', 'user': BOT, 'issue_url': 'https://api.github.com/repos/Goldkelch/qik-vrt/issues/1105'}
 
     def event(self, kind: str, state: str = 'success') -> dict:
         pr = {'number': 1105, 'head': {'sha': HEAD}, 'issue_url': 'https://api.github.com/repos/Goldkelch/qik-vrt/issues/1105'}
@@ -140,7 +142,7 @@ class LiveStatusExecutionTests(unittest.TestCase):
         if comments is not None:
             (self.root / 'fixture.json').write_text(json.dumps({'comments': comments, **flags}), encoding='utf-8')
         (self.root / 'event.json').write_text(json.dumps(event if event is not None else self.event(kind)), encoding='utf-8')
-        env = {'PATH': str(self.root) + os.pathsep + os.environ['PATH'], 'HOME': str(self.root), 'FIXTURE_ROOT': str(self.root), 'REAL_JQ': shutil.which('jq'), 'REPOSITORY': 'Goldkelch/qik-vrt', 'GITHUB_EVENT_PATH': str(self.root / 'event.json'), 'EVENT_NAME': kind, 'DISPATCH_PR': '1105', 'MARKER': MARKER, 'GITHUB_RUN_ID': '700', 'GITHUB_RUN_ATTEMPT': str(attempt)}
+        env = {'PATH': str(self.root) + os.pathsep + os.environ['PATH'], 'HOME': str(self.root), 'FIXTURE_ROOT': str(self.root), 'REAL_JQ': shutil.which('jq'), 'REPOSITORY': 'Goldkelch/qik-vrt', 'GITHUB_EVENT_PATH': str(self.root / 'event.json'), 'EVENT_NAME': kind, 'DISPATCH_PR': '1105', 'MARKER': MARKER, 'GITHUB_RUN_ID': '700', 'GITHUB_RUN_ATTEMPT': str(attempt), 'RUNNER_TEMP': str(self.root)}
         return subprocess.run(['bash', '-e', '-o', 'pipefail'], input=self.shell, text=True, capture_output=True, timeout=20, env=env)
 
     def calls(self) -> list:
@@ -242,7 +244,7 @@ class LiveStatusExecutionTests(unittest.TestCase):
 
     def test_self_projection_event_uses_no_api_calls(self) -> None:
         event = self.event('issue_comment')
-        event['comment'] = {'body': MARKER, 'user': BOT}
+        event['comment'] = {'body': MARKER, 'user': BOT, 'issue_url': 'https://api.github.com/repos/Goldkelch/qik-vrt/issues/1105'}
         result = self.run_event('issue_comment', comments=[], event=event)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.calls(), [])
@@ -252,6 +254,96 @@ class LiveStatusExecutionTests(unittest.TestCase):
             result = self.run_event(kind, comments=[self.comment()])
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue(all(x['endpoint'].startswith('repos/Goldkelch/qik-vrt/') for x in self.calls()))
+
+
+    def receipt(self) -> dict:
+        return json.loads((self.root / 'qikvrt-live-status-readback.json').read_text())
+
+    def set_flags(self, **flags) -> None:
+        path = self.root / 'fixture.json'
+        value = json.loads(path.read_text())
+        value.update(flags)
+        path.write_text(json.dumps(value))
+
+    def test_duplicate_transition_still_requires_exact_readback(self) -> None:
+        first = self.run_event(comments=[self.comment()])
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.set_flags(readback_mismatch=True)
+        again = self.run_event(attempt=2)
+        self.assertNotEqual(again.returncode, 0)
+        self.assertNotIn('PROJECTION_READBACK_OK', again.stdout)
+        self.assertNotIn('PROJECTION_ALREADY_PRESENT', again.stdout)
+        self.assertEqual(len(self.writes()), 1)
+        self.assertFalse((self.root / 'qikvrt-live-status-readback.json').exists())
+
+    def test_duplicate_id_cannot_hide_conflicting_source_payload(self) -> None:
+        first = self.run_event(comments=[self.comment()])
+        self.assertEqual(first.returncode, 0, first.stderr)
+        path = self.root / 'saved.json'
+        value = self.saved()
+        value['body'] = value['body'].replace('PR #1105 @ ' + HEAD, 'PR #1105 @ ' + 'd'*40)
+        path.write_text(json.dumps(value))
+        again = self.run_event(attempt=2)
+        self.assertNotEqual(again.returncode, 0)
+        self.assertIn('conflicting source transition', again.stderr)
+        self.assertEqual(len(self.writes()), 1)
+
+    def test_readback_from_another_issue_is_rejected(self) -> None:
+        result = self.run_event(comments=[self.comment()], foreign_issue=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('PROJECTION_READBACK_OK', result.stdout)
+        self.assertFalse((self.root / 'qikvrt-live-status-readback.json').exists())
+
+    def test_scoped_receipt_binds_readback_and_duplicate_without_effect(self) -> None:
+        first = self.run_event(comments=[self.comment()])
+        self.assertEqual(first.returncode, 0, first.stderr)
+        receipt = self.receipt()
+        self.assertEqual(receipt['source_head'], HEAD)
+        self.assertEqual(receipt['source_tree'], TREE)
+        self.assertEqual(receipt['event_id'], 'workflow_run:99:2:success')
+        self.assertEqual(receipt['comment_id'], 77)
+        self.assertEqual(receipt['body_sha256'], hashlib.sha256(self.saved()['body'].encode()).hexdigest())
+        self.assertTrue(receipt['readback_verified'])
+        self.assertTrue(receipt['write_performed'])
+        self.assertFalse(receipt['duplicate'])
+        self.assertFalse(receipt['effect_ack_done'])
+        self.assertEqual(receipt['binding_scope'], 'HISTORICAL_EVENT_SOURCE')
+        second = self.run_event(attempt=2)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertTrue(self.receipt()['duplicate'])
+        self.assertFalse(self.receipt()['write_performed'])
+        self.assertEqual(receipt['body_sha256'], self.receipt()['body_sha256'])
+        self.assertEqual(self.calls()[-1], {'method': 'GET', 'endpoint': 'repos/Goldkelch/qik-vrt/issues/comments/77'})
+
+    def test_historical_duplicate_survives_a_newer_displayed_header(self) -> None:
+        first = self.run_event(comments=[self.comment()])
+        self.assertEqual(first.returncode, 0, first.stderr)
+        value = self.saved()
+        value['body'] = value['body'].replace('**Observed event subject:** `PR #1105 @ ' + HEAD, '**Observed event subject:** `PR #1105 @ ' + 'c'*40)
+        (self.root / 'saved.json').write_text(json.dumps(value))
+        again = self.run_event(attempt=2)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertEqual(len(self.writes()), 1)
+        self.assertTrue(self.receipt()['duplicate'])
+        self.assertEqual(self.receipt()['source_head'], HEAD)
+
+    def test_workflow_run_and_pr_events_share_the_pr_serialization_key(self) -> None:
+        source = WORKFLOW.read_text()
+        self.assertIn('github.event.workflow_run.pull_requests[0].number ||', source)
+        self.assertIn('qikvrt-live-status-readback.json', source)
+        self.assertIn('actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a', source)
+
+
+    def test_multiple_lines_for_one_source_identifier_are_conflicting(self) -> None:
+        first = self.run_event(comments=[self.comment()])
+        self.assertEqual(first.returncode, 0, first.stderr)
+        value = self.saved()
+        value['body'] += '\n- `conflict` **OBSERVE** · different payload · event `workflow_run:99:2:success`\n'
+        (self.root / 'saved.json').write_text(json.dumps(value))
+        again = self.run_event(attempt=2)
+        self.assertNotEqual(again.returncode, 0)
+        self.assertIn('conflicting source transition', again.stderr)
+        self.assertEqual(len(self.writes()), 1)
 
 
 if __name__ == "__main__":
