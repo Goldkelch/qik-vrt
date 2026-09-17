@@ -111,7 +111,8 @@ jobs:
               source_id="$(jq -r '.workflow_run.id' "$event")"
               subject="PR #$pr @ $head"
               case "$state" in
-                success) verb='EFFECT' ;;
+                # Workflow success is an observation, never external effect evidence.
+                success) verb='OBSERVE' ;;
                 # A workflow surface conclusion establishes an observation to
                 # classify.  It cannot establish that all issue, PR and branch
                 # carriers are exhausted, so it cannot authoritatively emit HOLD.
@@ -135,7 +136,7 @@ jobs:
           line="- \`$now\` **$verb** · \`$subject\` · $detail · event \`$event_id\`"
 
           comments="$(gh api "repos/$REPOSITORY/issues/$pr/comments?per_page=100")"
-          comment_id="$(printf '%s' "$comments" | jq -r --arg marker "$MARKER" '.[] | select(.body | contains($marker)) | .id' | tail -n 1)"
+          comment_id="$(printf '%s' "$comments" | jq -r --arg marker "$MARKER" '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith($marker))) | .id' | tail -n 1)"
 
           if [ -n "$comment_id" ]; then
             old="$(printf '%s' "$comments" | jq -r --argjson id "$comment_id" '.[] | select(.id == $id) | .body')"
@@ -165,5 +166,16 @@ jobs:
           if [ -n "$comment_id" ]; then
             gh api --method PATCH "repos/$REPOSITORY/issues/comments/$comment_id" -f body="$body" >/dev/null
           else
-            gh api --method POST "repos/$REPOSITORY/issues/$pr/comments" -f body="$body" >/dev/null
+            comment_id="$(gh api --method POST "repos/$REPOSITORY/issues/$pr/comments" -f body="$body" --jq '.id')"
           fi
+
+          # A successful write response is transport evidence only.  One separate
+          # GET must return the same comment identity, exact body, PR and author.
+          # Failure or drift stops here: no retry, second write or effect claim.
+          [[ "$comment_id" =~ ^[1-9][0-9]*$ ]]
+          readback="$(gh api "repos/$REPOSITORY/issues/comments/$comment_id")"
+          printf '%s' "$readback" | jq -e \
+            --argjson id "$comment_id" --arg expected "$body" \
+            --arg issue_url "https://api.github.com/repos/$REPOSITORY/issues/$pr" \
+            '.id == $id and .body == $expected and .issue_url == $issue_url and .user.login == "github-actions[bot]"' >/dev/null
+          printf 'PROJECTION_READBACK=VERIFIED\nEXTERNAL_EFFECT=NOT_ESTABLISHED\n'
