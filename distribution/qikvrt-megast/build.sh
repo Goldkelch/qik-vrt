@@ -41,7 +41,10 @@ m68k-linux-gnu-gcc -m68000 -static -std=c90 -pedantic -Wall -Wextra -Werror -O2 
 cp "$GUEST/opt/qikvrt/runtime/QIKVRT_BOOT.BIN" "$OUT/QIKVRT_BOOT.BIN"
 python3 -B "$ROOT/tools/qikvrt_smalltalk.py" install
 python3 -B "$ROOT/tools/qikvrt_smalltalk.py" build --output "$GUEST/opt/qikvrt/smalltalk"
-cp -a "${QIKVRT_TOOLCHAIN_CACHE:-$ROOT/.qikvrt/toolchains}/pharo/13.1-4f7563dfe5-vm33501fd6/vm" "$GUEST/opt/qikvrt/pharo-vm"
+# The lock owns the cache identity; an explicit dependency update must not
+# silently copy the previous version into the fresh distribution.
+PHARO_VERSION=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$ROOT/runtime/toolchains/pharo-13.lock.json")
+cp -a "${QIKVRT_TOOLCHAIN_CACHE:-$ROOT/.qikvrt/toolchains}/pharo/$PHARO_VERSION/vm" "$GUEST/opt/qikvrt/pharo-vm"
 cp "$ROOT/src/smalltalk/smoke.st" "$GUEST/opt/qikvrt/smalltalk/"
 cp "$ROOT/runtime/toolchains/"pharo-*-LICENSE.txt "$GUEST/opt/qikvrt/smalltalk/"
 cp "$ROOT/distribution/qikvrt-megast/boot.py" "$GUEST/opt/qikvrt/boot.py"

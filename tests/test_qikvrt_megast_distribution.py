@@ -1,9 +1,11 @@
+import hashlib
 import io
 import json
 import pathlib
 import runpy
 import tempfile
 import unittest
+import zipfile
 from unittest import mock
 from urllib.parse import urlsplit
 
@@ -109,7 +111,7 @@ class MegaSTDistributionContract(unittest.TestCase):
         self.assertEqual(image['sha256'], '897668dd548864f74730065de3fa2b1f4b5d3636d4c7d14f91945f0a5ce22590')
         self.assertEqual(lock['vm']['sha256'], '80b106bbfd27f4db997e15831978836157043541c1e2b1e29fe3f10839bf78de')
 
-    def test_pharo_vm_uses_named_archive_without_changing_locked_bytes(self):
+    def test_pharo_vm_dependency_identity_remains_explicitly_pinned(self):
         # Fresh bounded probes established that the old expected VM bytes are no
         # longer served by either the named archive or the original stable alias.
         # This candidate explicitly pins the repeatedly reobserved named archive;
@@ -121,6 +123,8 @@ class MegaSTDistributionContract(unittest.TestCase):
         self.assertEqual(url.netloc, 'files.pharo.org')
         self.assertRegex(url.path, r'^/vm/pharo-spur64-headless/Linux-x86_64/PharoVM-v[0-9.]+\+[0-9]+\.[0-9a-f]+-Linux-x86_64-bin\.zip$')
         self.assertEqual(vm['sha256'], '80b106bbfd27f4db997e15831978836157043541c1e2b1e29fe3f10839bf78de')
+        self.assertEqual(lock['version'], '13.1-4f7563dfe5-vm80b106bb')
+        self.assertTrue(url.path.endswith('/PharoVM-v10.3.9+0.33e04bb-Linux-x86_64-bin.zip'))
         self.assertEqual(vm['file'], 'bin/pharo')
 
     def test_changed_upstream_bytes_cannot_install_or_change_lock(self):
@@ -137,6 +141,81 @@ class MegaSTDistributionContract(unittest.TestCase):
             self.assertFalse(module['cache_path'](cache, lock).exists())
             self.assertEqual(list((cache / 'pharo').iterdir()), [])
         self.assertEqual(lock_path.read_bytes(), original)
+
+    def test_pharo_lock_cache_and_distribution_have_one_version_authority(self):
+        toolchains = ROOT / 'runtime/toolchains'
+        lock = json.loads((toolchains / 'pharo-13.lock.json').read_text())
+        rows = [line.split('\t') for line in (toolchains / 'TOOLCHAIN.lock.tsv').read_text().splitlines()
+                if line.startswith('pharo\t')]
+        self.assertEqual(len(rows), 2)
+        for row in rows:
+            kind = 'vm' if row[2] == 'linux-amd64-vm' else 'image'
+            self.assertEqual(row[1], lock['version'])
+            self.assertEqual(row[4], lock[kind]['sha256'])
+        registry_bytes = (toolchains / 'CACHE_REGISTRY.json').read_bytes()
+        registry = json.loads(registry_bytes)
+        coverage = json.loads((toolchains / 'CACHE_COVERAGE.json').read_text())
+        self.assertEqual(registry['components']['pharo']['version'], lock['version'])
+        self.assertEqual(registry['components']['pharo']['cache_locations'],
+                         ['.qikvrt/toolchains/pharo/' + lock['version']])
+        self.assertEqual(coverage['lock_sha256'], hashlib.sha256((toolchains / 'TOOLCHAIN.lock.tsv').read_bytes()).hexdigest())
+        self.assertEqual(coverage['registry_sha256'], hashlib.sha256(registry_bytes).hexdigest())
+        pharo = [entry for entry in coverage['components'] if entry['component'] == 'pharo']
+        self.assertEqual(len(pharo), 1)
+        self.assertEqual(pharo[0]['version'], lock['version'])
+        build = BUILD.read_text()
+        self.assertIn('PHARO_VERSION=$(python3 -c', build)
+        self.assertIn('"$ROOT/runtime/toolchains/pharo-13.lock.json"', build)
+        self.assertIn('/pharo/$PHARO_VERSION/vm', build)
+        self.assertNotIn('/pharo/13.1-', build)
+
+    @staticmethod
+    def archive_fixture(name, payload):
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, 'w') as archive:
+            archive.writestr(name, payload)
+        return output.getvalue()
+
+    def test_bad_vm_after_valid_image_cannot_install_or_damage_previous_cache(self):
+        module = runpy.run_path(str(ROOT / 'tools/qikvrt_smalltalk.py'))
+        lock_path = ROOT / 'runtime/toolchains/pharo-13.lock.json'
+        original = lock_path.read_bytes()
+        lock = json.loads(original)
+        image = self.archive_fixture('fixture.image', b'synthetic image, never executed')
+        lock['image']['sha256'] = hashlib.sha256(image).hexdigest()
+        with tempfile.TemporaryDirectory() as temp:
+            cache = pathlib.Path(temp)
+            previous_lock = dict(lock, version='13.1-4f7563dfe5-vm33501fd6')
+            previous = module['cache_path'](cache, previous_lock)
+            previous.mkdir(parents=True)
+            sentinel = previous / 'do-not-replace'
+            sentinel.write_bytes(b'previous cache bytes')
+            with mock.patch('platform.system', return_value='Linux'), mock.patch('platform.machine', return_value='x86_64'), mock.patch('urllib.request.urlopen', side_effect=[io.BytesIO(image), io.BytesIO(b'corrupt-vm-fixture')]) as fetch:
+                with self.assertRaisesRegex(ValueError, 'vm: downloaded archive digest mismatch'):
+                    module['install'](cache, lock)
+            self.assertEqual(fetch.call_count, 2)
+            self.assertFalse(module['cache_path'](cache, lock).exists())
+            self.assertEqual(list((cache / 'pharo').iterdir()), [previous])
+            self.assertEqual(sentinel.read_bytes(), b'previous cache bytes')
+        self.assertEqual(lock_path.read_bytes(), original)
+
+    def test_valid_local_archives_are_reverified_on_warm_path(self):
+        module = runpy.run_path(str(ROOT / 'tools/qikvrt_smalltalk.py'))
+        lock = json.loads((ROOT / 'runtime/toolchains/pharo-13.lock.json').read_text())
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            archives = root / 'archives'
+            archives.mkdir()
+            for kind, name in [('image', 'fixture.image'), ('vm', 'bin/pharo')]:
+                data = self.archive_fixture(name, b'synthetic bytes, never executed')
+                (archives / (kind + '.zip')).write_bytes(data)
+                lock[kind]['sha256'] = hashlib.sha256(data).hexdigest()
+            with mock.patch('platform.system', return_value='Linux'), mock.patch('platform.machine', return_value='x86_64'), mock.patch('urllib.request.urlopen', side_effect=AssertionError('local fixture must not fetch')):
+                installed = module['install'](root / 'cache', lock, archives)
+                self.assertEqual(module['verify'](root / 'cache', lock), installed)
+                (installed / 'vm/bin/pharo').write_bytes(b'tampered extracted bytes')
+                with self.assertRaisesRegex(ValueError, 'vm: extracted bytes changed'):
+                    module['install'](root / 'cache', lock, archives)
 
 
 if __name__ == '__main__':
