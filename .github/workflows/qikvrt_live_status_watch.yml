@@ -31,9 +31,13 @@ permissions:
   issues: write
   pull-requests: write
 
+# Isolate v2 from still-running default-branch v1 writers. Every event for
+# one PR uses the same writer group, including workflow_run notifications.
 concurrency:
-  group: qikvrt-live-terminal-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr || github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.id || github.run_id }}
+  group: qikvrt-live-terminal-v2-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr || github.event.workflow_run.pull_requests[0].number || github.run_id }}
   cancel-in-progress: false
+  # Up to 100 pending runs; overflow is cancellation, never closure evidence.
+  queue: max
 
 jobs:
   project:
@@ -52,9 +56,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
           DISPATCH_PR: ${{ inputs.pr }}
-          # Isolate exact-event receipts from the still-active default-branch
-          # legacy writer. Its contains-marker selector must not match this v2
-          # surface. Keep legacy history separate; do not copy its marker here.
+          # Keep the v1 comment as history; never migrate or overwrite it.
           MARKER: '<!-- qikvrt-universal-terminal-live-surface-v2 -->'
         shell: bash
         run: |

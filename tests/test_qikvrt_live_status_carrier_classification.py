@@ -389,5 +389,22 @@ class LiveStatusExecutionTests(unittest.TestCase):
 
 
 
+    def test_workflow_run_serializes_by_pr_not_source_run(self) -> None:
+        text = WORKFLOW.read_text(encoding='utf-8')
+        group = next(line.strip() for line in text.splitlines() if line.startswith('  group:'))
+        self.assertIn('qikvrt-live-terminal-v2-', group)
+        self.assertIn('github.event.workflow_run.pull_requests[0].number', group)
+        self.assertNotIn('github.event.workflow_run.id', group)
+        self.assertIn('github.event.pull_request.number', group)
+        self.assertIn('github.event.issue.number', group)
+        self.assertIn('inputs.pr', group)
+
+    def test_serialized_events_use_bounded_queue_without_canceling_active_run(self) -> None:
+        text = WORKFLOW.read_text(encoding='utf-8')
+        concurrency = text.split('concurrency:\n', 1)[1].split('\njobs:', 1)[0]
+        self.assertIn('  queue: max\n', concurrency)
+        self.assertIn('  cancel-in-progress: false', concurrency)
+
+
 if __name__ == "__main__":
     unittest.main()
