@@ -109,6 +109,18 @@ class MegaSTDistributionContract(unittest.TestCase):
         self.assertEqual(image['sha256'], '897668dd548864f74730065de3fa2b1f4b5d3636d4c7d14f91945f0a5ce22590')
         self.assertEqual(lock['vm']['sha256'], '33501fd6c73932726dd751543f5dbb04495b976b6ed16990d820fbedb9fbf6ba')
 
+    def test_pharo_vm_uses_named_archive_without_changing_locked_bytes(self):
+        # The next actual execution, run 35214246138, passed image hashing and
+        # exposed the same mutable-alias failure at the independently pinned VM.
+        lock = json.loads((ROOT / 'runtime/toolchains/pharo-13.lock.json').read_text())
+        vm = lock['vm']
+        url = urlsplit(vm['url'])
+        self.assertEqual(url.scheme, 'https')
+        self.assertEqual(url.netloc, 'files.pharo.org')
+        self.assertRegex(url.path, r'^/vm/pharo-spur64-headless/Linux-x86_64/PharoVM-v[0-9.]+\+[0-9]+\.[0-9a-f]+-Linux-x86_64-bin\.zip$')
+        self.assertEqual(vm['sha256'], '33501fd6c73932726dd751543f5dbb04495b976b6ed16990d820fbedb9fbf6ba')
+        self.assertEqual(vm['file'], 'bin/pharo')
+
     def test_changed_upstream_bytes_cannot_install_or_change_lock(self):
         module = runpy.run_path(str(ROOT / 'tools/qikvrt_smalltalk.py'))
         lock_path = ROOT / 'runtime/toolchains/pharo-13.lock.json'
