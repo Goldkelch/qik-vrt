@@ -67,11 +67,57 @@ jobs:
           lb --version
           qemu-system-x86_64 --version
       - name: Verify C90 and Smalltalk language implementations
+        id: languages
         run: |
           python3 -B tools/qikvrt_tool_cache.py verify
           sh tests/test_effect_ack_core.sh
           python3 -B tools/qikvrt_smalltalk.py install
           python3 -B tools/qikvrt_smalltalk.py test
+      - name: Inspect original Pharo VM archive identity without installing candidates
+        if: failure() && steps.languages.outcome == 'failure'
+        timeout-minutes: 8
+        run: |
+          python3 -B - <<'PY'
+          import hashlib,json,pathlib,subprocess,tempfile
+          lock=json.loads(pathlib.Path('runtime/toolchains/pharo-13.lock.json').read_text())
+          root='https://files.pharo.org/vm/pharo-spur64-headless/Linux-x86_64/'
+          names=[
+            'PharoVM-v12.0.3-beta+0.2aa4b7c-Linux-x86_64-bin.zip',
+            'PharoVM-v10.3.9+2.336b3a7-Linux-x86_64-bin.zip',
+            'PharoVM-v12.0.1-alpha+4.e9d1d652-Linux-x86_64-bin.zip',
+          ]
+          report={'schema':'qikvrt_dependency_identity_probe_v1','source_head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'source_tree':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip(),'expected_vm_sha256':lock['vm']['sha256'],'archive_execution':False,'lock_mutation':False,'effect_ack_done':False,'probes':[]}
+          out=pathlib.Path('/tmp/qikvrt-dependency-diagnostics')
+          out.mkdir(exist_ok=True)
+          for name in names:
+            url=root+name
+            entry={'url':url,'state':'NOT_MATCHED'}
+            with tempfile.TemporaryDirectory() as tmp:
+              archive=pathlib.Path(tmp)/'archive.zip'
+              try:
+                result=subprocess.run(['curl','--fail','--silent','--show-error','--proto','=https','--connect-timeout','15','--max-time','120','--max-filesize','104857600','--output',str(archive),url],capture_output=True,timeout=125)
+                entry['fetch_exit']=result.returncode
+                if result.returncode==0:
+                  digest=hashlib.sha256()
+                  with archive.open('rb') as stream:
+                    for block in iter(lambda:stream.read(1048576),b''):
+                      digest.update(block)
+                  entry.update(bytes=archive.stat().st_size,sha256=digest.hexdigest())
+                  entry['state']='HASH_MATCH' if digest.hexdigest()==lock['vm']['sha256'] else 'HASH_MISMATCH'
+              except subprocess.TimeoutExpired:
+                entry['state']='BOUNDED_TIMEOUT'
+            report['probes'].append(entry)
+            (out/'PHARO_VM_ARCHIVE_PROBE.json').write_text(json.dumps(report,sort_keys=True,indent=2)+'\n')
+            print(json.dumps(entry,sort_keys=True),flush=True)
+          PY
+      - name: Preserve dependency identity diagnosis without masking failed language gate
+        if: failure() && steps.languages.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: qikvrt-dependency-diagnostics-${{ github.event.pull_request.head.sha || github.sha }}
+          path: /tmp/qikvrt-dependency-diagnostics/PHARO_VM_ARCHIVE_PROBE.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Build exact-subject ISO
         env:
           QIKVRT_EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
