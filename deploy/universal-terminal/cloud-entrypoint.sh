@@ -40,16 +40,9 @@ EOF
 export QIKVRT_HTTP_HOST=127.0.0.1
 export QIKVRT_START_URL="${QIKVRT_CLOUD_START_URL:-http://127.0.0.1:8080/qik-vrt/mesh/v1/}"
 
-# The Firefox extension consumes the same append-only repository event journal
-# through a loopback-only SSE relay. Start it before Firefox so browser startup
-# never falls back to a timer/polling transport.
-LIVE_EVENTS="${QIKVRT_LIVE_EVENTS_PATH:-/opt/qikvrt/state/live/QIKVRT_LIVE_EVENTS.jsonl}"
-[ -f "$LIVE_EVENTS" ] || { echo "BLOCK: live event journal unavailable: $LIVE_EVENTS" >&2; exit 1; }
-python3 -B /opt/qikvrt/tools/qikvrt_live_sse.py \
-  --events "$LIVE_EVENTS" --host 127.0.0.1 --port 8787 &
-LIVE_SSE_PID=$!
-register_pid live-sse "$LIVE_SSE_PID"
-
+# The shared terminal owns and supervises its required loopback SSE child.
+# Do not bind a second relay here or substitute a baked-in historical journal.
+# Runtime transport readiness does not establish a live repository subscription.
 /usr/local/bin/qikvrt-universal-terminal &
 TERMINAL_PID=$!
 register_pid terminal "$TERMINAL_PID"
