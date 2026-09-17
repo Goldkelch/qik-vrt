@@ -63,6 +63,9 @@ jobs:
           subject=''
           detail=''
           source_id="$GITHUB_RUN_ID"
+          source_attempt=1
+          transition="$(jq -r '.action // "observe"' "$event")"
+          [[ "$REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]
 
           case "$EVENT_NAME" in
             pull_request)
@@ -74,7 +77,7 @@ jobs:
               ;;
             pull_request_review)
               pr="$(jq -r '.pull_request.number' "$event")"
-              head="$(jq -r '.pull_request.head.sha' "$event")"
+              head="$(jq -r '.review.commit_id' "$event")"
               state="$(jq -r '.review.state' "$event")"
               actor="$(jq -r '.review.user.login' "$event")"
               subject="PR #$pr @ $head"
@@ -85,9 +88,9 @@ jobs:
               if [ "$(jq -r '.issue.pull_request != null' "$event")" != true ]; then exit 0; fi
               pr="$(jq -r '.issue.number' "$event")"
               body="$(jq -r '.comment.body' "$event")"
-              if [[ "$body" == *"$MARKER"* ]]; then exit 0; fi
-              head="$(jq -r '.issue.pull_request.url' "$event" | sed 's#https://api.github.com/##')"
-              head="$(gh api "$head" --jq '.head.sha')"
+              if [[ "$body" == *"$MARKER"* ]] && [ "$(jq -r '.comment.user.login' "$event")" = 'github-actions[bot]' ]; then exit 0; fi
+              [[ "$pr" =~ ^[1-9][0-9]*$ ]]
+              head="$(gh api "repos/$REPOSITORY/pulls/$pr" --jq '.head.sha')"
               subject="PR #$pr @ $head"
               detail="issue_comment by $(jq -r '.comment.user.login' "$event")"
               ;;
@@ -99,9 +102,14 @@ jobs:
               state="$(jq -r '.workflow_run.conclusion // .workflow_run.status' "$event")"
               run_url="$(jq -r '.workflow_run.html_url' "$event")"
               source_id="$(jq -r '.workflow_run.id' "$event")"
+              source_attempt="$(jq -r '.workflow_run.run_attempt // 1' "$event")"
+              transition="$state"
               subject="PR #$pr @ $head"
               case "$state" in
-                success) verb='EFFECT' ;;
+                # Workflow success is an observation, not an external effect.
+                success) verb='OBSERVE' ;;
+                # A surface conclusion cannot prove that all issue, PR and branch
+                # carriers are exhausted; it cannot authoritatively emit HOLD.
                 failure|cancelled|action_required|timed_out) verb='CLASSIFY' ;;
                 *) verb='OBSERVE' ;;
               esac
@@ -109,6 +117,7 @@ jobs:
               ;;
             workflow_dispatch)
               pr="$DISPATCH_PR"
+              [[ "$pr" =~ ^[1-9][0-9]*$ ]]
               head="$(gh api "repos/$REPOSITORY/pulls/$pr" --jq '.head.sha')"
               subject="PR #$pr @ $head"
               detail='manual surface bind'
@@ -116,24 +125,52 @@ jobs:
             *) exit 0 ;;
           esac
 
-          test -n "$pr"
+          [[ "$pr" =~ ^[1-9][0-9]*$ ]]
+          [[ "$head" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$source_id" =~ ^[1-9][0-9]*$ ]]
+          [[ "$source_attempt" =~ ^[1-9][0-9]*$ ]]
+          [[ "$transition" =~ ^[a-z_]+$ ]]
           now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          event_id="${EVENT_NAME}:${source_id}:${GITHUB_RUN_ATTEMPT}"
+          event_id="${EVENT_NAME}:${source_id}:${source_attempt}:${transition}"
           line="- \`$now\` **$verb** · \`$subject\` · $detail · event \`$event_id\`"
 
-          # Read only the existing live-surface comment through the issue event's
-          # embedded comments URL.  This avoids a broad 100-comment listing on
-          # every event and bounds installation REST consumption.
-          comments_url="$(jq -r '.issue.comments_url // .pull_request.issue_url + "/comments" // empty' "$event")"
-          if [ -z "$comments_url" ] || [ "$comments_url" = null ]; then
-            comments_url="https://api.github.com/repos/$REPOSITORY/issues/$pr/comments"
+          # Page size does not lower the REST request count. Search a bounded,
+          # complete inventory; never interpret a truncated page as absence.
+          comment_id=''
+          old=''
+          inventory_complete=0
+          for page in 1 2 3 4 5; do
+            comments="$(gh api "repos/$REPOSITORY/issues/$pr/comments?per_page=100&page=$page")"
+            printf '%s' "$comments" | jq -e 'type == "array"' >/dev/null
+            matches="$(printf '%s' "$comments" | jq -c --arg marker "$MARKER" '[.[] | select(.user.login == "github-actions[bot]" and .user.type == "Bot") | select((.body // "") | startswith($marker))]')"
+            count="$(printf '%s' "$matches" | jq 'length')"
+            if [ "$count" -gt 1 ] || { [ "$count" -eq 1 ] && [ -n "$comment_id" ]; }; then
+              echo 'BLOCK: duplicate live-surface comments' >&2
+              exit 1
+            fi
+            if [ "$count" -eq 1 ]; then
+              comment_id="$(printf '%s' "$matches" | jq -r '.[0].id')"
+              old="$(printf '%s' "$matches" | jq -r '.[0].body')"
+              [[ "$comment_id" =~ ^[1-9][0-9]*$ ]]
+            fi
+            if [ "$(printf '%s' "$comments" | jq 'length')" -lt 100 ]; then
+              inventory_complete=1
+              break
+            fi
+          done
+          if [ "$inventory_complete" -ne 1 ]; then
+            echo 'BLOCK: live-surface inventory exceeds five pages; no write' >&2
+            exit 1
           fi
-          comments_path="${comments_url#https://api.github.com/}"
-          comments="$(gh api "$comments_path?per_page=20")"
-          comment_id="$(printf '%s' "$comments" | jq -r --arg marker "$MARKER" '.[] | select(.body | contains($marker)) | .id' | tail -n 1)"
+          # A rerun of the same source transition must not append or write again.
+          if printf '%s\n' "$old" | grep -Fq "· event \`$event_id\`"; then
+            echo "PROJECTION_ALREADY_PRESENT event=$event_id"
+            exit 0
+          fi
+          tree="$(gh api "repos/$REPOSITORY/git/commits/$head" --jq '.tree.sha')"
+          [[ "$tree" =~ ^[0-9a-f]{40}$ ]]
 
           if [ -n "$comment_id" ]; then
-            old="$(printf '%s' "$comments" | jq -r --argjson id "$comment_id" '.[] | select(.id == $id) | .body')"
             journal="$(printf '%s\n' "$old" | awk '/^## Live event journal/{f=1;next} f && /^- `/{print}' | tail -n 119)"
           else
             journal=''
@@ -145,7 +182,9 @@ jobs:
 
           This comment is an **event-driven projection**. It does not poll. Each eligible repository event performs one bounded update and exits.
 
-          **Current exact subject:** \`$subject\`
+          **Observed event subject:** \`$subject\`
+          **Event subject tree:** \`$tree\`
+          This historical event binding is not a claim about the current PR head.
           **Last event:** \`$event_id\`
           **Last transition:** **$verb**
           **Observed at:** \`$now\`
@@ -159,5 +198,11 @@ jobs:
           if [ -n "$comment_id" ]; then
             gh api --method PATCH "repos/$REPOSITORY/issues/comments/$comment_id" -f body="$body" >/dev/null
           else
-            gh api --method POST "repos/$REPOSITORY/issues/$pr/comments" -f body="$body" >/dev/null
+            comment_id="$(gh api --method POST "repos/$REPOSITORY/issues/$pr/comments" -f body="$body" --jq '.id')"
           fi
+          # A successful write response is not persistence evidence. Re-read
+          # the exact object once; errors, overwrite races and mismatch fail closed.
+          [[ "$comment_id" =~ ^[1-9][0-9]*$ ]]
+          readback="$(gh api "repos/$REPOSITORY/issues/comments/$comment_id")"
+          printf '%s' "$readback" | jq -e --argjson id "$comment_id" --arg body "$body" '.id == $id and .body == $body and .user.login == "github-actions[bot]" and .user.type == "Bot"' >/dev/null
+          printf 'PROJECTION_READBACK_OK head=%s tree=%s event=%s comment=%s\n' "$head" "$tree" "$event_id" "$comment_id"
