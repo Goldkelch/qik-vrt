@@ -5,6 +5,7 @@
 Regular files support independent replay/live cursors for every subscriber.
 A destructive FIFO cannot implement broadcast or durable resume and is rejected.
 No timer, GitHub query, fabricated receipt or repository mutation drives follow.
+An explicit bootstrap option creates only an empty private runtime journal.
 """
 from __future__ import annotations
 
@@ -208,13 +209,33 @@ class Handler(BaseHTTPRequestHandler):
         return
 
 
+def prepare_journal(path: Path) -> None:
+    """Create a private empty runtime journal without truncating existing bytes.
+
+    This is storage initialization, not an observed event or source subscription.
+    Symlinks, FIFOs and device nodes cannot become journal carriers.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+    fd = os.open(path, flags, 0o600)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise ValueError("durable regular journal required for initialization")
+    finally:
+        os.close(fd)
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--events", default="state/live/QIKVRT_LIVE_EVENTS.jsonl")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8787)
+    p.add_argument("--initialize-journal", action="store_true", help="create an empty private journal only when missing; never truncate")
     a = p.parse_args()
     Handler.events_path = Path(a.events)
+    if a.initialize_journal:
+        prepare_journal(Handler.events_path)
     server = ThreadingHTTPServer((a.host, a.port), Handler)
     server.serve_forever()
 
