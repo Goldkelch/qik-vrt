@@ -1,5 +1,11 @@
+import io
+import json
 import pathlib
+import runpy
+import tempfile
 import unittest
+from unittest import mock
+from urllib.parse import urlsplit
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BUILD = ROOT / "distribution/qikvrt-megast/build.sh"
@@ -89,6 +95,34 @@ class MegaSTDistributionContract(unittest.TestCase):
         self.assertIn('independently read back after publication', text)
         self.assertIn('EFFECT_ACK_DONE', text)
         self.assertIn('Stay fail closed and keep future open', text)
+
+    def test_pharo_image_uses_named_archive_without_changing_locked_bytes(self):
+        # Runtime RED: distribution run 35212988079 received different bytes
+        # from the mutable get-files alias. Retrieval changes, identity does not.
+        lock = json.loads((ROOT / 'runtime/toolchains/pharo-13.lock.json').read_text())
+        image = lock['image']
+        url = urlsplit(image['url'])
+        self.assertEqual(url.scheme, 'https')
+        self.assertEqual(url.netloc, 'files.pharo.org')
+        self.assertRegex(url.path, r'^/image/130/Pharo13\.0-SNAPSHOT\.build\.[0-9]+\.sha\.4f7563dfe5\.arch\.64bit\.zip$')
+        self.assertEqual(image['file'], 'Pharo13.0-SNAPSHOT-64bit-4f7563dfe5.image')
+        self.assertEqual(image['sha256'], '897668dd548864f74730065de3fa2b1f4b5d3636d4c7d14f91945f0a5ce22590')
+        self.assertEqual(lock['vm']['sha256'], '33501fd6c73932726dd751543f5dbb04495b976b6ed16990d820fbedb9fbf6ba')
+
+    def test_changed_upstream_bytes_cannot_install_or_change_lock(self):
+        module = runpy.run_path(str(ROOT / 'tools/qikvrt_smalltalk.py'))
+        lock_path = ROOT / 'runtime/toolchains/pharo-13.lock.json'
+        original = lock_path.read_bytes()
+        lock = json.loads(original)
+        with tempfile.TemporaryDirectory() as temp:
+            cache = pathlib.Path(temp)
+            with mock.patch('platform.system', return_value='Linux'), mock.patch('platform.machine', return_value='x86_64'), mock.patch('urllib.request.urlopen', return_value=io.BytesIO(b'explicit-invalid-archive-fixture')) as fetch:
+                with self.assertRaisesRegex(ValueError, 'downloaded archive digest mismatch'):
+                    module['install'](cache, lock)
+            self.assertEqual(fetch.call_count, 1)
+            self.assertFalse(module['cache_path'](cache, lock).exists())
+            self.assertEqual(list((cache / 'pharo').iterdir()), [])
+        self.assertEqual(lock_path.read_bytes(), original)
 
 
 if __name__ == '__main__':
