@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://goldkelch.github.io/qik-vrt/schemas/temdd-conformance-report-v1.schema.json",
+  "title": "TEMDD exact-subject conformance report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema","temdd_conformance","implementation","suite","language","ir","ide",
+    "event_semantics","ledger","evidence_binding","causality","effect_ack",
+    "formal_invariants","tests","negative_vectors","backends","overall",
+    "predecessor_evidence_transfer","stable_language_claim","main_adoption",
+    "production_effect","effect_ack_done"
+  ],
+  "properties": {
+    "schema":{"const":"temdd_conformance_report_v1"},
+    "temdd_conformance":{"const":"1"},
+    "implementation":{
+      "type":"object","additionalProperties":false,
+      "required":["repository","head","tree","digest"],
+      "properties":{
+        "repository":{"type":"string","minLength":3},
+        "head":{"type":"string","pattern":"^[0-9a-f]{40}$"},
+        "tree":{"type":"string","pattern":"^[0-9a-f]{40}$"},
+        "digest":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "suite":{
+      "type":"object","additionalProperties":false,
+      "required":["version","digest","files"],
+      "properties":{
+        "version":{"const":"1"},
+        "digest":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},
+        "files":{"type":"array","minItems":1}
+      }
+    },
+    "language":{"const":"PASS"},
+    "ir":{"const":"PASS"},
+    "ide":{"const":"PASS"},
+    "event_semantics":{"const":"PASS"},
+    "ledger":{"const":"PASS"},
+    "evidence_binding":{"const":"PASS"},
+    "causality":{"const":"PASS"},
+    "effect_ack":{"const":"PASS"},
+    "formal_invariants":{"const":"PASS"},
+    "tests":{"const":"PASS"},
+    "negative_vectors":{"const":"PASS"},
+    "backends":{"type":"object","minProperties":4},
+    "overall":{"const":"PASS"},
+    "predecessor_evidence_transfer":{"const":false},
+    "stable_language_claim":{"const":false},
+    "main_adoption":{"const":false},
+    "production_effect":{"const":false},
+    "effect_ack_done":{"const":false}
+  }
+}

@@ -61,6 +61,9 @@ POST_ALPHA2_EXCLUSIONS = {
     "formalization/QIKVRT_Formalization_v2.0/universal_ontology/SOURCE_SCOPE.json",
     "formalization/QIKVRT_Formalization_v2.0/universal_ontology/WORLD_FORMULA_CLAIM_MATRIX.json",
 }
+POST_ALPHA2_EXCLUSION_PREFIXES = (
+    "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/",
+)
 # These live text files legitimately advanced after Alpha-2. The exact
 # published bytes are materialized from the hash-bound Alpha-2 archive by
 # tools/qikvrt_freeze_alpha2_status.py and substituted only inside this
@@ -191,6 +194,11 @@ def release_inputs(root: pathlib.Path) -> list[pathlib.Path]:
             continue
         repository_relative = path.relative_to(root).as_posix()
         if repository_relative in POST_ALPHA2_EXCLUSIONS:
+            continue
+        if any(
+            repository_relative.startswith(prefix)
+            for prefix in POST_ALPHA2_EXCLUSION_PREFIXES
+        ):
             continue
         if path.is_file() and path.suffix != ".pyc":
             inputs.add(_regular_file(path))

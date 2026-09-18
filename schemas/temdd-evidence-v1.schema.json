@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://goldkelch.github.io/qik-vrt/schemas/temdd-evidence-v1.schema.json",
+  "title": "TEMDD canonical evidence IR v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema","evidence_id","evidence_type","observed_subject","producer_event",
+    "content_digest","freshness","epistemic","provenance","evidence_transfer"
+  ],
+  "properties": {
+    "schema":{"const":"temdd_evidence_ir_v1"},
+    "evidence_id":{"type":"string","minLength":1},
+    "evidence_type":{"type":"string","minLength":1},
+    "observed_subject":{
+      "type":"object","additionalProperties":false,
+      "required":["subject_id","repository","pr","head","tree"],
+      "properties":{
+        "subject_id":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},
+        "repository":{"type":"string","minLength":3},
+        "pr":{"type":"integer","minimum":1},
+        "head":{"type":"string","pattern":"^[0-9a-f]{40}$"},
+        "tree":{"type":"string","pattern":"^[0-9a-f]{40}$"}
+      }
+    },
+    "producer_event":{"type":"string","pattern":"^[0-9a-f]{32}:[1-9][0-9]{0,18}$"},
+    "content_digest":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "freshness":{"enum":["FRESH","STALE"]},
+    "epistemic":{"enum":["TRUE","FALSE","UNKNOWN","CONFLICT","STALE","UNOBSERVABLE"]},
+    "provenance":{
+      "type":"object","additionalProperties":false,
+      "required":["producer","producer_event_id","source_order","observation_order","observed_at"],
+      "properties":{
+        "producer":{"enum":["repository","transputer"]},
+        "producer_event_id":{"type":"string","minLength":1},
+        "source_order":{"type":"integer","minimum":0},
+        "observation_order":{"type":"integer","minimum":1},
+        "observed_at":{"type":"string","pattern":"Z$"}
+      }
+    },
+    "evidence_transfer":{"const":"DENY"}
+  }
+}

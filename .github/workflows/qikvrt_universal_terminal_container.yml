@@ -59,6 +59,7 @@ jobs:
           docker volume create qikvrt-test-profile >/dev/null
           docker volume create qikvrt-test-state >/dev/null
           docker run -d --name qikvrt-terminal \
+            -e QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION=1 \
             -p 127.0.0.1:6080:6080 \
             -v qikvrt-test-profile:/var/lib/qikvrt/profile \
             -v qikvrt-test-state:/var/lib/qikvrt/state \
@@ -91,6 +92,7 @@ jobs:
           set -euo pipefail
           docker rm -f qikvrt-terminal >/dev/null
           docker run -d --name qikvrt-terminal \
+            -e QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION=1 \
             -p 127.0.0.1:6080:6080 \
             -v qikvrt-test-profile:/var/lib/qikvrt/profile \
             -v qikvrt-test-state:/var/lib/qikvrt/state \
