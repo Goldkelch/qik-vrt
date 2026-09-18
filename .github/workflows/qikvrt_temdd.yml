@@ -114,26 +114,6 @@ jobs:
       lake build 2>&1 | tee "$RUNNER_TEMP/temdd-backends/lake-build.log"
       lake env lean ../TEMDDCore.lean 2>&1 | tee "$RUNNER_TEMP/temdd-backends/temdd-lean.log"
       grep -q 'theorem missing_effect_readback_not_done' ../TEMDDCore.lean
-   - name: TEMDD v1 exact-subject seven-layer conformance
-     env:
-      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
-     shell: bash
-     run: |
-      set -euo pipefail
-      test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-      mkdir -p "$RUNNER_TEMP/temdd-backends"
-      python3 -B conformance/temdd/runner.py --repository Goldkelch/qik-vrt \
-        --output "$RUNNER_TEMP/temdd-backends/temdd-conformance-v1.json"
-      python3 - "$RUNNER_TEMP/temdd-backends/temdd-conformance-v1.json" <<'PY'
-      import json,subprocess,sys
-      report=json.load(open(sys.argv[1],encoding='utf-8'))
-      head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
-      tree=subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip()
-      assert report['overall']=='PASS'
-      assert report['temdd_conformance']=='1'
-      assert report['implementation']['head']==head
-      assert report['implementation']['tree']==tree
-      PY
    - name: Seal exact-head executable-backend receipt
      env:
       EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -157,9 +137,30 @@ jobs:
       for name in ['runtime/m68000/temdd_transition.s','tests/temdd/runtime-m68000.c','runtime/temdd/TEMDDRuntime.st','tests/temdd/runtime-smalltalk.st','formalization/TEMDDCore.lean','runtime/toolchains/pharo-13.lock.json']:
           raw=Path(name).read_bytes()
           sources[name]={'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
-      receipt={'schema':'qikvrt_temdd_executable_backends_v1','repository':os.environ['GITHUB_REPOSITORY'],'source_sha':head,'source_tree':tree,'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'backends':{'c90':'EXECUTED_SUCCESS','smalltalk':'EXECUTED_SUCCESS','m68000':'EXECUTED_SUCCESS_QEMU_USER','lean':'COMPILED_SUCCESS_LEAN_4_19_LAKE'},'sources':sources,'outputs':outputs,'predecessor_evidence_transfer':False,'physical_m68000_execution_observed':False,'stable_language_claim':False,'remaining_semantic_closure':['UNMATERIALIZED_NORMATIVE_T13_T16_DEFINITIONS'],'effect_ack_done':False}
+      receipt={'schema':'qikvrt_temdd_executable_backends_v1','repository':os.environ['GITHUB_REPOSITORY'],'source_sha':head,'source_tree':tree,'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'backends':{'c90':'EXECUTED_SUCCESS','smalltalk':'EXECUTED_SUCCESS','m68000':'EXECUTED_SUCCESS_QEMU_USER','lean':'COMPILED_SUCCESS_LEAN_4_19_LAKE'},'sources':sources,'outputs':outputs,'predecessor_evidence_transfer':False,'physical_m68000_execution_observed':False,'stable_language_claim':False,'remaining_semantic_closure':['FRESH_V1_CONFORMANCE_REQUIRED'],'effect_ack_done':False}
       (evidence/'backend-receipt.json').write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
       print('TEMDD_EXECUTABLE_BACKENDS_RECEIPT head='+head+' tree='+tree)
+      PY
+   - name: TEMDD v1 exact-subject seven-layer conformance
+     env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+     shell: bash
+     run: |
+      set -euo pipefail
+      test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+      mkdir -p "$RUNNER_TEMP/temdd-backends"
+      python3 -B conformance/temdd/runner.py --repository Goldkelch/qik-vrt \
+        --backend-receipt "$RUNNER_TEMP/temdd-backends/backend-receipt.json" \
+        --output "$RUNNER_TEMP/temdd-backends/temdd-conformance-v1.json"
+      python3 - "$RUNNER_TEMP/temdd-backends/temdd-conformance-v1.json" <<'PY'
+      import json,subprocess,sys
+      report=json.load(open(sys.argv[1],encoding='utf-8'))
+      head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+      tree=subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip()
+      assert report['overall']=='PASS'
+      assert report['temdd_conformance']=='1'
+      assert report['implementation']['head']==head
+      assert report['implementation']['tree']==tree
       PY
    - name: Materialize bounded integrity candidate without adopting or promoting
      shell: bash
