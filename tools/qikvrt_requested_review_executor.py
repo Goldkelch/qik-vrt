@@ -755,7 +755,7 @@ def _threads(snapshot: Mapping[str, Any]) -> list[dict[str, Any]]:
                 "id": identifier,
                 "is_resolved": resolved,
                 "body_sha256": body_sha256,
-                "authority_scope_paths": list(item.get("authority_scope_paths", [])),
+                **({"authority_scope_paths": list(item.get("authority_scope_paths", []))} if "authority_scope_paths" in item else {}),
             }
         )
     result.sort(key=lambda item: item["id"])
