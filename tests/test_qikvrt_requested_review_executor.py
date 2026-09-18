@@ -67,6 +67,16 @@ CONFLICT_DIFF_BYTES = DEFAULT_DIFF_BYTES + b"""+<<<<<<< HEAD
 +>>>>>>> competing-branch
 """
 
+AUTHORITY_DIFF_BYTES = b"""diff --git a/.github/workflows/example.yml b/.github/workflows/example.yml
+index 1111111111111111111111111111111111111111..2222222222222222222222222222222222222222 100644
+--- a/.github/workflows/example.yml
++++ b/.github/workflows/example.yml
+@@ -1 +1,3 @@
+ name: example
++permissions:
++  contents: write
+"""
+
 
 def sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
@@ -298,6 +308,61 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         )
         self.assert_safety_boundaries(result)
         return result
+
+    def authority_discussion(self, *, commit_id: str = HEAD_SHA, paths=None):
+        return {
+            "kind": "PULL_REQUEST_REVIEW",
+            "id": "authority-review-1",
+            "author": "owner",
+            "author_association": "COLLABORATOR",
+            "state": "COMMENTED",
+            "commit_id": commit_id,
+            "updated_at": "2026-09-17T14:04:04Z",
+            "body_sha256": sha256_bytes(b"authority declaration"),
+            "authority_scope_paths": [".github/workflows/example.yml"] if paths is None else paths,
+        }
+
+    def authority_snapshot(self, discussion_items):
+        changed = [{
+            "path": ".github/workflows/example.yml",
+            "status": "modified",
+            "base_blob_sha": "1" * 40,
+            "head_blob_sha": "2" * 40,
+        }]
+        return self.snapshot(
+            diff_payload=AUTHORITY_DIFF_BYTES,
+            changed_files=changed,
+            scope_sha256=scope_sha256(changed),
+            discussion_items=discussion_items,
+        )
+
+    def test_exact_head_scope_authority_declaration_discharges_permission_finding(self):
+        result = self.evaluate(
+            self.authority_snapshot([self.authority_discussion()]),
+            AUTHORITY_DIFF_BYTES,
+        )
+        self.assertEqual("APPROVE", result["state"])
+        self.assertIsNone(result["first_blocker"])
+        self.assertTrue(any(
+            finding["finding_id"] == "MESH_AUTHORITY_SATISFIED_BY_OWNER_DECLARATION"
+            for finding in result["findings"]
+        ))
+
+    def test_predecessor_authority_declaration_does_not_discharge_current_head(self):
+        result = self.evaluate(
+            self.authority_snapshot([self.authority_discussion(commit_id="9" * 40)]),
+            AUTHORITY_DIFF_BYTES,
+        )
+        self.assertEqual("COMMENT_WITH_BLOCKER", result["state"])
+        self.assertEqual("MESH_WORKFLOW_PERMISSION_WIDENING", result["first_blocker"])
+
+    def test_partial_authority_scope_does_not_discharge_permission_finding(self):
+        result = self.evaluate(
+            self.authority_snapshot([self.authority_discussion(paths=[".github/workflows/other.yml"])]),
+            AUTHORITY_DIFF_BYTES,
+        )
+        self.assertEqual("COMMENT_WITH_BLOCKER", result["state"])
+        self.assertEqual("MESH_WORKFLOW_PERMISSION_WIDENING", result["first_blocker"])
 
     def finding_ids(self, result: dict[str, object]) -> list[str]:
         return [finding["finding_id"] for finding in result["findings"]]
