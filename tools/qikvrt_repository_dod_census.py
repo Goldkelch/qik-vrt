@@ -18,6 +18,7 @@ BRANCH_ALLOWED = {
     "PRODUCTIVE_CURRENT_CANDIDATE",
 }
 MARKER = "<!-- qikvrt-dod-pr-disposition:"
+UNAVAILABLE_SCHEMA = "qikvrt_open_pr_snapshot_unavailable_v1"
 
 
 def git(*args: str) -> str:
@@ -105,6 +106,18 @@ def flatten_pages(value: Any) -> list[dict[str, Any]]:
     return rows
 
 
+def load_pr_snapshot(path: Path) -> tuple[list[dict[str, Any]], bool, str | None]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(value, Mapping) and value.get("schema") == UNAVAILABLE_SCHEMA:
+        if value.get("state") != "HOLD_UNVERIFIED":
+            raise ValueError("unavailable PR snapshot must be HOLD_UNVERIFIED")
+        reason = value.get("reason")
+        if not isinstance(reason, str) or not reason:
+            raise ValueError("unavailable PR snapshot requires reason")
+        return [], False, reason
+    return flatten_pages(value), True, None
+
+
 def branch_rows() -> list[tuple[str, str]]:
     raw = git("for-each-ref", "--format=%(refname:short)\t%(objectname)", "refs/remotes/origin/")
     rows: list[tuple[str, str]] = []
@@ -125,33 +138,63 @@ def build(repository: str, subject: str, tree: str, current_pr: int, open_prs: P
     actual_tree = git("rev-parse", "HEAD^{tree}")
     if (actual_head, actual_tree) != (subject, tree):
         raise ValueError("EXACT_SUBJECT_DRIFT")
+
     main_head = git("rev-parse", "refs/remotes/origin/main")
-    prs = flatten_pages(json.loads(open_prs.read_text(encoding="utf-8")))
+    prs, pr_snapshot_complete, pr_snapshot_reason = load_pr_snapshot(open_prs)
     pr_rows = [classify_pr(pr, subject, current_pr) for pr in prs]
     branches = [classify_branch(name, tip, subject, main_head) for name, tip in branch_rows()]
+
     unregarded_prs = [row["number"] for row in pr_rows if not row["regarded"]]
     unregarded_branches = [row["name"] for row in branches if not row["regarded"]]
     candidate_on_main = subject == main_head
+    inventory_complete = pr_snapshot_complete
+
+    if pr_snapshot_complete:
+        all_prs_regarded = not unregarded_prs
+    else:
+        all_prs_regarded = False
+
+    all_branches_regarded = not unregarded_branches
+    all_productive_merged = (
+        inventory_complete
+        and candidate_on_main
+        and all_prs_regarded
+        and all_branches_regarded
+    )
+
+    reasons: list[str] = []
+    if not pr_snapshot_complete:
+        reasons.append("OPEN_PR_SNAPSHOT_UNAVAILABLE:" + str(pr_snapshot_reason))
+
     return {
         "schema": "qikvrt_repository_dod_census_v1",
         "repository": repository,
         "subject": {"head": subject, "tree": tree},
         "main_head": main_head,
-        "inventory_complete": True,
+        "state": "OBSERVED" if inventory_complete else "HOLD_UNVERIFIED",
+        "inventory_complete": inventory_complete,
+        "inventory_reasons": reasons,
+        "pr_snapshot": {
+            "complete": pr_snapshot_complete,
+            "reason": pr_snapshot_reason,
+            "fabricated_fallback": False,
+        },
+        "branch_snapshot": {
+            "complete": True,
+            "source": "FETCHED_GIT_REFS",
+        },
         "counts": {
-            "open_pull_requests": len(pr_rows),
+            "open_pull_requests": len(pr_rows) if pr_snapshot_complete else None,
             "branch_refs": len(branches),
-            "unregarded_pull_requests": len(unregarded_prs),
+            "unregarded_pull_requests": len(unregarded_prs) if pr_snapshot_complete else None,
             "unregarded_branches": len(unregarded_branches),
         },
-        "all_pull_requests_regarded": not unregarded_prs,
-        "all_branches_regarded": not unregarded_branches,
-        "all_productive_branches_merged": (
-            candidate_on_main and not unregarded_prs and not unregarded_branches
-        ),
+        "all_pull_requests_regarded": all_prs_regarded,
+        "all_branches_regarded": all_branches_regarded,
+        "all_productive_branches_merged": all_productive_merged,
         "pull_requests": pr_rows,
         "branches": branches,
-        "unregarded_pull_requests": unregarded_prs,
+        "unregarded_pull_requests": unregarded_prs if pr_snapshot_complete else [],
         "unregarded_branches": unregarded_branches,
         "predecessor_evidence_transfer": False,
     }
@@ -177,8 +220,14 @@ def main() -> int:
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:
         print("HOLD_UNVERIFIED " + str(exc))
         return 2
+
     args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(json.dumps(report["counts"], sort_keys=True))
+    print(json.dumps({
+        "state": report["state"],
+        "inventory_complete": report["inventory_complete"],
+        "counts": report["counts"],
+        "inventory_reasons": report["inventory_reasons"],
+    }, sort_keys=True))
     return 0
 
 
