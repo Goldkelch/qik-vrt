@@ -6,6 +6,8 @@ on:
       - "deploy/universal-terminal/**"
       - "browser/firefox/qikvrt-terminal/**"
       - "src/qikvrt_effect_ack_http_terminal.py"
+      - "src/qikvrt_temdd_event_ledger.py"
+      - "docs/terminal/temdd/**"
       - "policy/QIKVRT_UNIVERSAL_TERMINAL_VIRTUALIZATION_V1.json"
       - "tests/test_qikvrt_universal_terminal_network_boundary.py"
       - "tests/test_qikvrt_effect_ack_http_terminal.py"
@@ -21,6 +23,8 @@ jobs:
     timeout-minutes: 25
     env:
       EXACT_SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      EXACT_PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+      EXACT_SUBJECT_REF: ${{ github.ref }}
     steps:
       - name: Check out exact candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -63,6 +67,8 @@ jobs:
             -p 127.0.0.1:6080:6080 \
             -e QIKVRT_START_URL=about:blank \
             -e QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION=1 \
+            -e QIKVRT_PR_NUMBER="${EXACT_PR_NUMBER}" \
+            -e QIKVRT_SUBJECT_REF="${EXACT_SUBJECT_REF}" \
             -v qikvrt-test-profile:/var/lib/qikvrt/profile \
             -v qikvrt-test-state:/var/lib/qikvrt/state \
             qikvrt/universal-terminal:${EXACT_SUBJECT_SHA}
@@ -105,6 +111,28 @@ jobs:
           assert value['external_effects']=='NONE'
           PY
           printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
+          CHECK_NAME=temdd_subject
+          docker exec qikvrt-terminal curl --max-time 2 -fsS http://127.0.0.1:8771/api/temdd/subject > /tmp/temdd-subject.json
+          python3 - <<'PY'
+          import json, os
+          value=json.load(open('/tmp/temdd-subject.json',encoding='utf-8'))
+          subject=value['subject']
+          assert subject['head'] == os.environ['EXACT_SUBJECT_SHA']
+          pr=os.environ.get('EXACT_PR_NUMBER','').strip()
+          if pr:
+              assert subject['pr'] == int(pr)
+              assert 'ref' not in subject
+          else:
+              assert subject['ref'] == os.environ['EXACT_SUBJECT_REF']
+              assert 'pr' not in subject
+          assert value['dod'] is False
+          assert value['evidence_transfer'] == 'DENY'
+          PY
+          printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
+          CHECK_NAME=temdd_ide_surface
+          docker exec qikvrt-terminal curl --max-time 2 -fsS http://127.0.0.1:8771/AI > /tmp/temdd-ide.html
+          grep -Fq 'id="ideSource"' /tmp/temdd-ide.html
+          printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
           CHECK_NAME=novnc_surface
           curl -fsS http://127.0.0.1:6080/vnc.html >/tmp/vnc.html
           grep -Eqi '<html|<!doctype html' /tmp/vnc.html
@@ -137,6 +165,8 @@ jobs:
             -p 127.0.0.1:6080:6080 \
             -e QIKVRT_START_URL=about:blank \
             -e QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION=1 \
+            -e QIKVRT_PR_NUMBER="${EXACT_PR_NUMBER}" \
+            -e QIKVRT_SUBJECT_REF="${EXACT_SUBJECT_REF}" \
             -v qikvrt-test-profile:/var/lib/qikvrt/profile \
             -v qikvrt-test-state:/var/lib/qikvrt/state \
             qikvrt/universal-terminal:${EXACT_SUBJECT_SHA}
@@ -203,6 +233,8 @@ jobs:
           cp /tmp/initial-post-readback-checks.log /tmp/qikvrt-terminal-evidence/initial-post-readback-checks.log 2>/dev/null || true
           cp /tmp/restart-post-readback-checks.log /tmp/qikvrt-terminal-evidence/restart-post-readback-checks.log 2>/dev/null || true
           cp /tmp/vnc.html /tmp/qikvrt-terminal-evidence/vnc.html 2>/dev/null || true
+          cp /tmp/temdd-subject.json /tmp/qikvrt-terminal-evidence/temdd-subject.json 2>/dev/null || true
+          cp /tmp/temdd-ide.html /tmp/qikvrt-terminal-evidence/temdd-ide.html 2>/dev/null || true
           cp /tmp/qikvrt-compose.json /tmp/qikvrt-terminal-evidence/compose-rendered.json 2>/dev/null || true
           printf '%s\n' "$EXACT_SUBJECT_SHA" > /tmp/qikvrt-terminal-evidence/exact-head.txt
           python3 - <<'PY'

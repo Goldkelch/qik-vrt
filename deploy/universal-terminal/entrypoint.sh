@@ -77,9 +77,19 @@ python3 -B /opt/qikvrt/tools/qikvrt_live_sse.py \
 LIVE_SSE_PID=$!
 PIDS="$PIDS ${LIVE_SSE_PID}"
 
-python3 -B /opt/qikvrt/src/qikvrt_effect_ack_http_terminal.py \
-  --host "$HTTP_HOST" --port "$HTTP_PORT" \
-  > /opt/qikvrt/runtime/logs/effect-ack-http.log 2>&1 &
+if [ -n "${QIKVRT_PR_NUMBER:-}" ]; then
+  python3 -B /opt/qikvrt/src/qikvrt_temdd_event_ledger.py serve \
+    --host "$HTTP_HOST" --port "$HTTP_PORT" --state-dir "$STATE_DIR" \
+    --repository "${QIKVRT_REPOSITORY:-Goldkelch/qik-vrt}" \
+    --pr "$QIKVRT_PR_NUMBER" \
+    > /opt/qikvrt/runtime/logs/effect-ack-http.log 2>&1 &
+else
+  python3 -B /opt/qikvrt/src/qikvrt_temdd_event_ledger.py serve \
+    --host "$HTTP_HOST" --port "$HTTP_PORT" --state-dir "$STATE_DIR" \
+    --repository "${QIKVRT_REPOSITORY:-Goldkelch/qik-vrt}" \
+    --ref "${QIKVRT_SUBJECT_REF:-refs/heads/main}" \
+    > /opt/qikvrt/runtime/logs/effect-ack-http.log 2>&1 &
+fi
 HTTP_PID=$!
 PIDS="$PIDS ${HTTP_PID}"
 
@@ -151,6 +161,8 @@ obj={
   'effect_ack_host':http_host,
   'effect_ack_port':int(http_port),
   'mesh_path':'/qik-vrt/mesh/v1/',
+  'temdd_ide':'/AI/',
+  'temdd_event_stream':'/api/temdd/events',
   'started_at_unix':int(time.time()),
   'authenticated_session_storage':'FIREFOX_PROFILE',
   'adapter':'QIKVRT_FIREFOX_TERMINAL_PROXY_V2',

@@ -95,5 +95,20 @@ class UniversalTerminalNetworkBoundaryTests(unittest.TestCase):
         self.assertIn("CHECK_NAME=initial_runtime_state_copy", workflow)
 
 
+    def test_total_system_temdd_gateway_is_loopback_bound_and_additive(self):
+        entrypoint = ENTRYPOINT.read_text(encoding="utf-8")
+        cloud = CLOUD_ENTRYPOINT.read_text(encoding="utf-8")
+        nginx = (ROOT / "deploy/universal-terminal/nginx.conf").read_text(encoding="utf-8")
+        self.assertIn("qikvrt_temdd_event_ledger.py serve", entrypoint)
+        self.assertIn("QIKVRT_PR_NUMBER", entrypoint)
+        self.assertIn("QIKVRT_SUBJECT_REF", entrypoint)
+        self.assertIn("http://127.0.0.1:8080/AI/", cloud)
+        self.assertIn("proxy_pass http://127.0.0.1:8771/AI;", nginx)
+        self.assertIn("proxy_set_header Host 127.0.0.1:8771;", nginx)
+        self.assertIn("location = /api/temdd/subject", nginx)
+        self.assertIn("location = /api/temdd/events", nginx)
+
+
+
 if __name__ == "__main__":
     unittest.main()

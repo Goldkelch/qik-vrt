@@ -130,3 +130,14 @@ cloud-carrier-live-sse-test: tool-cache-contract
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tests/test_cloud_carrier_live_sse_runtime.py -v
 
 test: cloud-carrier-live-sse-test
+
+
+# P1 total-system integration: additive exact-subject gates.
+.PHONY: temdd-event-ledger-test mesh-monitor-test
+temdd-event-ledger-test:
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tests/test_temdd_event_ledger.py
+
+mesh-monitor-test:
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tests/test_mesh_monitor.py
+
+test: temdd-event-ledger-test mesh-monitor-test
