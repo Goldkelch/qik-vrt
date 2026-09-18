@@ -42,48 +42,95 @@ jobs:
           git fetch --force --prune origin '+refs/heads/*:refs/remotes/origin/*'
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
 
-      - name: Snapshot all open PRs fail closed on API unavailability
+      - name: Snapshot all open PRs through one bounded read fallback
         shell: bash
         run: |
           set -euo pipefail
           root="$RUNNER_TEMP/qikvrt-dod"
           mkdir -p "$root"
+          : >"$root/open-prs.rest.stderr"
+          : >"$root/open-prs.graphql.stderr"
 
           set +e
-          gh api --paginate --slurp             "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100"             >"$root/open-prs.raw.json" 2>"$root/open-prs.stderr"
-          rc=$?
+          gh api --paginate --slurp             "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100"             >"$root/open-prs.rest.json" 2>"$root/open-prs.rest.stderr"
+          rest_rc=$?
           set -e
 
-          if [ "$rc" -eq 0 ]; then
-            python3 - "$root/open-prs.raw.json" "$root/open-prs.json" <<'PY'
+          if [ "$rest_rc" -eq 0 ]; then
+            python3 - "$root/open-prs.rest.json" "$root/open-prs.json" <<'PY'
           import json,sys
           src,dst=sys.argv[1:]
-          value=json.load(open(src,encoding='utf-8'))
-          if not isinstance(value,list):
-              raise SystemExit('BLOCK: open PR API result is not a list')
+          pages=json.load(open(src,encoding='utf-8'))
+          if not isinstance(pages,list):
+              raise SystemExit('BLOCK: REST open PR result is not a list')
+          rows=[row for page in pages for row in page] if pages and all(isinstance(page,list) for page in pages) else pages
+          if not all(isinstance(row,dict) for row in rows):
+              raise SystemExit('BLOCK: REST open PR row is not an object')
+          value={'schema':'qikvrt_open_pr_snapshot_v1','state':'OBSERVED','source':'REST','pull_requests':rows}
           with open(dst,'w',encoding='utf-8') as f:
               json.dump(value,f,separators=(',',':'))
               f.write('\n')
           PY
-            echo "OPEN_PR_SNAPSHOT=OBSERVED"
+            echo "OPEN_PR_SNAPSHOT=OBSERVED_REST"
           else
-            python3 - "$root/open-prs.json" "$rc" <<'PY'
+            owner="${GITHUB_REPOSITORY%%/*}"
+            name="${GITHUB_REPOSITORY#*/}"
+            query='query($owner:String!,$name:String!,$endCursor:String){repository(owner:$owner,name:$name){pullRequests(first:100,states:OPEN,after:$endCursor,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number state body headRefName headRefOid}pageInfo{hasNextPage endCursor}}}}'
+
+            set +e
+            gh api graphql --paginate --slurp               -f owner="$owner" -f name="$name" -f query="$query"               >"$root/open-prs.graphql.json" 2>"$root/open-prs.graphql.stderr"
+            graphql_rc=$?
+            set -e
+
+            if [ "$graphql_rc" -eq 0 ]; then
+              python3 - "$root/open-prs.graphql.json" "$root/open-prs.json" <<'PY'
           import json,sys
-          path,rc=sys.argv[1:]
+          src,dst=sys.argv[1:]
+          pages=json.load(open(src,encoding='utf-8'))
+          if not isinstance(pages,list):
+              raise SystemExit('BLOCK: GraphQL page result is not a list')
+          rows=[]
+          for page in pages:
+              nodes=page.get('data',{}).get('repository',{}).get('pullRequests',{}).get('nodes')
+              if not isinstance(nodes,list):
+                  raise SystemExit('BLOCK: GraphQL pullRequests.nodes is not a list')
+              for node in nodes:
+                  if not isinstance(node,dict):
+                      raise SystemExit('BLOCK: GraphQL PR row is not an object')
+                  rows.append({
+                      'number':node.get('number'),
+                      'state':str(node.get('state','')).lower(),
+                      'body':node.get('body') or '',
+                      'head':{'sha':node.get('headRefOid'),'ref':node.get('headRefName')},
+                  })
+          value={'schema':'qikvrt_open_pr_snapshot_v1','state':'OBSERVED','source':'GRAPHQL','pull_requests':rows}
+          with open(dst,'w',encoding='utf-8') as f:
+              json.dump(value,f,separators=(',',':'))
+              f.write('\n')
+          PY
+              echo "OPEN_PR_SNAPSHOT=OBSERVED_GRAPHQL"
+            else
+              python3 - "$root/open-prs.json" "$rest_rc" "$graphql_rc" <<'PY'
+          import json,sys
+          path,rest_rc,graphql_rc=sys.argv[1:]
           value={
               'schema':'qikvrt_open_pr_snapshot_unavailable_v1',
               'state':'HOLD_UNVERIFIED',
               'reason':'OPEN_PR_SNAPSHOT_API_UNAVAILABLE',
-              'transport_rc':int(rc),
+              'rest_rc':int(rest_rc),
+              'graphql_rc':int(graphql_rc),
               'fabricated_empty_inventory':False,
               'retry_attempted':False,
+              'bounded_alternative_read_attempted':True,
           }
           with open(path,'w',encoding='utf-8') as f:
               json.dump(value,f,sort_keys=True,separators=(',',':'))
               f.write('\n')
           PY
-            echo "OPEN_PR_SNAPSHOT=HOLD_UNVERIFIED"
-            tail -n 5 "$root/open-prs.stderr" || true
+              echo "OPEN_PR_SNAPSHOT=HOLD_UNVERIFIED"
+              tail -n 5 "$root/open-prs.rest.stderr" || true
+              tail -n 5 "$root/open-prs.graphql.stderr" || true
+            fi
           fi
 
       - name: Build exact-subject finite census
@@ -118,4 +165,5 @@ jobs:
           path: |
             ${{ runner.temp }}/qikvrt-dod/census.json
             ${{ runner.temp }}/qikvrt-dod/open-prs.json
-            ${{ runner.temp }}/qikvrt-dod/open-prs.stderr
+            ${{ runner.temp }}/qikvrt-dod/open-prs.rest.stderr
+            ${{ runner.temp }}/qikvrt-dod/open-prs.graphql.stderr

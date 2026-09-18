@@ -85,6 +85,14 @@ class RepositoryDodTests(unittest.TestCase):
         self.assertTrue(result["conjuncts"]["ALL_BRANCHES_REGARDED"])
         self.assertFalse(result["conjuncts"]["ALL_PRODUCTIVE_BRANCHES_MERGED"])
 
+    def test_regarded_productive_unmerged_branch_keeps_branch_regard_separate(self):
+        obs = self.good()
+        obs["branches"].append({"name": "feature/x", "disposition": "PRODUCTIVE_UNMERGED"})
+        obs["all_productive_branches_merged"] = False
+        result = evaluate(obs)
+        self.assertTrue(result["conjuncts"]["ALL_BRANCHES_REGARDED"])
+        self.assertFalse(result["conjuncts"]["ALL_PRODUCTIVE_BRANCHES_MERGED"])
+
     def test_productive_branch_outside_final_state_blocks(self):
         obs = self.good()
         obs["all_productive_branches_merged"] = False
