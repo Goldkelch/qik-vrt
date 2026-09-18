@@ -1,0 +1,2580 @@
+diff --git a/.github/workflows/qikvrt_temdd.yml b/.github/workflows/qikvrt_temdd.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..a27e1dc7fc7bf87fde5ea5fda83b2a2f2ceb9a47
+--- /dev/null
++++ b/.github/workflows/qikvrt_temdd.yml
+@@ -0,0 +1,95 @@
++name: QIKVRT TEMDD conformance
++on:
++  pull_request:
++    paths: ['spec/temdd/**','examples/temdd/**','schemas/temdd-*','tools/qikvrt_temdd.py','tools/qikvrt_temdd_conformance.py','tests/test_temdd.py','tests/temdd/**','src/temdd_core.c','include/temdd_core.h','tests/test_temdd_core.c','runtime/temdd/**','runtime/m68000/temdd_transition.s','formalization/TEMDDCore.lean','src/qikvrt_temdd_event_ledger.py','src/qikvrt_effect_ack_http_terminal.py','tests/test_temdd_event_ledger.py','docs/terminal/temdd/**','deploy/universal-terminal/**','Makefile','.github/workflows/qikvrt_temdd.yml']
++  push: {branches: [main]}
++permissions: {contents: read}
++jobs:
++ conformance:
++  runs-on: ubuntu-24.04
++  timeout-minutes: 15
++  steps:
++   - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
++     with:
++      ref: ${{ github.event.pull_request.head.sha || github.sha }}
++      persist-credentials: false
++   - uses: actions/setup-python@v6
++     with:
++      python-version: '3.12.13'
++   - uses: actions/setup-node@v6
++     with:
++      node-version: '24.x'
++      package-manager-cache: false
++   - name: Fresh exact-head persistent producer and browser regressions
++     env:
++      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
++     shell: bash
++     run: |
++      set -euo pipefail
++      test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
++      git diff --exit-code
++      python3 -B tools/qikvrt_tool_cache.py verify
++      python3 --version
++      node --version
++      make temdd-event-ledger-test 2>&1 | tee "$RUNNER_TEMP/temdd-producer-tests.log"
++      git diff --exit-code
++      printf 'HEAD=%s\nTREE=%s\nEVIDENCE_TRANSFER=DENY\nSCOPE=producer-regression-only\nDOD=NOT_PROVEN\n' "$EXPECTED_HEAD" "$(git rev-parse 'HEAD^{tree}')" | tee "$RUNNER_TEMP/temdd-producer-binding.txt"
++   - name: Python parser T01-T12 and corpus
++     run: |
++      python3 -B -m unittest tests.test_temdd
++      python3 -B tools/qikvrt_temdd_conformance.py
++      python3 -B tools/qikvrt_temdd.py tests/temdd/positive/minimal.temdd >/tmp/minimal.json
++      for f in tests/temdd/negative/*.temdd; do if python3 -B tools/qikvrt_temdd.py "$f" >/dev/null 2>&1; then echo "negative corpus admitted: $f"; exit 1; fi; done
++      python3 -B tools/qikvrt_temdd.py examples/temdd/qikvrt_convergence_v0_1.temdd >/tmp/temdd-ir.json
++      python3 - <<'PY'
++      import json
++      x=json.load(open('/tmp/temdd-ir.json'))
++      required={'ZERO_BUGS','ALL_PULL_REQUESTS_REGARDED','ALL_BRANCHES_REGARDED','ALL_PRODUCTIVE_BRANCHES_MERGED','FRESH_EXACT_MAIN_VALIDATION_PASS','FRESH_EFFECT_READBACK'}
++      assert required == set(x['dod']); assert x['subject']['binding']=='exact'
++      PY
++   - name: C90 differential kernel
++     run: cc -std=c90 -pedantic -Wall -Wextra -Werror -Iinclude src/temdd_core.c tests/test_temdd_core.c -o /tmp/temdd-core && /tmp/temdd-core
++   - name: M68000 source admission
++     run: grep -q 'SUCCESSOR_REQUIRED' runtime/m68000/temdd_transition.s
++   - name: Smalltalk source admission
++     run: grep -q 'successorRequired' runtime/temdd/TEMDDRuntime.st
++   - name: Lean obligation source admission
++     run: grep -q 'missing_effect_readback_not_done' formalization/TEMDDCore.lean
++   - name: Materialize bounded integrity candidate without adopting or promoting
++     shell: bash
++     run: |
++      set -euo pipefail
++      python3 -B tools/qikvrt_integrity.py generate
++      python3 -B tools/qikvrt_integrity.py verify
++      python3 - <<'PYCODE'
++      import hashlib, json, os, shutil, subprocess
++      from pathlib import Path
++      def git(*args):
++          return subprocess.check_output(['git', *args], text=True).strip()
++      allow = ['REPOSITORY_FILE_MANIFEST.json', 'REPOSITORY_FILE_MANIFEST.json.sha256', 'SHA256SUMS.txt']
++      changed = git('diff', '--name-only').splitlines()
++      assert set(changed) <= set(allow), changed
++      assert not git('diff', '--cached', '--name-only')
++      out = Path(os.environ['RUNNER_TEMP']) / 'temdd-integrity'
++      out.mkdir()
++      files = {}
++      for name in allow:
++          shutil.copyfile(name, out / name)
++          files[name] = {'sha256': hashlib.sha256(Path(name).read_bytes()).hexdigest(), 'blob': git('hash-object', name)}
++      receipt = {'schema': 'qikvrt_temdd_integrity_candidate_v1', 'repository': os.environ['GITHUB_REPOSITORY'],
++                 'parent_head': git('rev-parse', 'HEAD'), 'parent_tree': git('rev-parse', 'HEAD^{tree}'),
++                 'run_id': os.environ['GITHUB_RUN_ID'], 'allowlist': allow, 'files': files,
++                 'state': 'MATERIALIZED_WORKTREE_ONLY', 'adopted': False, 'p2_pass': False,
++                 'evidence_transfer': 'DENY', 'dod': False}
++      (out / 'receipt.json').write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
++      PYCODE
++   - name: Preserve exact-head focused evidence and bounded integrity candidate
++     if: always()
++     uses: actions/upload-artifact@v4
++     with:
++      name: temdd-producer-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}
++      path: |
++       ${{ runner.temp }}/temdd-producer-tests.log
++       ${{ runner.temp }}/temdd-producer-binding.txt
++       ${{ runner.temp }}/temdd-integrity/
++      if-no-files-found: error
+diff --git a/.github/workflows/qikvrt_universal_terminal_container.yml b/.github/workflows/qikvrt_universal_terminal_container.yml
+index 72121a916ac45c0dbfab29e424dce207c8978195..485d8198a3ffaaa7a7a3d42d07141d86b38537d8 100644
+--- a/.github/workflows/qikvrt_universal_terminal_container.yml
++++ b/.github/workflows/qikvrt_universal_terminal_container.yml
+@@ -59,6 +59,7 @@ jobs:
+           docker volume create qikvrt-test-profile >/dev/null
+           docker volume create qikvrt-test-state >/dev/null
+           docker run -d --name qikvrt-terminal \
++            -e QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION=1 \
+             -p 127.0.0.1:6080:6080 \
+             -v qikvrt-test-profile:/var/lib/qikvrt/profile \
+             -v qikvrt-test-state:/var/lib/qikvrt/state \
+@@ -91,6 +92,7 @@ jobs:
+           set -euo pipefail
+           docker rm -f qikvrt-terminal >/dev/null
+           docker run -d --name qikvrt-terminal \
++            -e QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION=1 \
+             -p 127.0.0.1:6080:6080 \
+             -v qikvrt-test-profile:/var/lib/qikvrt/profile \
+             -v qikvrt-test-state:/var/lib/qikvrt/state \
+diff --git a/Makefile b/Makefile
+index 4f3eae3ab9a530e5d4d672de84f5526b8e00e4ac..5272393d39d5a29d29aaa1ee9c21a41d47a63b5f 100644
+--- a/Makefile
++++ b/Makefile
+@@ -116,3 +116,9 @@ run-api:
+ 
+ clean:
+ 	rm -rf unit_state e2e_state .qikvrt/runtime .qikvrt/evidence .qikvrt/api .qikvrt/cache .qikvrt/release .qikvrt/interactions .qikvrt/real-mesh logs __pycache__ src/__pycache__ scripts/__pycache__ tests/__pycache__ tools/__pycache__
++
++# Finite producer/replay regression; no scheduling inside the TEMDD kernel.
++.PHONY: temdd-event-ledger-test
++test: temdd-event-ledger-test
++temdd-event-ledger-test:
++	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tests/test_temdd_event_ledger.py
+diff --git a/deploy/universal-terminal/Dockerfile b/deploy/universal-terminal/Dockerfile
+index 589c96ccd01447641fc478606fc18d4a41ff71bb..18fe7e2e265197b70687094e63c72316bd0140ae 100644
+--- a/deploy/universal-terminal/Dockerfile
++++ b/deploy/universal-terminal/Dockerfile
+@@ -4,38 +4,28 @@ ENV DEBIAN_FRONTEND=noninteractive \
+     DISPLAY=:99 \
+     QIKVRT_HTTP_PORT=8771 \
+     QIKVRT_NOVNC_PORT=6080 \
+-    QIKVRT_START_URL=https://arxiv.org/ \
++    QIKVRT_START_URL=http://127.0.0.1:8771/AI \
+     QIKVRT_PROFILE_DIR=/var/lib/qikvrt/profile \
+     QIKVRT_STATE_DIR=/var/lib/qikvrt/state \
+     QIKVRT_RUNTIME_ID=qikvrt-firefox-terminal
+ 
+-RUN apt-get update && apt-get install -y --no-install-recommends \
+-      ca-certificates firefox-esr python3 python3-minimal git zip \
+-      xvfb x11vnc novnc websockify dbus-x11 procps curl \
+-    && rm -rf /var/lib/apt/lists/*
+-
++RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates firefox-esr python3 python3-minimal git zip xvfb x11vnc novnc websockify dbus-x11 procps curl && rm -rf /var/lib/apt/lists/*
+ WORKDIR /opt/qikvrt
+ COPY . /opt/qikvrt
+-
+-RUN mkdir -p /opt/qikvrt/runtime/bootstrap-profile/extensions /opt/qikvrt/runtime/logs \
+-    /var/lib/qikvrt/profile /var/lib/qikvrt/state \
++RUN mkdir -p /opt/qikvrt/runtime/bootstrap-profile/extensions /opt/qikvrt/runtime/logs /var/lib/qikvrt/profile /var/lib/qikvrt/state \
+     && cd browser/firefox/qikvrt-terminal \
+     && zip -qr /opt/qikvrt/runtime/bootstrap-profile/extensions/qikvrt-ai-terminal@goldkelch.local.xpi . \
+     && printf '%s\n' \
+       'user_pref("browser.shell.checkDefaultBrowser", false);' \
+-      'user_pref("browser.startup.homepage", "https://arxiv.org/");' \
++      'user_pref("browser.startup.homepage", "http://127.0.0.1:8771/AI");' \
+       'user_pref("toolkit.telemetry.reportingpolicy.firstRun", false);' \
+       'user_pref("datareporting.policy.dataSubmissionEnabled", false);' \
+       'user_pref("browser.sessionstore.resume_from_crash", true);' \
+       > /opt/qikvrt/runtime/bootstrap-profile/user.js
+-
+ COPY deploy/universal-terminal/entrypoint.sh /usr/local/bin/qikvrt-universal-terminal
+ COPY deploy/universal-terminal/runtime-health.sh /usr/local/bin/qikvrt-runtime-health
+ RUN chmod +x /usr/local/bin/qikvrt-universal-terminal /usr/local/bin/qikvrt-runtime-health
+-
+ VOLUME ["/var/lib/qikvrt/profile", "/var/lib/qikvrt/state"]
+ EXPOSE 6080
+-HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=6 \
+-  CMD ["/usr/local/bin/qikvrt-runtime-health"]
+-
++HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=6 CMD ["/usr/local/bin/qikvrt-runtime-health"]
+ ENTRYPOINT ["/usr/local/bin/qikvrt-universal-terminal"]
+diff --git a/deploy/universal-terminal/entrypoint.sh b/deploy/universal-terminal/entrypoint.sh
+old mode 100755
+new mode 100644
+index 81349289f955b60c63019c5094dc16ba33ceb655..c0ef17059cf02126f5a7fb5fae2a3adee8a9bdbd
+--- a/deploy/universal-terminal/entrypoint.sh
++++ b/deploy/universal-terminal/entrypoint.sh
+@@ -7,7 +7,7 @@ RUNTIME_ID="${QIKVRT_RUNTIME_ID:-qikvrt-firefox-terminal}"
+ HTTP_PORT="${QIKVRT_HTTP_PORT:-8771}"
+ NOVNC_PORT="${QIKVRT_NOVNC_PORT:-6080}"
+ DISPLAY_VALUE="${DISPLAY:-:99}"
+-START_URL="${QIKVRT_START_URL:-https://arxiv.org/}"
++START_URL="${QIKVRT_START_URL:-http://127.0.0.1:${HTTP_PORT}/AI}"
+ 
+ mkdir -p /opt/qikvrt/runtime/logs "$PROFILE_DIR" "$STATE_DIR"
+ 
+@@ -16,15 +16,29 @@ if [ ! -f "$PROFILE_DIR/.qikvrt-profile-initialized" ]; then
+   : > "$PROFILE_DIR/.qikvrt-profile-initialized"
+ fi
+ 
+-python3 -B /opt/qikvrt/src/qikvrt_effect_ack_http_terminal.py \
+-  --host 127.0.0.1 --port "$HTTP_PORT" \
++# Production keeps Firefox signature enforcement.  The isolated repository-native
++# smoke test may explicitly admit the unsigned reference package so its
++# persistent profile lifecycle can be exercised without weakening deployment.
++case "${QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION:-0}" in
++  0) ;;
++  1)
++    if ! grep -Fqx 'user_pref("xpinstall.signatures.required", false);' "$PROFILE_DIR/user.js"; then
++      printf '%s\n' 'user_pref("xpinstall.signatures.required", false);' >> "$PROFILE_DIR/user.js"
++    fi
++    ;;
++  *)
++    echo "BLOCK: QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION must be 0 or 1" >&2
++    exit 64
++    ;;
++esac
++
++python3 -B /opt/qikvrt/src/qikvrt_temdd_event_ledger.py serve \
++  --host 127.0.0.1 --port "$HTTP_PORT" --state-dir "$STATE_DIR" \
+   > /opt/qikvrt/runtime/logs/effect-ack-http.log 2>&1 &
+ HTTP_PID=$!
+ 
+-Xvfb "$DISPLAY_VALUE" -screen 0 1440x900x24 -nolisten tcp \
+-  > /opt/qikvrt/runtime/logs/xvfb.log 2>&1 &
++Xvfb "$DISPLAY_VALUE" -screen 0 1440x900x24 -nolisten tcp > /opt/qikvrt/runtime/logs/xvfb.log 2>&1 &
+ XVFB_PID=$!
+-
+ sleep 1
+ VNC_ARGS="-display $DISPLAY_VALUE -forever -shared -localhost -rfbport 5900"
+ if [ -n "${QIKVRT_VNC_PASSWORD_FILE:-}" ]; then
+@@ -39,46 +53,19 @@ fi
+ # shellcheck disable=SC2086
+ x11vnc $VNC_ARGS > /opt/qikvrt/runtime/logs/x11vnc.log 2>&1 &
+ VNC_PID=$!
+-
+-websockify --web=/usr/share/novnc/ "$NOVNC_PORT" localhost:5900 \
+-  > /opt/qikvrt/runtime/logs/novnc.log 2>&1 &
++websockify --web=/usr/share/novnc/ "$NOVNC_PORT" localhost:5900 > /opt/qikvrt/runtime/logs/novnc.log 2>&1 &
+ NOVNC_PID=$!
+-
+-firefox-esr --no-remote --profile "$PROFILE_DIR" "$START_URL" \
+-  > /opt/qikvrt/runtime/logs/firefox.log 2>&1 &
++firefox-esr --no-remote --profile "$PROFILE_DIR" "$START_URL" > /opt/qikvrt/runtime/logs/firefox.log 2>&1 &
+ FIREFOX_PID=$!
+ 
+ python3 -B - "$STATE_DIR/runtime.json" "$RUNTIME_ID" "$PROFILE_DIR" "$START_URL" "$NOVNC_PORT" <<'PY'
+ import json,sys,time
+ path,runtime_id,profile,start_url,novnc_port=sys.argv[1:]
+-obj={
+-  'schema':'qikvrt_universal_terminal_runtime_state_v1',
+-  'runtime_id':runtime_id,
+-  'browser':'firefox-esr',
+-  'profile_dir':profile,
+-  'profile_persistent':True,
+-  'start_url':start_url,
+-  'novnc_port':int(novnc_port),
+-  'started_at_unix':int(time.time()),
+-  'authenticated_session_storage':'FIREFOX_PROFILE',
+-  'adapter':'QIKVRT_FIREFOX_TERMINAL_PROXY_V1',
+-  'external_effect_claimed':False,
+-  'pass':False,
+-  'final_pass':False,
+-  'effect_ack_done':False,
+-}
++obj={'schema':'qikvrt_universal_terminal_runtime_state_v1','runtime_id':runtime_id,'browser':'firefox-esr','profile_dir':profile,'profile_persistent':True,'start_url':start_url,'novnc_port':int(novnc_port),'started_at_unix':int(time.time()),'authenticated_session_storage':'FIREFOX_PROFILE','adapter':'QIKVRT_FIREFOX_TERMINAL_PROXY_V1','temdd_event_stream':'/api/temdd/events','external_effect_claimed':False,'pass':False,'final_pass':False,'effect_ack_done':False}
+ open(path,'w',encoding='utf-8').write(json.dumps(obj,indent=2,sort_keys=True)+'\n')
+ PY
+-
+-cleanup() {
+-  kill "$FIREFOX_PID" "$NOVNC_PID" "$VNC_PID" "$XVFB_PID" "$HTTP_PID" 2>/dev/null || true
+-}
++cleanup(){ kill "$FIREFOX_PID" "$NOVNC_PID" "$VNC_PID" "$XVFB_PID" "$HTTP_PID" 2>/dev/null || true; }
+ trap cleanup INT TERM EXIT
+-
+-printf '%s\n' "QIKVRT universal terminal ready: runtime=${RUNTIME_ID} noVNC=0.0.0.0:${NOVNC_PORT} effect_ack=127.0.0.1:${HTTP_PORT} profile=${PROFILE_DIR}"
+-
+-while kill -0 "$HTTP_PID" 2>/dev/null && kill -0 "$FIREFOX_PID" 2>/dev/null && kill -0 "$NOVNC_PID" 2>/dev/null; do
+-  sleep 1
+-done
+-
++printf '%s\n' "QIKVRT universal terminal ready: runtime=${RUNTIME_ID} /AI=${START_URL} noVNC=0.0.0.0:${NOVNC_PORT} effect_ack=127.0.0.1:${HTTP_PORT}"
++while kill -0 "$HTTP_PID" 2>/dev/null && kill -0 "$FIREFOX_PID" 2>/dev/null && kill -0 "$NOVNC_PID" 2>/dev/null; do sleep 1; done
+ exit 1
+diff --git a/docs/terminal/temdd/index.html b/docs/terminal/temdd/index.html
+new file mode 100644
+index 0000000000000000000000000000000000000000..2c32118f30c37d8393ae174b06aedb3ece1fe4c0
+--- /dev/null
++++ b/docs/terminal/temdd/index.html
+@@ -0,0 +1,97 @@
++<!doctype html>
++<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>QIK-VRT TEMDD Live Universal Terminal</title><style>body{margin:0;background:#090c10;color:#e8edf2;font:14px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}main{max-width:1280px;margin:auto;padding:18px}.grid{display:grid;grid-template-columns:1fr 2fr;gap:14px}.p{background:#11171e;border:1px solid #303a46;border-radius:12px;padding:16px}.meta{display:grid;grid-template-columns:110px 1fr;gap:6px}.muted{color:#8d9aaa}.ok{color:#68d391}.hold{color:#ecc94b}#tail{height:68vh;overflow:auto;white-space:pre-wrap;background:#070a0d;padding:12px;border-radius:8px}.badge{border:1px solid #43505e;border-radius:99px;padding:2px 8px}button{background:#18212b;color:#e8edf2;border:1px solid #43505e;border-radius:7px;padding:6px 10px}.ide-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:12px}.ide-grid textarea,.ide-grid pre{width:100%;box-sizing:border-box;min-height:320px;background:#070a0d;color:#e8edf2;border:1px solid #303a46;border-radius:8px;padding:10px;font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}.ide-actions{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.ide-status{white-space:pre-wrap}.ide-status.ok{color:#68d391}.ide-status.hold{color:#ecc94b}@media(max-width:800px){.grid,.ide-grid{grid-template-columns:1fr}#tail{height:55vh}}</style></head><body><main><h1>QIK-VRT · TEMDD LIVE UNIVERSAL TERMINAL <span id="state" class="badge hold">CONNECTING</span></h1><p class="muted">Observer lifetime ≠ execution lifetime · exact-subject evidence · fail-closed · replayable event cursor</p><div class="grid"><section class="p"><h2>Exact checkout subject</h2><div class="meta"><span class="muted">Authority</span><span id="repository">—</span><span class="muted">PR</span><span id="pr">—</span><span class="muted">HEAD</span><span id="head">—</span><span class="muted">TREE</span><span id="tree">—</span><span class="muted">Event ID</span><span id="cursor">—</span><span class="muted">DoD</span><span id="dod" class="hold">NOT PROVEN</span></div><h2>Transport</h2><p id="transport">discovering local native stream…</p><button id="reconnect">RECONNECT</button><p class="muted">Ledger persistence is not validation, review, promotion, or EFFECT_ACK_DONE. A deployed checkout is not a fresh remote PR-head observation.</p></section><section class="p"><h2>tail -f</h2><div id="tail"></div></section></div>
++<section class="p" id="ide"><h2>TEMDD v0.1 IDE · local analysis only</h2>
++<p class="muted">Editieren und Analysieren ist lokal. Browser-Analyse erzeugt keinen nativen Event, keine Authority und keinen Effect. Ausführung bleibt am repository-nativen/Unix-Ingress mit frischem Readback.</p>
++<div class="ide-actions"><button id="ideExample" type="button">BEISPIEL LADEN</button><button id="ideAnalyze" type="button">ANALYZE → IR</button><button id="ideCopy" type="button">IR KOPIEREN</button></div>
++<div class="ide-grid"><label>TEMDD source<textarea id="ideSource" spellcheck="false" autocomplete="off"></textarea></label><label>Typed diagnostic IR<pre id="ideIr">NO_ANALYSIS</pre></label></div>
++<p id="ideStatus" class="ide-status hold">LOCAL_ONLY · NO EFFECT</p>
++</section></main><script>
++'use strict';
++const TEMDD_DOD=new Set(['ZERO_BUGS','ALL_PULL_REQUESTS_REGARDED','ALL_BRANCHES_REGARDED','ALL_PRODUCTIVE_BRANCHES_MERGED','FRESH_EXACT_MAIN_VALIDATION_PASS','FRESH_EFFECT_READBACK']);
++const TEMDD_EXAMPLE=`temdd 0.1;
++authority owner = "Goldkelch/qik-vrt";
++subject convergence {
++  repository = "Goldkelch/qik-vrt";
++  binding = exact;
++}
++request finish_qikvrt { target = QIKVRT_DOD; }
++on event {
++  follow exact;
++  classify causal;
++}
++on blocker {
++  learn smallest_sound_successor;
++  execute successor;
++}
++until {
++  ZERO_BUGS
++  && ALL_PULL_REQUESTS_REGARDED
++  && ALL_BRANCHES_REGARDED
++  && ALL_PRODUCTIVE_BRANCHES_MERGED
++  && FRESH_EXACT_MAIN_VALIDATION_PASS
++  && FRESH_EFFECT_READBACK;
++}`;
++function ideEl(id){return document.getElementById(id)}
++function temddMatch(re,text,label){const m=text.match(re);if(!m)throw Error('missing '+label);return m}
++function analyzeTemdd(text){
++ const version=temddMatch(/^\s*temdd\s+([0-9.]+)\s*;/s,text,'version')[1];
++ if(version!=='0.1')throw Error('unsupported version');
++ const authority=temddMatch(/authority\s+[A-Za-z][A-Za-z0-9_-]*\s*=\s*"([^"]+)"\s*;/s,text,'authority')[1];
++ const subject=temddMatch(/subject\s+([A-Za-z][A-Za-z0-9_-]*)\s*\{([\s\S]*?)\}/,text,'subject');
++ const repository=temddMatch(/repository\s*=\s*"([^"]+)"\s*;/s,subject[2],'repository')[1];
++ temddMatch(/binding\s*=\s*exact\s*;/s,subject[2],'exact binding');
++ const request=temddMatch(/request\s+([A-Za-z][A-Za-z0-9_-]*)\s*\{\s*target\s*=\s*([A-Za-z][A-Za-z0-9_-]*)\s*;\s*\}/s,text,'request');
++ const handlers=[...text.matchAll(/on\s+(event|blocker)\s*\{([\s\S]*?)\}/g)].map(m=>({event:m[1],statements:m[2].split(';').map(x=>x.trim()).filter(Boolean)}));
++ const until=temddMatch(/until\s*\{([\s\S]*?)\}/,text,'until')[1].trim().replace(/;\s*$/,'');
++ const dod=until.split('&&').map(x=>x.trim()).filter(Boolean);
++ if(!handlers.length||!dod.length)throw Error('handlers and DoD required');
++ if(new Set(dod).size!==dod.length)throw Error('duplicate DoD predicate');
++ if(request[2]==='QIKVRT_DOD'&&(dod.length!==TEMDD_DOD.size||dod.some(x=>!TEMDD_DOD.has(x))))throw Error('QIKVRT_DOD requires complete canonical predicate');
++ return {schema:'temdd_ir_v0_1',version,authority,subject:{name:subject[1],repository,binding:'exact'},request:{name:request[1],target:request[2]},handlers,dod};
++}
++let ideIr=null;
++ideEl('ideExample').onclick=()=>{ideEl('ideSource').value=TEMDD_EXAMPLE;ideEl('ideStatus').textContent='EXAMPLE_LOADED · LOCAL_ONLY · NO EFFECT';ideEl('ideStatus').className='ide-status hold'};
++ideEl('ideAnalyze').onclick=()=>{try{ideIr=analyzeTemdd(ideEl('ideSource').value);ideEl('ideIr').textContent=JSON.stringify(ideIr,null,2);ideEl('ideStatus').textContent='BOOTSTRAP_CONFORMANT_LOCAL_ANALYSIS · NO EFFECT';ideEl('ideStatus').className='ide-status ok'}catch(e){ideIr=null;ideEl('ideIr').textContent='BLOCK '+e.message;ideEl('ideStatus').textContent='HOLD · '+e.message;ideEl('ideStatus').className='ide-status hold'}};
++ideEl('ideCopy').onclick=()=>{if(!ideIr){ideEl('ideStatus').textContent='HOLD · analyze valid TEMDD first';return}navigator.clipboard.writeText(JSON.stringify(ideIr,null,2)).then(()=>{ideEl('ideStatus').textContent='IR_COPIED · TRANSPORT_ACK != EFFECT_ACK'}).catch(e=>{ideEl('ideStatus').textContent='HOLD · copy failed: '+e.message})};
++ideEl('ideSource').value=TEMDD_EXAMPLE;
++const tail=document.getElementById('tail'),state=document.getElementById('state'),cursorEl=document.getElementById('cursor');
++let es=null,cursor='',exactSubject=null,ledgerId='',cursorKey='',generation=0;
++function line(kind,msg){tail.textContent+=`${new Date().toISOString()}  ${kind.padEnd(10)} ${msg}\n`;tail.scrollTop=tail.scrollHeight;}
++function setState(s,c){state.textContent=s;state.className='badge '+c;}
++function hold(reason){setState('HOLD','hold');document.getElementById('dod').textContent='NOT PROVEN';line('HOLD',reason);}
++function validSubject(s){return s&&Object.keys(s).sort().join(',')==='head,pr,repository,tree'&&typeof s.repository==='string'&&Number.isInteger(s.pr)&&s.pr>0&&/^[0-9a-f]{40}$/.test(s.head)&&/^[0-9a-f]{40}$/.test(s.tree);}
++function sameSubject(a,b){return validSubject(a)&&validSubject(b)&&['repository','pr','head','tree'].every(k=>a[k]===b[k]);}
++function sequence(id){const m=/^([0-9a-f]{32}):([1-9][0-9]{0,18})$/.exec(id);if(!m||m[1]!==ledgerId)throw Error('foreign or malformed ledger cursor');return BigInt(m[2]);}
++async function connect(){
++  const current=++generation;if(es)es.close();es=null;setState('CONNECTING','hold');
++  try{
++    const r=await fetch('/api/temdd/subject',{cache:'no-store'});if(!r.ok)throw Error('exact checkout readback unavailable');
++    const x=await r.json();if(current!==generation)return;
++    if(!validSubject(x.subject)||!/^[0-9a-f]{32}$/.test(x.ledger_id)||x.dod!==false||x.evidence_transfer!=='DENY')throw Error('invalid exact-subject envelope');
++    exactSubject=x.subject;ledgerId=x.ledger_id;
++    cursorKey='qikvrt.temdd.cursor:'+JSON.stringify([ledgerId,exactSubject.repository,exactSubject.pr,exactSubject.head,exactSubject.tree]);
++    cursor=localStorage.getItem(cursorKey)||'';if(cursor)sequence(cursor);
++    for(const key of ['repository','pr','head','tree'])document.getElementById(key).textContent=exactSubject[key];
++    cursorEl.textContent=cursor||'—';line('SUBJECT',JSON.stringify(exactSubject));
++    const url='/api/temdd/events'+(cursor?'?after='+encodeURIComponent(cursor):'');
++    document.getElementById('transport').textContent='SSE '+url;
++    const source=new EventSource(url);es=source;let bound=false;
++    source.onopen=()=>{if(current===generation){bound=false;setState('CONNECTED','hold');}};
++    source.addEventListener('subject',e=>{if(current!==generation)return;try{
++      const s=JSON.parse(e.data);if(!sameSubject(s.subject,exactSubject)||s.ledger_id!==ledgerId||s.dod!==false||s.evidence_transfer!=='DENY')throw Error('stream subject mismatch');
++      bound=true;setState('OBSERVING','ok');line('CONNECT','exact-subject stream bound; DoD remains unproven');
++    }catch(err){source.close();hold(err.message);}});
++    source.onmessage=e=>{if(current!==generation)return;try{
++      const event=JSON.parse(e.data);
++      if(!bound||event.schema!=='qikvrt_temdd_event_v1'||!sameSubject(event.subject,exactSubject)||event.id!==e.lastEventId||event.evidence_transfer!=='DENY'||event.dod!==false)throw Error('unbound or invalid event');
++      const next=sequence(event.id);if(cursor&&next<=sequence(cursor))throw Error('non-monotonic event');
++      if(!/^(OBSERVE|CLASSIFY|ACTION|EFFECT|READBACK|SUCCESSOR|HOLD)$/.test(event.kind)||typeof event.message!=='string')throw Error('invalid event content');
++      line(event.kind,event.message+' · '+event.subject.head+' · '+event.id);
++      localStorage.setItem(cursorKey,event.id);cursor=event.id;cursorEl.textContent=cursor;
++    }catch(err){source.close();hold(err.message);}};
++    source.addEventListener('hold',()=>{if(current===generation){source.close();hold('producer readback unavailable; fresh reconnect required');}});
++    source.onerror=()=>{if(current===generation){bound=false;hold('transport unavailable; native EventSource reconnect retains its cursor; repository execution unchanged');}};
++  }catch(err){if(current===generation)hold(err.message);}
++}
++document.getElementById('reconnect').onclick=connect;connect();
++</script></body></html>
+diff --git a/examples/temdd/qikvrt_convergence_v0_1.temdd b/examples/temdd/qikvrt_convergence_v0_1.temdd
+new file mode 100644
+index 0000000000000000000000000000000000000000..da48c8812b3227758c09d1c0a2d2bedcd7b27242
+--- /dev/null
++++ b/examples/temdd/qikvrt_convergence_v0_1.temdd
+@@ -0,0 +1,23 @@
++temdd 0.1;
++authority owner = "Goldkelch/qik-vrt";
++subject convergence {
++  repository = "Goldkelch/qik-vrt";
++  binding = exact;
++}
++request finish_qikvrt { target = QIKVRT_DOD; }
++on event {
++  follow exact;
++  classify causal;
++}
++on blocker {
++  learn smallest_sound_successor;
++  execute successor;
++}
++until {
++  ZERO_BUGS
++  && ALL_PULL_REQUESTS_REGARDED
++  && ALL_BRANCHES_REGARDED
++  && ALL_PRODUCTIVE_BRANCHES_MERGED
++  && FRESH_EXACT_MAIN_VALIDATION_PASS
++  && FRESH_EFFECT_READBACK;
++}
+diff --git a/formalization/TEMDDCore.lean b/formalization/TEMDDCore.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..8277b5c1f5a6aa4dde8751f098090e981bb002b9
+--- /dev/null
++++ b/formalization/TEMDDCore.lean
+@@ -0,0 +1,19 @@
++namespace QIKVRT.TEMDD
++inductive State where | hold | continue | successorRequired | done deriving DecidableEq
++inductive Event where | unknown | evidence | blocker deriving DecidableEq
++def transition : State -> Event -> State
++| State.done, _ => State.done
++| _, Event.blocker => State.successorRequired
++| _, Event.evidence => State.continue
++| _, Event.unknown => State.hold
++structure DoD where
++ zeroBugs : Bool
++ allPullRequestsRegarded : Bool
++ allBranchesRegarded : Bool
++ allProductiveBranchesMerged : Bool
++ freshExactMainValidationPass : Bool
++ freshEffectReadback : Bool
++def complete (d : DoD) : Bool := d.zeroBugs && d.allPullRequestsRegarded && d.allBranchesRegarded && d.allProductiveBranchesMerged && d.freshExactMainValidationPass && d.freshEffectReadback
++theorem blocker_requires_successor (s : State) (h : s != State.done) : transition s Event.blocker = State.successorRequired := by cases s <;> simp [transition] at h ⊢
++theorem missing_effect_readback_not_done (d : DoD) (h : d.freshEffectReadback = false) : complete d = false := by simp [complete, h]
++end QIKVRT.TEMDD
+diff --git a/include/temdd_core.h b/include/temdd_core.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..79efe5deadd70206ce313b2d0e138d72087e350a
+--- /dev/null
++++ b/include/temdd_core.h
+@@ -0,0 +1,7 @@
++#ifndef QIKVRT_TEMDD_CORE_H
++#define QIKVRT_TEMDD_CORE_H
++typedef enum { TEMDD_HOLD=0, TEMDD_CONTINUE=1, TEMDD_SUCCESSOR_REQUIRED=2, TEMDD_DONE=3 } temdd_state;
++typedef enum { TEMDD_EVENT_UNKNOWN=0, TEMDD_EVENT_EVIDENCE=1, TEMDD_EVENT_BLOCKER=2 } temdd_event;
++temdd_state temdd_transition(temdd_state state, temdd_event event);
++int temdd_done(const int predicates[6]);
++#endif
+diff --git a/runtime/m68000/temdd_transition.s b/runtime/m68000/temdd_transition.s
+new file mode 100644
+index 0000000000000000000000000000000000000000..989dbc2c93c6835d9c94c85bf4ab854db97cf50f
+--- /dev/null
++++ b/runtime/m68000/temdd_transition.s
+@@ -0,0 +1,15 @@
++; TEMDD v0.1 fixed-relation transition kernel, Motorola 68000
++; D0 = event: 0 unknown, 1 evidence, 2 blocker
++; returns D0 = state: 0 HOLD, 1 CONTINUE, 2 SUCCESSOR_REQUIRED
++        cmpi.b  #2,d0
++        beq.s   .blocker
++        cmpi.b  #1,d0
++        beq.s   .evidence
++        moveq   #0,d0
++        rts
++.evidence:
++        moveq   #1,d0
++        rts
++.blocker:
++        moveq   #2,d0
++        rts
+diff --git a/runtime/temdd/TEMDDRuntime.st b/runtime/temdd/TEMDDRuntime.st
+new file mode 100644
+index 0000000000000000000000000000000000000000..6a77ac84186aad8b87c5898a4e4cfcd8332c9b22
+--- /dev/null
++++ b/runtime/temdd/TEMDDRuntime.st
+@@ -0,0 +1,18 @@
++"TEMDD v0.1 live Smalltalk semantic kernel. Source form is intentionally image-independent."
++Object subclass: #TEMDDRuntime
++    instanceVariableNames: ''
++    classVariableNames: ''
++    poolDictionaries: ''
++    category: 'QIKVRT-TEMDD'.
++
++TEMDDRuntime class >> transitionFor: event state: state
++    "Finite event transition. HOLD/CONTINUE are never NOOP."
++    (state = #done) ifTrue: [ ^ #done ].
++    (event = #blocker) ifTrue: [ ^ #successorRequired ].
++    (event = #evidence) ifTrue: [ ^ #continue ].
++    ^ #hold.
++
++TEMDDRuntime class >> doneForPredicates: predicates
++    | required |
++    required := #(ZERO_BUGS ALL_PULL_REQUESTS_REGARDED ALL_BRANCHES_REGARDED ALL_PRODUCTIVE_BRANCHES_MERGED FRESH_EXACT_MAIN_VALIDATION_PASS FRESH_EFFECT_READBACK).
++    ^ required allSatisfy: [ :each | predicates includes: each ].
+diff --git a/schemas/temdd-ir-v0.1.schema.json b/schemas/temdd-ir-v0.1.schema.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..e7654624f586e2e86b9dcafe84b04a77c4c8452a
+--- /dev/null
++++ b/schemas/temdd-ir-v0.1.schema.json
+@@ -0,0 +1,13 @@
++{
++ "$schema":"https://json-schema.org/draft/2020-12/schema",
++ "$id":"https://goldkelch.github.io/qik-vrt/schemas/temdd-ir-v0.1.schema.json",
++ "title":"TEMDD canonical IR v0.1","type":"object","additionalProperties":false,
++ "required":["schema","version","authority","subject","request","handlers","dod"],
++ "properties":{
++  "schema":{"const":"temdd_ir_v0_1"},"version":{"const":"0.1"},"authority":{"type":"string","minLength":1},
++  "subject":{"type":"object","additionalProperties":false,"required":["name","repository","binding"],"properties":{"name":{"type":"string"},"repository":{"type":"string"},"binding":{"const":"exact"}}},
++  "request":{"type":"object","additionalProperties":false,"required":["name","target"],"properties":{"name":{"type":"string"},"target":{"type":"string"}}},
++  "handlers":{"type":"array","minItems":1,"items":{"type":"object","additionalProperties":false,"required":["event","statements"],"properties":{"event":{"enum":["event","blocker"]},"statements":{"type":"array","items":{"type":"string"}}}}},
++  "dod":{"type":"array","minItems":1,"uniqueItems":true,"items":{"type":"string"}}
++ }
++}
+diff --git a/spec/temdd/README.md b/spec/temdd/README.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..dfaee7bdb1ab1531db01f839dab8a8618c3469c1
+--- /dev/null
++++ b/spec/temdd/README.md
+@@ -0,0 +1,18 @@
++# TEMDD
++
++Tested Event Model Driven Development is specified here as an executable QIK-VRT metaprogramming language.
++
++Entry points:
++- `TEMDD_LANGUAGE_SPEC_V0_1.md` — normative bootstrap semantics.
++- `TEMDD_Syntax_V0_1.ebnf` — grammar.
++- `../../schemas/temdd-ir-v0.1.schema.json` — canonical IR contract.
++- `../../tools/qikvrt_temdd.py` — deterministic reference parser/elaborator.
++- `../../tools/qikvrt_temdd_conformance.py` — executable T01-T12 semantic checks.
++- `../../tests/temdd/` — positive and fail-closed negative corpus.
++- `../../runtime/temdd/TEMDDRuntime.st` — Smalltalk live-object backend bootstrap.
++- `../../src/temdd_core.c` — C90 deterministic backend.
++- `../../runtime/m68000/temdd_transition.s` — fixed-relation M68000 backend bootstrap.
++- `../../formalization/TEMDDCore.lean` — formal semantic obligations.
++- `../../examples/temdd/qikvrt_convergence_v0_1.temdd` — first dogfood production program.
++
++Language evolution is itself TEMDD: mutation creates a new exact subject; predecessor validation does not transfer; the successor must pass fresh conformance and deployment readback.
+diff --git a/spec/temdd/TEMDD_ARCHITECTURE_V0_1.md b/spec/temdd/TEMDD_ARCHITECTURE_V0_1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..31c772a76c1e904e9211b7036570df953698156b
+--- /dev/null
++++ b/spec/temdd/TEMDD_ARCHITECTURE_V0_1.md
+@@ -0,0 +1,7 @@
++# TEMDD architecture v0.1
++
++TEMDD is the single normative semantic core. Python, Smalltalk, C90, M68000, Lean, GitHub Actions and deployment systems are projections or adapters, not independent control-plane semantics.
++
++The architecture is layered: language source; deterministic frontend; canonical typed IR; semantic conformance; backend projections; transport adapters; effect executors; readback observers. Only the semantic core decides status. Transport layers may deliver events but may not synthesize authority, evidence, DONE or EFFECT_ACK.
++
++This separation permits gradual replacement of duplicated Python/YAML control logic while preserving observable behavior through shared vectors and exact-subject evidence.
+diff --git a/spec/temdd/TEMDD_AUTHORITY_MODEL_V0_1.json b/spec/temdd/TEMDD_AUTHORITY_MODEL_V0_1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..cbfc5cae1543dd51849052b46d68677ab935f97c
+--- /dev/null
++++ b/spec/temdd/TEMDD_AUTHORITY_MODEL_V0_1.json
+@@ -0,0 +1 @@
++{"schema":"temdd_authority_model_v0_1","authority_is_evidence":false,"authorization_is_scope_bound":true,"required_binding":["actor","subject","effect_class","scope","freshness"],"missing_authority":"HOLD_UNVERIFIED","authority_cannot_be_inferred_from_transport":true,"authority_cannot_be_inferred_from_successful_execution":true}
+diff --git a/spec/temdd/TEMDD_BACKEND_CONTRACT_V0_1.json b/spec/temdd/TEMDD_BACKEND_CONTRACT_V0_1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..2391281f2156bdc9c14e885f8ac5c1730f1a1d59
+--- /dev/null
++++ b/spec/temdd/TEMDD_BACKEND_CONTRACT_V0_1.json
+@@ -0,0 +1 @@
++{"schema":"temdd_backend_contract_v0_1","source":"TEMDD","canonical_ir":"temdd_ir_v0_1","backends":[{"name":"python-reference","status":"EXECUTABLE"},{"name":"smalltalk-live","status":"SOURCE_BOOTSTRAP"},{"name":"c90","status":"EXECUTABLE"},{"name":"m68000","status":"SOURCE_BOOTSTRAP"},{"name":"lean","status":"SOURCE_OBLIGATION"}],"cross_backend_rule":"DISAGREEMENT_BLOCKS","stable_language_requires":["EXECUTABLE_SMALLTALK_GATE","EXECUTABLE_M68000_GATE","COMPILED_LEAN_GATE","REPRODUCIBLE_RELEASE","PRODUCTION_EFFECT_READBACK"]}
+diff --git a/spec/temdd/TEMDD_BOOTSTRAP_DOD_V0_1.json b/spec/temdd/TEMDD_BOOTSTRAP_DOD_V0_1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..20440304fa45a1c9088d03e4de4f39a4642c39cf
+--- /dev/null
++++ b/spec/temdd/TEMDD_BOOTSTRAP_DOD_V0_1.json
+@@ -0,0 +1 @@
++{"schema":"temdd_bootstrap_dod_v0_1","required":["NORMATIVE_SPEC","EXECUTABLE_GRAMMAR","CANONICAL_IR","REFERENCE_FRONTEND","POSITIVE_NEGATIVE_CORPUS","T01_T12_EXECUTABLE","C90_EXECUTABLE","SMALLTALK_BACKEND","M68000_BACKEND","LEAN_OBLIGATIONS","EVENT_NATIVE_CI","SELF_IMPROVEMENT_CONTRACT","CD_CONTRACT","DOGFOOD_PROGRAM","DETERMINISTIC_INTEGRITY","FULL_REPOSITORY_TEST","EXACT_HEAD_VALIDATION","NATIVE_AUTHORITY_REVIEW","POST_REVIEW_REOBSERVATION","MAIN_INTEGRATION","FRESH_EXACT_MAIN_VALIDATION_PASS","FRESH_EFFECT_READBACK"],"current_claim":"UNVERIFIED","done":false,"no_op":"EXCLUDED","return_condition":"FULL_DOD_ONLY","successor_required":true}
+diff --git a/spec/temdd/TEMDD_BOOTSTRAP_MANIFEST_V0_1.json b/spec/temdd/TEMDD_BOOTSTRAP_MANIFEST_V0_1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..2f9f8820e804bc6faebd90a5895a9cc4d5d6a08b
+--- /dev/null
++++ b/spec/temdd/TEMDD_BOOTSTRAP_MANIFEST_V0_1.json
+@@ -0,0 +1 @@
++{"schema":"temdd_bootstrap_manifest_v0_1","language":"TEMDD","version":"0.1","authority":"Goldkelch/qik-vrt","normative_spec":"spec/temdd/TEMDD_LANGUAGE_SPEC_V0_1.md","grammar":"spec/temdd/TEMDD_Syntax_V0_1.ebnf","ir_schema":"schemas/temdd-ir-v0.1.schema.json","frontend":"tools/qikvrt_temdd.py","conformance":"tools/qikvrt_temdd_conformance.py","ci":".github/workflows/qikvrt_temdd.yml","dogfood":"examples/temdd/qikvrt_convergence_v0_1.temdd","status":"CANDIDATE_UNVERIFIED","stable_language":false,"return_condition":"FULL_DOD_ONLY","successor_required":true,"validation_plan":"spec/temdd/TEMDD_VALIDATION_PLAN_V0_1.json"}
+diff --git a/spec/temdd/TEMDD_BOOTSTRAP_RECEIPT_V0_1.json b/spec/temdd/TEMDD_BOOTSTRAP_RECEIPT_V0_1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..f725eea69c67111ca97cd6ba74d1ac03da973e95
+--- /dev/null
++++ b/spec/temdd/TEMDD_BOOTSTRAP_RECEIPT_V0_1.json
+@@ -0,0 +1 @@
++{"schema":"temdd_bootstrap_receipt_v0_1","base_main":"a86054139b49c13c5cd344753b248b46b5daf66f","claim":"UNVERIFIED_CANDIDATE","implemented":["normative_spec","ebnf","canonical_ir_schema","python_reference_parser","T01_T12_conformance","positive_negative_corpus","smalltalk_source_backend","c90_executable_backend","m68000_source_backend","lean_source_obligations","event_native_ci","self_improvement_contract","cd_contract","dogfood_convergence_program"],"must_reobserve_after_integrity_materialization":["exact_head","full_repository_tests","temdd_conformance","review_state"],"effect_ack_done":false,"return_condition":"FULL_DOD_ONLY","note":"Descriptive only; exact-head CI and runtime readback are authoritative."}
+diff --git a/spec/temdd/TEMDD_CD_V0_1.json b/spec/temdd/TEMDD_CD_V0_1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..87f300bfab7bcf9893457b80bcfbdef2975973ce
+--- /dev/null
++++ b/spec/temdd/TEMDD_CD_V0_1.json
+@@ -0,0 +1 @@
++{"schema":"temdd_cd_v0_1","trigger":"native_repository_event","kernel_is_scheduled":false,"pipeline":["parse","elaborate","positive_negative_corpus","T01_T12","c90_differential","backend_admission","formal_obligations","integrity","exact_head_validation","authority_review","post_review_reobservation","promotion","exact_main_validation","production_effect_readback"],"mutation_resets_downstream_evidence":true,"missing_required_evidence":"HOLD_UNVERIFIED","intermediate_state":"CONTINUE","done":"FULL_DECLARED_DOD_ONLY"}
+diff --git a/spec/temdd/TEMDD_COMPILER_CONTRACT_V0_1.json b/spec/temdd/TEMDD_COMPILER_CONTRACT_V0_1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..9de35c95425cd8a40ae163a37b00763cf3d2613b
+--- /dev/null
++++ b/spec/temdd/TEMDD_COMPILER_CONTRACT_V0_1.json
+@@ -0,0 +1 @@
++{"schema":"temdd_compiler_contract_v0_1","pipeline":["source","parse","typed_ast","canonical_ir","backend"],"must_preserve":["subject_identity","evidence_provenance","authority_boundary","status","effect_state","readback_obligation"],"semantic_loss":"COMPILE_BLOCK","backend_disagreement":"BLOCK","canonical_test_vectors":true,"targets":["python","smalltalk","c90","m68000","lean"]}
+diff --git a/spec/temdd/TEMDD_CONFORMANCE_MATRIX_V0_1.json b/spec/temdd/TEMDD_CONFORMANCE_MATRIX_V0_1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..861d9d62e97d393824c1514b87422ed212c410ea
+--- /dev/null
++++ b/spec/temdd/TEMDD_CONFORMANCE_MATRIX_V0_1.json
+@@ -0,0 +1 @@
++{"schema":"temdd_conformance_matrix_v0_1","python":{"parser":"EXECUTABLE","semantic":"EXECUTABLE"},"c90":{"semantic":"EXECUTABLE"},"smalltalk":{"semantic":"SOURCE_BOOTSTRAP"},"m68000":{"semantic":"SOURCE_BOOTSTRAP"},"lean":{"obligations":"SOURCE_OBLIGATION"},"candidate_gate":"CI_PLUS_INTEGRITY_PLUS_FULL_REPOSITORY_TEST","stable_gate":"ALL_DECLARED_BACKENDS_EXECUTABLE_PLUS_FORMAL_PLUS_PRODUCTION_READBACK"}
+diff --git a/spec/temdd/TEMDD_CONFORMANCE_V0_1.md b/spec/temdd/TEMDD_CONFORMANCE_V0_1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..241f7012e2dc6670863fa1932a614d4a83e09188
+--- /dev/null
++++ b/spec/temdd/TEMDD_CONFORMANCE_V0_1.md
+@@ -0,0 +1,7 @@
++# TEMDD v0.1 Conformance
++
++A conforming implementation MUST parse the positive corpus, reject the negative corpus, preserve exact-subject binding, distinguish transport/result/effect acknowledgement, fail closed on stale or unknown critical evidence, and construct DONE only from the complete declared DoD.
++
++The reference implementation is `tools/qikvrt_temdd.py`. Semantic executable checks T01-T12 are in `tools/qikvrt_temdd_conformance.py`. The C90 kernel is compiled under `-std=c90 -pedantic -Wall -Wextra -Werror`. Smalltalk and M68000 are source backends in this bootstrap and MUST become executable runtime gates before a future stable TEMDD 1.0 claim. Lean obligations are source-admitted in v0.1 and MUST be compiled by the repository's Lean/Lake proof lane before stable promotion.
++
++v0.1 therefore distinguishes BOOTSTRAP_CONFORMANT from STABLE_LANGUAGE. The former may be reached by this candidate; the latter is intentionally not claimed.
+diff --git a/spec/temdd/TEMDD_DESIGN_RATIONALE_V0_1.md b/spec/temdd/TEMDD_DESIGN_RATIONALE_V0_1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d0e03cfbd2ec91511c19a9226e5b47889951b6a1
+--- /dev/null
++++ b/spec/temdd/TEMDD_DESIGN_RATIONALE_V0_1.md
+@@ -0,0 +1,3 @@
++# TEMDD design rationale v0.1
++
++TEMDD minimizes semantic distance between specification and execution. Evidence, authority, effects, readback, holds and successors are language concepts because treating them as comments or workflow conventions caused divergent implementations. The kernel is intentionally finite and event-driven; persistence and scheduling belong to adapters. Exact-subject typing prevents accidental evidence transfer. Successor-based learning makes self-improvement testable. Multiple backends provide portability and differential checking without multiplying normative semantics.
+diff --git a/spec/temdd/TEMDD_DOGFOOD_V0_1.md b/spec/temdd/TEMDD_DOGFOOD_V0_1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ab930109e32772ca06d371b2cd7fdfed07fce67f
+--- /dev/null
++++ b/spec/temdd/TEMDD_DOGFOOD_V0_1.md
+@@ -0,0 +1,3 @@
++# TEMDD dogfood program
++
++`examples/temdd/qikvrt_convergence_v0_1.temdd` is the first production-shaped TEMDD program. It intentionally targets the complete QIK-VRT DoD and therefore cannot compile if that canonical conjunction is weakened. The program follows exact evidence on events and derives a smallest sound successor on blockers. Execution of repository effects remains delegated to admitted QIK-VRT actors; the bootstrap parser itself has no ambient mutation authority.
+diff --git a/spec/temdd/TEMDD_EFFECT_MODEL_V0_1.json b/spec/temdd/TEMDD_EFFECT_MODEL_V0_1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..04a928737afa86e44d7715a7fd44159140515af9
+--- /dev/null
++++ b/spec/temdd/TEMDD_EFFECT_MODEL_V0_1.json
+@@ -0,0 +1 @@
++{"schema":"temdd_effect_model_v0_1","states":["REQUESTED","PREPARED","AUTHORIZED","COMMITTED","READ_BACK","ACKNOWLEDGED","HOLD_UNVERIFIED"],"invariants":{"transport_ack_is_effect_ack":false,"result_is_effect":false,"commit_is_done":false,"readback_required":true,"unknown_critical_state":"HOLD_UNVERIFIED"},"effect_ack_constructor_requires":["exact_subject","authority","committed_effect","fresh_readback","expected_observed_equivalence"]}
+diff --git a/spec/temdd/TEMDD_EVENT_MODEL_V0_1.json b/spec/temdd/TEMDD_EVENT_MODEL_V0_1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..39269ef5db110054cc06235fa3d89f39c0c7b503
+--- /dev/null
++++ b/spec/temdd/TEMDD_EVENT_MODEL_V0_1.json
+@@ -0,0 +1 @@
++{"schema":"temdd_event_model_v0_1","kernel":"FINITE_EVENT_TRANSITION","polling_in_kernel":false,"scheduling_in_kernel":false,"events_are_immutable":true,"event_fields":["id","kind","subject","provenance","observed_at","payload_digest"],"transition_output":["evidence","effect_intent","successor_intent","hold"],"quiescence_after_transition":true,"continuation":"NEXT_NATIVE_EVENT"}
+diff --git a/spec/temdd/TEMDD_EVIDENCE_MODEL_V0_1.json b/spec/temdd/TEMDD_EVIDENCE_MODEL_V0_1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a0789587f438bd61c69751ebb029912f8ca128b
+--- /dev/null
++++ b/spec/temdd/TEMDD_EVIDENCE_MODEL_V0_1.json
+@@ -0,0 +1 @@
++{"schema":"temdd_evidence_model_v0_1","immutable":true,"required_fields":["subject","kind","origin","digest","observed_at","freshness"],"exact_subject_required":true,"predecessor_transfer":"DENY","stale":"HOLD_UNVERIFIED","conflict":"HOLD_UNVERIFIED","missing":"HOLD_UNVERIFIED","model_output_is_evidence":false}
+diff --git a/spec/temdd/TEMDD_GLOSSARY_V0_1.md b/spec/temdd/TEMDD_GLOSSARY_V0_1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..0f9766ed3ce40cd3efe5c61388b697ae38037d76
+--- /dev/null
++++ b/spec/temdd/TEMDD_GLOSSARY_V0_1.md
+@@ -0,0 +1,3 @@
++# TEMDD glossary
++
++**Subject** — immutable identity to which evidence is bound. **Evidence** — immutable observed fact with provenance and freshness. **Model** — representation used for inference, not evidence by itself. **Authority** — explicit scope-bound permission for an effect. **Effect** — externally observable mutation. **Readback** — fresh observation after commit. **Successor** — new exact subject created by mutation or learning. **HOLD_UNVERIFIED** — fail-closed nonterminal state. **CONTINUE** — productive obligation remains and awaits/uses the next admissible event. **NOOP** — permitted only when no productive obligation exists. **DONE** — proof object for the full declared Definition of Done.
+diff --git a/spec/temdd/TEMDD_IDE_V0_1.md b/spec/temdd/TEMDD_IDE_V0_1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..45498aa1750441062936225b10c2d745de101767
+--- /dev/null
++++ b/spec/temdd/TEMDD_IDE_V0_1.md
+@@ -0,0 +1,18 @@
++# TEMDD v0.1 IDE Contract
++
++Status: BOOTSTRAP_CONFORMANT_UI
++
++The TEMDD IDE is the editable local-analysis surface embedded in the Universal Terminal. It preserves the same fail-closed language boundary as the reference parser.
++
++## Required behavior
++
++- edit TEMDD v0.1 source in the browser;
++- load the repository-bound reference program;
++- derive local typed diagnostic IR for version, authority, exact subject, request, handlers and DoD;
++- reject unsupported versions, missing exact binding, duplicate DoD predicates and incomplete `QIKVRT_DOD`;
++- keep local analysis distinct from execution and effects;
++- never POST TEMDD events from the browser editor;
++- native execution remains behind repository/runtime admission and fresh Effect-Ack readback;
++- copying source or IR is transport only: `TRANSPORT_ACK != EFFECT_ACK`.
++
++This UI contract does not claim Main adoption, production extension delivery, repository-wide PASS, FINAL_PASS or EFFECT_ACK_DONE.
+diff --git a/spec/temdd/TEMDD_IMPLEMENTATION_MAP_V0_1.json b/spec/temdd/TEMDD_IMPLEMENTATION_MAP_V0_1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..2a8e7d646b54267716612404a2dddcbf6af0cd76
+--- /dev/null
++++ b/spec/temdd/TEMDD_IMPLEMENTATION_MAP_V0_1.json
+@@ -0,0 +1 @@
++{"schema":"temdd_implementation_map_v0_1","frontend":"tools/qikvrt_temdd.py","semantic_conformance":"tools/qikvrt_temdd_conformance.py","grammar":"spec/temdd/TEMDD_Syntax_V0_1.ebnf","ir":"schemas/temdd-ir-v0.1.schema.json","python_tests":"tests/test_temdd.py","corpus":"tests/temdd","smalltalk":"runtime/temdd/TEMDDRuntime.st","c90":["include/temdd_core.h","src/temdd_core.c","tests/test_temdd_core.c"],"m68000":"runtime/m68000/temdd_transition.s","lean":"formalization/TEMDDCore.lean","ci":".github/workflows/qikvrt_temdd.yml","dogfood":"examples/temdd/qikvrt_convergence_v0_1.temdd"}
+diff --git a/spec/temdd/TEMDD_INTEROP_V0_1.md b/spec/temdd/TEMDD_INTEROP_V0_1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b6da6115834c940e4829a5b679c5cef506052b30
+--- /dev/null
++++ b/spec/temdd/TEMDD_INTEROP_V0_1.md
+@@ -0,0 +1,3 @@
++# TEMDD interoperability v0.1
++
++TEMDD interoperates through canonical events, canonical IR, explicit effect intents and readback receipts. GitHub Actions, Railway/runtime services, REST, browsers and other systems are adapters. Adapters may translate representation but must not reinterpret semantic status. Existing QIK-VRT event envelopes and Effect-Ack contracts are intended transport/effect boundaries; adapters must preserve their digests and exact-subject binding.
+diff --git a/spec/temdd/TEMDD_LANGUAGE_SPEC_V0_1.md b/spec/temdd/TEMDD_LANGUAGE_SPEC_V0_1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..633d82a4cdef8e4346393fbc1bedf8d3b205e0b3
+--- /dev/null
++++ b/spec/temdd/TEMDD_LANGUAGE_SPEC_V0_1.md
+@@ -0,0 +1,32 @@
++# TEMDD Language Specification v0.1
++
++Status: executable bootstrap candidate. Authority: Goldkelch/qik-vrt.
++
++TEMDD (Tested Event Model Driven Development) is the executable metaprogramming language of QIK-VRT. Its lifecycle is `REQUEST -> EXECUTE -> FOLLOW -> LEARN -> SUCCESSOR -> ... -> DONE`.
++
++## Normative invariants
++T01 Evidence is exact-subject typed and cannot transfer to another head/tree/scope. T02 Mutation creates a successor and invalidates dependent evidence. T03 TRANSPORT_ACK != EFFECT_ACK. T04 RESULT != EFFECT. T05 HOLD/CONTINUE are nonterminal and never NOOP. T06 Open productive work excludes DONE. T07 External effects require exact-scope authority. T08 Committed effects require fresh readback. T09 Missing/stale/conflicting/malformed/indeterminate critical evidence fails closed. T10 Unknown critical effect state blocks. T11 Learning constructs a successor and cannot self-certify. T12 DONE requires the complete declared DoD from fresh bound evidence.
++
++## Semantic objects
++`authority`, `subject`, `request`, `event`, `test`, `evidence`, `model`, `effect`, `hold`, `learn`, `successor`, `done`. Models are not evidence. Effects have prepare/authorize/commit/readback boundaries.
++
++## Execution
++TEMDD is event-driven. Scheduling and polling are outer-layer transports, not kernel semantics. A runtime consumes one event, performs a finite transition, emits evidence/effect/successor intents and becomes quiescent. WAIT/HOLD, queued work, open PRs, unmerged productive branches, failed gates, missing releases and missing effect readback cannot become NOOP or DONE.
++
++## Compilation
++`TEMDD source -> parser -> typed AST/IR -> conformance -> backend`. Initial backends are Python reference, Smalltalk live objects, C90 deterministic runtime, M68000 fixed relations and Lean obligations. Translators preserve subject identity, provenance, authority, status, effect state and readback obligations. Semantic loss or backend disagreement is BLOCK.
++
++## Self-improvement
++`S --learn--> S'`. S' is a new exact subject. Evidence for S is not validation for S'. Fresh conformance and deployment evidence is mandatory before adoption.
++
++## Continuous deployment
++`parse -> elaborate -> conformance -> differential backends -> formal obligations -> reproducible build -> candidate deploy/readback -> authorized promotion -> production readback`. No stage implies a later stage.
++
++## Canonical QIK-VRT DoD
++`ZERO_BUGS && ALL_PULL_REQUESTS_REGARDED && ALL_BRANCHES_REGARDED && ALL_PRODUCTIVE_BRANCHES_MERGED && FRESH_EXACT_MAIN_VALIDATION_PASS && FRESH_EFFECT_READBACK`.
++
++## Bootstrap boundary
++v0.1 distinguishes BOOTSTRAP_CONFORMANT from STABLE_LANGUAGE. Stable status requires executable Smalltalk and M68000 gates, compiled Lean obligations, reproducible release, Main adoption and fresh production effect readback. Version labels and successful transport/build jobs cannot manufacture these claims. Intermediate states are observable but are not a return condition; the return condition is the full declared DoD.
++
++## Conformance keywords
++MUST/MUST NOT define normative requirements; SHOULD is a strong recommendation overridable only with recorded evidence; MAY is optional. Any implementation claiming TEMDD v0.1 conformance MUST satisfy the executable positive/negative corpus and T01-T12 checks for the features it claims.
+diff --git a/spec/temdd/TEMDD_LICENSE_AND_PROVENANCE_V0_1.md b/spec/temdd/TEMDD_LICENSE_AND_PROVENANCE_V0_1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d0018c611d920613e17313350c79242211885281
+--- /dev/null
++++ b/spec/temdd/TEMDD_LICENSE_AND_PROVENANCE_V0_1.md
+@@ -0,0 +1,3 @@
++# TEMDD license and provenance note
++
++TEMDD bootstrap source is developed inside Goldkelch/qik-vrt and follows the repository's governing license/provenance rules. Backend adapters must retain provenance and may not import third-party implementation text merely because a language/runtime is compatible. Compatibility and clean-room reimplementation are distinct from copying. New dependencies require explicit repository admission and reproducible lock evidence.
+diff --git a/spec/temdd/TEMDD_MIGRATION_V0_1.md b/spec/temdd/TEMDD_MIGRATION_V0_1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5737a88ce421da9ddf52ba30d09b12de3d795d7f
+--- /dev/null
++++ b/spec/temdd/TEMDD_MIGRATION_V0_1.md
+@@ -0,0 +1,3 @@
++# TEMDD control-plane migration
++
++Existing Python/YAML mechanisms are not deleted wholesale. Each control relation is migrated only after the TEMDD representation passes the same event vectors plus stricter negative vectors. The sequence is observe existing behavior, encode TEMDD relation, differential test, deploy candidate, read back, then retire only the proven-redundant predecessor. Until equivalence is demonstrated, the predecessor remains authoritative for its admitted scope. This prevents a language bootstrap from weakening a mature fail-closed control plane.
+diff --git a/spec/temdd/TEMDD_OBSERVABILITY_V0_1.json b/spec/temdd/TEMDD_OBSERVABILITY_V0_1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..6ee1651fcb8f769586cbfd51db170997c9dd8013
+--- /dev/null
++++ b/spec/temdd/TEMDD_OBSERVABILITY_V0_1.json
+@@ -0,0 +1 @@
++{"schema":"temdd_observability_v0_1","append_only_transition_events":true,"required_transition_fields":["event_id","subject","previous_state","next_state","cause","evidence_digest"],"tail_semantics":"EVENT_STREAM_NOT_POLLING","deduplicate_by":["subject","event_id","evidence_digest"],"intermediate_state_visible":true,"intermediate_state_is_return_condition":false}
+diff --git a/spec/temdd/TEMDD_PERFORMANCE_V0_1.md b/spec/temdd/TEMDD_PERFORMANCE_V0_1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..000f0c16b984fc7a1ba1f5a15577fc104e09f14e
+--- /dev/null
++++ b/spec/temdd/TEMDD_PERFORMANCE_V0_1.md
+@@ -0,0 +1,3 @@
++# TEMDD performance contract v0.1
++
++Correctness precedes throughput. The semantic kernel performs finite event transitions and does not poll. Fixed, proven relations should be lowerable to C90/M68000 paths; inspectable dynamic relations may remain in Smalltalk/Python. Optimizations must preserve canonical IR behavior and pass differential vectors. Caches are transport/runtime optimizations and cannot change evidence freshness, authority, exact-subject identity, or effect-readback requirements.
+diff --git a/spec/temdd/TEMDD_PERSISTENT_EVENT_LEDGER_V1.md b/spec/temdd/TEMDD_PERSISTENT_EVENT_LEDGER_V1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..3c7b3874fffb5db6ec18204e49a6adfc2c0e5f46
+--- /dev/null
++++ b/spec/temdd/TEMDD_PERSISTENT_EVENT_LEDGER_V1.md
+@@ -0,0 +1,146 @@
++# TEMDD persistent native-event producer v1
++
++SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++
++## Bounded obligation
++
++PR #1103 gains a durable producer and replay transport for `/api/temdd/events`.
++This is not T15/T16, language closure, a GitHub review, deployment acceptance,
++Main integration, or QIKVRT_DOD. Persistence never implies any of those claims.
++The existing Effect-Ack backend remains unchanged and is composed, not replaced.
++
++The finite kernel is `Runtime.append` -> exact checkout check -> `Ledger.append`
++-> validation -> SQLite transaction COMMIT -> exact durable readback -> event
++notification. No repository polling, scheduler, retry job, model call, review or
++promotion exists in this kernel. HTTP/SSE and Unix socket listeners are outer
++I/O adapters; socket readiness, not a timed GitHub query, wakes observers.
++Timeouts bound transport writes and subprocess I/O, not repository transitions.
++The pre-existing container process supervisor remains an outer-layer concern.
++
++## Reuse decision
++
++The unchanged `qikvrt_effect_ack_http_terminal.Handler`, existing TEMDD workflow,
++`make test`, and repository integrity generator are reused. The existing
++`tools/qikvrt_real_mesh.py` has versioned node-hop/terminal receipt schemas for
++bounded multi-pair message delivery, not this browser cursor contract. This
++store is a separate exact-subject observation projection with durable native-ID
++transactions; it does not replace that mesh ledger or relabel its receipts as
++TEMDD proof. Upstream native callbacks retain their own authentication boundary.
++
++## Run and connect a native producer
++
++Requirements: Linux/Unix, Python 3.10+, Git, a clean committed checkout, and a
++persistent owner-controlled state directory. Node.js is also required for the
++browser regression test, not for the producer runtime.
++
++```sh
++python3 -B src/qikvrt_temdd_event_ledger.py serve \
++  --root "$PWD" --host 127.0.0.1 --port 8771 \
++  --state-dir /var/lib/qikvrt/state --repository Goldkelch/qik-vrt --pr 1103
++```
++
++The container entrypoint invokes this service. `/AI` serves the observer and
++`/api/temdd/subject` reads the exact deployed checkout and ledger epoch. Startup
++appends one actual local `transputer` OBSERVE event after both listeners bind;
++its payload records the process and bound HTTP address. This proves neither a
++running Firefox nor a current remote PR state.
++
++An already authenticated repository/transputer callback submits its native
++observation synchronously, with no polling and no browser write capability:
++
++```sh
++python3 -B src/qikvrt_temdd_event_ledger.py append \
++  --state-dir /var/lib/qikvrt/state < native-event.json
++```
++
++`native-event.json` must have exactly these fields (head/tree are placeholders;
++replace them with the actual native observation, never copy old evidence):
++
++```json
++{
++  "schema": "qikvrt_temdd_native_event_v1",
++  "kind": "READBACK",
++  "subject": {
++    "repository": "Goldkelch/qik-vrt",
++    "pr": 1103,
++    "head": "<exact observed 40-hex commit>",
++    "tree": "<exact observed 40-hex tree>"
++  },
++  "provenance": {
++    "source": "repository",
++    "native_event_id": "<stable ID of this native delivery>"
++  },
++  "observed_at": "<actual UTC observation timestamp ending in Z>",
++  "message": "<native observation summary>",
++  "payload": {"receipt": "<native observation receipt>"}
++}
++```
++
++Kinds: OBSERVE, CLASSIFY, ACTION, EFFECT, READBACK, SUCCESSOR, HOLD. Producer
++sources: repository or transputer. One append accepts at most 65,536 canonical
++UTF-8 bytes. Identical redelivery returns the same persisted record; reusing a
++native ID with different content or subject fails closed. Payload SHA-256 and
++whole-ledger-record SHA-256 are recomputed, not supplied by the caller.
++
++Success is `PERSISTED` with the committed record, `authority_effect:false` and
++`dod:false`. Errors return HOLD/nonzero. This is a ledger persistence receipt,
++not proof that an arbitrary assertion inside a payload is true.
++
++## Trust boundary and persistence
++
++Ingress is `<state-dir>/temdd/ingress.sock`, mode 0600, inside a 0700 directory.
++One process exclusively owns the store; a second owner fails closed. Browser
++POST requests to `/api/temdd/*` are rejected. TEMDD HTTP reads require loopback
++Host and same Origin. The local operating-system owner is trusted to authenticate
++its upstream callback. Source labels and hashes are NOT webhook authentication,
++digital signatures, or protection against a malicious state-directory owner.
++This change does not install a GitHub webhook subscription or remote relay.
++
++`events.sqlite3` uses WAL plus synchronous FULL and durable COMMIT before any
++notification. Sequence IDs are persistent `ledger-epoch:sequence`; restart does
++not reset them. A new/erased ledger has a different epoch. Filesystem/device
++power-loss durability still depends on the deployment storage honoring sync.
++The state directory must be mounted persistently for container replacement.
++
++## Replay, subject mutation and fail-closed observer
++
++`Last-Event-ID` takes precedence over the original `?after=` URL on native SSE
++reconnect. Unknown, foreign-epoch, wrong-subject and future cursors are rejected,
++never silently reset. Empty cursor means replay this subject from its beginning.
++Replay is ordered and batched; the readback/subscribe race is closed. Observer
++slots are bounded and released on disconnect even with no new native event.
++No heartbeat fabricates repository events. Client disconnect does not stop or
++modify repository execution.
++
++Subject = repository + PR + exact commit + exact tree. Every ingress/readback
++checks the deployed checkout; tracked mutation stops the producer fail-closed
++until explicit restart. Old rows are retained for history but cannot replay into
++a different subject. Browser cursor keys also include subject and ledger epoch.
++The browser rejects a mismatched subject, malformed/non-monotonic event and any
++`dod:true`. Transport errors show HOLD while leaving native SSE reconnection
++available. A subject handshake is control data, not persisted repository proof.
++
++A deployed checkout is not a fresh observation of the remote PR head. This
++producer makes no freshness assertion about GitHub absent a native authenticated
++upstream observation. No old test result, review or ledger row becomes evidence
++for a successor merely because the implementation or content is similar.
++
++## Validation and canonical integrity
++
++`make temdd-event-ledger-test` runs fresh Git fixtures, real Unix ingress and
++HTTP/SSE sockets, restart/replay, concurrent append, storage/crash-point failure,
++wrong-subject/cursor rejection, JavaScript consumer and legacy Effect-Ack tests.
++It is admitted into `make test`. The TEMDD workflow checks out the literal PR
++head, runs this suite and existing language checks, and records head/tree.
++A focused suite PASS is not full P2 or language conformance closure.
++
++The workflow also uses the repository's own integrity generator to export a
++strict three-file candidate (`REPOSITORY_FILE_MANIFEST.json`, its `.sha256`,
++`SHA256SUMS.txt`) with parent head/tree, allowlist and hashes. It never adopts or
++pushes that worktree. A later consumer must reobserve the branch, require the
++identical parent, verify the allowlist/hashes, adopt non-force, and then rerun
++all applicable validation on that new head/tree. Worktree verification is not
++committed-integrity verification; every adoption resets P2+.
++
++Runtime/Firefox deployment, upstream repository relay authentication, full P2,
++T15/T16 and the remaining language obligations require their own fresh evidence.
+diff --git a/spec/temdd/TEMDD_PORTABILITY_V0_1.md b/spec/temdd/TEMDD_PORTABILITY_V0_1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5122154242660b565773c749ef03e51b787a22ba
+--- /dev/null
++++ b/spec/temdd/TEMDD_PORTABILITY_V0_1.md
+@@ -0,0 +1,3 @@
++# TEMDD portability v0.1
++
++The canonical interchange boundary is UTF-8 TEMDD source plus canonical JSON IR. A backend is conforming only when it preserves the semantic fields required by `TEMDD_COMPILER_CONTRACT_V0_1.json`. The C90 kernel provides the portable deterministic baseline. M68000 is the fixed-relation low-level target. Smalltalk is the inspectable live-object target. Python is the bootstrap reference frontend. Lean carries proof obligations. Platform-specific transports are adapters outside the semantic kernel.
+diff --git a/spec/temdd/TEMDD_RELEASE_V0_1.json b/spec/temdd/TEMDD_RELEASE_V0_1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..72a8f8233548d9fa3b480778c8d1756f02fd9f8d
+--- /dev/null
++++ b/spec/temdd/TEMDD_RELEASE_V0_1.json
+@@ -0,0 +1 @@
++{"schema":"temdd_release_v0_1","version":"0.1.0-bootstrap","claim":"CANDIDATE_ONLY","source_program":"examples/temdd/qikvrt_convergence_v0_1.temdd","required_before_candidate_pass":["DETERMINISTIC_INTEGRITY","TEMDD_CONFORMANCE_WORKFLOW","FULL_REPOSITORY_TEST"],"required_before_main":["EXACT_HEAD_VALIDATION","NATIVE_AUTHORITY_REVIEW","POST_REVIEW_REOBSERVATION","LEGITIMATE_PROMOTION"],"required_before_done":["FRESH_EXACT_MAIN_VALIDATION_PASS","FRESH_EFFECT_READBACK","ZERO_BUGS","ALL_PULL_REQUESTS_REGARDED","ALL_BRANCHES_REGARDED","ALL_PRODUCTIVE_BRANCHES_MERGED"]}
+diff --git a/spec/temdd/TEMDD_ROADMAP_V0_1.md b/spec/temdd/TEMDD_ROADMAP_V0_1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..24ff8824fd98e1c9e43c4f216be0e3cb0d81af42
+--- /dev/null
++++ b/spec/temdd/TEMDD_ROADMAP_V0_1.md
+@@ -0,0 +1,3 @@
++# TEMDD roadmap after bootstrap
++
++The bootstrap is not the stable endpoint. Immediate successors are executable Smalltalk runtime admission, assembled/executed M68000 vectors, compiled Lean/Lake obligations, stronger typed AST validation, canonical event-envelope adapters, Effect-Ack adapter, repository work-unit execution, Universal Terminal visualization, reproducible packaging, and gradual differential migration of existing control-plane relations. Every successor remains subject to the same mutation-reset and fresh-readback discipline.
+diff --git a/spec/temdd/TEMDD_SECURITY_V0_1.md b/spec/temdd/TEMDD_SECURITY_V0_1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..21c56e9925bf7d5c9feba2573466c0513d13f591
+--- /dev/null
++++ b/spec/temdd/TEMDD_SECURITY_V0_1.md
+@@ -0,0 +1,3 @@
++# TEMDD security model v0.1
++
++TEMDD separates observation, decision, authorization and effect. Parsing is deterministic and has no ambient authority. A source program cannot acquire credentials, elevate authority, convert model output into evidence, or claim an effect from a transport acknowledgement. Backends must fail closed on unknown critical states and preserve the exact subject. External credentials remain runtime capabilities outside source text and are admitted only at an explicit authority/effect boundary. Replays are observations unless an independently authorized effect is committed and freshly read back.
+diff --git a/spec/temdd/TEMDD_SELF_IMPROVEMENT_V0_1.json b/spec/temdd/TEMDD_SELF_IMPROVEMENT_V0_1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..b9ed7757209b2380bbe15891529c0349536195a4
+--- /dev/null
++++ b/spec/temdd/TEMDD_SELF_IMPROVEMENT_V0_1.json
+@@ -0,0 +1 @@
++{"schema":"temdd_self_improvement_v0_1","rule":"LEARNING_CREATES_SUCCESSOR","in_place_self_certification":false,"evidence_transfer":"DENY","mutation_resets":["validation","review","post_review_reobservation","effect_readback"],"successor_pipeline":["parse","elaborate","conformance","differential_backends","formal_obligations","candidate_deploy","candidate_readback","authorized_promotion","production_readback"],"failure_semantics":"HOLD_UNVERIFIED","intermediate_state_is_stop_condition":false}
+diff --git a/spec/temdd/TEMDD_STATUS_MODEL_V0_1.json b/spec/temdd/TEMDD_STATUS_MODEL_V0_1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..9666a3d7e2c7d0817597b6744a68ab1676c0c760
+--- /dev/null
++++ b/spec/temdd/TEMDD_STATUS_MODEL_V0_1.json
+@@ -0,0 +1 @@
++{"schema":"temdd_status_model_v0_1","terminal":["DONE"],"nonterminal":["REQUESTED","EXECUTING","FOLLOWING","LEARNING","SUCCESSOR_REQUIRED","CONTINUE","HOLD_UNVERIFIED"],"noop_allowed_only_when":"NO_PRODUCTIVE_OBLIGATION_EXISTS","noop_excluded_by":["QUEUED","OPEN_PR","UNMERGED_PRODUCTIVE_BRANCH","FAILED_GATE","MISSING_RELEASE","MISSING_EFFECT_READBACK","SUCCESSOR_REQUIRED"],"done_requires":"FULL_DECLARED_DOD"}
+diff --git a/spec/temdd/TEMDD_Syntax_V0_1.ebnf b/spec/temdd/TEMDD_Syntax_V0_1.ebnf
+new file mode 100644
+index 0000000000000000000000000000000000000000..22ed411886a77c89e925c24d51e6c44bf5e24b84
+--- /dev/null
++++ b/spec/temdd/TEMDD_Syntax_V0_1.ebnf
+@@ -0,0 +1,23 @@
++(* TEMDD executable bootstrap grammar v0.1 *)
++program = "temdd", version, ";", { declaration } ;
++declaration = authority | subject | request | handler | dod ;
++authority = "authority", identifier, "=", string, ";" ;
++subject = "subject", identifier, "{", "repository", "=", string, ";", "binding", "=", "exact", ";", "}" ;
++request = "request", identifier, "{", "target", "=", identifier, ";", "}" ;
++handler = "on", eventkind, "{", { statement }, "}" ;
++eventkind = "event" | "blocker" ;
++statement = follow | classify | learn | execute | hold | effect ;
++follow = "follow", "exact", ";" ;
++classify = "classify", "causal", ";" ;
++learn = "learn", "smallest_sound_successor", ";" ;
++execute = "execute", "successor", ";" ;
++hold = "hold", identifier, "until", identifier, ";" ;
++effect = "effect", identifier, "{", "require", "authority", ";", "require", "validation", ";", "commit", ";", "readback", ";", "}" ;
++dod = "until", "{", predicate, { "&&", predicate }, ";", "}" ;
++predicate = identifier ;
++version = digit, { digit | "." } ;
++identifier = letter, { letter | digit | "_" | "-" } ;
++string = '"', { character }, '"' ;
++letter = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M" | "N" | "O" | "P" | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z" | "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" ;
++digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
++character = letter | digit | " " | "/" | "-" | "_" | "." | ":" ;
+diff --git a/spec/temdd/TEMDD_TESTING_V0_1.md b/spec/temdd/TEMDD_TESTING_V0_1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fa9650e106c50299ff8269d4522e8514fb5674f4
+--- /dev/null
++++ b/spec/temdd/TEMDD_TESTING_V0_1.md
+@@ -0,0 +1,3 @@
++# TEMDD testing strategy v0.1
++
++Language changes require: parser unit tests; positive and negative corpus vectors; semantic invariant tests T01-T12; C90 differential vectors; backend-specific executable gates as those runtimes become admitted; formal obligations for invariants that are represented in Lean; repository integrity; and exact-subject CI. Tests must include failure cases because fail-closed behavior is part of the language semantics. A green transport/build job cannot substitute for semantic or effect readback.
+diff --git a/spec/temdd/TEMDD_VALIDATION_PLAN_V0_1.json b/spec/temdd/TEMDD_VALIDATION_PLAN_V0_1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..c7b32d8fa960d546f1a94da0387a97952979f592
+--- /dev/null
++++ b/spec/temdd/TEMDD_VALIDATION_PLAN_V0_1.json
+@@ -0,0 +1 @@
++{"schema":"temdd_validation_plan_v0_1","subject":"NEXT_EXACT_HEAD","order":["MATERIALIZE_DETERMINISTIC_INTEGRITY","RUN_TEMDD_CONFORMANCE","RUN_FULL_REPOSITORY_TEST","REOBSERVE_EXACT_HEAD_TREE","NATIVE_AUTHORITY_REVIEW","POST_REVIEW_REOBSERVATION","PROMOTE","FRESH_EXACT_MAIN_VALIDATION","FRESH_PRODUCTION_EFFECT_READBACK"],"predecessor_evidence_transfer":"DENY","stop_on_blocker":"HOLD_UNVERIFIED_AND_DERIVE_SUCCESSOR","done_only_on_full_dod":true}
+diff --git a/spec/temdd/TEMDD_VERSIONING_V0_1.md b/spec/temdd/TEMDD_VERSIONING_V0_1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..9339864025b32d1b9ad7880b153105416062b679
+--- /dev/null
++++ b/spec/temdd/TEMDD_VERSIONING_V0_1.md
+@@ -0,0 +1,5 @@
++# TEMDD versioning
++
++TEMDD language versions are independent from repository releases. A language mutation changes the exact candidate subject and resets downstream evidence. Backward compatibility is demonstrated by executable corpus vectors, never inferred from version numbers.
++
++`0.x` denotes bootstrap semantics. `1.0` requires executable gates for all declared production backends, compiled formal obligations, reproducible packaging, Main adoption, and fresh production readback. A version label alone cannot construct STABLE_LANGUAGE or DONE.
+diff --git a/src/qikvrt_effect_ack_http_terminal.py b/src/qikvrt_effect_ack_http_terminal.py
+index a4e41a9cc0e60976eb279bf59de7d0a6310db476..a2bf2c8c37b1c6303a87ddbd3b7420c35dc400c6 100644
+--- a/src/qikvrt_effect_ack_http_terminal.py
++++ b/src/qikvrt_effect_ack_http_terminal.py
+@@ -29,326 +29,119 @@ HOST = "127.0.0.1"
+ DEFAULT_PORT = 8771
+ SF_KEY = re.compile(r"^[a-z*][a-z0-9_.*-]*$")
+ 
+-
+ def canonical_json(value: Any) -> bytes:
+     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+-
+-
+ def sha256(value: bytes) -> str:
+     return hashlib.sha256(value).hexdigest()
+-
+-
+ def sf_bytes(raw: bytes) -> str:
+     return ":" + base64.b64encode(raw).decode("ascii") + ":"
+-
+-
+ def parse_sf_bytes(value: str) -> bytes:
+     if len(value) < 2 or not (value.startswith(":") and value.endswith(":")):
+         raise ValueError("Structured Field Byte Sequence required")
+-    try:
+-        return base64.b64decode(value[1:-1], validate=True)
+-    except (ValueError, base64.binascii.Error) as exc:
+-        raise ValueError("malformed Structured Field Byte Sequence") from exc
+-
+-
++    try: return base64.b64decode(value[1:-1], validate=True)
++    except (ValueError, base64.binascii.Error) as exc: raise ValueError("malformed Structured Field Byte Sequence") from exc
+ def parse_effect_ack_request(raw: str | None) -> dict[str, Any]:
+-    if raw is None or not raw.strip():
+-        raise ValueError("Effect-Ack-Request required")
++    if raw is None or not raw.strip(): raise ValueError("Effect-Ack-Request required")
+     members: dict[str, str] = {}
+     for item in raw.split(","):
+-        if "=" not in item:
+-            raise ValueError("malformed Effect-Ack-Request dictionary")
+-        key, value = item.split("=", 1)
+-        key = key.strip().lower()
+-        value = value.strip()
+-        if not SF_KEY.fullmatch(key) or key in members:
+-            raise ValueError("invalid or duplicate Effect-Ack-Request member")
+-        members[key] = value
+-    if set(members) - {"v", "mode", "token", "hash"}:
+-        raise ValueError("unknown Effect-Ack-Request member in version 1")
+-    try:
+-        version = int(members.get("v", ""))
+-    except ValueError as exc:
+-        raise ValueError("Effect-Ack-Request v must be an integer") from exc
+-    if version != 1:
+-        raise ValueError("unsupported Effect-Ack-Request version")
+-    mode = members.get("mode")
+-    if mode not in {"prepare", "commit"}:
+-        raise ValueError("Effect-Ack-Request mode must be prepare or commit")
++        if "=" not in item: raise ValueError("malformed Effect-Ack-Request dictionary")
++        key, value = item.split("=", 1); key=key.strip().lower(); value=value.strip()
++        if not SF_KEY.fullmatch(key) or key in members: raise ValueError("invalid or duplicate Effect-Ack-Request member")
++        members[key]=value
++    if set(members)-{"v","mode","token","hash"}: raise ValueError("unknown Effect-Ack-Request member in version 1")
++    try: version=int(members.get("v",""))
++    except ValueError as exc: raise ValueError("Effect-Ack-Request v must be an integer") from exc
++    if version != 1: raise ValueError("unsupported Effect-Ack-Request version")
++    mode=members.get("mode")
++    if mode not in {"prepare","commit"}: raise ValueError("Effect-Ack-Request mode must be prepare or commit")
+     if mode == "prepare":
+-        if set(members) != {"v", "mode"}:
+-            raise ValueError("prepare must not carry token or hash")
+-        return {"v": 1, "mode": "prepare"}
+-    if set(members) != {"v", "mode", "token", "hash"}:
+-        raise ValueError("commit requires token and hash")
+-    token_bytes = parse_sf_bytes(members["token"])
+-    try:
+-        token = token_bytes.decode("ascii")
+-    except UnicodeDecodeError as exc:
+-        raise ValueError("commit token must be ASCII") from exc
+-    hash_bytes = parse_sf_bytes(members["hash"])
+-    if len(hash_bytes) != 32:
+-        raise ValueError("commit hash must contain exactly 32 octets")
+-    return {"v": 1, "mode": "commit", "token": token, "hash": hash_bytes.hex()}
+-
+-
++        if set(members)!={"v","mode"}: raise ValueError("prepare must not carry token or hash")
++        return {"v":1,"mode":"prepare"}
++    if set(members)!={"v","mode","token","hash"}: raise ValueError("commit requires token and hash")
++    token_bytes=parse_sf_bytes(members["token"])
++    try: token=token_bytes.decode("ascii")
++    except UnicodeDecodeError as exc: raise ValueError("commit token must be ASCII") from exc
++    hash_bytes=parse_sf_bytes(members["hash"])
++    if len(hash_bytes)!=32: raise ValueError("commit hash must contain exactly 32 octets")
++    return {"v":1,"mode":"commit","token":token,"hash":hash_bytes.hex()}
+ def git_read(*args: str) -> str | None:
+-    try:
+-        return subprocess.check_output(["git", *args], text=True, stderr=subprocess.DEVNULL, timeout=2).strip()
+-    except (OSError, subprocess.SubprocessError):
+-        return None
+-
+-
++    try: return subprocess.check_output(["git",*args],text=True,stderr=subprocess.DEVNULL,timeout=2).strip()
++    except (OSError,subprocess.SubprocessError): return None
+ @dataclass
+ class Prepared:
+-    token: str
+-    input_hash: str
+-    record_hash: str
+-    expires_at: float
+-    used: bool = False
+-
+-
++    token:str; input_hash:str; record_hash:str; expires_at:float; used:bool=False
+ class State:
+-    def __init__(self) -> None:
+-        self.secret = secrets.token_bytes(32)
+-        self.lock = threading.Lock()
+-        self.prepared: dict[str, Prepared] = {}
+-        self.records: dict[str, dict[str, Any]] = {}
+-        self.events: list[dict[str, Any]] = []
+-
+-    def record(self, *, state: str, input_hash: str, ordinary_release: bool, reason: str) -> tuple[str, dict[str, Any]]:
+-        body = {
+-            "schema": "qikvrt_effect_ack_http_terminal_record_v1",
+-            "wire_version": 1,
+-            "message_type": "effect-ack-record",
+-            "state": state,
+-            "input_hash": "sha256:" + input_hash,
+-            "policy_id": "QIKVRT_LOOPBACK_TERMINAL_V1",
+-            "policy_version": 1,
+-            "policy_allows_release": ordinary_release,
+-            "ordinary_release": ordinary_release,
+-            "responsibility_owner": "LOCAL_INTERACTIVE_USER",
+-            "reason": reason,
+-            "created_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+-            "external_effect": "NONE",
+-        }
+-        digest = sha256(canonical_json(body))
+-        body["record_hash"] = "sha256:" + digest
+-        self.records[digest] = body
+-        return digest, body
+-
+-    def make_token(self, input_hash: str, record_hash: str) -> str:
+-        nonce = secrets.token_bytes(24)
+-        expires = int(time.time()) + TOKEN_TTL_SECONDS
+-        payload = nonce + expires.to_bytes(8, "big") + bytes.fromhex(input_hash) + bytes.fromhex(record_hash)
+-        mac = hmac.new(self.secret, payload, hashlib.sha256).digest()
+-        token = base64.urlsafe_b64encode(payload + mac).decode("ascii").rstrip("=")
+-        self.prepared[token] = Prepared(token, input_hash, record_hash, float(expires))
+-        return token
+-
+-
+-STATE = State()
+-
+-
++    def __init__(self)->None:
++        self.secret=secrets.token_bytes(32); self.lock=threading.Lock(); self.prepared:dict[str,Prepared]={}; self.records:dict[str,dict[str,Any]]={}; self.events:list[dict[str,Any]]=[]
++    def record(self,*,state:str,input_hash:str,ordinary_release:bool,reason:str)->tuple[str,dict[str,Any]]:
++        body={"schema":"qikvrt_effect_ack_http_terminal_record_v1","wire_version":1,"message_type":"effect-ack-record","state":state,"input_hash":"sha256:"+input_hash,"policy_id":"QIKVRT_LOOPBACK_TERMINAL_V1","policy_version":1,"policy_allows_release":ordinary_release,"ordinary_release":ordinary_release,"responsibility_owner":"LOCAL_INTERACTIVE_USER","reason":reason,"created_utc":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()),"external_effect":"NONE"}
++        digest=sha256(canonical_json(body)); body["record_hash"]="sha256:"+digest; self.records[digest]=body; return digest,body
++    def make_token(self,input_hash:str,record_hash:str)->str:
++        nonce=secrets.token_bytes(24); expires=int(time.time())+TOKEN_TTL_SECONDS; payload=nonce+expires.to_bytes(8,"big")+bytes.fromhex(input_hash)+bytes.fromhex(record_hash); mac=hmac.new(self.secret,payload,hashlib.sha256).digest(); token=base64.urlsafe_b64encode(payload+mac).decode("ascii").rstrip("="); self.prepared[token]=Prepared(token,input_hash,record_hash,float(expires)); return token
++STATE=State()
+ class Handler(BaseHTTPRequestHandler):
+-    server_version = "QIKVRTEffectAckTerminal/1.0"
+-
+-    def _json(
+-        self,
+-        code: int,
+-        body: dict[str, Any],
+-        *,
+-        state: str | None = None,
+-        record_hash: str | None = None,
+-        commit_token: str | None = None,
+-    ) -> None:
+-        payload = json.dumps(body, ensure_ascii=False, sort_keys=True, indent=2).encode("utf-8")
+-        self.send_response(code)
+-        self.send_header("Content-Type", "application/json; charset=utf-8")
+-        self.send_header("Content-Length", str(len(payload)))
+-        self.send_header("Cache-Control", "no-store")
+-        self.send_header("X-Content-Type-Options", "nosniff")
+-        self.send_header("Access-Control-Allow-Origin", "https://github.com")
+-        self.send_header("Access-Control-Expose-Headers", "Effect-Ack, Link")
+-        self.send_header("Link", "</.well-known/effect-ack>; rel=\"effect-ack\"; type=\"application/json\"")
++    server_version="QIKVRTEffectAckTerminal/1.0"
++    def _json(self,code:int,body:dict[str,Any],*,state:str|None=None,record_hash:str|None=None,commit_token:str|None=None)->None:
++        payload=json.dumps(body,ensure_ascii=False,sort_keys=True,indent=2).encode("utf-8"); self.send_response(code); self.send_header("Content-Type","application/json; charset=utf-8"); self.send_header("Content-Length",str(len(payload))); self.send_header("Cache-Control","no-store"); self.send_header("X-Content-Type-Options","nosniff"); self.send_header("Access-Control-Allow-Origin","https://github.com"); self.send_header("Access-Control-Expose-Headers","Effect-Ack, Link"); self.send_header("Link",'</.well-known/effect-ack>; rel="effect-ack"; type="application/json"')
+         if state and record_hash:
+-            state_token = {
+-                "EFFECT_NACK": "nack",
+-                "EFFECT_ACK_CONTINUE": "continue",
+-                "EFFECT_ACK_DONE": "done",
+-                "EFFECT_ACK_ISOLATE": "isolate",
+-                "EFFECT_ACK_BLOCK": "block",
+-            }[state]
+-            value = f"v=1, state={state_token}, hash={sf_bytes(bytes.fromhex(record_hash))}"
+-            if commit_token is not None:
+-                value += f", token={sf_bytes(commit_token.encode('ascii'))}"
+-            self.send_header("Effect-Ack", value)
+-        self.end_headers()
+-        self.wfile.write(payload)
+-
+-    def _read_body(self) -> dict[str, Any]:
+-        if self.headers.get("Transfer-Encoding"):
+-            raise ValueError("Transfer-Encoding unsupported")
+-        raw_length = self.headers.get("Content-Length")
+-        if raw_length is None:
+-            raise ValueError("Content-Length required")
+-        length = int(raw_length)
+-        if length < 1 or length > MAX_BODY:
+-            raise ValueError("body outside bounded size")
+-        if self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
+-            raise ValueError("application/json required")
+-        value = json.loads(self.rfile.read(length).decode("utf-8"))
+-        if not isinstance(value, dict):
+-            raise ValueError("JSON object required")
++            state_token={"EFFECT_NACK":"nack","EFFECT_ACK_CONTINUE":"continue","EFFECT_ACK_DONE":"done","EFFECT_ACK_ISOLATE":"isolate","EFFECT_ACK_BLOCK":"block"}[state]; value=f"v=1, state={state_token}, hash={sf_bytes(bytes.fromhex(record_hash))}"
++            if commit_token is not None: value+=f", token={sf_bytes(commit_token.encode('ascii'))}"
++            self.send_header("Effect-Ack",value)
++        self.end_headers(); self.wfile.write(payload)
++    def _read_body(self)->dict[str,Any]:
++        if self.headers.get("Transfer-Encoding"): raise ValueError("Transfer-Encoding unsupported")
++        raw_length=self.headers.get("Content-Length")
++        if raw_length is None: raise ValueError("Content-Length required")
++        length=int(raw_length)
++        if length<1 or length>MAX_BODY: raise ValueError("body outside bounded size")
++        if self.headers.get("Content-Type","").split(";",1)[0].strip().lower()!="application/json": raise ValueError("application/json required")
++        value=json.loads(self.rfile.read(length).decode("utf-8"))
++        if not isinstance(value,dict): raise ValueError("JSON object required")
+         return value
+-
+-    def do_OPTIONS(self) -> None:
+-        self.send_response(204)
+-        self.send_header("Access-Control-Allow-Origin", "https://github.com")
+-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Effect-Ack-Request")
+-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+-        self.send_header("Content-Length", "0")
+-        self.end_headers()
+-
+-    def do_GET(self) -> None:
+-        if self.path == "/.well-known/effect-ack":
+-            self._json(200, {
+-                "schema": "qikvrt_effect_ack_http_capability_v1",
+-                "versions": [1],
+-                "modes": ["prepare", "commit"],
+-                "protected_effects": ["terminal_input"],
+-                "external_effects": "NONE",
+-                "record_template": "/effect-ack/records/{sha256}",
+-            })
+-            return
+-        if self.path == "/terminal/state":
+-            head = git_read("rev-parse", "HEAD")
+-            tree = git_read("rev-parse", "HEAD^{tree}")
+-            with STATE.lock:
+-                body = {
+-                    "schema": "qikvrt_terminal_backend_state_v1",
+-                    "events": len(STATE.events),
+-                    "last_event": STATE.events[-1] if STATE.events else None,
+-                    "repository_head": head,
+-                    "repository_tree": tree,
+-                    "external_effects": "NONE",
+-                }
+-            self._json(200, body)
+-            return
+-        prefix = "/effect-ack/records/"
++    def do_OPTIONS(self)->None:
++        self.send_response(204); self.send_header("Access-Control-Allow-Origin","https://github.com"); self.send_header("Access-Control-Allow-Headers","Content-Type, Effect-Ack-Request"); self.send_header("Access-Control-Allow-Methods","GET, POST, OPTIONS"); self.send_header("Content-Length","0"); self.end_headers()
++    def do_GET(self)->None:
++        if self.path=="/.well-known/effect-ack": self._json(200,{"schema":"qikvrt_effect_ack_http_capability_v1","versions":[1],"modes":["prepare","commit"],"protected_effects":["terminal_input"],"external_effects":"NONE","record_template":"/effect-ack/records/{sha256}"}); return
++        if self.path=="/terminal/state":
++            head=git_read("rev-parse","HEAD"); tree=git_read("rev-parse","HEAD^{tree}")
++            with STATE.lock: body={"schema":"qikvrt_terminal_backend_state_v1","events":len(STATE.events),"last_event":STATE.events[-1] if STATE.events else None,"repository_head":head,"repository_tree":tree,"external_effects":"NONE"}
++            self._json(200,body); return
++        prefix="/effect-ack/records/"
+         if self.path.startswith(prefix):
+-            digest = self.path[len(prefix):]
+-            with STATE.lock:
+-                body = STATE.records.get(digest)
+-            if body is None:
+-                self._json(404, {"state": "HOLD", "reason": "record not found"})
+-            else:
+-                self._json(200, body, state=body["state"], record_hash=digest)
++            digest=self.path[len(prefix):]
++            with STATE.lock: body=STATE.records.get(digest)
++            if body is None:self._json(404,{"state":"HOLD","reason":"record not found"})
++            else:self._json(200,body,state=body["state"],record_hash=digest)
+             return
+-        self._json(404, {"state": "HOLD", "reason": "not found"})
+-
+-    def do_POST(self) -> None:
++        self._json(404,{"state":"HOLD","reason":"not found"})
++    def do_POST(self)->None:
+         try:
+-            request_binding = parse_effect_ack_request(self.headers.get("Effect-Ack-Request"))
+-            body = self._read_body()
+-            if self.path == "/terminal/prepare":
+-                if request_binding["mode"] != "prepare":
+-                    raise ValueError("prepare endpoint requires mode=prepare")
+-                self._prepare(body)
+-                return
+-            if self.path == "/terminal/commit":
+-                if request_binding["mode"] != "commit":
+-                    raise ValueError("commit endpoint requires mode=commit")
+-                self._commit(body, request_binding)
+-                return
+-            self._json(404, {"state": "HOLD", "reason": "not found"})
+-        except (ValueError, UnicodeError, json.JSONDecodeError) as exc:
+-            self._json(400, {"state": "HOLD", "ordinary_release": False, "reason": str(exc)})
+-
+-    def _prepare(self, body: dict[str, Any]) -> None:
+-        if body.get("schema") != "qikvrt_terminal_input_v1":
+-            digest, record = STATE.record(
+-                state="EFFECT_ACK_BLOCK",
+-                input_hash=sha256(canonical_json(body)),
+-                ordinary_release=False,
+-                reason="unsupported terminal schema",
+-            )
+-            self._json(422, {"record": record, "record_hash": digest}, state=record["state"], record_hash=digest)
+-            return
+-        input_hash = sha256(canonical_json(body))
++            request_binding=parse_effect_ack_request(self.headers.get("Effect-Ack-Request")); body=self._read_body()
++            if self.path=="/terminal/prepare":
++                if request_binding["mode"]!="prepare": raise ValueError("prepare endpoint requires mode=prepare")
++                self._prepare(body); return
++            if self.path=="/terminal/commit":
++                if request_binding["mode"]!="commit": raise ValueError("commit endpoint requires mode=commit")
++                self._commit(body,request_binding); return
++            self._json(404,{"state":"HOLD","reason":"not found"})
++        except (ValueError,UnicodeError,json.JSONDecodeError) as exc:self._json(400,{"state":"HOLD","ordinary_release":False,"reason":str(exc)})
++    def _prepare(self,body:dict[str,Any])->None:
++        if body.get("schema")!="qikvrt_terminal_input_v1":
++            digest,record=STATE.record(state="EFFECT_ACK_BLOCK",input_hash=sha256(canonical_json(body)),ordinary_release=False,reason="unsupported terminal schema"); self._json(422,{"record":record,"record_hash":digest},state=record["state"],record_hash=digest); return
++        input_hash=sha256(canonical_json(body))
++        with STATE.lock: digest,record=STATE.record(state="EFFECT_ACK_DONE",input_hash=input_hash,ordinary_release=True,reason="loopback terminal input satisfies bounded local policy"); token=STATE.make_token(input_hash,digest)
++        self._json(200,{"state":"EFFECT_ACK_DONE","ordinary_release":False,"commit_token":token,"record_hash":digest,"record_url":f"/effect-ack/records/{digest}","expires_in_seconds":TOKEN_TTL_SECONDS,"external_effect":"NONE"},state="EFFECT_ACK_DONE",record_hash=digest,commit_token=token)
++    def _commit(self,body:dict[str,Any],binding:dict[str,Any])->None:
++        token=binding["token"]; record_hash=binding["hash"]; commit_input_hash=sha256(canonical_json(body))
+         with STATE.lock:
+-            digest, record = STATE.record(
+-                state="EFFECT_ACK_DONE",
+-                input_hash=input_hash,
+-                ordinary_release=True,
+-                reason="loopback terminal input satisfies bounded local policy",
+-            )
+-            token = STATE.make_token(input_hash, digest)
+-        response = {
+-            "state": "EFFECT_ACK_DONE",
+-            "ordinary_release": False,
+-            "commit_token": token,
+-            "record_hash": digest,
+-            "record_url": f"/effect-ack/records/{digest}",
+-            "expires_in_seconds": TOKEN_TTL_SECONDS,
+-            "external_effect": "NONE",
+-        }
+-        self._json(200, response, state="EFFECT_ACK_DONE", record_hash=digest, commit_token=token)
+-
+-    def _commit(self, body: dict[str, Any], binding: dict[str, Any]) -> None:
+-        token = binding["token"]
+-        record_hash = binding["hash"]
+-        commit_input_hash = sha256(canonical_json(body))
+-        with STATE.lock:
+-            prepared = STATE.prepared.get(token)
+-            if prepared is None or prepared.used or prepared.expires_at < time.time() or not hmac.compare_digest(prepared.record_hash, record_hash):
+-                self._json(409, {"state": "HOLD", "ordinary_release": False, "reason": "invalid stale used or mismatched token"})
+-                return
+-            if not hmac.compare_digest(prepared.input_hash, commit_input_hash):
+-                self._json(409, {"state": "HOLD", "ordinary_release": False, "reason": "commit payload differs from exact prepared payload"})
+-                return
+-            prepared.used = True
+-            event = {
+-                "event_id": len(STATE.events) + 1,
+-                "kind": "TERMINAL_INPUT_ACCEPTED",
+-                "record_hash": record_hash,
+-                "input_hash": commit_input_hash,
+-                "text": str(body.get("text", ""))[:4096],
+-                "audio_present": body.get("audio") is not None,
+-                "video_present": body.get("video") is not None,
+-                "observed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+-                "external_effect": "NONE",
+-            }
+-            STATE.events.append(event)
+-            digest, record = STATE.record(
+-                state="EFFECT_ACK_DONE",
+-                input_hash=prepared.input_hash,
+-                ordinary_release=True,
+-                reason="single-use exact-bound loopback commit executed",
+-            )
+-        self._json(
+-            200,
+-            {"state": "EFFECT_ACK_DONE", "ordinary_release": True, "post_effect": event, "successor_record": record},
+-            state="EFFECT_ACK_DONE",
+-            record_hash=digest,
+-        )
+-
+-    def log_message(self, fmt: str, *args: Any) -> None:
+-        return
+-
+-
+-def main() -> int:
+-    parser = argparse.ArgumentParser()
+-    parser.add_argument("--host", default=HOST)
+-    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+-    args = parser.parse_args()
+-    if args.host not in {"127.0.0.1", "localhost"}:
+-        raise SystemExit("BLOCK: reference terminal bridge is loopback-only")
+-    server = ThreadingHTTPServer((args.host, args.port), Handler)
+-    print(json.dumps({"state": "READY", "host": args.host, "port": args.port, "external_effects": "NONE"}, sort_keys=True), flush=True)
+-    server.serve_forever()
+-    return 0
+-
+-
+-if __name__ == "__main__":
+-    raise SystemExit(main())
++            prepared=STATE.prepared.get(token)
++            if prepared is None or prepared.used or prepared.expires_at<time.time() or not hmac.compare_digest(prepared.record_hash,record_hash): self._json(409,{"state":"HOLD","ordinary_release":False,"reason":"invalid stale used or mismatched token"}); return
++            if not hmac.compare_digest(prepared.input_hash,commit_input_hash): self._json(409,{"state":"HOLD","ordinary_release":False,"reason":"commit payload differs from exact prepared payload"}); return
++            prepared.used=True; event={"event_id":len(STATE.events)+1,"kind":"TERMINAL_INPUT_ACCEPTED","record_hash":record_hash,"input_hash":commit_input_hash,"text":str(body.get("text",""))[:4096],"audio_present":body.get("audio") is not None,"video_present":body.get("video") is not None,"observed_at":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()),"external_effect":"NONE"}; STATE.events.append(event); digest,record=STATE.record(state="EFFECT_ACK_DONE",input_hash=prepared.input_hash,ordinary_release=True,reason="single-use exact-bound loopback commit executed")
++        self._json(200,{"state":"EFFECT_ACK_DONE","ordinary_release":True,"post_effect":event,"successor_record":record},state="EFFECT_ACK_DONE",record_hash=digest)
++    def log_message(self,fmt:str,*args:Any)->None:return
++def main()->int:
++    parser=argparse.ArgumentParser(); parser.add_argument("--host",default=HOST); parser.add_argument("--port",type=int,default=DEFAULT_PORT); args=parser.parse_args()
++    if args.host not in {"127.0.0.1","localhost"}: raise SystemExit("BLOCK: reference terminal bridge is loopback-only")
++    server=ThreadingHTTPServer((args.host,args.port),Handler); print(json.dumps({"state":"READY","host":args.host,"port":args.port,"external_effects":"NONE"},sort_keys=True),flush=True); server.serve_forever(); return 0
++if __name__=="__main__": raise SystemExit(main())
+diff --git a/src/qikvrt_temdd_event_ledger.py b/src/qikvrt_temdd_event_ledger.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6322bd45edb9de7d2aa07dee6fbc12307148475c
+--- /dev/null
++++ b/src/qikvrt_temdd_event_ledger.py
+@@ -0,0 +1,459 @@
++#!/usr/bin/env python3
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++"""Synchronous TEMDD ledger; socket/SSE transport lives outside the kernel.
++
++No scheduler, repository polling, review, promotion, or DoD inference. The
++owner-only Unix socket is a local native-producer trust boundary, not a GitHub
++webhook authenticator. A successful append means durable ledger readback only.
++"""
++from __future__ import annotations
++
++import argparse
++import contextlib
++from datetime import datetime, timezone
++import fcntl
++import hashlib
++import json
++import os
++from pathlib import Path
++import re
++import selectors
++import socket
++import socketserver
++import sqlite3
++import stat
++import subprocess
++import sys
++import threading
++from urllib.parse import parse_qs, urlsplit
++import uuid
++
++# Also supports loading as src.qikvrt_temdd_event_ledger in repository tests.
++try:
++    from . import qikvrt_effect_ack_http_terminal as terminal
++except ImportError:
++    import qikvrt_effect_ack_http_terminal as terminal
++
++MAX_EVENT = 65536
++KINDS = frozenset({'OBSERVE', 'CLASSIFY', 'ACTION', 'EFFECT', 'READBACK',
++                   'SUCCESSOR', 'HOLD'})
++SCHEMA = 'qikvrt_temdd_native_event_v1'
++HEX40 = re.compile(r'[0-9a-f]{40}\Z')
++CURSOR = re.compile(r'([0-9a-f]{32}):([1-9][0-9]{0,18})\Z')
++
++
++class Hold(ValueError):
++    """Fail-closed observation/ingress failure; never repository NOOP."""
++
++
++def canonical(value):
++    return json.dumps(value, ensure_ascii=False, sort_keys=True,
++                      separators=(',', ':'), allow_nan=False).encode('utf-8')
++
++
++def digest(value):
++    return hashlib.sha256(canonical(value)).hexdigest()
++
++
++def utc():
++    return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
++
++
++def subject(root, repository, pr):
++    """Observe one clean immutable checkout, without a floating tree lookup."""
++    def git(*args):
++        return subprocess.check_output(['git', '-C', str(root), *args],
++            stderr=subprocess.DEVNULL, timeout=5, text=True).strip()
++    try:
++        head = git('rev-parse', '--verify', 'HEAD^{commit}')
++        tree = git('rev-parse', '--verify', head + '^{tree}')
++        if not HEX40.fullmatch(head) or not HEX40.fullmatch(tree):
++            raise Hold('EXACT_SUBJECT_UNOBSERVABLE')
++        git('diff', '--quiet', head, '--')
++        if git('rev-parse', '--verify', 'HEAD^{commit}') != head:
++            raise Hold('EXACT_SUBJECT_CHANGED')
++    except (OSError, subprocess.SubprocessError) as exc:
++        raise Hold('EXACT_SUBJECT_UNOBSERVABLE_OR_DIRTY') from exc
++    if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository):
++        raise Hold('REPOSITORY_REQUIRED')
++    if type(pr) is not int or pr < 1:
++        raise Hold('PR_REQUIRED')
++    return {'repository': repository, 'pr': pr, 'head': head, 'tree': tree}
++
++
++class Ledger:
++    """One process owns the durable store; append is a finite transaction."""
++    def __init__(self, state_dir, exact_subject):
++        self.subject = dict(exact_subject)
++        self.binding = digest(self.subject)
++        self.condition = threading.Condition(threading.RLock())
++        self.stopped = False
++        self.reason = ''
++        self.listeners = set()
++        self.directory = Path(state_dir) / 'temdd'
++        if self.directory.is_symlink():
++            raise Hold('UNSAFE_LEDGER_DIRECTORY')
++        self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
++        info = self.directory.stat()
++        if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o077:
++            raise Hold('LEDGER_DIRECTORY_MUST_BE_OWNER_ONLY')
++        self.lock_fd = os.open(self.directory / 'owner.lock',
++            os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
++        try:
++            fcntl.flock(self.lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
++            for name in ('events.sqlite3', 'events.sqlite3-wal', 'events.sqlite3-shm'):
++                if (self.directory / name).is_symlink():
++                    raise Hold('UNSAFE_LEDGER_FILE')
++            self.db = sqlite3.connect(self.directory / 'events.sqlite3',
++                                      check_same_thread=False, timeout=5)
++            self.db.execute('PRAGMA journal_mode=WAL')
++            self.db.execute('PRAGMA synchronous=FULL')
++            with self.db:
++                self.db.execute('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
++                self.db.execute('CREATE TABLE IF NOT EXISTS events ('
++                    'seq INTEGER PRIMARY KEY AUTOINCREMENT, binding TEXT NOT NULL, '
++                    'source TEXT NOT NULL, native_id TEXT NOT NULL, native_digest TEXT NOT NULL, '
++                    'body TEXT NOT NULL, body_digest TEXT NOT NULL, UNIQUE(source,native_id))')
++                self.db.execute('CREATE INDEX IF NOT EXISTS events_binding ON events(binding,seq)')
++                self.db.execute('INSERT OR IGNORE INTO meta VALUES (?,?)', ('schema', '1'))
++                self.db.execute('INSERT OR IGNORE INTO meta VALUES (?,?)', ('epoch', uuid.uuid4().hex))
++            meta = dict(self.db.execute('SELECT key,value FROM meta'))
++            if meta.get('schema') != '1' or not re.fullmatch(r'[0-9a-f]{32}', meta.get('epoch', '')):
++                raise Hold('UNKNOWN_LEDGER_SCHEMA')
++            self.epoch = meta['epoch']
++            if self.db.execute('PRAGMA quick_check').fetchone() != ('ok',):
++                raise Hold('CORRUPT_LEDGER')
++        except BaseException:
++            if hasattr(self, 'db'):
++                self.db.close()
++            os.close(self.lock_fd)
++            raise
++
++    def _validate(self, event):
++        required = {'schema', 'kind', 'subject', 'provenance', 'observed_at', 'message', 'payload'}
++        if not isinstance(event, dict) or set(event) != required or event['schema'] != SCHEMA:
++            raise Hold('INVALID_NATIVE_EVENT')
++        if canonical(event['subject']) != canonical(self.subject):
++            raise Hold('EXACT_SUBJECT_MISMATCH')
++        if not isinstance(event['kind'], str) or event['kind'] not in KINDS:
++            raise Hold('INVALID_EVENT_KIND')
++        provenance = event['provenance']
++        if not isinstance(provenance, dict) or set(provenance) != {'source', 'native_event_id'}:
++            raise Hold('NATIVE_PROVENANCE_REQUIRED')
++        if provenance['source'] not in ('repository', 'transputer'):
++            raise Hold('UNADMITTED_PRODUCER')
++        native_id = provenance['native_event_id']
++        if not isinstance(native_id, str) or not re.fullmatch(r'[^\x00-\x20\x7f]{1,256}', native_id):
++            raise Hold('INVALID_NATIVE_EVENT_ID')
++        if not isinstance(event['message'], str) or len(event['message']) > 4096:
++            raise Hold('INVALID_EVENT_MESSAGE')
++        if not isinstance(event['payload'], dict):
++            raise Hold('PAYLOAD_OBJECT_REQUIRED')
++        observed = event['observed_at']
++        try:
++            if not isinstance(observed, str) or not observed.endswith('Z'):
++                raise ValueError()
++            datetime.fromisoformat(observed[:-1] + '+00:00')
++        except ValueError as exc:
++            raise Hold('UTC_OBSERVATION_REQUIRED') from exc
++        if len(canonical(event)) > MAX_EVENT:
++            raise Hold('EVENT_TOO_LARGE')
++
++    def _decode(self, row):
++        seq, binding, text, expected = row
++        body = json.loads(text)
++        if binding != self.binding or body.get('subject') != self.subject or digest(body) != expected:
++            raise Hold('LEDGER_READBACK_MISMATCH')
++        return dict(body, id=f'{self.epoch}:{seq}', ledger_digest=expected)
++
++    def append(self, event):
++        # Freeze caller-owned objects before validation / hashing / persistence.
++        event = json.loads(canonical(event))
++        self._validate(event)
++        native = digest(event)
++        provenance = event['provenance']
++        with self.condition:
++            if self.stopped:
++                raise Hold(self.reason or 'LEDGER_STOPPED')
++            old = self.db.execute('SELECT seq,native_digest FROM events WHERE source=? AND native_id=?',
++                (provenance['source'], provenance['native_event_id'])).fetchone()
++            if old is not None:
++                if old[1] != native:
++                    raise Hold('NATIVE_EVENT_ID_CONFLICT')
++                row = self.db.execute('SELECT seq,binding,body,body_digest FROM events WHERE seq=?', (old[0],)).fetchone()
++                return self._decode(row)
++            body = dict(event, schema='qikvrt_temdd_event_v1', recorded_at=utc(),
++                        payload_digest=digest(event['payload']), evidence_transfer='DENY', dod=False)
++            text = canonical(body).decode('utf-8')
++            with self.db:
++                result = self.db.execute('INSERT INTO events(binding,source,native_id,native_digest,body,body_digest) '
++                    'VALUES (?,?,?,?,?,?)', (self.binding, provenance['source'], provenance['native_event_id'], native, text, digest(body)))
++                seq = result.lastrowid
++            # No publish before COMMIT and exact durable readback.
++            row = self.db.execute('SELECT seq,binding,body,body_digest FROM events WHERE seq=?', (seq,)).fetchone()
++            readback = self._decode(row)
++            self._notify()
++            return readback
++
++    def cursor(self, value):
++        if not value:
++            return 0
++        if not isinstance(value, str):
++            raise Hold('INVALID_REPLAY_CURSOR')
++        match = CURSOR.fullmatch(value)
++        if not match or match[1] != self.epoch or int(match[2]) > 9223372036854775807:
++            raise Hold('INVALID_REPLAY_CURSOR')
++        seq = int(match[2])
++        with self.condition:
++            row = self.db.execute('SELECT seq,binding,body,body_digest FROM events WHERE seq=?', (seq,)).fetchone()
++            if row is None or row[1] != self.binding:
++                raise Hold('STALE_OR_UNKNOWN_REPLAY_CURSOR')
++            self._decode(row)
++        return seq
++
++    def replay(self, after):
++        with self.condition:
++            rows = self.db.execute('SELECT seq,binding,body,body_digest FROM events '
++                'WHERE binding=? AND seq>? ORDER BY seq LIMIT 128', (self.binding, after)).fetchall()
++            return [self._decode(row) for row in rows]
++
++    def _notify(self):
++        self.condition.notify_all()
++        for writer in tuple(self.listeners):
++            with contextlib.suppress(BlockingIOError, OSError):
++                writer.send(b'1')  # coalesced, nonblocking, at most 32 observers
++
++    def subscribe(self):
++        with self.condition:
++            reader, writer = socket.socketpair()
++            reader.setblocking(False)
++            writer.setblocking(False)
++            self.listeners.add(writer)
++            writer.send(b'1')  # closes the replay/subscribe race
++            return reader, writer
++
++    def unsubscribe(self, reader, writer):
++        with self.condition:
++            self.listeners.discard(writer)
++            reader.close()
++            writer.close()
++            self.condition.notify_all()
++
++    def stop(self, reason='PRODUCER_STOPPED'):
++        with self.condition:
++            self.stopped = True
++            self.reason = reason
++            self._notify()
++
++    def close(self):
++        self.stop()
++        with self.condition:
++            self.db.close()
++            os.close(self.lock_fd)
++
++
++class Runtime:
++    def __init__(self, root, state_dir, repository, pr):
++        self.root = Path(root).resolve()
++        self.repository, self.pr = repository, pr
++        self.subject = subject(self.root, repository, pr)
++        self.ledger = Ledger(state_dir, self.subject)
++        self.subscribers = threading.BoundedSemaphore(32)
++
++    def ensure_subject(self):
++        try:
++            if subject(self.root, self.repository, self.pr) != self.subject:
++                raise Hold('EXACT_SUBJECT_CHANGED_RESTART_REQUIRED')
++            if self.ledger.stopped:
++                raise Hold(self.ledger.reason)
++        except Hold as exc:
++            self.ledger.stop(str(exc))
++            raise
++        return self.subject
++
++    def append(self, event):
++        self.ensure_subject()
++        return self.ledger.append(event)
++
++
++def make_handler(runtime):
++    class Handler(terminal.Handler):
++        protocol_version = 'HTTP/1.1'
++
++        def _hold(self, reason, code=503):
++            self._json(code, {'state': 'HOLD', 'reason': reason, 'dod': False,
++                             'ordinary_release': False, 'evidence_transfer': 'DENY'})
++
++        def _frame(self, value, name=None, event_id=None):
++            frame = (f'event: {name}\n' if name else '')
++            frame += (f'id: {event_id}\n' if event_id else '')
++            self.wfile.write((frame + 'data: ' + canonical(value).decode('utf-8') + '\n\n').encode('utf-8'))
++            self.wfile.flush()
++
++        def do_GET(self):
++            path = urlsplit(self.path).path
++            if path not in ('/AI', '/AI/', '/api/temdd/subject', '/api/temdd/events'):
++                return super().do_GET()
++            host = self.headers.get('Host', '')
++            allowed_hosts = {f'127.0.0.1:{self.server.server_port}', f'localhost:{self.server.server_port}'}
++            if host not in allowed_hosts:
++                return self._hold('LOOPBACK_HOST_REQUIRED', 403)
++            if self.headers.get('Origin') not in (None, 'http://' + host):
++                return self._hold('SAME_ORIGIN_REQUIRED', 403)
++            try:
++                exact = runtime.ensure_subject()
++                if path in ('/AI', '/AI/'):
++                    data = (runtime.root / 'docs/terminal/temdd/index.html').read_bytes()
++                    self.send_response(200)
++                    self.send_header('Content-Type', 'text/html; charset=utf-8')
++                    self.send_header('Content-Length', str(len(data)))
++                    self.send_header('Cache-Control', 'no-store')
++                    self.send_header('X-Content-Type-Options', 'nosniff')
++                    self.end_headers()
++                    self.wfile.write(data)
++                    return
++                if path == '/api/temdd/subject':
++                    return self._json(200, {'subject': exact, 'ledger_id': runtime.ledger.epoch,
++                        'state': 'HOLD_UNVERIFIED', 'dod': False, 'evidence_transfer': 'DENY'})
++                query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
++                if set(query) - {'after'} or len(query.get('after', [''])) != 1:
++                    raise Hold('INVALID_REPLAY_QUERY')
++                # Native reconnect headers supersede the original URL's cursor.
++                after = runtime.ledger.cursor(self.headers.get('Last-Event-ID') or query.get('after', [''])[0])
++                if not runtime.subscribers.acquire(blocking=False):
++                    return self._hold('SUBSCRIBER_LIMIT')
++            except (ValueError, OSError, sqlite3.Error) as exc:
++                return self._hold(str(exc), 409 if isinstance(exc, Hold) else 503)
++            reader, writer = runtime.ledger.subscribe()
++            try:
++                self.connection.settimeout(5)  # bounded writes, not a polling timer
++                self.send_response(200)
++                self.send_header('Content-Type', 'text/event-stream; charset=utf-8')
++                self.send_header('Cache-Control', 'no-store')
++                self.send_header('X-Accel-Buffering', 'no')
++                self.send_header('X-Content-Type-Options', 'nosniff')
++                self.end_headers()
++                self._frame({'subject': exact, 'ledger_id': runtime.ledger.epoch,
++                    'dod': False, 'evidence_transfer': 'DENY'}, name='subject')
++                with selectors.DefaultSelector() as ready:
++                    ready.register(reader, selectors.EVENT_READ)
++                    ready.register(self.connection, selectors.EVENT_READ)
++                    while True:  # outer I/O adapter; no timed status queries
++                        for key, _ in ready.select():
++                            if key.fileobj is self.connection:
++                                return  # disconnect or unsupported pipelined input
++                        with contextlib.suppress(BlockingIOError):
++                            reader.recv(65536)
++                        while True:
++                            with runtime.ledger.condition:
++                                if runtime.ledger.stopped:
++                                    self._frame({'state': 'HOLD', 'reason': runtime.ledger.reason, 'dod': False}, name='hold')
++                                    return
++                                batch = runtime.ledger.replay(after)
++                            runtime.ensure_subject()
++                            for event in batch:
++                                self._frame(event, event_id=event['id'])
++                                after = int(event['id'].split(':')[1])
++                            if len(batch) < 128:
++                                break
++            except (OSError, ValueError, sqlite3.Error):
++                # Observer disconnect never changes repository execution state.
++                with contextlib.suppress(OSError):
++                    self._frame({'state': 'HOLD', 'reason': 'STREAM_READBACK_UNAVAILABLE', 'dod': False}, name='hold')
++            finally:
++                self.close_connection = True
++                runtime.ledger.unsubscribe(reader, writer)
++                runtime.subscribers.release()
++
++        def do_POST(self):
++            if urlsplit(self.path).path.startswith('/api/temdd/'):
++                return self._hold('NATIVE_UNIX_INGRESS_REQUIRED', 405)
++            return super().do_POST()
++    return Handler
++
++
++def make_ingress(runtime):
++    class Ingress(socketserver.StreamRequestHandler):
++        def handle(self):
++            self.connection.settimeout(5)
++            try:
++                raw = self.rfile.readline(MAX_EVENT + 2)
++                if len(raw) > MAX_EVENT + 1 or not raw.endswith(b'\n'):
++                    raise Hold('BOUNDED_EVENT_LINE_REQUIRED')
++                event = runtime.append(json.loads(raw))
++                result = {'state': 'PERSISTED', 'event': event, 'authority_effect': False, 'dod': False}
++            except (OSError, ValueError, sqlite3.Error, RecursionError) as exc:
++                result = {'state': 'HOLD', 'reason': str(exc), 'dod': False}
++            with contextlib.suppress(OSError):
++                self.wfile.write(canonical(result) + b'\n')
++    path = runtime.ledger.directory / 'ingress.sock'
++    if path.exists() or path.is_symlink():
++        if path.is_symlink() or not stat.S_ISSOCK(path.stat().st_mode):
++            raise Hold('UNSAFE_INGRESS_PATH')
++        path.unlink()  # store-owner lock excludes a live competing producer
++    server = socketserver.UnixStreamServer(str(path), Ingress)
++    os.chmod(path, 0o600)
++    return server
++
++
++def submit(state_dir, event):
++    raw = canonical(event)
++    if len(raw) > MAX_EVENT:
++        raise Hold('EVENT_TOO_LARGE')
++    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
++        client.settimeout(10)
++        client.connect(str(Path(state_dir) / 'temdd/ingress.sock'))
++        client.sendall(raw + b'\n')
++        with client.makefile('rb') as response:
++            result = json.loads(response.readline(MAX_EVENT * 2))
++    if result.get('state') != 'PERSISTED':
++        raise Hold(result.get('reason', 'LEDGER_READBACK_UNAVAILABLE'))
++    return result
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('operation', choices=('serve', 'append'))
++    parser.add_argument('--state-dir', required=True)
++    parser.add_argument('--host', default='127.0.0.1')
++    parser.add_argument('--port', type=int, default=8771)
++    parser.add_argument('--root', default=str(Path(__file__).resolve().parents[1]))
++    parser.add_argument('--repository', default='Goldkelch/qik-vrt')
++    parser.add_argument('--pr', type=int, default=1103)
++    args = parser.parse_args()
++    try:
++        if args.operation == 'append':
++            raw = sys.stdin.buffer.read(MAX_EVENT + 1)
++            if len(raw) > MAX_EVENT:
++                raise Hold('EVENT_TOO_LARGE')
++            print(canonical(submit(args.state_dir, json.loads(raw))).decode('utf-8'))
++            return 0
++        if args.host != '127.0.0.1':
++            raise Hold('LOOPBACK_ONLY')
++        runtime = Runtime(args.root, args.state_dir, args.repository, args.pr)
++        http = terminal.ThreadingHTTPServer((args.host, args.port), make_handler(runtime))
++        ingress = make_ingress(runtime)
++        thread = threading.Thread(target=ingress.serve_forever, daemon=True)
++        thread.start()  # outer I/O adapter, not a repository job scheduler
++        try:
++            runtime.append({'schema': SCHEMA, 'kind': 'OBSERVE', 'subject': runtime.subject,
++                'provenance': {'source': 'transputer', 'native_event_id': 'listener-bound:' + uuid.uuid4().hex},
++                'observed_at': utc(), 'message': 'Local TEMDD listeners bound; no DoD inference',
++                'payload': {'pid': os.getpid(), 'http_address': list(http.server_address)}})
++            print(canonical({'state': 'LISTENING', 'subject': runtime.subject, 'dod': False}).decode(), flush=True)
++            http.serve_forever()
++        finally:
++            runtime.ledger.stop()
++            ingress.shutdown()
++            ingress.server_close()
++            http.server_close()
++            thread.join(timeout=6)
++            runtime.ledger.close()
++        return 0
++    except (OSError, ValueError, sqlite3.Error, RecursionError) as exc:
++        print(canonical({'state': 'HOLD', 'reason': str(exc), 'dod': False}).decode(), file=sys.stderr)
++        return 2
++
++
++if __name__ == '__main__':
++    raise SystemExit(main())
+diff --git a/src/temdd_core.c b/src/temdd_core.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..f8be56548e4c05c2f564b4b7aa94fd2fc5587e41
+--- /dev/null
++++ b/src/temdd_core.c
+@@ -0,0 +1,14 @@
++/* TEMDD v0.1 C90 deterministic semantic kernel. */
++#include "temdd_core.h"
++temdd_state temdd_transition(temdd_state state, temdd_event event) {
++    if (state == TEMDD_DONE) return TEMDD_DONE;
++    if (event == TEMDD_EVENT_BLOCKER) return TEMDD_SUCCESSOR_REQUIRED;
++    if (event == TEMDD_EVENT_EVIDENCE) return TEMDD_CONTINUE;
++    return TEMDD_HOLD;
++}
++int temdd_done(const int predicates[6]) {
++    int i;
++    if (!predicates) return 0;
++    for (i = 0; i < 6; ++i) if (!predicates[i]) return 0;
++    return 1;
++}
+diff --git a/tests/temdd/README.md b/tests/temdd/README.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d536d9ae376b96feec052502db3bfe02b892cc8f
+--- /dev/null
++++ b/tests/temdd/README.md
+@@ -0,0 +1,3 @@
++# TEMDD executable corpus
++
++`positive/` programs MUST parse and elaborate deterministically. `negative/` programs MUST fail closed. The corpus is executed by the TEMDD conformance workflow. Mutation of language semantics requires adding or updating a regression vector before adoption.
+diff --git a/tests/temdd/negative/duplicate_dod_predicate.temdd b/tests/temdd/negative/duplicate_dod_predicate.temdd
+new file mode 100644
+index 0000000000000000000000000000000000000000..4f1d65144f2e829bc08c8d52e92737e16f02cb57
+--- /dev/null
++++ b/tests/temdd/negative/duplicate_dod_predicate.temdd
+@@ -0,0 +1 @@
++temdd 0.1; authority owner = "Goldkelch/qik-vrt"; subject s { repository = "Goldkelch/qik-vrt"; binding = exact; } request r { target = QIKVRT_DOD; } on event { follow exact; } until { ZERO_BUGS && ZERO_BUGS && ALL_PULL_REQUESTS_REGARDED && ALL_BRANCHES_REGARDED && ALL_PRODUCTIVE_BRANCHES_MERGED && FRESH_EXACT_MAIN_VALIDATION_PASS && FRESH_EFFECT_READBACK; }
+diff --git a/tests/temdd/negative/floating_subject.temdd b/tests/temdd/negative/floating_subject.temdd
+new file mode 100644
+index 0000000000000000000000000000000000000000..923068f427111b0a7db3852c57536430e0ae7190
+--- /dev/null
++++ b/tests/temdd/negative/floating_subject.temdd
+@@ -0,0 +1 @@
++temdd 0.1; authority owner = "Goldkelch/qik-vrt"; subject s { repository = "Goldkelch/qik-vrt"; binding = floating; } request r { target = QIKVRT_DOD; } on event { follow exact; } until { ZERO_BUGS && FRESH_EFFECT_READBACK; }
+diff --git a/tests/temdd/negative/missing_authority.temdd b/tests/temdd/negative/missing_authority.temdd
+new file mode 100644
+index 0000000000000000000000000000000000000000..9c3e65aa96728fc91337c1f8dfa31e32cac21447
+--- /dev/null
++++ b/tests/temdd/negative/missing_authority.temdd
+@@ -0,0 +1 @@
++temdd 0.1; subject s { repository = "Goldkelch/qik-vrt"; binding = exact; } request r { target = QIKVRT_DOD; } on event { follow exact; } until { ZERO_BUGS && FRESH_EFFECT_READBACK; }
+diff --git a/tests/temdd/negative/missing_dod.temdd b/tests/temdd/negative/missing_dod.temdd
+new file mode 100644
+index 0000000000000000000000000000000000000000..85a80d2d35eebca722a3d5215887bf213dbc30f7
+--- /dev/null
++++ b/tests/temdd/negative/missing_dod.temdd
+@@ -0,0 +1 @@
++temdd 0.1; authority owner = "Goldkelch/qik-vrt"; subject s { repository = "Goldkelch/qik-vrt"; binding = exact; } request r { target = QIKVRT_DOD; } on event { follow exact; }
+diff --git a/tests/temdd/negative/no_handler.temdd b/tests/temdd/negative/no_handler.temdd
+new file mode 100644
+index 0000000000000000000000000000000000000000..ce0a3819f96d61f87673e69e1a8a0eea01dcd2da
+--- /dev/null
++++ b/tests/temdd/negative/no_handler.temdd
+@@ -0,0 +1 @@
++temdd 0.1; authority owner = "Goldkelch/qik-vrt"; subject s { repository = "Goldkelch/qik-vrt"; binding = exact; } request r { target = QIKVRT_DOD; } until { ZERO_BUGS && FRESH_EFFECT_READBACK; }
+diff --git a/tests/temdd/negative/no_readback_dod.temdd b/tests/temdd/negative/no_readback_dod.temdd
+new file mode 100644
+index 0000000000000000000000000000000000000000..5c60dbeb0a2d2ae7a96d0dbb25e3a6a6cdd341d1
+--- /dev/null
++++ b/tests/temdd/negative/no_readback_dod.temdd
+@@ -0,0 +1 @@
++temdd 0.1; authority owner = "Goldkelch/qik-vrt"; subject s { repository = "Goldkelch/qik-vrt"; binding = exact; } request r { target = QIKVRT_DOD; } on event { follow exact; } until { ZERO_BUGS; }
+diff --git a/tests/temdd/negative/unsupported_version.temdd b/tests/temdd/negative/unsupported_version.temdd
+new file mode 100644
+index 0000000000000000000000000000000000000000..2d67f1c6796aff289eaef8842c7ae0a659ac3b55
+--- /dev/null
++++ b/tests/temdd/negative/unsupported_version.temdd
+@@ -0,0 +1 @@
++temdd 1.0; authority owner = "Goldkelch/qik-vrt"; subject s { repository = "Goldkelch/qik-vrt"; binding = exact; } request r { target = CUSTOM_DOD; } on event { follow exact; } until { ZERO_BUGS; }
+diff --git a/tests/temdd/positive/minimal.temdd b/tests/temdd/positive/minimal.temdd
+new file mode 100644
+index 0000000000000000000000000000000000000000..a0508be351967cee8322714d897f1c3263e036b8
+--- /dev/null
++++ b/tests/temdd/positive/minimal.temdd
+@@ -0,0 +1 @@
++temdd 0.1; authority owner = "Goldkelch/qik-vrt"; subject s { repository = "Goldkelch/qik-vrt"; binding = exact; } request r { target = CUSTOM_DOD; } on event { follow exact; } until { ZERO_BUGS && FRESH_EFFECT_READBACK; }
+diff --git a/tests/test_qikvrt_universal_terminal_network_boundary.py b/tests/test_qikvrt_universal_terminal_network_boundary.py
+index ef90a7f2a0b6beac59e34426b9328bf662266de6..1bd5c5e8d91399163637e3a0fc5b8cad94c0df59 100644
+--- a/tests/test_qikvrt_universal_terminal_network_boundary.py
++++ b/tests/test_qikvrt_universal_terminal_network_boundary.py
+@@ -6,6 +6,8 @@ import unittest
+ ROOT = pathlib.Path(__file__).resolve().parents[1]
+ COMPOSE = ROOT / "deploy/universal-terminal/compose.yaml"
+ POLICY = ROOT / "policy/QIKVRT_UNIVERSAL_TERMINAL_VIRTUALIZATION_V1.json"
++ENTRYPOINT = ROOT / "deploy/universal-terminal/entrypoint.sh"
++WORKFLOW = ROOT / ".github/workflows/qikvrt_universal_terminal_container.yml"
+ 
+ 
+ class UniversalTerminalNetworkBoundaryTests(unittest.TestCase):
+@@ -16,6 +18,16 @@ class UniversalTerminalNetworkBoundaryTests(unittest.TestCase):
+         self.assertNotIn('"0.0.0.0:', text)
+         self.assertNotIn('"[::]:', text)
+ 
++    def test_unsigned_reference_extension_is_explicit_ci_only_opt_in(self):
++        entrypoint = ENTRYPOINT.read_text(encoding="utf-8")
++        workflow = WORKFLOW.read_text(encoding="utf-8")
++        self.assertIn("QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION", entrypoint)
++        self.assertIn('user_pref("xpinstall.signatures.required", false);', entrypoint)
++        self.assertEqual(
++            workflow.count("QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION=1"),
++            2,
++        )
++
+     def test_policy_forbids_non_loopback_exposure(self):
+         policy = json.loads(POLICY.read_text(encoding="utf-8"))
+         boundary = policy["network_boundary"]
+diff --git a/tests/test_temdd.py b/tests/test_temdd.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..52e9464d877b1b263f6582ed8fe04dd8ca2f514a
+--- /dev/null
++++ b/tests/test_temdd.py
+@@ -0,0 +1,23 @@
++import unittest
++from tools.qikvrt_temdd import parse
++GOOD='''temdd 0.1; authority owner = "Goldkelch/qik-vrt"; subject s { repository = "Goldkelch/qik-vrt"; binding = exact; } request r { target = CUSTOM_DOD; } on event { follow exact; classify causal; } on blocker { learn smallest_sound_successor; execute successor; } until { ZERO_BUGS && FRESH_EFFECT_READBACK; }'''
++class TEMDDTests(unittest.TestCase):
++ def test_deterministic_ir(self): self.assertEqual(parse(GOOD),parse(GOOD))
++ def test_exact_binding(self): self.assertEqual(parse(GOOD)['subject']['binding'],'exact')
++ def test_dod_conjunction(self): self.assertEqual(parse(GOOD)['dod'],['ZERO_BUGS','FRESH_EFFECT_READBACK'])
++ def test_missing_authority_blocks(self):
++  with self.assertRaises(ValueError): parse(GOOD.replace('authority owner = "Goldkelch/qik-vrt";',''))
++ def test_nonexact_binding_blocks(self):
++  with self.assertRaises(ValueError): parse(GOOD.replace('binding = exact','binding = floating'))
++ def test_missing_repository_blocks(self):
++  with self.assertRaises(ValueError): parse(GOOD.replace('repository = "Goldkelch/qik-vrt";',''))
++ def test_subject_scope_not_global(self):
++  bad=GOOD.replace('repository = "Goldkelch/qik-vrt";','')+' repository = "evil/global";'
++  with self.assertRaises(ValueError): parse(bad)
++ def test_missing_handler_blocks(self):
++  with self.assertRaises(ValueError): parse(GOOD.replace('on event { follow exact; classify causal; }','').replace('on blocker { learn smallest_sound_successor; execute successor; }',''))
++ def test_qikvrt_dod_is_complete(self):
++  with self.assertRaises(ValueError): parse(GOOD.replace('CUSTOM_DOD','QIKVRT_DOD'))
++ def test_duplicate_dod_blocks(self):
++  with self.assertRaises(ValueError): parse(GOOD.replace('ZERO_BUGS &&','ZERO_BUGS && ZERO_BUGS &&'))
++if __name__=='__main__': unittest.main()
+diff --git a/tests/test_temdd_core.c b/tests/test_temdd_core.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..18c575d0fb3116dd951dc7e42bda63783bcb7ba1
+--- /dev/null
++++ b/tests/test_temdd_core.c
+@@ -0,0 +1,10 @@
++#include "temdd_core.h"
++int main(void) {
++ int no[6]={1,1,1,1,1,0}; int yes[6]={1,1,1,1,1,1};
++ if (temdd_transition(TEMDD_HOLD,TEMDD_EVENT_UNKNOWN)!=TEMDD_HOLD) return 1;
++ if (temdd_transition(TEMDD_HOLD,TEMDD_EVENT_EVIDENCE)!=TEMDD_CONTINUE) return 2;
++ if (temdd_transition(TEMDD_CONTINUE,TEMDD_EVENT_BLOCKER)!=TEMDD_SUCCESSOR_REQUIRED) return 3;
++ if (temdd_done(no)) return 4;
++ if (!temdd_done(yes)) return 5;
++ return 0;
++}
+diff --git a/tests/test_temdd_event_ledger.py b/tests/test_temdd_event_ledger.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..187230e0bab7512811c0e9d71c4f6498be5f06ef
+--- /dev/null
++++ b/tests/test_temdd_event_ledger.py
+@@ -0,0 +1,421 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++"""Fresh fixture-local producer, replay, HTTP, and consumer regression tests."""
++from __future__ import annotations
++
++import copy
++import http.client
++import json
++from pathlib import Path
++import shutil
++import socket
++import sqlite3
++import subprocess
++import sys
++import tempfile
++import threading
++import unittest
++from unittest import mock
++
++ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT / 'src'))
++import qikvrt_temdd_event_ledger as m
++
++
++class ProducerTests(unittest.TestCase):
++    def setUp(self):
++        self.temp = tempfile.TemporaryDirectory()
++        self.root = Path(self.temp.name) / 'repo'
++        self.root.mkdir()
++        self.state = Path(self.temp.name) / 'state'
++        page = self.root / 'docs/terminal/temdd/index.html'
++        page.parent.mkdir(parents=True)
++        shutil.copyfile(ROOT / 'docs/terminal/temdd/index.html', page)
++        self.git('init', '-q')
++        self.git('config', 'user.name', 'TEMDD fixture')
++        self.git('config', 'user.email', 'fixture@example.invalid')
++        self.git('add', '.')
++        self.git('commit', '-qm', 'fixture')
++        self.runtime = m.Runtime(self.root, self.state, 'Goldkelch/qik-vrt', 1103)
++        self.http = self.ingress = None
++        self.threads = []
++        m.terminal.STATE = m.terminal.State()
++
++    def tearDown(self):
++        self.stop_servers()
++        self.runtime.ledger.close()
++        self.temp.cleanup()
++
++    def git(self, *args):
++        return subprocess.check_output(['git', '-C', str(self.root), *args], stderr=subprocess.DEVNULL).decode().strip()
++
++    def event(self, native='native:1', **changes):
++        event = {'schema': m.SCHEMA, 'kind': 'READBACK', 'subject': copy.deepcopy(self.runtime.subject),
++                 'provenance': {'source': 'repository', 'native_event_id': native},
++                 'observed_at': '2026-09-15T20:00:00Z', 'message': 'native fixture readback',
++                 'payload': {'receipt': 'fixture-only; not production evidence'}}
++        event.update(changes)
++        return event
++
++    def start_servers(self):
++        self.http = m.terminal.ThreadingHTTPServer(('127.0.0.1', 0), m.make_handler(self.runtime))
++        self.ingress = m.make_ingress(self.runtime)
++        for server in (self.http, self.ingress):
++            t = threading.Thread(target=server.serve_forever, daemon=True)
++            t.start()
++            self.threads.append(t)
++
++    def stop_servers(self):
++        if self.http:
++            self.runtime.ledger.stop()
++            for server in (self.http, self.ingress):
++                server.shutdown()
++                server.server_close()
++            for t in self.threads:
++                t.join(timeout=3)
++                self.assertFalse(t.is_alive())
++            self.http = self.ingress = None
++            self.threads = []
++
++    def request(self, method, path, body=None, headers=None):
++        c = http.client.HTTPConnection(*self.http.server_address, timeout=3)
++        c.request(method, path, body=body, headers=headers or {})
++        r = c.getresponse()
++        data = r.read()
++        status = r.status
++        c.close()
++        return status, data
++
++    def stream(self, query='', headers=None):
++        c = http.client.HTTPConnection(*self.http.server_address, timeout=3)
++        c.request('GET', '/api/temdd/events' + query, headers=headers or {})
++        r = c.getresponse()
++        self.assertEqual(r.status, 200)
++        self.assertTrue(r.getheader('Content-Type').startswith('text/event-stream'))
++        first = self.frame(r)
++        self.assertEqual(first['event'], 'subject')
++        self.assertEqual(json.loads(first['data'])['subject'], self.runtime.subject)
++        return c, r
++
++    def frame(self, response):
++        result = {}
++        while True:
++            line = response.readline()
++            self.assertTrue(line, 'unexpected SSE EOF')
++            if line == b'\n':
++                return result
++            key, value = line.decode().rstrip('\n').split(': ', 1)
++            result[key] = value
++
++    def disconnect(self, c, r):
++        if c.sock:
++            c.sock.shutdown(socket.SHUT_RDWR)
++        r.close()
++        c.close()
++
++    def test_durable_restart_and_monotonic_ids(self):
++        first = self.runtime.append(self.event())
++        self.runtime.ledger.close()
++        self.runtime = m.Runtime(self.root, self.state, 'Goldkelch/qik-vrt', 1103)
++        self.assertEqual(self.runtime.ledger.replay(0), [first])
++        second = self.runtime.append(self.event('native:2'))
++        self.assertEqual(second['id'], first['id'].rsplit(':', 1)[0] + ':2')
++        self.assertFalse(first['dod'])
++        self.assertEqual(first['evidence_transfer'], 'DENY')
++        self.assertEqual(first['payload_digest'], m.digest(self.event()['payload']))
++
++    def test_idempotent_delivery_and_conflicting_native_id(self):
++        first = self.runtime.append(self.event())
++        self.assertEqual(self.runtime.append(self.event()), first)
++        with self.assertRaisesRegex(m.Hold, 'CONFLICT'):
++            self.runtime.append(self.event(message='changed'))
++        self.assertEqual(len(self.runtime.ledger.replay(0)), 1)
++
++    def test_wrong_head_tree_repository_and_pr_rejected(self):
++        for field, value in [('head', 'a'*40), ('tree', 'b'*40), ('repository', 'ingolf-lohmann/qik-vrt'), ('pr', 1104)]:
++            event = self.event()
++            event['subject'][field] = value
++            with self.subTest(field=field), self.assertRaisesRegex(m.Hold, 'SUBJECT_MISMATCH'):
++                self.runtime.append(event)
++        self.assertEqual(self.runtime.ledger.replay(0), [])
++
++    def test_malformed_and_oversized_ingress_rejected(self):
++        cases = [self.event(dod=True), self.event(kind='DONE'), self.event(payload=[]),
++                 self.event(observed_at='not-a-time'), self.event(message='x'*4097),
++                 self.event(payload={'oversized': 'x'*m.MAX_EVENT}), self.event(payload={'x': float('nan')})]
++        event = self.event()
++        event['provenance']['native_event_id'] = 'newline\nforgery'
++        cases.append(event)
++        for event in cases:
++            with self.subTest(event=str(event)[:100]), self.assertRaises(ValueError):
++                self.runtime.append(event)
++        self.assertEqual(self.runtime.ledger.replay(0), [])
++
++    def test_unknown_foreign_and_future_cursors_hold(self):
++        first = self.runtime.append(self.event())
++        bad = ['1', 'unknown:1', '0'*32+':1', first['id'].rsplit(':', 1)[0]+':999',
++               first['id'].rsplit(':', 1)[0]+':9223372036854775808', first['id']+'\n']
++        for cursor in bad:
++            with self.subTest(cursor=cursor), self.assertRaises(m.Hold):
++                self.runtime.ledger.cursor(cursor)
++        self.assertEqual(self.runtime.ledger.cursor(first['id']), 1)
++
++    def test_successor_never_replays_predecessor_evidence(self):
++        first = self.runtime.append(self.event())
++        self.runtime.ledger.close()
++        (self.root/'successor.txt').write_text('new subject\n')
++        self.git('add', '.')
++        self.git('commit', '-qm', 'successor')
++        self.runtime = m.Runtime(self.root, self.state, 'Goldkelch/qik-vrt', 1103)
++        self.assertEqual(self.runtime.ledger.replay(0), [])
++        with self.assertRaisesRegex(m.Hold, 'STALE'):
++            self.runtime.ledger.cursor(first['id'])
++        with self.assertRaisesRegex(m.Hold, 'CONFLICT'):
++            self.runtime.append(self.event())
++        second = self.runtime.append(self.event('successor:2'))
++        self.assertTrue(second['id'].endswith(':2'))
++        self.assertNotEqual(first['subject'], second['subject'])
++
++    def test_runtime_head_mutation_invalidates_observers(self):
++        (self.root/'changed.txt').write_text('changed\n')
++        self.git('add', '.')
++        self.git('commit', '-qm', 'changed')
++        with self.assertRaisesRegex(m.Hold, 'CHANGED'):
++            self.runtime.append(self.event())
++        self.assertTrue(self.runtime.ledger.stopped)
++        self.assertEqual(self.runtime.ledger.replay(0), [])
++
++    def test_dirty_checkout_is_unobservable(self):
++        (self.root/'docs/terminal/temdd/index.html').write_text('dirty')
++        with self.assertRaisesRegex(m.Hold, 'DIRTY'):
++            self.runtime.ensure_subject()
++        self.assertTrue(self.runtime.ledger.stopped)
++
++    def test_copied_checkout_ignores_stat_cache_drift_but_not_byte_changes(self):
++        copied = Path(self.temp.name) / 'image-checkout'
++        # Docker COPY changes cached inode/mtime metadata without changing Git bytes.
++        shutil.copytree(self.root, copied, copy_function=shutil.copyfile)
++        self.assertEqual(m.subject(copied, 'Goldkelch/qik-vrt', 1103), self.runtime.subject)
++        (copied/'docs/terminal/temdd/index.html').write_text('actual byte mutation')
++        with self.assertRaisesRegex(m.Hold, 'DIRTY'):
++            m.subject(copied, 'Goldkelch/qik-vrt', 1103)
++
++    def test_storage_failure_never_publishes(self):
++        self.runtime.ledger.db.execute("CREATE TRIGGER deny BEFORE INSERT ON events BEGIN SELECT RAISE(FAIL, 'disk failure fixture'); END")
++        with mock.patch.object(self.runtime.ledger.condition, 'notify_all') as notify:
++            with self.assertRaises(sqlite3.Error):
++                self.runtime.append(self.event())
++            notify.assert_not_called()
++        self.assertEqual(self.runtime.ledger.replay(0), [])
++
++    def test_commit_before_notification_failure_is_replayable(self):
++        with mock.patch.object(self.runtime.ledger.condition, 'notify_all', side_effect=RuntimeError('crash point')):
++            with self.assertRaises(RuntimeError):
++                self.runtime.append(self.event())
++        self.runtime.ledger.close()
++        self.runtime = m.Runtime(self.root, self.state, 'Goldkelch/qik-vrt', 1103)
++        rows = self.runtime.ledger.replay(0)
++        self.assertEqual(len(rows), 1)
++        self.assertEqual(self.runtime.append(self.event()), rows[0])
++
++    def test_tampered_readback_holds(self):
++        first = self.runtime.append(self.event())
++        self.runtime.ledger.db.execute("UPDATE events SET body = replace(body, 'native fixture readback', 'tampered')")
++        self.runtime.ledger.db.commit()
++        with self.assertRaisesRegex(m.Hold, 'READBACK_MISMATCH'):
++            self.runtime.ledger.replay(0)
++        with self.assertRaises(m.Hold):
++            self.runtime.ledger.cursor(first['id'])
++
++    def test_store_has_exclusive_owner_and_private_ingress(self):
++        with self.assertRaises(BlockingIOError):
++            m.Ledger(self.state, self.runtime.subject)
++        self.start_servers()
++        self.assertEqual((self.state/'temdd').stat().st_mode & 0o777, 0o700)
++        self.assertEqual((self.state/'temdd/ingress.sock').stat().st_mode & 0o777, 0o600)
++
++    def test_concurrent_native_deliveries_have_distinct_monotonic_ids(self):
++        results, errors = [], []
++        def append(i):
++            try:
++                results.append(self.runtime.ledger.append(self.event(f'parallel:{i}')))
++            except BaseException as exc:
++                errors.append(exc)
++        threads = [threading.Thread(target=append, args=(i,)) for i in range(12)]
++        for t in threads:
++            t.start()
++        for t in threads:
++            t.join(timeout=5)
++            self.assertFalse(t.is_alive())
++        self.assertEqual(errors, [])
++        self.assertEqual(sorted(int(x['id'].split(':')[1]) for x in results), list(range(1, 13)))
++
++    def test_real_socket_sse_disconnect_replay_and_header_precedence(self):
++        self.start_servers()
++        c, r = self.stream()
++        first = m.submit(self.state, self.event())['event']
++        frame = self.frame(r)
++        self.assertEqual(frame['id'], first['id'])
++        self.assertEqual(json.loads(frame['data']), first)
++        self.disconnect(c, r)
++        second = m.submit(self.state, self.event('native:2'))['event']
++        third = m.submit(self.state, self.event('native:3'))['event']
++        self.assertFalse(self.runtime.ledger.stopped)
++        c, r = self.stream('?after='+first['id'], {'Last-Event-ID': second['id']})
++        self.assertEqual(self.frame(r)['id'], third['id'])
++        self.disconnect(c, r)
++
++    def test_disconnect_releases_observer_without_a_new_event(self):
++        self.start_servers()
++        c, r = self.stream()
++        self.assertEqual(len(self.runtime.ledger.listeners), 1)
++        self.disconnect(c, r)
++        with self.runtime.ledger.condition:
++            released = self.runtime.ledger.condition.wait_for(
++                lambda: not self.runtime.ledger.listeners, timeout=3)
++        self.assertTrue(released)
++        self.assertFalse(self.runtime.ledger.stopped)
++        self.assertEqual(self.runtime.ledger.replay(0), [])
++
++    def test_real_socket_restart_preserves_replay(self):
++        self.start_servers()
++        first = m.submit(self.state, self.event())['event']
++        self.stop_servers()
++        self.runtime.ledger.close()
++        self.runtime = m.Runtime(self.root, self.state, 'Goldkelch/qik-vrt', 1103)
++        self.start_servers()
++        second = m.submit(self.state, self.event('native:2'))['event']
++        c, r = self.stream('?after='+first['id'])
++        self.assertEqual(self.frame(r)['id'], second['id'])
++        self.disconnect(c, r)
++
++    def test_invalid_http_cursor_and_browser_writes_fail_closed(self):
++        self.start_servers()
++        for method, path, expected in [('GET', '/api/temdd/events?after=bad', 409),
++                ('GET', '/api/temdd/events?after=x&after=y', 409),
++                ('POST', '/api/temdd/events', 405)]:
++            status, data = self.request(method, path, body='{}' if method=='POST' else None)
++            self.assertEqual(status, expected)
++            self.assertEqual(json.loads(data)['state'], 'HOLD')
++        self.assertEqual(self.runtime.ledger.replay(0), [])
++
++    def test_foreign_origin_and_rebinding_host_are_rejected(self):
++        self.start_servers()
++        for headers in [{'Origin': 'https://untrusted.invalid'}, {'Host': 'untrusted.invalid'}]:
++            status, data = self.request('GET', '/api/temdd/subject', headers=headers)
++            self.assertEqual(status, 403)
++            self.assertFalse(json.loads(data)['dod'])
++
++    def test_ai_surface_and_subject_are_served(self):
++        self.start_servers()
++        status, data = self.request('GET', '/AI')
++        self.assertEqual(status, 200)
++        self.assertIn(b'/api/temdd/events', data)
++        status, data = self.request('GET', '/api/temdd/subject')
++        envelope = json.loads(data)
++        self.assertEqual(status, 200)
++        self.assertEqual(envelope['subject'], self.runtime.subject)
++        self.assertEqual(envelope['state'], 'HOLD_UNVERIFIED')
++        self.assertFalse(envelope['dod'])
++
++    def test_legacy_effect_ack_remains_exact_bound_and_single_use(self):
++        self.start_servers()
++        status, data = self.request('GET', '/.well-known/effect-ack')
++        self.assertEqual(status, 200)
++        self.assertEqual(json.loads(data)['external_effects'], 'NONE')
++        payload = json.dumps({'schema': 'qikvrt_terminal_input_v1', 'text': 'fixture'})
++        headers = {'Content-Type': 'application/json', 'Effect-Ack-Request': 'v=1, mode=prepare'}
++        status, data = self.request('POST', '/terminal/prepare', payload, headers)
++        prepared = json.loads(data)
++        self.assertEqual(status, 200)
++        headers['Effect-Ack-Request'] = ('v=1, mode=commit, token=' + m.terminal.sf_bytes(prepared['commit_token'].encode())
++                                       + ', hash=' + m.terminal.sf_bytes(bytes.fromhex(prepared['record_hash'])))
++        status, _ = self.request('POST', '/terminal/commit', payload.replace('fixture', 'different'), headers)
++        self.assertEqual(status, 409)
++        status, _ = self.request('POST', '/terminal/commit', payload, headers)
++        self.assertEqual(status, 200)
++        status, _ = self.request('POST', '/terminal/commit', payload, headers)
++        self.assertEqual(status, 409)
++        self.assertEqual(self.runtime.ledger.replay(0), [])  # terminal ACK is not a TEMDD proof
++
++    def test_cli_append_is_finite_and_returns_durable_readback(self):
++        self.start_servers()
++        command = [sys.executable, '-B', str(ROOT/'src/qikvrt_temdd_event_ledger.py'),
++                   'append', '--state-dir', str(self.state)]
++        result = subprocess.run(command, input=json.dumps(self.event('cli:1')),
++                                capture_output=True, text=True, timeout=10)
++        self.assertEqual(result.returncode, 0, result.stderr)
++        receipt = json.loads(result.stdout)
++        self.assertEqual(receipt['state'], 'PERSISTED')
++        self.assertFalse(receipt['authority_effect'])
++        self.assertEqual(self.runtime.ledger.replay(0), [receipt['event']])
++        wrong = self.event('cli:2')
++        wrong['subject']['head'] = '0'*40
++        result = subprocess.run(command, input=json.dumps(wrong),
++                                capture_output=True, text=True, timeout=10)
++        self.assertEqual(result.returncode, 2)
++        self.assertEqual(json.loads(result.stderr)['state'], 'HOLD')
++        self.assertEqual(len(self.runtime.ledger.replay(0)), 1)
++
++    def test_repository_entrypoint_and_test_admission(self):
++        entrypoint = (ROOT/'deploy/universal-terminal/entrypoint.sh').read_text()
++        self.assertIn('src/qikvrt_temdd_event_ledger.py serve', entrypoint)
++        self.assertIn('--state-dir "$STATE_DIR"', entrypoint)
++        subprocess.run(['sh', '-n', str(ROOT/'deploy/universal-terminal/entrypoint.sh')],
++                       check=True, timeout=5)
++        makefile = (ROOT/'Makefile').read_text()
++        self.assertIn('test: temdd-event-ledger-test', makefile)
++        self.assertIn('tests/test_temdd_event_ledger.py', makefile)
++        workflow = (ROOT/'.github/workflows/qikvrt_temdd.yml').read_text()
++        self.assertIn('github.event.pull_request.head.sha || github.sha', workflow)
++        self.assertIn('make temdd-event-ledger-test', workflow)
++        self.assertIn("'REPOSITORY_FILE_MANIFEST.json.sha256'", workflow)
++        self.assertNotIn("'REPOSITORY_FILE_MANIFEST.sha256'", workflow)
++
++    def test_browser_ide_is_local_editable_and_effect_free(self):
++        page = (ROOT/'docs/terminal/temdd/index.html').read_text(encoding='utf-8')
++        self.assertIn('id="ideSource"', page)
++        self.assertIn('ANALYZE → IR', page)
++        self.assertIn('function analyzeTemdd(text)', page)
++        self.assertIn('QIKVRT_DOD requires complete canonical predicate', page)
++        self.assertIn('TRANSPORT_ACK != EFFECT_ACK', page)
++        self.assertNotIn("fetch('/api/temdd/events',{method:'POST'", page)
++        self.assertNotIn('fetch("/api/temdd/events",{method:"POST"', page)
++
++    def test_browser_ide_parser_matches_reference_example_shape(self):
++        page = (ROOT/'docs/terminal/temdd/index.html').read_text(encoding='utf-8')
++        self.assertIn("schema:'temdd_ir_v0_1'", page)
++        self.assertIn("version!=='0.1'", page)
++        self.assertIn("binding:'exact'", page)
++        self.assertIn('FRESH_EFFECT_READBACK', page)
++
++    def test_consumer_validation_and_reconnect_state_machine(self):
++        js = r'''
++const fs=require('fs'),vm=require('vm'),assert=require('assert');
++const html=fs.readFileSync(process.argv[1],'utf8'),script=html.match(/<script>([\s\S]*)<\/script>/)[1];
++const elements=new Map(),storage=new Map(),sources=[];
++const subj={repository:'Goldkelch/qik-vrt',pr:1103,head:'a'.repeat(40),tree:'b'.repeat(40)},epoch='c'.repeat(32);
++class ES{constructor(url){this.url=url;this.handlers={};this.closed=false;sources.push(this);}addEventListener(n,f){this.handlers[n]=f;}close(){this.closed=true;}}
++const ctx={document:{getElementById(id){if(!elements.has(id))elements.set(id,{textContent:'',className:'',scrollHeight:0});return elements.get(id);}},
++ localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},EventSource:ES,
++ fetch:async()=>({ok:true,json:async()=>({subject:subj,ledger_id:epoch,dod:false,evidence_transfer:'DENY'})}),Date,JSON,BigInt,Number,Error,console};
++vm.createContext(ctx);vm.runInContext(script,ctx);
++setImmediate(()=>{try{
++ const es=sources[0];assert(es);es.onopen();assert.equal(elements.get('state').textContent,'CONNECTED');
++ es.handlers.subject({data:JSON.stringify({subject:subj,ledger_id:epoch,dod:false,evidence_transfer:'DENY'})});
++ assert.equal(elements.get('state').textContent,'OBSERVING');
++ const event={schema:'qikvrt_temdd_event_v1',subject:subj,id:epoch+':1',kind:'READBACK',message:'<script>not html</script>',dod:false,evidence_transfer:'DENY'};
++ es.onmessage({data:JSON.stringify(event),lastEventId:event.id});assert.equal(storage.size,1);
++ es.onerror();assert.equal(es.closed,false);assert.equal(elements.get('state').textContent,'HOLD');assert.equal(elements.get('dod').textContent,'NOT PROVEN');
++ es.onopen();es.handlers.subject({data:JSON.stringify({subject:subj,ledger_id:epoch,dod:false,evidence_transfer:'DENY'})});
++ event.id=epoch+':2';event.dod=true;es.onmessage({data:JSON.stringify(event),lastEventId:event.id});
++ assert.equal(es.closed,true);assert.equal(elements.get('dod').textContent,'NOT PROVEN');assert.equal([...storage.values()][0],epoch+':1');
++ console.log('consumer reconnect, exact-subject binding, and false-DONE rejection PASS');
++}catch(e){console.error(e);process.exitCode=1;}});
++'''
++        result = subprocess.run(['node', '-e', js, str(ROOT/'docs/terminal/temdd/index.html')],
++                                capture_output=True, text=True, timeout=15)
++        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
++
++
++if __name__ == '__main__':
++    unittest.main(verbosity=2)
+diff --git a/tools/qikvrt_temdd.py b/tools/qikvrt_temdd.py
+new file mode 100755
+index 0000000000000000000000000000000000000000..740b757baca640ca4f3300b8669d0ebf09439efc
+--- /dev/null
++++ b/tools/qikvrt_temdd.py
+@@ -0,0 +1,30 @@
++#!/usr/bin/env python3
++"""TEMDD v0.1 deterministic reference parser/elaborator."""
++import json,re,sys
++from pathlib import Path
++ID=r"[A-Za-z][A-Za-z0-9_-]*"
++QIKVRT_DOD={'ZERO_BUGS','ALL_PULL_REQUESTS_REGARDED','ALL_BRANCHES_REGARDED','ALL_PRODUCTIVE_BRANCHES_MERGED','FRESH_EXACT_MAIN_VALIDATION_PASS','FRESH_EFFECT_READBACK'}
++def parse(text):
++ def one(p,label,src=None):
++  m=re.search(p,text if src is None else src,re.S)
++  if not m: raise ValueError('missing '+label)
++  return m
++ v=one(r"^\s*temdd\s+([0-9.]+)\s*;",'version').group(1)
++ if v!='0.1': raise ValueError('unsupported version')
++ a=one(r"authority\s+"+ID+r"\s*=\s*\"([^\"]+)\"\s*;",'authority').group(1)
++ s=one(r"subject\s+("+ID+r")\s*\{(.*?)\}",'subject'); sb=s.group(2)
++ rm=one(r"repository\s*=\s*\"([^\"]+)\"\s*;",'repository',sb); one(r"binding\s*=\s*exact\s*;",'exact binding',sb)
++ q=one(r"request\s+("+ID+r")\s*\{\s*target\s*=\s*("+ID+r")\s*;\s*\}",'request'); target=q.group(2)
++ handlers=[]
++ for m in re.finditer(r"on\s+(event|blocker)\s*\{(.*?)\}",text,re.S): handlers.append({'event':m.group(1),'statements':[x.strip() for x in m.group(2).split(';') if x.strip()]})
++ d=one(r"until\s*\{(.*?)\}",'until').group(1).strip().rstrip(';'); dod=[x.strip() for x in d.split('&&') if x.strip()]
++ if not handlers or not dod: raise ValueError('handlers and DoD required')
++ if len(set(dod))!=len(dod): raise ValueError('duplicate DoD predicate')
++ if target=='QIKVRT_DOD' and set(dod)!=QIKVRT_DOD: raise ValueError('QIKVRT_DOD requires complete canonical predicate')
++ return {'schema':'temdd_ir_v0_1','version':v,'authority':a,'subject':{'name':s.group(1),'repository':rm.group(1),'binding':'exact'},'request':{'name':q.group(1),'target':target},'handlers':handlers,'dod':dod}
++def main(argv):
++ if len(argv)!=2:return 64
++ try: ir=parse(Path(argv[1]).read_text(encoding='utf-8'))
++ except (OSError,ValueError) as e: print('BLOCK '+str(e),file=sys.stderr);return 2
++ print(json.dumps(ir,sort_keys=True,separators=(',',':')));return 0
++if __name__=='__main__':raise SystemExit(main(sys.argv))
+diff --git a/tools/qikvrt_temdd_conformance.py b/tools/qikvrt_temdd_conformance.py
+new file mode 100755
+index 0000000000000000000000000000000000000000..d8d3b99ea7eabb11e048757856f2ee1b43ce30ad
+--- /dev/null
++++ b/tools/qikvrt_temdd_conformance.py
+@@ -0,0 +1,21 @@
++#!/usr/bin/env python3
++"""TEMDD semantic conformance T01-T12. Fail closed."""
++from collections import namedtuple
++Evidence=namedtuple('Evidence','subject kind fresh')
++DOD=('ZERO_BUGS','ALL_PULL_REQUESTS_REGARDED','ALL_BRANCHES_REGARDED','ALL_PRODUCTIVE_BRANCHES_MERGED','FRESH_EXACT_MAIN_VALIDATION_PASS','FRESH_EFFECT_READBACK')
++def evidence(subject,kind,fresh=True): return Evidence(subject,kind,fresh)
++def admits(e,subject,kind): return e.subject==subject and e.kind==kind and e.fresh
++def successor(subject,mutation): return subject+'@successor:'+mutation
++def done(predicates): return all(bool(predicates.get(x,False)) for x in DOD)
++def check():
++ s='repo@head/tree'; t=successor(s,'m1'); e=evidence(s,'validation')
++ assert admits(e,s,'validation') and not admits(e,t,'validation')
++ assert 'TRANSPORT_ACK'!='EFFECT_ACK' and 'RESULT'!='EFFECT'
++ assert {'HOLD','CONTINUE'}.isdisjoint({'NOOP','DONE'})
++ assert not done({x:True for x in DOD if x!='ALL_PULL_REQUESTS_REGARDED'})
++ assert not admits(evidence(s,'authority',False),s,'authority')
++ p={x:True for x in DOD}; p['FRESH_EFFECT_READBACK']=False; assert not done(p)
++ assert 'UNKNOWN' not in {'EFFECT_ACK','DONE'}
++ assert t!=s and not admits(e,t,'validation')
++ print('TEMDD_CONFORMANCE T01-T12 PASS')
++if __name__=='__main__': check()
