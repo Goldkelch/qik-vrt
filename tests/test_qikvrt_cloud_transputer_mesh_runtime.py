@@ -65,6 +65,7 @@ def test_ai_and_legacy_mesh_routes_resolve_the_same_live_targets():
         "/qik-vrt/mesh/v1/terminal/vnc.html",
         "/qik-vrt/mesh/v1/effect-ack/.well-known/effect-ack",
         "/qik-vrt/mesh/v1/effect-ack/terminal/state",
+        "/qik-vrt/mesh/v1/effect-ack/AI",
         "/qik-vrt/mesh/v1/healthz",
     }
     for base in ("https://runtime.example/AI/", "https://runtime.example/qik-vrt/mesh/v1/"):
