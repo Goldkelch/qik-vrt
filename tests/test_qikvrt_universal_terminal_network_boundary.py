@@ -6,6 +6,8 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 COMPOSE = ROOT / "deploy/universal-terminal/compose.yaml"
 POLICY = ROOT / "policy/QIKVRT_UNIVERSAL_TERMINAL_VIRTUALIZATION_V1.json"
+ENTRYPOINT = ROOT / "deploy/universal-terminal/entrypoint.sh"
+WORKFLOW = ROOT / ".github/workflows/qikvrt_universal_terminal_container.yml"
 
 
 class UniversalTerminalNetworkBoundaryTests(unittest.TestCase):
@@ -15,6 +17,16 @@ class UniversalTerminalNetworkBoundaryTests(unittest.TestCase):
         self.assertNotIn("QIKVRT_BIND_ADDRESS", text)
         self.assertNotIn('"0.0.0.0:', text)
         self.assertNotIn('"[::]:', text)
+
+    def test_unsigned_reference_extension_is_explicit_ci_only_opt_in(self):
+        entrypoint = ENTRYPOINT.read_text(encoding="utf-8")
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION", entrypoint)
+        self.assertIn('user_pref("xpinstall.signatures.required", false);', entrypoint)
+        self.assertEqual(
+            workflow.count("QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION=1"),
+            2,
+        )
 
     def test_policy_forbids_non_loopback_exposure(self):
         policy = json.loads(POLICY.read_text(encoding="utf-8"))

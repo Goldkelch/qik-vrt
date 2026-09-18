@@ -16,6 +16,22 @@ if [ ! -f "$PROFILE_DIR/.qikvrt-profile-initialized" ]; then
   : > "$PROFILE_DIR/.qikvrt-profile-initialized"
 fi
 
+# Production keeps Firefox signature enforcement.  The isolated repository-native
+# smoke test may explicitly admit the unsigned reference package so its
+# persistent profile lifecycle can be exercised without weakening deployment.
+case "${QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION:-0}" in
+  0) ;;
+  1)
+    if ! grep -Fqx 'user_pref("xpinstall.signatures.required", false);' "$PROFILE_DIR/user.js"; then
+      printf '%s\n' 'user_pref("xpinstall.signatures.required", false);' >> "$PROFILE_DIR/user.js"
+    fi
+    ;;
+  *)
+    echo "BLOCK: QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION must be 0 or 1" >&2
+    exit 64
+    ;;
+esac
+
 python3 -B /opt/qikvrt/src/qikvrt_temdd_event_ledger.py serve \
   --host 127.0.0.1 --port "$HTTP_PORT" --state-dir "$STATE_DIR" \
   > /opt/qikvrt/runtime/logs/effect-ack-http.log 2>&1 &
