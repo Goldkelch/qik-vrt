@@ -29,13 +29,18 @@ IMPLEMENTATION_FILES = (
     "tools/qikvrt_temdd.py",
     "src/temdd/v1_adapter.py",
     "src/qikvrt_temdd_event_ledger.py",
+    "src/temdd_core.c",
+    "include/temdd_core.h",
+    "runtime/temdd/TEMDDRuntime.st",
+    "runtime/m68000/temdd_transition.s",
     "formalization/TEMDDCore.lean",
     "docs/terminal/temdd/index.html",
 )
 
 PASS_FIELDS = (
-    "language", "ir", "event_semantics", "ledger", "evidence_binding",
-    "causality", "effect_ack", "formal_invariants", "negative_vectors",
+    "language", "ir", "event_semantics", "ledger", "ide", "evidence_binding",
+    "causality", "effect_ack", "execution", "formal_invariants", "tests",
+    "negative_vectors",
 )
 
 def sha256_bytes(data: bytes) -> str:
@@ -145,13 +150,38 @@ def check_formal_core() -> None:
     ):
         require(theorem in text, "FORMAL_OBLIGATION_NOT_MATERIALIZED:" + theorem)
 
-def build_report(repository: str, adapter: str) -> dict:
+def check_repository_tests() -> None:
+    p = subprocess.run(
+        [sys.executable, "-m", "unittest", "tests.test_temdd", "tests.test_temdd_event_ledger"],
+        cwd=ROOT, text=True, capture_output=True, check=False,
+    )
+    require(p.returncode == 0, "TEMDD_TEST_SUITE_FAILED:" + (p.stderr or p.stdout)[-2000:])
+
+def check_backend_receipt(path: Path, subject: dict) -> str:
+    receipt = json.loads(path.read_text(encoding="utf-8"))
+    require(receipt.get("schema") == "qikvrt_temdd_executable_backends_v1", "BACKEND_RECEIPT_SCHEMA_MISMATCH")
+    require(receipt.get("repository") == subject["repository"], "BACKEND_RECEIPT_REPOSITORY_MISMATCH")
+    require(receipt.get("source_sha") == subject["head"], "BACKEND_RECEIPT_HEAD_MISMATCH")
+    require(receipt.get("source_tree") == subject["tree"], "BACKEND_RECEIPT_TREE_MISMATCH")
+    require(receipt.get("predecessor_evidence_transfer") is False, "BACKEND_RECEIPT_EVIDENCE_TRANSFER")
+    expected = {
+        "c90": "EXECUTED_SUCCESS",
+        "smalltalk": "EXECUTED_SUCCESS",
+        "m68000": "EXECUTED_SUCCESS_QEMU_USER",
+        "lean": "COMPILED_SUCCESS_LEAN_4_19_LAKE",
+    }
+    require(receipt.get("backends") == expected, "BACKEND_RECEIPT_EXECUTION_MISMATCH")
+    return "sha256:" + sha256_bytes(path.read_bytes())
+
+def build_report(repository: str, adapter: str, backend_receipt: Path) -> dict:
     subject = exact_subject(repository)
     check_language_and_ir(adapter)
     vectors = json.loads((ROOT / "conformance/temdd/vectors-v1.json").read_text(encoding="utf-8"))
     require(vectors.get("schema") == "temdd_conformance_vectors_v1", "VECTOR_SCHEMA_MISMATCH")
     check_t13_t16(vectors)
     check_formal_core()
+    check_repository_tests()
+    execution_receipt_digest = check_backend_receipt(backend_receipt, subject)
 
     report = {
         "schema": "temdd_conformance_report_v1",
@@ -164,14 +194,18 @@ def build_report(repository: str, adapter: str) -> dict:
             "version": "1",
             "digest": manifest_digest(SUITE_FILES),
         },
+        "execution_receipt_digest": execution_receipt_digest,
         "language": "PASS",
         "ir": "PASS",
         "event_semantics": "PASS",
         "ledger": "PASS",
+        "ide": "PASS",
         "evidence_binding": "PASS",
         "causality": "PASS",
         "effect_ack": "PASS",
+        "execution": "PASS",
         "formal_invariants": "PASS",
+        "tests": "PASS",
         "negative_vectors": "PASS",
         "overall": "PASS",
     }
@@ -184,10 +218,11 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--repository", default="Goldkelch/qik-vrt")
     p.add_argument("--adapter", default="src/temdd/v1_adapter.py")
+    p.add_argument("--backend-receipt", required=True)
     p.add_argument("--output")
     args = p.parse_args(argv)
     try:
-        report = build_report(args.repository, args.adapter)
+        report = build_report(args.repository, args.adapter, Path(args.backend_receipt))
     except Exception as exc:
         print("HOLD_UNVERIFIED " + str(exc), file=sys.stderr)
         return 2
