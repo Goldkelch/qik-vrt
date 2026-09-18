@@ -1,0 +1,161 @@
+{
+  "schema": "qikvrt_work_unit_v1",
+  "work_unit_id": "SEED_DASHBOARD_CONTINUE_REPAIR_34880403356_V1",
+  "repository": "Goldkelch/qik-vrt",
+  "source_ref": "refs/heads/main",
+  "source_commit": "a86054139b49c13c5cd344753b248b46b5daf66f",
+  "source_tree": "feff1cae2401a3df83febc3b9458de70d79b818e",
+  "source_job": {
+    "run_id": 34880403356,
+    "run_attempt": 2,
+    "job_id": 104098276444,
+    "url": "https://github.com/Goldkelch/qik-vrt/actions/runs/34880403356/job/104098276444",
+    "step": "Refresh, revalidate, and build dashboard",
+    "observed": [
+      "QIKVRT_SEED_MAINTENANCE PASS run_id=34880403356-2",
+      "QIKVRT_SEED_REVALIDATE CONTINUE run_id=34880403356-2",
+      "Process completed with exit code 10.",
+      "include-hidden-files: false"
+    ]
+  },
+  "repair_lane": {
+    "pull_request": 924,
+    "predecessor_commit": "9b864908b177817c12b4894d91f7ceaa6e761b5f",
+    "strategy": "Preserve the existing PR history, integrate the observed Main tree, and complete its nonterminal-boundary repair without transferring predecessor checks or reviews."
+  },
+  "root_cause": "The CLI deliberately returns 10 for all non-PASS semantic results. The fail-fast Bash pipeline aborts on valid revalidation CONTINUE before a dashboard HOLD can be recorded.",
+  "reuse_analysis": [
+    "PR #924 already stages HOLD, but trusts exit 10 without distinguishing BLOCK, has an indented here-document terminator, and still uploads old dashboard exports.",
+    "PRs #982 and #1041 normalize CONTINUE to process success but do not satisfy the separate PASS-only dashboard export gate.",
+    "PR #887 implements a broader Seed control plane; the requested dashboard job needs only the existing #924 workflow repair."
+  ],
+  "changes": [
+    "Handle only revalidation exit 10 plus a persisted current-run CONTINUE receipt as HOLD; bind repository, source head/tree, run and attempt, source aggregate run ids and counters.",
+    "Preserve maintenance failures, unexpected revalidation exits, BLOCK/unknown/missing/misbound receipts and tee failures.",
+    "Keep the existing dashboard and audit PASS-only export gate unchanged.",
+    "Advertise fresh dashboard export paths only after successful generation; omit checked-out old exports on HOLD or failure.",
+    "Enable upload of explicitly enumerated hidden evidence paths, including the exact-head and HOLD receipts."
+  ],
+  "contributions": [
+    {
+      "kind": "HUMAN",
+      "actor": "Ingolf Lohmann",
+      "contribution": "Requested diagnosis and implementation of the linked failing Actions job."
+    },
+    {
+      "kind": "ARTIFICIAL_COGNITIVE_SYSTEM",
+      "actor": "OpenAI Codex",
+      "model_identity": "UNAVAILABLE",
+      "contribution": "Analyzed exact logs and existing repairs; implemented workflow correction and offline subprocess regressions; prepared integrity materialization and repository validation."
+    }
+  ],
+  "evidence_retention": "METADATA_ONLY",
+  "human_acceptance": "PENDING",
+  "verification": {
+    "red_phase": "Three new regressions failed on the unmodified Main workflow; the stale-node subprocess reproduced exit 10 and the literal CONTINUE log.",
+    "focused_command": "python3 -B -m unittest -v tests.test_seed_workflows tests.test_qikvrt_workflow_executor_mesh_contract",
+    "coverage": [
+      "Real revalidation CLI on stale and fresh offline fixtures",
+      "HOLD receipt exact binding and absence of newly exported old dashboard bytes",
+      "PASS-only dashboard/audit gate",
+      "BLOCK, unknown, missing and stale or misbound receipts",
+      "Maintenance and revalidation process failures",
+      "Explicit inclusion of hidden evidence in the upload allowlist"
+    ],
+    "required_before_commit": [
+      "git diff --check",
+      "python3 -B tools/qikvrt_integrity.py generate",
+      "python3 -B tools/qikvrt_integrity.py verify",
+      "make test"
+    ],
+    "candidate_binding": "The containing Git commit and its tree bind the implementation and integrity trio. Fresh remote Actions observations remain separate.",
+    "focused_result": "31 tests passed",
+    "full_suite_result": "make test exited 0 after the workflow and tests were fixed; final metadata and integrity are reverified before branch update.",
+    "full_suite_log_sha256": "fe67a48de63ad2ad0b4e16e1a9004de801eeedd4011a406e509f1cb7604c5811"
+  },
+  "boundaries": {
+    "native_approval": false,
+    "main_adoption": false,
+    "publication": false,
+    "deployment": false,
+    "EFFECT_ACK_DONE": false,
+    "predecessor_evidence_transfer": false
+  },
+  "next_action": "Observe fresh checks on the successor of PR #924; native review and protected Main adoption remain separate. A subsequent Main run must read back either a bound HOLD or freshly produced dashboard exports.",
+  "created_at": "2026-09-14T18:36:51.332169+00:00",
+  "source_repository": "Goldkelch/qik-vrt",
+  "human_actor": "Ingolf Lohmann",
+  "artificial_cognitive_actor": {
+    "provider": "OpenAI",
+    "system_family": "Codex",
+    "model_or_build": "UNAVAILABLE",
+    "session_or_run_id": "32b2c414725d",
+    "tools_and_adapters": [
+      "GitHub connector",
+      "Git",
+      "Bash",
+      "Python standard library"
+    ],
+    "identity_and_observation_limits": "Platform attribution is not biometric identity; local tests do not establish a hosted Actions or protected Main effect."
+  },
+  "human_contributions": [
+    "Task selection, linked failing job and authorization to implement the fix."
+  ],
+  "artificial_cognitive_contributions": [
+    "Exact log diagnosis, reuse assessment, workflow and test implementation, local validation."
+  ],
+  "joint_components": [],
+  "unresolved_origin": [],
+  "human_decision": "PENDING",
+  "external_effects": {
+    "scope": "Existing PR #924 repair branch only",
+    "main_adoption": "NOT_PERFORMED",
+    "review": "NOT_PERFORMED",
+    "publication": "NOT_PERFORMED",
+    "deployment": "NOT_PERFORMED"
+  },
+  "release_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  },
+  "git_history": {
+    "first_parent": "9b864908b177817c12b4894d91f7ceaa6e761b5f",
+    "additional_parent": "a86054139b49c13c5cd344753b248b46b5daf66f",
+    "changed_paths": [
+      ".github/workflows/qikvrt_seed_dashboard_publish.yml",
+      "tests/test_seed_workflows.py",
+      "state/work_units/SEED_DASHBOARD_CONTINUE_REPAIR_34880403356_V1.json",
+      "REPOSITORY_FILE_MANIFEST.json",
+      "REPOSITORY_FILE_MANIFEST.json.sha256",
+      "SHA256SUMS.txt"
+    ],
+    "history_rewrite": false
+  },
+  "inputs": [
+    {
+      "path": ".github/workflows/qikvrt_seed_dashboard_publish.yml",
+      "source_commit": "a86054139b49c13c5cd344753b248b46b5daf66f",
+      "bytes": 3535,
+      "sha256": "6db7d9ae58123d96b25af0fe3ed7e24ea6983e0a5778a03837f1dfabde9f655b"
+    },
+    {
+      "path": "tests/test_seed_workflows.py",
+      "source_commit": "a86054139b49c13c5cd344753b248b46b5daf66f",
+      "bytes": 15897,
+      "sha256": "3cd9358be06701639e6b46c24d0ac663e283ae7a720bc5a1e585c5e749e0cb12"
+    }
+  ],
+  "outputs": [
+    {
+      "path": ".github/workflows/qikvrt_seed_dashboard_publish.yml",
+      "bytes": 6938,
+      "sha256": "b1ef99a607bd157219a9fb490ec28c659203bd40087bce90d060b8eacb832375"
+    },
+    {
+      "path": "tests/test_seed_workflows.py",
+      "bytes": 24446,
+      "sha256": "c29c5ffdc1887b0b1950e40c75d219c6f88bc157da329aa5666c90d8398a04fe"
+    }
+  ]
+}
