@@ -62,7 +62,7 @@ class UniversalTerminalNetworkBoundaryTests(unittest.TestCase):
             entrypoint,
         )
         self.assertIn(
-            'export QIKVRT_START_URL="${QIKVRT_CLOUD_START_URL:-http://127.0.0.1:8080/qik-vrt/mesh/v1/}"',
+            'export QIKVRT_START_URL="${QIKVRT_CLOUD_START_URL:-http://127.0.0.1:8080/AI/}"',
             CLOUD_ENTRYPOINT.read_text(encoding="utf-8"),
         )
         workflow = WORKFLOW.read_text(encoding="utf-8")
