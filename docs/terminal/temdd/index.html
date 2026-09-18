@@ -8,11 +8,23 @@
 </section></main><script>
 'use strict';
 const TEMDD_DOD=new Set(['ZERO_BUGS','ALL_PULL_REQUESTS_REGARDED','ALL_BRANCHES_REGARDED','ALL_PRODUCTIVE_BRANCHES_MERGED','FRESH_EXACT_MAIN_VALIDATION_PASS','FRESH_EFFECT_READBACK']);
+const TEMDD_EPISTEMIC=new Set(['TRUE','FALSE','UNKNOWN','CONFLICT','STALE','UNOBSERVABLE']);
+const TEMDD_FRESHNESS=new Set(['FRESH','STALE']);
 const TEMDD_EXAMPLE=`temdd 0.1;
 authority owner = "Goldkelch/qik-vrt";
+context qikvrt { perspective = "product-owner"; }
 subject convergence {
   repository = "Goldkelch/qik-vrt";
   binding = exact;
+}
+relation authority_mirror {
+  source = "Goldkelch/qik-vrt";
+  predicate = "observes";
+  target = "ingolf-lohmann/qik-vrt";
+  epistemic = UNKNOWN;
+  source_order = 2;
+  observation_order = 1;
+  freshness = FRESH;
 }
 request finish_qikvrt { target = QIKVRT_DOD; }
 on event {
@@ -37,9 +49,26 @@ function analyzeTemdd(text){
  const version=temddMatch(/^\s*temdd\s+([0-9.]+)\s*;/s,text,'version')[1];
  if(version!=='0.1')throw Error('unsupported version');
  const authority=temddMatch(/authority\s+[A-Za-z][A-Za-z0-9_-]*\s*=\s*"([^"]+)"\s*;/s,text,'authority')[1];
+ const context=temddMatch(/context\s+([A-Za-z][A-Za-z0-9_-]*)\s*\{([\s\S]*?)\}/,text,'context');
+ const perspective=temddMatch(/perspective\s*=\s*"([^"]+)"\s*;/s,context[2],'perspective')[1];
  const subject=temddMatch(/subject\s+([A-Za-z][A-Za-z0-9_-]*)\s*\{([\s\S]*?)\}/,text,'subject');
  const repository=temddMatch(/repository\s*=\s*"([^"]+)"\s*;/s,subject[2],'repository')[1];
  temddMatch(/binding\s*=\s*exact\s*;/s,subject[2],'exact binding');
+ const relations=[...text.matchAll(/relation\s+([A-Za-z][A-Za-z0-9_-]*)\s*\{([\s\S]*?)\}/g)].map(m=>{
+   const body=m[2], epistemic=temddMatch(/epistemic\s*=\s*([A-Za-z][A-Za-z0-9_-]*)\s*;/s,body,'relation epistemic')[1],
+     freshness=temddMatch(/freshness\s*=\s*([A-Za-z][A-Za-z0-9_-]*)\s*;/s,body,'relation freshness')[1];
+   if(!TEMDD_EPISTEMIC.has(epistemic))throw Error('invalid epistemic state');
+   if(!TEMDD_FRESHNESS.has(freshness))throw Error('invalid freshness');
+   return {name:m[1],
+     source:temddMatch(/source\s*=\s*"([^"]+)"\s*;/s,body,'relation source')[1],
+     predicate:temddMatch(/predicate\s*=\s*"([^"]+)"\s*;/s,body,'relation predicate')[1],
+     target:temddMatch(/target\s*=\s*"([^"]+)"\s*;/s,body,'relation target')[1],
+     epistemic,
+     source_order:Number(temddMatch(/source_order\s*=\s*([0-9]+)\s*;/s,body,'relation source order')[1]),
+     observation_order:Number(temddMatch(/observation_order\s*=\s*([0-9]+)\s*;/s,body,'relation observation order')[1]),
+     freshness};
+ });
+ if(!relations.length)throw Error('at least one first-class relation required');
  const request=temddMatch(/request\s+([A-Za-z][A-Za-z0-9_-]*)\s*\{\s*target\s*=\s*([A-Za-z][A-Za-z0-9_-]*)\s*;\s*\}/s,text,'request');
  const handlers=[...text.matchAll(/on\s+(event|blocker)\s*\{([\s\S]*?)\}/g)].map(m=>({event:m[1],statements:m[2].split(';').map(x=>x.trim()).filter(Boolean)}));
  const until=temddMatch(/until\s*\{([\s\S]*?)\}/,text,'until')[1].trim().replace(/;\s*$/,'');
@@ -47,7 +76,7 @@ function analyzeTemdd(text){
  if(!handlers.length||!dod.length)throw Error('handlers and DoD required');
  if(new Set(dod).size!==dod.length)throw Error('duplicate DoD predicate');
  if(request[2]==='QIKVRT_DOD'&&(dod.length!==TEMDD_DOD.size||dod.some(x=>!TEMDD_DOD.has(x))))throw Error('QIKVRT_DOD requires complete canonical predicate');
- return {schema:'temdd_ir_v0_1',version,authority,subject:{name:subject[1],repository,binding:'exact'},request:{name:request[1],target:request[2]},handlers,dod};
+ return {schema:'temdd_ir_v0_1',version,authority,context:{name:context[1],perspective},subject:{name:subject[1],repository,binding:'exact'},relations,request:{name:request[1],target:request[2]},handlers,dod};
 }
 let ideIr=null;
 ideEl('ideExample').onclick=()=>{ideEl('ideSource').value=TEMDD_EXAMPLE;ideEl('ideStatus').textContent='EXAMPLE_LOADED · LOCAL_ONLY · NO EFFECT';ideEl('ideStatus').className='ide-status hold'};
@@ -85,6 +114,8 @@ async function connect(){
       const event=JSON.parse(e.data);
       if(!bound||event.schema!=='qikvrt_temdd_event_v1'||!sameSubject(event.subject,exactSubject)||event.id!==e.lastEventId||event.evidence_transfer!=='DENY'||event.dod!==false)throw Error('unbound or invalid event');
       const next=sequence(event.id);if(cursor&&next<=sequence(cursor))throw Error('non-monotonic event');
+      if(!Number.isSafeInteger(event.observation_order)||BigInt(event.observation_order)!==next)throw Error('observation order mismatch');
+      if(!event.provenance||!Number.isSafeInteger(event.provenance.source_order)||event.provenance.source_order<0||typeof event.emitted_at!=='string'||typeof event.observed_at!=='string')throw Error('temporal provenance missing');
       if(!/^(OBSERVE|CLASSIFY|ACTION|EFFECT|READBACK|SUCCESSOR|HOLD)$/.test(event.kind)||typeof event.message!=='string')throw Error('invalid event content');
       line(event.kind,event.message+' · '+event.subject.head+' · '+event.id);
       localStorage.setItem(cursorKey,event.id);cursor=event.id;cursorEl.textContent=cursor;

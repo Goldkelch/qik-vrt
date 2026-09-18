@@ -1,7 +1,7 @@
 name: QIKVRT TEMDD conformance
 on:
   pull_request:
-    paths: ['spec/temdd/**','examples/temdd/**','schemas/temdd-*','tools/qikvrt_temdd.py','tools/qikvrt_temdd_conformance.py','tests/test_temdd.py','tests/temdd/**','src/temdd_core.c','include/temdd_core.h','tests/test_temdd_core.c','runtime/temdd/**','runtime/m68000/temdd_transition.s','runtime/toolchains/pharo-13.lock.json','formalization/TEMDDCore.lean','src/qikvrt_temdd_event_ledger.py','src/qikvrt_effect_ack_http_terminal.py','tests/test_temdd_event_ledger.py','docs/terminal/temdd/**','deploy/universal-terminal/**','Makefile','.github/workflows/qikvrt_temdd.yml']
+    paths: ['spec/temdd/**','examples/temdd/**','schemas/temdd-*','tools/qikvrt_temdd.py','tools/qikvrt_temdd_conformance.py','tests/test_temdd.py','tests/temdd/**','src/temdd_core.c','include/temdd_core.h','tests/test_temdd_core.c','runtime/temdd/**','runtime/m68000/temdd_transition.s','runtime/toolchains/pharo-13.lock.json','formalization/TEMDDCore.lean','formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/**','src/qikvrt_temdd_event_ledger.py','src/qikvrt_effect_ack_http_terminal.py','tests/test_temdd_event_ledger.py','docs/terminal/temdd/**','deploy/universal-terminal/**','Makefile','.github/workflows/qikvrt_temdd.yml']
   push: {branches: [main]}
 permissions: {contents: read}
 jobs:
@@ -41,18 +41,23 @@ jobs:
       make temdd-event-ledger-test 2>&1 | tee "$RUNNER_TEMP/temdd-producer-tests.log"
       git diff --exit-code
       printf 'HEAD=%s\nTREE=%s\nEVIDENCE_TRANSFER=DENY\nSCOPE=producer-regression-only\nDOD=NOT_PROVEN\n' "$EXPECTED_HEAD" "$(git rev-parse 'HEAD^{tree}')" | tee "$RUNNER_TEMP/temdd-producer-binding.txt"
-   - name: Python parser T01-T12 and corpus
+   - name: Python parser T01-T16 and corpus
      run: |
       python3 -B -m unittest tests.test_temdd
       python3 -B tools/qikvrt_temdd_conformance.py
       python3 -B tools/qikvrt_temdd.py tests/temdd/positive/minimal.temdd >/tmp/minimal.json
       for f in tests/temdd/negative/*.temdd; do if python3 -B tools/qikvrt_temdd.py "$f" >/dev/null 2>&1; then echo "negative corpus admitted: $f"; exit 1; fi; done
       python3 -B tools/qikvrt_temdd.py examples/temdd/qikvrt_convergence_v0_1.temdd >/tmp/temdd-ir.json
+      python3 -B tools/qikvrt_temdd.py examples/temdd/temdd_self_application_v0_1.temdd >/tmp/temdd-self-ir.json
       python3 - <<'PY'
       import json
       x=json.load(open('/tmp/temdd-ir.json'))
       required={'ZERO_BUGS','ALL_PULL_REQUESTS_REGARDED','ALL_BRANCHES_REGARDED','ALL_PRODUCTIVE_BRANCHES_MERGED','FRESH_EXACT_MAIN_VALIDATION_PASS','FRESH_EFFECT_READBACK'}
       assert required == set(x['dod']); assert x['subject']['binding']=='exact'
+      assert x['context']['perspective']=='product-owner'
+      assert x['relations'] and x['relations'][0]['epistemic']=='UNKNOWN'
+      assert x['relations'][0]['source_order'] != x['relations'][0]['observation_order']
+      s=json.load(open('/tmp/temdd-self-ir.json')); assert s['subject']['name']=='temdd_language'; assert s['relations'][0]['source']=='TEMDD' and s['relations'][0]['target']=='TEMDD'
       PY
    - name: C90 differential kernel
      run: cc -std=c90 -pedantic -Wall -Wextra -Werror -Iinclude src/temdd_core.c tests/test_temdd_core.c -o /tmp/temdd-core && /tmp/temdd-core
@@ -113,6 +118,8 @@ jobs:
       lake clean
       lake build 2>&1 | tee "$RUNNER_TEMP/temdd-backends/lake-build.log"
       lake env lean ../TEMDDCore.lean 2>&1 | tee "$RUNNER_TEMP/temdd-backends/temdd-lean.log"
+      lake env lean QIKVRTFormalization/TEMDD/T13T16.lean 2>&1 | tee "$RUNNER_TEMP/temdd-backends/temdd-t13-t16-lean.log"
+      lake env lean QIKVRTFormalization/TEMDD/AxiomAudit.lean 2>&1 | tee "$RUNNER_TEMP/temdd-backends/temdd-axiom-audit.log"
       grep -q 'theorem missing_effect_readback_not_done' ../TEMDDCore.lean
    - name: Seal exact-head executable-backend receipt
      env:
@@ -128,16 +135,16 @@ jobs:
       if head != os.environ['EXPECTED_HEAD'] or re.fullmatch(r'[0-9a-f]{40}',tree) is None:
           raise SystemExit('exact TEMDD backend subject drift')
       evidence=Path(os.environ['RUNNER_TEMP'])/'temdd-backends'
-      required={'m68000':'m68000-execution.log','smalltalk':'smalltalk-execution.log','lean':'temdd-lean.log','lake':'lake-build.log'}
+      required={'m68000':'m68000-execution.log','smalltalk':'smalltalk-execution.log','lean':'temdd-lean.log','lean_t13_t16':'temdd-t13-t16-lean.log','axiom_audit':'temdd-axiom-audit.log','lake':'lake-build.log'}
       outputs={}
       for key,name in required.items():
           raw=(evidence/name).read_bytes()
           outputs[key]={'path':name,'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
       sources={}
-      for name in ['runtime/m68000/temdd_transition.s','tests/temdd/runtime-m68000.c','runtime/temdd/TEMDDRuntime.st','tests/temdd/runtime-smalltalk.st','formalization/TEMDDCore.lean','runtime/toolchains/pharo-13.lock.json']:
+      for name in ['runtime/m68000/temdd_transition.s','tests/temdd/runtime-m68000.c','runtime/temdd/TEMDDRuntime.st','tests/temdd/runtime-smalltalk.st','formalization/TEMDDCore.lean','runtime/toolchains/pharo-13.lock.json','spec/temdd/TEMDD_NORMATIVE_T13_T16_V0_1.json','formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/Completion.lean','formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/MetaGrammar.lean','formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/T13T16.lean']:
           raw=Path(name).read_bytes()
           sources[name]={'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
-      receipt={'schema':'qikvrt_temdd_executable_backends_v1','repository':os.environ['GITHUB_REPOSITORY'],'source_sha':head,'source_tree':tree,'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'backends':{'c90':'EXECUTED_SUCCESS','smalltalk':'EXECUTED_SUCCESS','m68000':'EXECUTED_SUCCESS_QEMU_USER','lean':'COMPILED_SUCCESS_LEAN_4_19_LAKE'},'sources':sources,'outputs':outputs,'predecessor_evidence_transfer':False,'physical_m68000_execution_observed':False,'stable_language_claim':False,'remaining_semantic_closure':['UNMATERIALIZED_NORMATIVE_T13_T16_DEFINITIONS'],'effect_ack_done':False}
+      receipt={'schema':'qikvrt_temdd_executable_backends_v1','repository':os.environ['GITHUB_REPOSITORY'],'source_sha':head,'source_tree':tree,'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'backends':{'c90':'EXECUTED_SUCCESS','smalltalk':'EXECUTED_SUCCESS','m68000':'EXECUTED_SUCCESS_QEMU_USER','lean':'COMPILED_SUCCESS_LEAN_4_19_LAKE'},'sources':sources,'outputs':outputs,'predecessor_evidence_transfer':False,'physical_m68000_execution_observed':False,'stable_language_claim':False,'remaining_semantic_closure':[],'semantic_closure':'T01_T16_MATERIALIZED_AND_EXECUTED','compiler_self_hosting_claim':False,'effect_ack_done':False}
       (evidence/'backend-receipt.json').write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
       print('TEMDD_EXECUTABLE_BACKENDS_RECEIPT head='+head+' tree='+tree)
       PY

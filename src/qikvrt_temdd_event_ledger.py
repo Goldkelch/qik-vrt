@@ -130,7 +130,7 @@ class Ledger:
             raise
 
     def _validate(self, event):
-        required = {'schema', 'kind', 'subject', 'provenance', 'observed_at', 'message', 'payload'}
+        required = {'schema', 'kind', 'subject', 'provenance', 'emitted_at', 'observed_at', 'message', 'payload'}
         if not isinstance(event, dict) or set(event) != required or event['schema'] != SCHEMA:
             raise Hold('INVALID_NATIVE_EVENT')
         if canonical(event['subject']) != canonical(self.subject):
@@ -138,24 +138,28 @@ class Ledger:
         if not isinstance(event['kind'], str) or event['kind'] not in KINDS:
             raise Hold('INVALID_EVENT_KIND')
         provenance = event['provenance']
-        if not isinstance(provenance, dict) or set(provenance) != {'source', 'native_event_id'}:
+        if not isinstance(provenance, dict) or set(provenance) != {'source', 'native_event_id', 'source_order'}:
             raise Hold('NATIVE_PROVENANCE_REQUIRED')
         if provenance['source'] not in ('repository', 'transputer'):
             raise Hold('UNADMITTED_PRODUCER')
         native_id = provenance['native_event_id']
         if not isinstance(native_id, str) or not re.fullmatch(r'[^\x00-\x20\x7f]{1,256}', native_id):
             raise Hold('INVALID_NATIVE_EVENT_ID')
+        source_order = provenance['source_order']
+        if isinstance(source_order, bool) or not isinstance(source_order, int) or not 0 <= source_order <= 9007199254740991:
+            raise Hold('INVALID_SOURCE_ORDER')
         if not isinstance(event['message'], str) or len(event['message']) > 4096:
             raise Hold('INVALID_EVENT_MESSAGE')
         if not isinstance(event['payload'], dict):
             raise Hold('PAYLOAD_OBJECT_REQUIRED')
-        observed = event['observed_at']
-        try:
-            if not isinstance(observed, str) or not observed.endswith('Z'):
-                raise ValueError()
-            datetime.fromisoformat(observed[:-1] + '+00:00')
-        except ValueError as exc:
-            raise Hold('UTC_OBSERVATION_REQUIRED') from exc
+        for field, error in (('emitted_at', 'UTC_EMISSION_REQUIRED'), ('observed_at', 'UTC_OBSERVATION_REQUIRED')):
+            value = event[field]
+            try:
+                if not isinstance(value, str) or not value.endswith('Z'):
+                    raise ValueError()
+                datetime.fromisoformat(value[:-1] + '+00:00')
+            except ValueError as exc:
+                raise Hold(error) from exc
         if len(canonical(event)) > MAX_EVENT:
             raise Hold('EVENT_TOO_LARGE')
 
@@ -164,7 +168,7 @@ class Ledger:
         body = json.loads(text)
         if binding != self.binding or body.get('subject') != self.subject or digest(body) != expected:
             raise Hold('LEDGER_READBACK_MISMATCH')
-        return dict(body, id=f'{self.epoch}:{seq}', ledger_digest=expected)
+        return dict(body, id=f'{self.epoch}:{seq}', observation_order=seq, ledger_digest=expected)
 
     def append(self, event):
         # Freeze caller-owned objects before validation / hashing / persistence.
@@ -437,8 +441,8 @@ def main():
         thread.start()  # outer I/O adapter, not a repository job scheduler
         try:
             runtime.append({'schema': SCHEMA, 'kind': 'OBSERVE', 'subject': runtime.subject,
-                'provenance': {'source': 'transputer', 'native_event_id': 'listener-bound:' + uuid.uuid4().hex},
-                'observed_at': utc(), 'message': 'Local TEMDD listeners bound; no DoD inference',
+                'provenance': {'source': 'transputer', 'native_event_id': 'listener-bound:' + uuid.uuid4().hex, 'source_order': 0},
+                'emitted_at': utc(), 'observed_at': utc(), 'message': 'Local TEMDD listeners bound; no DoD inference',
                 'payload': {'pid': os.getpid(), 'http_address': list(http.server_address)}})
             print(canonical({'state': 'LISTENING', 'subject': runtime.subject, 'dod': False}).decode(), flush=True)
             http.serve_forever()

@@ -48,9 +48,10 @@ class ProducerTests(unittest.TestCase):
     def git(self, *args):
         return subprocess.check_output(['git', '-C', str(self.root), *args], stderr=subprocess.DEVNULL).decode().strip()
 
-    def event(self, native='native:1', **changes):
+    def event(self, native='native:1', source_order=1, **changes):
         event = {'schema': m.SCHEMA, 'kind': 'READBACK', 'subject': copy.deepcopy(self.runtime.subject),
-                 'provenance': {'source': 'repository', 'native_event_id': native},
+                 'provenance': {'source': 'repository', 'native_event_id': native, 'source_order': source_order},
+                 'emitted_at': '2026-09-15T19:59:59Z',
                  'observed_at': '2026-09-15T20:00:00Z', 'message': 'native fixture readback',
                  'payload': {'receipt': 'fixture-only; not production evidence'}}
         event.update(changes)
@@ -158,6 +159,13 @@ class ProducerTests(unittest.TestCase):
             with self.subTest(cursor=cursor), self.assertRaises(m.Hold):
                 self.runtime.ledger.cursor(cursor)
         self.assertEqual(self.runtime.ledger.cursor(first['id']), 1)
+
+    def test_source_and_observation_order_are_independent(self):
+        first = self.runtime.append(self.event('source:2', source_order=2))
+        second = self.runtime.append(self.event('source:1', source_order=1))
+        self.assertEqual((first['observation_order'], second['observation_order']), (1, 2))
+        self.assertGreater(first['provenance']['source_order'], second['provenance']['source_order'])
+        self.assertLess(first['observation_order'], second['observation_order'])
 
     def test_successor_never_replays_predecessor_evidence(self):
         first = self.runtime.append(self.event())
@@ -386,6 +394,10 @@ class ProducerTests(unittest.TestCase):
         self.assertIn("schema:'temdd_ir_v0_1'", page)
         self.assertIn("version!=='0.1'", page)
         self.assertIn("binding:'exact'", page)
+        self.assertIn('perspective', page)
+        self.assertIn('source_order', page)
+        self.assertIn('observation_order', page)
+        self.assertIn('epistemic', page)
         self.assertIn('FRESH_EFFECT_READBACK', page)
 
     def test_consumer_validation_and_reconnect_state_machine(self):
@@ -403,11 +415,11 @@ setImmediate(()=>{try{
  const es=sources[0];assert(es);es.onopen();assert.equal(elements.get('state').textContent,'CONNECTED');
  es.handlers.subject({data:JSON.stringify({subject:subj,ledger_id:epoch,dod:false,evidence_transfer:'DENY'})});
  assert.equal(elements.get('state').textContent,'OBSERVING');
- const event={schema:'qikvrt_temdd_event_v1',subject:subj,id:epoch+':1',kind:'READBACK',message:'<script>not html</script>',dod:false,evidence_transfer:'DENY'};
+ const event={schema:'qikvrt_temdd_event_v1',subject:subj,id:epoch+':1',kind:'READBACK',message:'<script>not html</script>',dod:false,evidence_transfer:'DENY',provenance:{source:'repository',native_event_id:'native:2',source_order:2},emitted_at:'2026-09-15T19:59:59Z',observed_at:'2026-09-15T20:00:00Z',observation_order:1};
  es.onmessage({data:JSON.stringify(event),lastEventId:event.id});assert.equal(storage.size,1);
  es.onerror();assert.equal(es.closed,false);assert.equal(elements.get('state').textContent,'HOLD');assert.equal(elements.get('dod').textContent,'NOT PROVEN');
  es.onopen();es.handlers.subject({data:JSON.stringify({subject:subj,ledger_id:epoch,dod:false,evidence_transfer:'DENY'})});
- event.id=epoch+':2';event.dod=true;es.onmessage({data:JSON.stringify(event),lastEventId:event.id});
+ event.id=epoch+':2';event.observation_order=2;event.provenance.source_order=1;event.dod=true;es.onmessage({data:JSON.stringify(event),lastEventId:event.id});
  assert.equal(es.closed,true);assert.equal(elements.get('dod').textContent,'NOT PROVEN');assert.equal([...storage.values()][0],epoch+':1');
  console.log('consumer reconnect, exact-subject binding, and false-DONE rejection PASS');
 }catch(e){console.error(e);process.exitCode=1;}});

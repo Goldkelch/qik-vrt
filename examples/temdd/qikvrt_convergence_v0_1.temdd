@@ -1,18 +1,22 @@
 temdd 0.1;
 authority owner = "Goldkelch/qik-vrt";
+context qikvrt { perspective = "product-owner"; }
 subject convergence {
   repository = "Goldkelch/qik-vrt";
   binding = exact;
 }
+relation authority_mirror {
+  source = "Goldkelch/qik-vrt";
+  predicate = "observes";
+  target = "ingolf-lohmann/qik-vrt";
+  epistemic = UNKNOWN;
+  source_order = 2;
+  observation_order = 1;
+  freshness = FRESH;
+}
 request finish_qikvrt { target = QIKVRT_DOD; }
-on event {
-  follow exact;
-  classify causal;
-}
-on blocker {
-  learn smallest_sound_successor;
-  execute successor;
-}
+on event { follow exact; classify causal; }
+on blocker { learn smallest_sound_successor; execute successor; }
 until {
   ZERO_BUGS
   && ALL_PULL_REQUESTS_REGARDED

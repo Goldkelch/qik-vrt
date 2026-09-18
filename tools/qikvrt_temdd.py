@@ -2,8 +2,12 @@
 """TEMDD v0.1 deterministic reference parser/elaborator."""
 import json,re,sys
 from pathlib import Path
+
 ID=r"[A-Za-z][A-Za-z0-9_-]*"
 QIKVRT_DOD={'ZERO_BUGS','ALL_PULL_REQUESTS_REGARDED','ALL_BRANCHES_REGARDED','ALL_PRODUCTIVE_BRANCHES_MERGED','FRESH_EXACT_MAIN_VALIDATION_PASS','FRESH_EFFECT_READBACK'}
+EPISTEMIC={'TRUE','FALSE','UNKNOWN','CONFLICT','STALE','UNOBSERVABLE'}
+FRESHNESS={'FRESH','STALE'}
+
 def parse(text):
  def one(p,label,src=None):
   m=re.search(p,text if src is None else src,re.S)
@@ -12,16 +16,40 @@ def parse(text):
  v=one(r"^\s*temdd\s+([0-9.]+)\s*;",'version').group(1)
  if v!='0.1': raise ValueError('unsupported version')
  a=one(r"authority\s+"+ID+r"\s*=\s*\"([^\"]+)\"\s*;",'authority').group(1)
+ c=one(r"context\s+("+ID+r")\s*\{(.*?)\}",'context'); cb=c.group(2)
+ perspective=one(r"perspective\s*=\s*\"([^\"]+)\"\s*;",'perspective',cb).group(1)
  s=one(r"subject\s+("+ID+r")\s*\{(.*?)\}",'subject'); sb=s.group(2)
- rm=one(r"repository\s*=\s*\"([^\"]+)\"\s*;",'repository',sb); one(r"binding\s*=\s*exact\s*;",'exact binding',sb)
+ rm=one(r"repository\s*=\s*\"([^\"]+)\"\s*;",'repository',sb)
+ one(r"binding\s*=\s*exact\s*;",'exact binding',sb)
+ relations=[]
+ for m in re.finditer(r"relation\s+("+ID+r")\s*\{(.*?)\}",text,re.S):
+  body=m.group(2)
+  def field(pattern,label):
+   return one(pattern,label,body).group(1)
+  epistemic=field(r"epistemic\s*=\s*("+ID+r")\s*;",'relation epistemic state')
+  freshness=field(r"freshness\s*=\s*("+ID+r")\s*;",'relation freshness')
+  if epistemic not in EPISTEMIC: raise ValueError('invalid epistemic state')
+  if freshness not in FRESHNESS: raise ValueError('invalid freshness')
+  relations.append({
+   'name':m.group(1),
+   'source':field(r"source\s*=\s*\"([^\"]+)\"\s*;",'relation source'),
+   'predicate':field(r"predicate\s*=\s*\"([^\"]+)\"\s*;",'relation predicate'),
+   'target':field(r"target\s*=\s*\"([^\"]+)\"\s*;",'relation target'),
+   'epistemic':epistemic,
+   'source_order':int(field(r"source_order\s*=\s*([0-9]+)\s*;",'relation source order')),
+   'observation_order':int(field(r"observation_order\s*=\s*([0-9]+)\s*;",'relation observation order')),
+   'freshness':freshness,
+  })
+ if not relations: raise ValueError('at least one first-class relation required')
  q=one(r"request\s+("+ID+r")\s*\{\s*target\s*=\s*("+ID+r")\s*;\s*\}",'request'); target=q.group(2)
  handlers=[]
- for m in re.finditer(r"on\s+(event|blocker)\s*\{(.*?)\}",text,re.S): handlers.append({'event':m.group(1),'statements':[x.strip() for x in m.group(2).split(';') if x.strip()]})
+ for m in re.finditer(r"on\s+(event|blocker)\s*\{(.*?)\}",text,re.S):
+  handlers.append({'event':m.group(1),'statements':[x.strip() for x in m.group(2).split(';') if x.strip()]})
  d=one(r"until\s*\{(.*?)\}",'until').group(1).strip().rstrip(';'); dod=[x.strip() for x in d.split('&&') if x.strip()]
  if not handlers or not dod: raise ValueError('handlers and DoD required')
  if len(set(dod))!=len(dod): raise ValueError('duplicate DoD predicate')
  if target=='QIKVRT_DOD' and set(dod)!=QIKVRT_DOD: raise ValueError('QIKVRT_DOD requires complete canonical predicate')
- return {'schema':'temdd_ir_v0_1','version':v,'authority':a,'subject':{'name':s.group(1),'repository':rm.group(1),'binding':'exact'},'request':{'name':q.group(1),'target':target},'handlers':handlers,'dod':dod}
+ return {'schema':'temdd_ir_v0_1','version':v,'authority':a,'context':{'name':c.group(1),'perspective':perspective},'subject':{'name':s.group(1),'repository':rm.group(1),'binding':'exact'},'relations':relations,'request':{'name':q.group(1),'target':target},'handlers':handlers,'dod':dod}
 def main(argv):
  if len(argv)!=2:return 64
  try: ir=parse(Path(argv[1]).read_text(encoding='utf-8'))
