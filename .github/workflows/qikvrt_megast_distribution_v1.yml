@@ -196,6 +196,19 @@ jobs:
           done
           cp distribution/qikvrt-megast/boot.py out/qikvrt-netboot-client.py
           exit "$result"
+      - name: Build and export exact-subject Docker image
+        env:
+          QIKVRT_EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          image="qikvrt/universal-terminal:${QIKVRT_EXACT_SHA}"
+          docker build --pull --file deploy/universal-terminal/Dockerfile --tag "$image" .
+          docker image inspect "$image" > out/qikvrt-universal-terminal-image-inspect.json
+          docker save --output out/qikvrt-universal-terminal-amd64.docker.tar "$image"
+          sha256sum out/qikvrt-universal-terminal-amd64.docker.tar > out/qikvrt-universal-terminal-amd64.docker.tar.sha256
+          docker load --input out/qikvrt-universal-terminal-amd64.docker.tar
+          docker image inspect "$image" >/dev/null
+
       - name: Preserve inspectable startup evidence separately from the image
         uses: actions/upload-artifact@v4
         if: always()
@@ -223,32 +236,38 @@ jobs:
             out/qikvrt-megast-filesystem.squashfs
             out/QIKVRT_BOOT.BIN
             out/qikvrt-netboot*
+            out/qikvrt-universal-terminal-amd64.docker.tar
+            out/qikvrt-universal-terminal-amd64.docker.tar.sha256
+            out/qikvrt-universal-terminal-image-inspect.json
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
 
   publish:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'pull_request'
     needs: build
+    env:
+      QIKVRT_EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: qikvrt-megast-${{ github.sha }}
+          name: qikvrt-megast-${{ github.event.pull_request.head.sha || github.sha }}
           path: out
       - name: Verify before publication
         run: |
           cd out
           sha256sum -c qikvrt-megast-amd64.iso.sha256
-          grep -F '"source_sha": "${{ github.sha }}"' qikvrt-megast-build-receipt.json
-          grep -F 'QIKVRT_MEGAST_BOOT_OK source_sha=${{ github.sha }}' qikvrt-megast-qemu-serial.log
-          grep -F 'QIKVRT_MEGAST_RUNTIME_OK source_sha=${{ github.sha }}' qikvrt-netboot-serial.log
+          grep -F '"source_sha": "'"${QIKVRT_EXACT_SHA}"'"' qikvrt-megast-build-receipt.json
+          grep -F "QIKVRT_MEGAST_BOOT_OK source_sha=${QIKVRT_EXACT_SHA}" qikvrt-megast-qemu-serial.log
+          grep -F "QIKVRT_MEGAST_RUNTIME_OK source_sha=${QIKVRT_EXACT_SHA}" qikvrt-netboot-serial.log
+          sha256sum -c qikvrt-universal-terminal-amd64.docker.tar.sha256
       - name: Publish exact-Main release asset
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          short=$(printf '%s' '${{ github.sha }}' | cut -c1-12)
-          tag="qikvrt-megast-${short}"
+          short=$(printf '%s' "${QIKVRT_EXACT_SHA}" | cut -c1-12)
+          tag="qikvrt-distribution-${short}"
           gh release create "$tag" \
             out/qikvrt-megast-amd64.iso \
             out/qikvrt-megast-amd64.iso.sha256 \
@@ -257,17 +276,43 @@ jobs:
             out/qikvrt-megast-vmlinuz out/qikvrt-megast-initrd \
             out/qikvrt-megast-filesystem.squashfs out/QIKVRT_BOOT.BIN \
             out/qikvrt-netboot* \
+            out/qikvrt-universal-terminal-amd64.docker.tar \
+            out/qikvrt-universal-terminal-amd64.docker.tar.sha256 \
+            out/qikvrt-universal-terminal-image-inspect.json \
             --repo '${{ github.repository }}' \
-            --target '${{ github.sha }}' \
-            --title "QIK-VRT Mega ST ${short}" \
-            --notes "Exact-Main QIK-VRT Mega ST distribution. Publication transport does not imply EFFECT_ACK_DONE."
+            --target "${QIKVRT_EXACT_SHA}" \
+            --title "QIK-VRT Linux Distribution ${short}" \
+            --notes "Exact-subject public Linux distribution: bootable ISO, HTTP netboot set, and Docker image. Repository governance is orthogonal to this delivery witness."
       - name: Read back published release metadata
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          short=$(printf '%s' '${{ github.sha }}' | cut -c1-12)
-          tag="qikvrt-megast-${short}"
+          set -euo pipefail
+          short=$(printf '%s' "${QIKVRT_EXACT_SHA}" | cut -c1-12)
+          tag="qikvrt-distribution-${short}"
           gh release view "$tag" --repo '${{ github.repository }}' --json tagName,targetCommitish,assets > out/release-readback.json
           grep -F "\"tagName\":\"$tag\"" out/release-readback.json
           grep -F 'qikvrt-megast-amd64.iso' out/release-readback.json
-          echo 'P7 transport/readback established; independent public download checksum and full acceptance corpus remain required for EFFECT_ACK_DONE.'
+          grep -F 'qikvrt-netboot.json' out/release-readback.json
+          grep -F 'qikvrt-universal-terminal-amd64.docker.tar' out/release-readback.json
+
+      - name: Fresh unauthenticated public artifact readback
+        env:
+          GH_TOKEN: ""
+        run: |
+          set -euo pipefail
+          short=$(printf '%s' "${QIKVRT_EXACT_SHA}" | cut -c1-12)
+          tag="qikvrt-distribution-${short}"
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}"
+          mkdir -p /tmp/qikvrt-public-readback
+          for asset in \
+            qikvrt-megast-amd64.iso.sha256 \
+            qikvrt-netboot.json \
+            qikvrt-universal-terminal-amd64.docker.tar.sha256; do
+            code=$(curl -L --silent --show-error --output "/tmp/qikvrt-public-readback/${asset}" --write-out '%{http_code}' "${base}/${asset}")
+            test "$code" = 200
+            test -s "/tmp/qikvrt-public-readback/${asset}"
+            printf 'PUBLIC_READBACK_200 asset=%s url=%s/%s\n' "$asset" "$base" "$asset"
+          done
+          printf 'QIKVRT_DISTRIBUTION_PUBLIC_INDEX=%s\n' "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${tag}"
+          printf 'QIKVRT_DISTRIBUTION_SOURCE_SHA=%s\n' "${QIKVRT_EXACT_SHA}"
