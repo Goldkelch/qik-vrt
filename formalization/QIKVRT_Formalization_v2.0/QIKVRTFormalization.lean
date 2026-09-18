@@ -26,6 +26,7 @@ import QIKVRTFormalization.QuantumFoundations.MeasurementIndependence
 import QIKVRTFormalization.Hardware.AuthorityMirrorWitness
 import QIKVRTFormalization.Hardware.D3FixedPoint
 import QIKVRTFormalization.Decision.ObservationSufficiency
+import QIKVRTFormalization.TEMDD.T13T16
 
 /-!
 Top-level import for the checked QIK-VRT formalization v2 tranches.
@@ -70,5 +71,3 @@ deterministically sufficient exactly when observation fibers do not mix historie
 requiring different correct actions. Equivalently, the observation kernel must
 refine the action kernel. Authority/Mirror/Witness recovery is a specialization.
 -/
-
-import QIKVRTFormalization.TEMDD.T13T16
