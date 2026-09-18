@@ -1,0 +1,68 @@
+name: QIKVRT repository DoD census
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Exact pull request number
+        required: true
+        type: string
+      head:
+        description: Exact pull request head SHA
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  census:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || inputs.head }}
+      PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch complete read-only branch graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          git fetch --force --prune origin '+refs/heads/*:refs/remotes/origin/*'
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+      - name: Snapshot all open PRs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/qikvrt-dod"
+          gh api --paginate --slurp             "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100"             > "$RUNNER_TEMP/qikvrt-dod/open-prs.json"
+      - name: Build exact-subject finite census
+        shell: bash
+        run: |
+          set -euo pipefail
+          tree="$(git rev-parse HEAD^{tree})"
+          python3 -B tools/qikvrt_repository_dod_census.py             --repository "$GITHUB_REPOSITORY"             --subject-head "$EXPECTED_HEAD"             --subject-tree "$tree"             --current-pr "$PR_NUMBER"             --open-prs "$RUNNER_TEMP/qikvrt-dod/open-prs.json"             --output "$RUNNER_TEMP/qikvrt-dod/census.json"
+          python3 - "$RUNNER_TEMP/qikvrt-dod/census.json" "$EXPECTED_HEAD" "$tree" <<'PY'
+          import json,sys
+          p,head,tree=sys.argv[1:]
+          r=json.load(open(p,encoding='utf-8'))
+          assert r['inventory_complete'] is True
+          assert r['subject']=={'head':head,'tree':tree}
+          assert r['predecessor_evidence_transfer'] is False
+          PY
+      - name: Preserve finite census
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-dod-census-${{ env.EXPECTED_HEAD }}
+          retention-days: 30
+          path: ${{ runner.temp }}/qikvrt-dod/census.json

@@ -77,6 +77,14 @@ class RepositoryDodTests(unittest.TestCase):
         obs["branches"].append({"name": "feature/x"})
         self.assert_excluded(obs, "ALL_BRANCHES_REGARDED")
 
+    def test_current_candidate_branch_is_regarded_but_not_merged(self):
+        obs = self.good()
+        obs["branches"].append({"name": "integration/final", "disposition": "PRODUCTIVE_CURRENT_CANDIDATE"})
+        obs["all_productive_branches_merged"] = False
+        result = evaluate(obs)
+        self.assertTrue(result["conjuncts"]["ALL_BRANCHES_REGARDED"])
+        self.assertFalse(result["conjuncts"]["ALL_PRODUCTIVE_BRANCHES_MERGED"])
+
     def test_productive_branch_outside_final_state_blocks(self):
         obs = self.good()
         obs["all_productive_branches_merged"] = False
