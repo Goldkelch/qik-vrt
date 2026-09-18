@@ -177,10 +177,10 @@ def review_queue_intent(
         raise ReviewSnapshotError("queue pull request number is invalid")
     if not isinstance(receipt_path, str) or not isinstance(diff_path, str):
         raise ReviewSnapshotError("queue evidence paths are invalid")
-    path = f"{REVIEW_QUEUE_ROOT}/pr-{pr_number}/{head}/{fingerprint}.json"
+    path = f"{REVIEW_QUEUE_ROOT}/pr-{pr_number}/{head}/{predecessor}/{fingerprint}.json"
     return path, {
         "schema": "qikvrt_mesh_review_queue_intent_v1",
-        "work_unit_id": f"pr-{pr_number}/{head}/{fingerprint}",
+        "work_unit_id": f"pr-{pr_number}/{head}/{predecessor}/{fingerprint}",
         "repository": repository,
         "pr_number": pr_number,
         "head_sha": head,

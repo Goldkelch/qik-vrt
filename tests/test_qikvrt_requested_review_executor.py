@@ -1932,6 +1932,19 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             [0.25, 1.0],
         )
 
+    def test_recursive_queue_intent_separates_same_successor_from_distinct_predecessors(self):
+        receipt = self.evaluate(self.snapshot())
+        successor = receipt["evidence_fingerprint"]
+        first_path, first = MODULE.review_queue_intent(receipt, "a" * 64)
+        second_path, second = MODULE.review_queue_intent(receipt, "b" * 64)
+
+        self.assertNotEqual(first_path, second_path)
+        self.assertTrue(first_path.endswith(f"/{'a' * 64}/{successor}.json"))
+        self.assertTrue(second_path.endswith(f"/{'b' * 64}/{successor}.json"))
+        self.assertEqual(first["successor_fingerprint"], successor)
+        self.assertEqual(second["successor_fingerprint"], successor)
+        self.assertNotEqual(first["predecessor_fingerprint"], second["predecessor_fingerprint"])
+
     def test_recursive_queue_intent_and_ack_are_content_addressed_and_immutable(self):
         receipt = self.evaluate(self.snapshot())
         predecessor = "a" * 64
@@ -1939,7 +1952,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertEqual(
             path,
             f"{MODULE.REVIEW_QUEUE_ROOT}/pr-349/{HEAD_SHA}/"
-            f"{receipt['evidence_fingerprint']}.json",
+            f"{predecessor}/{receipt['evidence_fingerprint']}.json",
         )
         self.assertEqual(intent["predecessor_fingerprint"], predecessor)
         self.assertEqual(
