@@ -27,6 +27,7 @@ SUITE_FILES = (
 
 IMPLEMENTATION_FILES = (
     "tools/qikvrt_temdd.py",
+    "src/temdd/v1_adapter.py",
     "src/qikvrt_temdd_event_ledger.py",
     "formalization/TEMDDCore.lean",
     "docs/terminal/temdd/index.html",
@@ -76,8 +77,16 @@ def check_language_and_ir(adapter: str) -> None:
     rc, out, err = invoke_adapter(adapter, good)
     require(rc == 0, "POSITIVE_CORPUS_REJECTED:" + err.strip())
     ir = json.loads(out)
-    require(ir.get("schema") == "temdd_ir_v0_1", "REFERENCE_IR_SCHEMA_MISMATCH")
+    require(ir.get("schema") == "temdd_ir_v1", "REFERENCE_IR_SCHEMA_MISMATCH")
+    require(ir.get("ir_version") == "1", "REFERENCE_IR_VERSION_MISMATCH")
+    require(ir.get("language_version") == "0.1", "REFERENCE_LANGUAGE_VERSION_MISMATCH")
     require(ir.get("subject", {}).get("binding") == "exact", "REFERENCE_IR_NOT_EXACT")
+    require(set(ir.get("semantic_contract", [])) == {
+        "T13_CAUSAL_BINDING",
+        "T14_EVIDENCE_NON_TRANSFER",
+        "T15_EFFECT_CONSTRUCTION",
+        "T16_CONFORMANCE_BINDING",
+    }, "REFERENCE_IR_SEMANTIC_CONTRACT_MISMATCH")
     for bad in sorted((ROOT / "tests/temdd/negative").glob("*.temdd")):
         rc, _, _ = invoke_adapter(adapter, bad)
         require(rc != 0, "NEGATIVE_CORPUS_ADMITTED:" + bad.name)
@@ -174,7 +183,7 @@ def build_report(repository: str, adapter: str) -> dict:
 def main(argv=None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--repository", default="Goldkelch/qik-vrt")
-    p.add_argument("--adapter", default="tools/qikvrt_temdd.py")
+    p.add_argument("--adapter", default="src/temdd/v1_adapter.py")
     p.add_argument("--output")
     args = p.parse_args(argv)
     try:
