@@ -371,6 +371,23 @@ class ProducerTests(unittest.TestCase):
         self.assertIn("'REPOSITORY_FILE_MANIFEST.json.sha256'", workflow)
         self.assertNotIn("'REPOSITORY_FILE_MANIFEST.sha256'", workflow)
 
+    def test_browser_ide_is_local_editable_and_effect_free(self):
+        page = (ROOT/'docs/terminal/temdd/index.html').read_text(encoding='utf-8')
+        self.assertIn('id="ideSource"', page)
+        self.assertIn('ANALYZE → IR', page)
+        self.assertIn('function analyzeTemdd(text)', page)
+        self.assertIn('QIKVRT_DOD requires complete canonical predicate', page)
+        self.assertIn('TRANSPORT_ACK != EFFECT_ACK', page)
+        self.assertNotIn("fetch('/api/temdd/events',{method:'POST'", page)
+        self.assertNotIn('fetch("/api/temdd/events",{method:"POST"', page)
+
+    def test_browser_ide_parser_matches_reference_example_shape(self):
+        page = (ROOT/'docs/terminal/temdd/index.html').read_text(encoding='utf-8')
+        self.assertIn("schema:'temdd_ir_v0_1'", page)
+        self.assertIn("version!=='0.1'", page)
+        self.assertIn("binding:'exact'", page)
+        self.assertIn('FRESH_EFFECT_READBACK', page)
+
     def test_consumer_validation_and_reconnect_state_machine(self):
         js = r'''
 const fs=require('fs'),vm=require('vm'),assert=require('assert');
