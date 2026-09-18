@@ -1,7 +1,7 @@
 name: QIKVRT TEMDD conformance
 on:
   pull_request:
-    paths: ['spec/temdd/**','examples/temdd/**','schemas/temdd-*','tools/qikvrt_temdd.py','tools/qikvrt_temdd_conformance.py','tests/test_temdd.py','tests/temdd/**','src/temdd_core.c','include/temdd_core.h','tests/test_temdd_core.c','runtime/temdd/**','runtime/m68000/temdd_transition.s','runtime/toolchains/pharo-13.lock.json','formalization/TEMDDCore.lean','src/qikvrt_temdd_event_ledger.py','src/qikvrt_effect_ack_http_terminal.py','tests/test_temdd_event_ledger.py','docs/terminal/temdd/**','deploy/universal-terminal/**','Makefile','.github/workflows/qikvrt_temdd.yml']
+    paths: ['spec/temdd/**','examples/temdd/**','conformance/temdd/**','schemas/temdd-*','tools/qikvrt_temdd.py','tools/qikvrt_temdd_conformance.py','tests/test_temdd.py','tests/temdd/**','src/temdd_core.c','include/temdd_core.h','tests/test_temdd_core.c','runtime/temdd/**','runtime/m68000/temdd_transition.s','runtime/toolchains/pharo-13.lock.json','formalization/TEMDDCore.lean','src/qikvrt_temdd_event_ledger.py','src/qikvrt_effect_ack_http_terminal.py','tests/test_temdd_event_ledger.py','docs/terminal/temdd/**','deploy/universal-terminal/**','Makefile','.github/workflows/qikvrt_temdd.yml']
   push: {branches: [main]}
 permissions: {contents: read}
 jobs:
@@ -114,6 +114,26 @@ jobs:
       lake build 2>&1 | tee "$RUNNER_TEMP/temdd-backends/lake-build.log"
       lake env lean ../TEMDDCore.lean 2>&1 | tee "$RUNNER_TEMP/temdd-backends/temdd-lean.log"
       grep -q 'theorem missing_effect_readback_not_done' ../TEMDDCore.lean
+   - name: TEMDD v1 exact-subject seven-layer conformance
+     env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+     shell: bash
+     run: |
+      set -euo pipefail
+      test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+      mkdir -p "$RUNNER_TEMP/temdd-backends"
+      python3 -B conformance/temdd/runner.py --repository Goldkelch/qik-vrt \
+        --output "$RUNNER_TEMP/temdd-backends/temdd-conformance-v1.json"
+      python3 - "$RUNNER_TEMP/temdd-backends/temdd-conformance-v1.json" <<'PY'
+      import json,subprocess,sys
+      report=json.load(open(sys.argv[1],encoding='utf-8'))
+      head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+      tree=subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip()
+      assert report['overall']=='PASS'
+      assert report['temdd_conformance']=='1'
+      assert report['implementation']['head']==head
+      assert report['implementation']['tree']==tree
+      PY
    - name: Seal exact-head executable-backend receipt
      env:
       EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
