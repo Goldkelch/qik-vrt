@@ -410,6 +410,19 @@ class SeedWorkflowTests(unittest.TestCase):
         self.assertEqual("a" * 40, boundary["source_head"])
         self.assertEqual("b" * 40, boundary["source_tree"])
         self.assertEqual("dashboard-test", boundary["qikvrt_run_id"])
+        self.assertEqual("NOT_EXECUTED", boundary["dashboard_execution"])
+        self.assertEqual("NOT_ESTABLISHED", boundary["current_dashboard_evidence"])
+        self.assertFalse(boundary["historical_dashboard_evidence_promoted"])
+        self.assertEqual(
+            [
+                ".qikvrt/seed-workflow/dashboard.log",
+                ".qikvrt/seed-workflow/dashboard-exact-head-binding.json",
+                ".qikvrt/seed-workflow/dashboard-nonterminal-boundary.json",
+                "evidence/seed_mesh_maintenance/runs/dashboard-test.json",
+                "evidence/seed_node_revalidation/runs/dashboard-test.json",
+            ],
+            boundary["current_run_evidence_set"],
+        )
         self.assertEqual("", (self.root / "github-output").read_text())
         self.assertEqual("previous dashboard\n", (self.root / "docs/qikvrt_mesh_dashboard.html").read_text())
         self.assertFalse((self.root / "evidence/seed_dashboard/runs/dashboard-test.json").exists())
@@ -478,6 +491,9 @@ class SeedWorkflowTests(unittest.TestCase):
         self.assertIn("include-hidden-files: true", upload)
         self.assertNotIn("docs/qikvrt_mesh_dashboard.html", upload)
         self.assertNotIn("evidence/seed_dashboard/LATEST.json", upload)
+        self.assertIn("dashboard_execution", workflow)
+        self.assertIn("current_dashboard_evidence", workflow)
+        self.assertIn("historical_dashboard_evidence_promoted", workflow)
 
     def test_dashboard_build_binds_every_main_push_to_exact_head_artifact(self) -> None:
         repository = Path(__file__).resolve().parents[1]
