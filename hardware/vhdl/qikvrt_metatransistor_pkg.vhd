@@ -30,10 +30,11 @@ package body qikvrt_metatransistor_pkg is
     drift_detected       : std_logic
   ) return qikvrt_state_t is
   begin
+    -- Only a strong '0' establishes drift freedom; every other value holds.
     if binding_valid /= '1' or
        authority_valid /= '1' or
        parent_child_differ /= '1' or
-       drift_detected = '1' then
+       drift_detected /= '0' then
       return QIKVRT_HOLD;
     end if;
 
