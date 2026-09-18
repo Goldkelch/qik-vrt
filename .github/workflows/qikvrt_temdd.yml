@@ -1,7 +1,7 @@
 name: QIKVRT TEMDD conformance
 on:
   pull_request:
-    paths: ['spec/temdd/**','examples/temdd/**','schemas/temdd-*','tools/qikvrt_temdd.py','tools/qikvrt_temdd_conformance.py','tests/test_temdd.py','tests/temdd/**','src/temdd_core.c','include/temdd_core.h','tests/test_temdd_core.c','runtime/temdd/**','runtime/m68000/temdd_transition.s','runtime/toolchains/pharo-13.lock.json','formalization/TEMDDCore.lean','formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/**','src/qikvrt_temdd_event_ledger.py','src/qikvrt_effect_ack_http_terminal.py','tests/test_temdd_event_ledger.py','docs/terminal/temdd/**','deploy/universal-terminal/**','Makefile','.github/workflows/qikvrt_temdd.yml']
+    paths: ['spec/temdd/**','examples/temdd/**','schemas/temdd-*','tools/qikvrt_temdd.py','tools/qikvrt_temdd_conformance.py','tools/qikvrt_temdd_conformance_report.py','src/qikvrt_temdd_semantic_ir.py','tests/test_temdd.py','tests/test_temdd_semantic_ir.py','tests/test_temdd_conformance_report.py','tests/temdd/**','src/temdd_core.c','include/temdd_core.h','tests/test_temdd_core.c','runtime/temdd/**','runtime/m68000/temdd_transition.s','runtime/toolchains/pharo-13.lock.json','formalization/TEMDDCore.lean','formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/**','src/qikvrt_temdd_event_ledger.py','src/qikvrt_effect_ack_http_terminal.py','tests/test_temdd_event_ledger.py','docs/terminal/temdd/**','deploy/universal-terminal/**','Makefile','.github/workflows/qikvrt_temdd.yml']
   push: {branches: [main]}
 permissions: {contents: read}
 jobs:
@@ -43,7 +43,7 @@ jobs:
       printf 'HEAD=%s\nTREE=%s\nEVIDENCE_TRANSFER=DENY\nSCOPE=producer-regression-only\nDOD=NOT_PROVEN\n' "$EXPECTED_HEAD" "$(git rev-parse 'HEAD^{tree}')" | tee "$RUNNER_TEMP/temdd-producer-binding.txt"
    - name: Python parser T01-T16 and corpus
      run: |
-      python3 -B -m unittest tests.test_temdd
+      python3 -B -m unittest tests.test_temdd tests.test_temdd_semantic_ir tests.test_temdd_conformance_report
       python3 -B tools/qikvrt_temdd_conformance.py
       python3 -B tools/qikvrt_temdd.py tests/temdd/positive/minimal.temdd >/tmp/minimal.json
       for f in tests/temdd/negative/*.temdd; do if python3 -B tools/qikvrt_temdd.py "$f" >/dev/null 2>&1; then echo "negative corpus admitted: $f"; exit 1; fi; done
@@ -147,6 +147,34 @@ jobs:
       receipt={'schema':'qikvrt_temdd_executable_backends_v1','repository':os.environ['GITHUB_REPOSITORY'],'source_sha':head,'source_tree':tree,'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'backends':{'c90':'EXECUTED_SUCCESS','smalltalk':'EXECUTED_SUCCESS','m68000':'EXECUTED_SUCCESS_QEMU_USER','lean':'COMPILED_SUCCESS_LEAN_4_19_LAKE'},'sources':sources,'outputs':outputs,'predecessor_evidence_transfer':False,'physical_m68000_execution_observed':False,'stable_language_claim':False,'remaining_semantic_closure':[],'semantic_closure':'T01_T16_MATERIALIZED_AND_EXECUTED','compiler_self_hosting_claim':False,'effect_ack_done':False}
       (evidence/'backend-receipt.json').write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
       print('TEMDD_EXECUTABLE_BACKENDS_RECEIPT head='+head+' tree='+tree)
+      PY
+   - name: Generate exact-subject TEMDD conformance report
+     env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+     shell: bash
+     run: |
+      set -euo pipefail
+      head="$(git rev-parse HEAD)"
+      tree="$(git rev-parse 'HEAD^{tree}')"
+      test "$head" = "$EXPECTED_HEAD"
+      python3 -B tools/qikvrt_temdd_conformance_report.py \
+        --repository "$GITHUB_REPOSITORY" \
+        --head "$head" \
+        --tree "$tree" \
+        --backend-receipt "$RUNNER_TEMP/temdd-backends/backend-receipt.json" \
+        --output "$RUNNER_TEMP/temdd-backends/conformance-report.json"
+      python3 - <<'PY'
+      import json, os, subprocess
+      from pathlib import Path
+      report=json.loads((Path(os.environ['RUNNER_TEMP'])/'temdd-backends/conformance-report.json').read_text())
+      assert report['overall']=='PASS'
+      assert report['implementation']['head']==subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+      assert report['implementation']['tree']==subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip()
+      assert report['predecessor_evidence_transfer'] is False
+      assert report['stable_language_claim'] is False
+      assert report['main_adoption'] is False
+      assert report['production_effect'] is False
+      assert report['effect_ack_done'] is False
       PY
    - name: Materialize bounded integrity candidate without adopting or promoting
      shell: bash

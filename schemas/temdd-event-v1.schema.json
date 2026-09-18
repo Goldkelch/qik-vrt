@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://goldkelch.github.io/qik-vrt/schemas/temdd-event-v1.schema.json",
+  "title": "TEMDD canonical event IR v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema","event_id","event_type","subject_id","subject_repository","subject_pr",
+    "subject_head","subject_tree","producer","producer_event_id","timestamp","emitted_at",
+    "source_order","observation_order","cause_event_ids","inputs","outputs","evidence_refs",
+    "decision","content_digest","evidence_transfer"
+  ],
+  "properties": {
+    "schema": {"const": "temdd_event_ir_v1"},
+    "event_id": {"type": "string", "pattern": "^[0-9a-f]{32}:[1-9][0-9]{0,18}$"},
+    "event_type": {"enum": ["OBSERVE","CLASSIFY","ACTION","EFFECT","READBACK","SUCCESSOR","HOLD"]},
+    "subject_id": {"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},
+    "subject_repository": {"type":"string","minLength":3},
+    "subject_pr": {"type":"integer","minimum":1},
+    "subject_head": {"type":"string","pattern":"^[0-9a-f]{40}$"},
+    "subject_tree": {"type":"string","pattern":"^[0-9a-f]{40}$"},
+    "producer": {"enum":["repository","transputer"]},
+    "producer_event_id": {"type":"string","minLength":1},
+    "timestamp": {"type":"string","pattern":"Z$"},
+    "emitted_at": {"type":"string","pattern":"Z$"},
+    "source_order": {"type":"integer","minimum":0},
+    "observation_order": {"type":"integer","minimum":1},
+    "cause_event_ids": {"type":"array","uniqueItems":true,"items":{"type":"string","minLength":1}},
+    "inputs": {"type":"array","uniqueItems":true,"items":{"type":"string","minLength":1}},
+    "outputs": {"type":"array","uniqueItems":true,"items":{"type":"string","minLength":1}},
+    "evidence_refs": {"type":"array","uniqueItems":true,"items":{"type":"string","minLength":1}},
+    "decision": {"type":"string","minLength":1},
+    "content_digest": {"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "evidence_transfer": {"const":"DENY"}
+  }
+}

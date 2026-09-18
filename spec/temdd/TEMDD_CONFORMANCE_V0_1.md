@@ -1,16 +1,50 @@
 # TEMDD v0.1 Conformance
 
-A conforming implementation MUST parse the positive corpus, reject the negative corpus, preserve exact-subject binding, distinguish transport/result/effect acknowledgement, fail closed on stale or unknown critical evidence, and construct DONE only from the complete declared DoD.
+TEMDD v0.1 conformance is a seven-layer, exact-subject contract:
 
-The reference implementation is `tools/qikvrt_temdd.py`. Semantic executable checks T01-T12 are in `tools/qikvrt_temdd_conformance.py`. The C90 kernel is compiled under `-std=c90 -pedantic -Wall -Wextra -Werror`.
+`LANGUAGE ∧ IR ∧ IDE ∧ LEDGER ∧ FORMALIZATION ∧ TESTS ∧ CONFORMANCE`.
 
-The bootstrap defines executable CI gates for the same bounded semantic kernel in all declared backend classes:
+A conforming candidate MUST parse the positive corpus, reject the negative
+corpus, preserve exact-subject binding, distinguish transport/result/effect
+acknowledgement, fail closed on stale or unknown critical evidence, preserve
+T01-T16, and construct DONE only from the complete declared DoD.
 
-- Smalltalk: the hash-locked Pharo 13 image and VM execute `TEMDDRuntime.st` against positive and fail-closed vectors.
-- M68000: the GNU m68k cross-toolchain builds the fixed relation and a C-ABI vector harness; `qemu-m68k` executes the resulting M68000 Linux binary.
-- Lean: the pinned Lean 4.19 / Lake project is freshly built and `formalization/TEMDDCore.lean` is kernel-checked through `lake env lean`.
-- C90 and Python remain executable differential/reference gates.
+## Canonical representations
 
-Successful execution establishes an exact-head backend receipt; it does not establish physical M68000 execution, independent review, Main adoption, public deployment, or `EFFECT_ACK_DONE`.
+Program meaning is carried by `temdd_ir_v0_1`. Durable native ledger rows are
+projected conservatively to `temdd_event_ir_v1`; evidence is represented as
+`temdd_evidence_ir_v1`. Event sequence and causal ancestry are independent:
+`observation_order` never manufactures `cause_event_ids`.
 
-v0.1 still distinguishes BOOTSTRAP_CONFORMANT from STABLE_LANGUAGE. The PR description refers to additional normative T13-T16 closure, but numbered repository definitions for those obligations are not yet materialized. They are therefore retained as an explicit semantic HOLD rather than invented by the backend gate.
+Evidence admission requires a fresh evidence object bound to exactly the same
+repository, PR, HEAD and TREE. Any subject mutation denies predecessor evidence
+transfer and requires fresh validation.
+
+## Executable implementation classes
+
+- Python: parser/elaborator, T01-T16 semantic checks and canonical Event/Evidence IR projection.
+- IDE: browser editor, typed diagnostic program IR, exact-subject view and persistent ledger trace; local analysis has no effect authority.
+- Ledger: durable append-only SQLite/WAL event store with exact-subject replay isolation and dual source/observation order.
+- C90: executable deterministic partial projection.
+- Smalltalk: hash-locked Pharo 13 executable partial projection.
+- M68000: cross-built fixed relation executed under `qemu-m68k`; this is not physical M68000 evidence.
+- Lean/Lake: pinned Lean 4.19 formal obligations, T13-T16 and axiom audit.
+
+## Exact-subject report
+
+The workflow emits `temdd_conformance_report_v1` only after all preceding
+candidate gates have succeeded on one immutable HEAD/TREE. The report binds:
+
+- implementation repository, HEAD, TREE and implementation digest;
+- normative suite version, file inventory and suite digest;
+- language, program IR, IDE, event semantics, ledger, evidence binding,
+  causality, Effect-Ack, formal invariants, tests and negative vectors;
+- executed C90, Smalltalk, M68000/QEMU and Lean backends.
+
+`overall=PASS` is scoped TEMDD candidate conformance only. It does not imply
+native P3 review, Main adoption, production deployment, physical hardware
+execution, scientific validation or general `EFFECT_ACK_DONE`.
+
+v0.1 therefore distinguishes `BOOTSTRAP/CANDIDATE_CONFORMANT` from
+`STABLE_LANGUAGE`. Stable-language status remains gated by Main adoption and
+fresh production readback.
