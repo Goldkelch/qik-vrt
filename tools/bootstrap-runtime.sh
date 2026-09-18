@@ -23,7 +23,7 @@ usage() {
     cat <<'EOF'
 Usage: tools/bootstrap-runtime.sh [--check-only] [--install]
        [--accept-third-party]
-       [--profile core|ietf|formal|audio|publication|all]
+       [--profile core|ietf|formal|audio|publication|smalltalk|rails|all]
        [--cache-dir PATH]
 
 Every profile checks GitHub CLI first. Only the verified GitHub CLI and
@@ -91,7 +91,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$PROFILE" in
-    core|ietf|formal|audio|publication|all) ;;
+    core|ietf|formal|audio|publication|smalltalk|rails|all) ;;
     *) usage >&2; exit 2 ;;
 esac
 if [ "$MODE" = install ] && [ "$ACCEPT_THIRD_PARTY" -ne 1 ]; then
@@ -173,6 +173,15 @@ find_python_312() {
         fi
     done
     return 1
+}
+
+check_rails_profile() {
+    command -v ruby >/dev/null 2>&1 || { mark_continue "rails: Ruby 3.3.8 is absent"; return; }
+    [ "$(ruby -e 'print RUBY_VERSION')" = "3.3.8" ] || { mark_continue "rails: Ruby 3.3.8 required"; return; }
+    command -v bundle >/dev/null 2>&1 || { mark_continue "rails: Bundler 2.5.22 is absent"; return; }
+    [ "$(bundle --version)" = "Bundler version 2.5.22" ] || { mark_continue "rails: Bundler 2.5.22 required"; return; }
+    (cd "$ROOT/deploy/vercel-monitor" && BUNDLE_FROZEN=true bundle check) || { mark_continue "rails: frozen Gemfile.lock closure is not installed"; return; }
+    printf '%s\n' "PASS: Rails runtime Ruby 3.3.8 / Bundler 2.5.22 / frozen dependency closure"
 }
 
 check_core_profile() {
@@ -389,6 +398,14 @@ check_audio_profile() {
     fi
 }
 
+check_smalltalk_profile() {
+    if [ "$MODE" = install ]; then
+        python3 "$ROOT/tools/qikvrt_smalltalk.py" install --cache-dir "$CACHE_DIR" || fail "Pharo installation failed"
+    elif ! python3 "$ROOT/tools/qikvrt_smalltalk.py" verify --cache-dir "$CACHE_DIR"; then
+        mark_continue "Run --install --accept-third-party --profile smalltalk for the locked Pharo runtime"
+    fi
+}
+
 check_publication_profile() {
     missing=
     for tool in xelatex pdftotext pdftoppm; do
@@ -412,12 +429,16 @@ case "$PROFILE" in
     formal) check_formal_profile ;;
     audio) check_audio_profile ;;
     publication) check_publication_profile ;;
+    smalltalk) check_smalltalk_profile ;;
+    rails) check_rails_profile ;;
     all)
         check_core_profile
         check_ietf_profile
         check_formal_profile
         check_audio_profile
         check_publication_profile
+        check_smalltalk_profile
+        check_rails_profile
         ;;
 esac
 

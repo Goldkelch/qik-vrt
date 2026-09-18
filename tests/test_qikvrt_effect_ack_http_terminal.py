@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import importlib.util
 import json
+import socket
+import subprocess
 import sys
 import threading
 import time
@@ -219,6 +221,60 @@ class LoopbackTerminalE2ETests(unittest.TestCase):
         )
         self.assertEqual(status, 400)
         self.assertFalse(body["ordinary_release"])
+
+
+class LoopbackTerminalCliLivenessTests(unittest.TestCase):
+    def test_cli_daemon_survives_consecutive_loopback_readbacks(self) -> None:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as reservation:
+            reservation.bind(("127.0.0.1", 0))
+            port = reservation.getsockname()[1]
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-B",
+                str(MODULE_PATH),
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            self.assertIsNotNone(process.stdout)
+            ready = json.loads(process.stdout.readline())
+            self.assertEqual(
+                ready,
+                {
+                    "external_effects": "NONE",
+                    "host": "127.0.0.1",
+                    "port": port,
+                    "state": "READY",
+                },
+            )
+            for _ in range(3):
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:{port}/.well-known/effect-ack", timeout=3
+                ) as response:
+                    self.assertEqual(response.status, 200)
+                    capability = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(
+                        capability["schema"], "qikvrt_effect_ack_http_capability_v1"
+                    )
+                self.assertIsNone(process.poll())
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=3)
+            if process.stdout is not None:
+                process.stdout.close()
+            if process.stderr is not None:
+                process.stderr.close()
 
 
 if __name__ == "__main__":

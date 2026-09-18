@@ -1,0 +1,80 @@
+name: QIKVRT MC68000 bidirectional wire roundtrip v1
+on:
+  pull_request:
+    paths:
+      - 'src/cloud_transputer/qikvrt_wire_v1.*'
+      - 'src/cloud_transputer/qikvrt_sha256_v1.c'
+      - 'src/cloud_transputer/m68k_wire_roundtrip.c'
+      - 'policy/QIKVRT_CLOUD_TRANSPUTER_V1.json'
+      - '.github/workflows/qikvrt_wire_roundtrip_v1.yml'
+permissions:
+  contents: read
+concurrency:
+  group: qikvrt-wire-roundtrip-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+jobs:
+  m68k-wire-roundtrip:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Bind literal head
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          git rev-parse HEAD
+          git rev-parse 'HEAD^{tree}'
+      - name: Install MC68000 compiler and runner
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gcc-m68k-linux-gnu libc6-dev-m68k-cross qemu-user binutils-m68k-linux-gnu
+      - name: Compile strict C90 MC68000 wire witness
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qikvrt-wire
+          m68k-linux-gnu-gcc -m68000 -static -std=c90 -pedantic-errors -Wall -Wextra -Werror -O2 -Isrc/cloud_transputer \
+            src/cloud_transputer/qikvrt_sha256_v1.c src/cloud_transputer/qikvrt_wire_v1.c src/cloud_transputer/m68k_wire_roundtrip.c \
+            -o /tmp/qikvrt-wire/qikvrt-m68k-wire
+          m68k-linux-gnu-readelf -h /tmp/qikvrt-wire/qikvrt-m68k-wire | tee /tmp/qikvrt-wire/readelf.txt
+          grep -Eq 'Machine:[[:space:]]+MC68000' /tmp/qikvrt-wire/readelf.txt
+          sha256sum /tmp/qikvrt-wire/qikvrt-m68k-wire | tee /tmp/qikvrt-wire/binary.sha256
+      - name: Execute forward state application and reverse receipt
+        run: |
+          set -euo pipefail
+          qemu-m68k /tmp/qikvrt-wire/qikvrt-m68k-wire | tee /tmp/qikvrt-wire/roundtrip.txt
+          for token in WIRE_PROTOCOL=QIKVRT_WIRE_V1 BYTE_ORDER=BIG_ENDIAN REQUEST_ROUNDTRIP=PASS LOCAL_STATE_REOBSERVED=PASS RECEIPT_BINDING=PASS REVERSE_ROUNDTRIP=PASS TRANSPORT_ACK_NOT_EFFECT_ACK=TRUE LOCAL_REFERENCE_EFFECT_ACK_DONE=TRUE GENERAL_EFFECT_ACK_DONE=FALSE; do
+            grep -Fqx "$token" /tmp/qikvrt-wire/roundtrip.txt
+          done
+      - name: Independently parse both emitted frames on host
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,struct
+          rows=dict(x.split('=',1) for x in Path('/tmp/qikvrt-wire/roundtrip.txt').read_text().splitlines() if '=' in x)
+          def fnv(b):
+              h=2166136261
+              for x in b: h=((h^x)*16777619)&0xffffffff
+              return h
+          frames={k:bytes.fromhex(rows[k]) for k in ('REQUEST_HEX','RECEIPT_HEX')}
+          for b in frames.values():
+              assert b[:5]==b'QVRT\x01'
+              assert struct.unpack('>H',b[10:12])[0]==84
+              n=struct.unpack('>I',b[44:48])[0]
+              assert len(b)==88+n
+              assert hashlib.sha256(b[84:84+n]).digest()==b[48:80]
+              assert fnv(b[:80])==struct.unpack('>I',b[80:84])[0]
+              assert fnv(b[:84+n])==struct.unpack('>I',b[84+n:88+n])[0]
+          request,receipt=frames['REQUEST_HEX'],frames['RECEIPT_HEX']
+          assert receipt[84:116]==hashlib.sha256(request).digest()
+          for off in (12,16,32,36,40): assert request[off:off+4]==receipt[off:off+4]
+          Path('/tmp/qikvrt-wire/HOST_REOBSERVATION.txt').write_text('HOST_INDEPENDENT_FRAME_REOBSERVATION=PASS\nGENERAL_EFFECT_ACK_DONE=FALSE\n')
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-m68k-wire-${{ github.event.pull_request.head.sha }}
+          path: /tmp/qikvrt-wire
+          retention-days: 30

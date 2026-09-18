@@ -1,0 +1,56 @@
+{
+  "schema": "qikvrt_work_unit_v1",
+  "work_unit_id": "MEGAST_RAILS_P2_COVERAGE_REPAIR_20260915_V1",
+  "parent_work_unit": "state/work_units/MEGAST_RAILS_VERCEL_20260915_V1.json",
+  "request": "Close the bounded candidate-local Rails P2 gap on PR #1095; keep review admission, Main promotion, public deployment and EFFECT_ACK_DONE separate.",
+  "human_contribution": {
+    "human": "Ingolf Lohmann",
+    "scope": "Candidate-local validation/repair request and explicit phase boundaries"
+  },
+  "artificial_cognitive_contribution": {
+    "system": "ChatGPT",
+    "scope": "Exact-source audit, Makefile coverage repair and eight isolated gate-control regressions"
+  },
+  "origin_class": "JOINT_SEPARABLE",
+  "base_commit": "7fc20a585e7687dbe1483230c28ce3295f804ece",
+  "base_tree": "b174202675956cab0ceb071a27b8b2d0ea3ce0ab",
+  "observed_main": "a86054139b49c13c5cd344753b248b46b5daf66f",
+  "reuse_sources": [
+    "Makefile",
+    "deploy/vercel-monitor/test/megast_test.rb",
+    "deploy/vercel-monitor/test/rails_smoke_test.rb",
+    "tools/qikvrt_tool_cache.py"
+  ],
+  "source_identities": {
+    "Makefile": {
+      "sha256": "a4b8d535bbf6da9d7cfe663be357985890d86c17eb844aa127d9ce6a478546e8",
+      "git_blob": "e8f2f591189cafe7deb46bfba1a006ddcfe050ce"
+    },
+    "tests/test_megast_rails_gate.py": {
+      "sha256": "612e440ddd1e4f69a3e8a295dfdf2336dd00e728208be5c589e1bb945f5d1c7d",
+      "git_blob": "8a545053213ff177cf7c3765b6edb59a13882675"
+    }
+  },
+  "validation_scope": "Eight gate-control regressions pass against the patched Makefile using explicitly isolated Ruby/cache test doubles. This is NOT a Rails runtime test or full repository P2. Fresh diagnostic of unchanged source files at base_commit: Ruby 3.3.8 core suite 11 tests, 64 assertions, zero failures/errors/skips; Bundler 2.5.22 dependency preflight fails before Rails boots.",
+  "validation_commands": [
+    "python3 -B tests/test_megast_rails_gate.py"
+  ],
+  "completed_scope": "Both supplied suites are mandatory under make test, frozen Bundler setup is required, missing/empty lock or cache/interpreter/test failure cannot silently pass. No dependency installation or resolver is hidden in the test target.",
+  "remaining": [
+    "Admit and provision the Ruby/Bundler/Rails runtime/cache profile through the existing bootstrap path",
+    "Resolve and review the complete transitive Gemfile.lock; do not fabricate it",
+    "Run both real suites and full exact-final-head P2 after canonical integrity materialization",
+    "Obtain exact-source Vercel build-only evidence through the legitimate project capability"
+  ],
+  "claims": {
+    "full_p2_complete": false,
+    "rails_runtime_verified": false,
+    "vercel_build_verified": false,
+    "native_review_implied": false,
+    "main_integrated": false,
+    "public_deployment_performed": false,
+    "predecessor_evidence_transfer": false
+  },
+  "ordinary_release": false,
+  "effect_ack_done": false
+}

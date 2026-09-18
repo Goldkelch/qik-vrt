@@ -1,0 +1,49 @@
+{
+  "schema": "qikvrt_work_unit_v1",
+  "work_unit_id": "SMALLTALK_EVENT_CONTINUATION_20260915_V1",
+  "request": "Ereignissteuerung zuerst: Smalltalk verarbeitet eingehende Ereignisse und setzt Arbeit ohne wiederholte Statusabfragen fort.",
+  "human_contribution": {
+    "human": "Ingolf Lohmann",
+    "scope": "selected event-driven Smalltalk integration as the first implementation priority"
+  },
+  "artificial_cognitive_contribution": {
+    "system": "OpenAI Codex",
+    "scope": "implementation, integration tests and scoped candidate preparation"
+  },
+  "origin_class": "JOINT_SEPARABLE",
+  "base_commit": "2fdcf8d233b1495732ef38e3406ebfc095fd0ef3",
+  "base_tree": "e073c90c1d8c5ffa47b8a4c08093ea00046ab850",
+  "reuse_sources": [
+    "tools/qikvrt_smalltalk.py",
+    "tools/qikvrt_live_sse.py",
+    "tools/qikvrt_real_mesh.py:AppendOnlyNodeLedger",
+    "src/smalltalk/QikvrtEffectAck.st",
+    "docs/terminal/QIKVRT_LIVE_EVENT_STREAM_V1.md"
+  ],
+  "source_sha256": {
+    "Makefile": "c65308e702873855dbff025cf2af585ce59009a62b421eccc4b271abf7557593",
+    "tools/qikvrt_smalltalk.py": "5b59ee06fa8212e5724b4b09dde7b6122263bb940e64b71857078013556244aa",
+    "tools/qikvrt_live_sse.py": "c5d55ab2837ef068a8969bd02c352681d9050e790d5557b8020c2d1dc43f85c0",
+    "src/smalltalk/QikvrtEventReactor.st": "19e1d87649e89c912707850a1733f4dcc47300c4be9c6fc580a9598538b6a4eb",
+    "src/smalltalk/events.st": "3999b8dd7e5818da62ccf5ab9436690221287ec574c97ef88af11f7f22c61fd1",
+    "src/smalltalk/save-image.st": "243b6d200f65431c9977157a5db9b26ad98f8c94f35511077df11b3065290068",
+    "src/smalltalk/README.md": "fdb637540b60f5acaf7b2490238d7f4cadcbc5305ca5fabf769fd05609bc3404",
+    "tests/test_qikvrt_live_sse.py": "4067480b32f2f3630d5312dd71263fa4631dd0fbc7b0e5934058b93f882ae0ac",
+    "tests/test_qikvrt_smalltalk_events.py": "0af3663dd634c049f721c7d9cf7ac23421a3f6094e5d389b76a8f8a0caf12ec3",
+    "runtime/toolchains/CACHE_REGISTRY.json": "b3a129b3a3bedf5882925cf728ac406b28e6f97a3fa76a07f6f5bb6b7709e846"
+  },
+  "validation_commands": [
+    "python3 -B -m unittest -v tests.test_qikvrt_live_sse tests.test_qikvrt_smalltalk_events",
+    "make smalltalk-test",
+    "make test"
+  ],
+  "validation_scope": "Fresh local candidate verification required; no CI, review or predecessor receipts transferred. Exact final commit verification reported on candidate handoff.",
+  "completed_scope": "Executable trusted-local-file notification to persistent Pharo predecessor scheduler to durable Mesh outbox, with restart replay and SSE notification transport.",
+  "remaining": [
+    "Authoritatively bind live producers that currently omit exact tree/base identity",
+    "Separately reviewed productive continuation handlers and deployment",
+    "Exact candidate native review and legitimate trusted-Main activation"
+  ],
+  "ordinary_release": false,
+  "effect_ack_done": false
+}
