@@ -1580,6 +1580,39 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertTrue(report["checks"]["stored_receipt_parses_as_expected"])
         self.assertFalse(report["checks"]["stored_receipt_bytes"])
 
+    def test_exact_scope_authority_review_parser_accepts_canonical_workflow_lines(self):
+        paths = [
+            ".github/workflows/qikvrt_cloud_transputer_integrity_objects_v1.yml",
+            ".github/workflows/qikvrt_megast_distribution_v1.yml",
+        ]
+        blob_a = "a" * 40
+        blob_b = "b" * 40
+        body = (
+            f"<!-- {MODULE.HUMAN_AUTHORITY_REVIEW_MARKER}:349:{HEAD_SHA} -->\n"
+            f"- `{paths[0]}`: Git-Blob `{blob_a}`; Workflow-Deklaration `permissions.contents: write`.\n"
+            f"- `{paths[1]}`: Git-Blob `{blob_b}`; Workflow-Deklaration `permissions.contents: write`.\n"
+        )
+        review = {
+            "id": 77,
+            "body": body,
+            "user": {"login": "ingolf-lohmann"},
+            "author_association": "COLLABORATOR",
+            "state": "COMMENTED",
+            "commit_id": HEAD_SHA,
+            "submitted_at": "2026-09-18T12:04:56Z",
+        }
+
+        def pages(endpoint):
+            return [review] if "/reviews?" in endpoint else []
+
+        with mock.patch.object(MODULE, "_gh_pages", side_effect=pages):
+            observed = MODULE._discussion_observation("example/qik-vrt", 349)
+
+        authority = next(
+            item for item in observed if item["kind"] == "PULL_REQUEST_REVIEW"
+        )
+        self.assertEqual(authority["authority_scope_paths"], sorted(paths))
+
     def test_own_mesh_projection_is_excluded_from_causal_discussion(self):
         own = {
             "id": 1,

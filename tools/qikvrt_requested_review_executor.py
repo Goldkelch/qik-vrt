@@ -2743,7 +2743,7 @@ def _discussion_observation(repository: str, number: int) -> list[dict[str, Any]
                 )
                 if marker is not None and item.get("commit_id") == marker.group(1):
                     authority_scope_paths = sorted(set(re.findall(
-                        r"^- \`(\\.github/workflows/[^\`]+)\`: Git-Blob \`[0-9a-f]{40}\`; Workflow-Deklaration \`permissions\\.contents: write\`\\.$",
+                        r"^- \`(\.github/workflows/[^\`]+)\`: Git-Blob \`[0-9a-f]{40}\`; Workflow-Deklaration \`permissions\.contents: write\`\.$",
                         body,
                         flags=re.MULTILINE,
                     )))
