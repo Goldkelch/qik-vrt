@@ -95,5 +95,20 @@ class UniversalTerminalNetworkBoundaryTests(unittest.TestCase):
         self.assertIn("CHECK_NAME=initial_runtime_state_copy", workflow)
 
 
+    def test_temdd_ledger_composes_with_cloud_terminal(self):
+        entrypoint = ENTRYPOINT.read_text(encoding="utf-8")
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("qikvrt_temdd_event_ledger.py serve", entrypoint)
+        self.assertIn('QIKVRT_TEMDD_PR:-1123', entrypoint)
+        self.assertIn("--repository", entrypoint)
+        self.assertIn("--pr", entrypoint)
+        self.assertIn("temdd_event_stream", entrypoint)
+        self.assertIn("QIKVRT_TEMDD_PR=1123", workflow)
+        self.assertIn("/api/temdd/subject", workflow)
+        self.assertIn("/AI", workflow)
+        self.assertIn("HOLD_UNVERIFIED", workflow)
+
+
+
 if __name__ == "__main__":
     unittest.main()

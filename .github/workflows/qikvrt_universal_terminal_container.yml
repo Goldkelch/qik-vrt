@@ -6,6 +6,10 @@ on:
       - "deploy/universal-terminal/**"
       - "browser/firefox/qikvrt-terminal/**"
       - "src/qikvrt_effect_ack_http_terminal.py"
+      - "src/qikvrt_temdd_event_ledger.py"
+      - "docs/terminal/temdd/**"
+      - "spec/temdd/**"
+      - "tests/test_temdd_event_ledger.py"
       - "policy/QIKVRT_UNIVERSAL_TERMINAL_VIRTUALIZATION_V1.json"
       - "tests/test_qikvrt_universal_terminal_network_boundary.py"
       - "tests/test_qikvrt_effect_ack_http_terminal.py"
@@ -63,6 +67,7 @@ jobs:
             -p 127.0.0.1:6080:6080 \
             -e QIKVRT_START_URL=about:blank \
             -e QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION=1 \
+            -e QIKVRT_TEMDD_PR=1123 \
             -v qikvrt-test-profile:/var/lib/qikvrt/profile \
             -v qikvrt-test-state:/var/lib/qikvrt/state \
             qikvrt/universal-terminal:${EXACT_SUBJECT_SHA}
@@ -105,6 +110,19 @@ jobs:
           assert value['external_effects']=='NONE'
           PY
           printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
+          CHECK_NAME=temdd_ide
+          docker exec qikvrt-terminal curl --max-time 2 -fsS http://127.0.0.1:8771/AI > /tmp/temdd-ide.html
+          grep -Fq 'TEMDD' /tmp/temdd-ide.html
+          docker exec qikvrt-terminal curl --max-time 2 -fsS http://127.0.0.1:8771/api/temdd/subject > /tmp/temdd-subject.json
+          python3 - <<'PY'
+          import json, os
+          value=json.load(open('/tmp/temdd-subject.json',encoding='utf-8'))
+          assert value['subject']['repository']=='Goldkelch/qik-vrt'
+          assert value['subject']['pr']==1123
+          assert value['subject']['head']==os.environ['EXACT_SUBJECT_SHA']
+          assert value['state']=='HOLD_UNVERIFIED'
+          PY
+          printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
           CHECK_NAME=novnc_surface
           curl -fsS http://127.0.0.1:6080/vnc.html >/tmp/vnc.html
           grep -Eqi '<html|<!doctype html' /tmp/vnc.html
@@ -137,6 +155,7 @@ jobs:
             -p 127.0.0.1:6080:6080 \
             -e QIKVRT_START_URL=about:blank \
             -e QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION=1 \
+            -e QIKVRT_TEMDD_PR=1123 \
             -v qikvrt-test-profile:/var/lib/qikvrt/profile \
             -v qikvrt-test-state:/var/lib/qikvrt/state \
             qikvrt/universal-terminal:${EXACT_SUBJECT_SHA}
@@ -203,6 +222,8 @@ jobs:
           cp /tmp/initial-post-readback-checks.log /tmp/qikvrt-terminal-evidence/initial-post-readback-checks.log 2>/dev/null || true
           cp /tmp/restart-post-readback-checks.log /tmp/qikvrt-terminal-evidence/restart-post-readback-checks.log 2>/dev/null || true
           cp /tmp/vnc.html /tmp/qikvrt-terminal-evidence/vnc.html 2>/dev/null || true
+          cp /tmp/temdd-ide.html /tmp/qikvrt-terminal-evidence/temdd-ide.html 2>/dev/null || true
+          cp /tmp/temdd-subject.json /tmp/qikvrt-terminal-evidence/temdd-subject.json 2>/dev/null || true
           cp /tmp/qikvrt-compose.json /tmp/qikvrt-terminal-evidence/compose-rendered.json 2>/dev/null || true
           printf '%s\n' "$EXACT_SUBJECT_SHA" > /tmp/qikvrt-terminal-evidence/exact-head.txt
           python3 - <<'PY'

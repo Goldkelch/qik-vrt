@@ -130,3 +130,15 @@ cloud-carrier-live-sse-test: tool-cache-contract
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tests/test_cloud_carrier_live_sse_runtime.py -v
 
 test: cloud-carrier-live-sse-test
+
+# TEMDD producer/replay regression; the kernel remains scheduler-free.
+.PHONY: temdd-event-ledger-test
+test: temdd-event-ledger-test
+temdd-event-ledger-test:
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tests/test_temdd_event_ledger.py
+
+.PHONY: mesh-monitor-test
+mesh-monitor-test:
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tests/test_mesh_monitor.py
+
+test: mesh-monitor-test
