@@ -130,3 +130,9 @@ cloud-carrier-live-sse-test: tool-cache-contract
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tests/test_cloud_carrier_live_sse_runtime.py -v
 
 test: cloud-carrier-live-sse-test
+
+# Finite producer/replay regression; no scheduling inside the TEMDD kernel.
+.PHONY: temdd-event-ledger-test
+test: temdd-event-ledger-test
+temdd-event-ledger-test:
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tests/test_temdd_event_ledger.py

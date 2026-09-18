@@ -6,6 +6,9 @@ on:
       - "deploy/universal-terminal/**"
       - "browser/firefox/qikvrt-terminal/**"
       - "src/qikvrt_effect_ack_http_terminal.py"
+      - "src/qikvrt_temdd_event_ledger.py"
+      - "docs/terminal/temdd/**"
+      - "tests/test_temdd_event_ledger.py"
       - "policy/QIKVRT_UNIVERSAL_TERMINAL_VIRTUALIZATION_V1.json"
       - "tests/test_qikvrt_universal_terminal_network_boundary.py"
       - "tests/test_qikvrt_effect_ack_http_terminal.py"
@@ -105,6 +108,10 @@ jobs:
           assert value['external_effects']=='NONE'
           PY
           printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
+          CHECK_NAME=temdd_ide_surface
+          docker exec qikvrt-terminal curl --max-time 2 -fsS http://127.0.0.1:8771/AI > /tmp/temdd-ide.html
+          grep -Fq 'TEMDD v0.1 IDE' /tmp/temdd-ide.html
+          printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
           CHECK_NAME=novnc_surface
           curl -fsS http://127.0.0.1:6080/vnc.html >/tmp/vnc.html
           grep -Eqi '<html|<!doctype html' /tmp/vnc.html
@@ -179,6 +186,8 @@ jobs:
           assert before['profile_persistent'] is True and after['profile_persistent'] is True
           assert before['start_url']==after['start_url']=='about:blank'
           assert after['authenticated_session_storage']=='FIREFOX_PROFILE'
+          assert after['temdd_ide']=='/AI'
+          assert after['temdd_event_stream']=='/api/temdd/events'
           assert after['external_effect_claimed'] is False
           assert after['started_at_unix'] >= before['started_at_unix']
           PY
@@ -203,6 +212,7 @@ jobs:
           cp /tmp/initial-post-readback-checks.log /tmp/qikvrt-terminal-evidence/initial-post-readback-checks.log 2>/dev/null || true
           cp /tmp/restart-post-readback-checks.log /tmp/qikvrt-terminal-evidence/restart-post-readback-checks.log 2>/dev/null || true
           cp /tmp/vnc.html /tmp/qikvrt-terminal-evidence/vnc.html 2>/dev/null || true
+          cp /tmp/temdd-ide.html /tmp/qikvrt-terminal-evidence/temdd-ide.html 2>/dev/null || true
           cp /tmp/qikvrt-compose.json /tmp/qikvrt-terminal-evidence/compose-rendered.json 2>/dev/null || true
           printf '%s\n' "$EXACT_SUBJECT_SHA" > /tmp/qikvrt-terminal-evidence/exact-head.txt
           python3 - <<'PY'

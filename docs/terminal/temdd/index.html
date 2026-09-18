@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>QIK-VRT TEMDD Live Universal Terminal</title><style>body{margin:0;background:#090c10;color:#e8edf2;font:14px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}main{max-width:1280px;margin:auto;padding:18px}.grid{display:grid;grid-template-columns:1fr 2fr;gap:14px}.p{background:#11171e;border:1px solid #303a46;border-radius:12px;padding:16px}.meta{display:grid;grid-template-columns:110px 1fr;gap:6px}.muted{color:#8d9aaa}.ok{color:#68d391}.hold{color:#ecc94b}#tail{height:68vh;overflow:auto;white-space:pre-wrap;background:#070a0d;padding:12px;border-radius:8px}.badge{border:1px solid #43505e;border-radius:99px;padding:2px 8px}button{background:#18212b;color:#e8edf2;border:1px solid #43505e;border-radius:7px;padding:6px 10px}.ide-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:12px}.ide-grid textarea,.ide-grid pre{width:100%;box-sizing:border-box;min-height:320px;background:#070a0d;color:#e8edf2;border:1px solid #303a46;border-radius:8px;padding:10px;font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}.ide-actions{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.ide-status{white-space:pre-wrap}.ide-status.ok{color:#68d391}.ide-status.hold{color:#ecc94b}@media(max-width:800px){.grid,.ide-grid{grid-template-columns:1fr}#tail{height:55vh}}</style></head><body><main><h1>QIK-VRT · TEMDD LIVE UNIVERSAL TERMINAL <span id="state" class="badge hold">CONNECTING</span></h1><p class="muted">Observer lifetime ≠ execution lifetime · exact-subject evidence · fail-closed · replayable event cursor</p><div class="grid"><section class="p"><h2>Exact checkout subject</h2><div class="meta"><span class="muted">Authority</span><span id="repository">—</span><span class="muted">PR</span><span id="pr">—</span><span class="muted">HEAD</span><span id="head">—</span><span class="muted">TREE</span><span id="tree">—</span><span class="muted">Event ID</span><span id="cursor">—</span><span class="muted">DoD</span><span id="dod" class="hold">NOT PROVEN</span></div><h2>Transport</h2><p id="transport">discovering local native stream…</p><button id="reconnect">RECONNECT</button><p class="muted">Ledger persistence is not validation, review, promotion, or EFFECT_ACK_DONE. A deployed checkout is not a fresh remote PR-head observation.</p></section><section class="p"><h2>tail -f</h2><div id="tail"></div></section></div>
+<section class="p" id="ide"><h2>TEMDD v0.1 IDE · local analysis only</h2>
+<p class="muted">Editieren und Analysieren ist lokal. Browser-Analyse erzeugt keinen nativen Event, keine Authority und keinen Effect. Ausführung bleibt am repository-nativen/Unix-Ingress mit frischem Readback.</p>
+<div class="ide-actions"><button id="ideExample" type="button">BEISPIEL LADEN</button><button id="ideAnalyze" type="button">ANALYZE → IR</button><button id="ideCopy" type="button">IR KOPIEREN</button></div>
+<div class="ide-grid"><label>TEMDD source<textarea id="ideSource" spellcheck="false" autocomplete="off"></textarea></label><label>Typed diagnostic IR<pre id="ideIr">NO_ANALYSIS</pre></label></div>
+<p id="ideStatus" class="ide-status hold">LOCAL_ONLY · NO EFFECT</p>
+</section></main><script>
+'use strict';
+const TEMDD_DOD=new Set(['ZERO_BUGS','ALL_PULL_REQUESTS_REGARDED','ALL_BRANCHES_REGARDED','ALL_PRODUCTIVE_BRANCHES_MERGED','FRESH_EXACT_MAIN_VALIDATION_PASS','FRESH_EFFECT_READBACK']);
+const TEMDD_EXAMPLE=`temdd 0.1;
+authority owner = "Goldkelch/qik-vrt";
+subject convergence {
+  repository = "Goldkelch/qik-vrt";
+  binding = exact;
+}
+request finish_qikvrt { target = QIKVRT_DOD; }
+on event {
+  follow exact;
+  classify causal;
+}
+on blocker {
+  learn smallest_sound_successor;
+  execute successor;
+}
+until {
+  ZERO_BUGS
+  && ALL_PULL_REQUESTS_REGARDED
+  && ALL_BRANCHES_REGARDED
+  && ALL_PRODUCTIVE_BRANCHES_MERGED
+  && FRESH_EXACT_MAIN_VALIDATION_PASS
+  && FRESH_EFFECT_READBACK;
+}`;
+function ideEl(id){return document.getElementById(id)}
+function temddMatch(re,text,label){const m=text.match(re);if(!m)throw Error('missing '+label);return m}
+function analyzeTemdd(text){
+ const version=temddMatch(/^\s*temdd\s+([0-9.]+)\s*;/s,text,'version')[1];
+ if(version!=='0.1')throw Error('unsupported version');
+ const authority=temddMatch(/authority\s+[A-Za-z][A-Za-z0-9_-]*\s*=\s*"([^"]+)"\s*;/s,text,'authority')[1];
+ const subject=temddMatch(/subject\s+([A-Za-z][A-Za-z0-9_-]*)\s*\{([\s\S]*?)\}/,text,'subject');
+ const repository=temddMatch(/repository\s*=\s*"([^"]+)"\s*;/s,subject[2],'repository')[1];
+ temddMatch(/binding\s*=\s*exact\s*;/s,subject[2],'exact binding');
+ const request=temddMatch(/request\s+([A-Za-z][A-Za-z0-9_-]*)\s*\{\s*target\s*=\s*([A-Za-z][A-Za-z0-9_-]*)\s*;\s*\}/s,text,'request');
+ const handlers=[...text.matchAll(/on\s+(event|blocker)\s*\{([\s\S]*?)\}/g)].map(m=>({event:m[1],statements:m[2].split(';').map(x=>x.trim()).filter(Boolean)}));
+ const until=temddMatch(/until\s*\{([\s\S]*?)\}/,text,'until')[1].trim().replace(/;\s*$/,'');
+ const dod=until.split('&&').map(x=>x.trim()).filter(Boolean);
+ if(!handlers.length||!dod.length)throw Error('handlers and DoD required');
+ if(new Set(dod).size!==dod.length)throw Error('duplicate DoD predicate');
+ if(request[2]==='QIKVRT_DOD'&&(dod.length!==TEMDD_DOD.size||dod.some(x=>!TEMDD_DOD.has(x))))throw Error('QIKVRT_DOD requires complete canonical predicate');
+ return {schema:'temdd_ir_v0_1',version,authority,subject:{name:subject[1],repository,binding:'exact'},request:{name:request[1],target:request[2]},handlers,dod};
+}
+let ideIr=null;
+ideEl('ideExample').onclick=()=>{ideEl('ideSource').value=TEMDD_EXAMPLE;ideEl('ideStatus').textContent='EXAMPLE_LOADED · LOCAL_ONLY · NO EFFECT';ideEl('ideStatus').className='ide-status hold'};
+ideEl('ideAnalyze').onclick=()=>{try{ideIr=analyzeTemdd(ideEl('ideSource').value);ideEl('ideIr').textContent=JSON.stringify(ideIr,null,2);ideEl('ideStatus').textContent='BOOTSTRAP_CONFORMANT_LOCAL_ANALYSIS · NO EFFECT';ideEl('ideStatus').className='ide-status ok'}catch(e){ideIr=null;ideEl('ideIr').textContent='BLOCK '+e.message;ideEl('ideStatus').textContent='HOLD · '+e.message;ideEl('ideStatus').className='ide-status hold'}};
+ideEl('ideCopy').onclick=()=>{if(!ideIr){ideEl('ideStatus').textContent='HOLD · analyze valid TEMDD first';return}navigator.clipboard.writeText(JSON.stringify(ideIr,null,2)).then(()=>{ideEl('ideStatus').textContent='IR_COPIED · TRANSPORT_ACK != EFFECT_ACK'}).catch(e=>{ideEl('ideStatus').textContent='HOLD · copy failed: '+e.message})};
+ideEl('ideSource').value=TEMDD_EXAMPLE;
+const tail=document.getElementById('tail'),state=document.getElementById('state'),cursorEl=document.getElementById('cursor');
+let es=null,cursor='',exactSubject=null,ledgerId='',cursorKey='',generation=0;
+function line(kind,msg){tail.textContent+=`${new Date().toISOString()}  ${kind.padEnd(10)} ${msg}\n`;tail.scrollTop=tail.scrollHeight;}
+function setState(s,c){state.textContent=s;state.className='badge '+c;}
+function hold(reason){setState('HOLD','hold');document.getElementById('dod').textContent='NOT PROVEN';line('HOLD',reason);}
+function validSubject(s){return s&&Object.keys(s).sort().join(',')==='head,pr,repository,tree'&&typeof s.repository==='string'&&Number.isInteger(s.pr)&&s.pr>0&&/^[0-9a-f]{40}$/.test(s.head)&&/^[0-9a-f]{40}$/.test(s.tree);}
+function sameSubject(a,b){return validSubject(a)&&validSubject(b)&&['repository','pr','head','tree'].every(k=>a[k]===b[k]);}
+function sequence(id){const m=/^([0-9a-f]{32}):([1-9][0-9]{0,18})$/.exec(id);if(!m||m[1]!==ledgerId)throw Error('foreign or malformed ledger cursor');return BigInt(m[2]);}
+async function connect(){
+  const current=++generation;if(es)es.close();es=null;setState('CONNECTING','hold');
+  try{
+    const r=await fetch('/api/temdd/subject',{cache:'no-store'});if(!r.ok)throw Error('exact checkout readback unavailable');
+    const x=await r.json();if(current!==generation)return;
+    if(!validSubject(x.subject)||!/^[0-9a-f]{32}$/.test(x.ledger_id)||x.dod!==false||x.evidence_transfer!=='DENY')throw Error('invalid exact-subject envelope');
+    exactSubject=x.subject;ledgerId=x.ledger_id;
+    cursorKey='qikvrt.temdd.cursor:'+JSON.stringify([ledgerId,exactSubject.repository,exactSubject.pr,exactSubject.head,exactSubject.tree]);
+    cursor=localStorage.getItem(cursorKey)||'';if(cursor)sequence(cursor);
+    for(const key of ['repository','pr','head','tree'])document.getElementById(key).textContent=exactSubject[key];
+    cursorEl.textContent=cursor||'—';line('SUBJECT',JSON.stringify(exactSubject));
+    const url='/api/temdd/events'+(cursor?'?after='+encodeURIComponent(cursor):'');
+    document.getElementById('transport').textContent='SSE '+url;
+    const source=new EventSource(url);es=source;let bound=false;
+    source.onopen=()=>{if(current===generation){bound=false;setState('CONNECTED','hold');}};
+    source.addEventListener('subject',e=>{if(current!==generation)return;try{
+      const s=JSON.parse(e.data);if(!sameSubject(s.subject,exactSubject)||s.ledger_id!==ledgerId||s.dod!==false||s.evidence_transfer!=='DENY')throw Error('stream subject mismatch');
+      bound=true;setState('OBSERVING','ok');line('CONNECT','exact-subject stream bound; DoD remains unproven');
+    }catch(err){source.close();hold(err.message);}});
+    source.onmessage=e=>{if(current!==generation)return;try{
+      const event=JSON.parse(e.data);
+      if(!bound||event.schema!=='qikvrt_temdd_event_v1'||!sameSubject(event.subject,exactSubject)||event.id!==e.lastEventId||event.evidence_transfer!=='DENY'||event.dod!==false)throw Error('unbound or invalid event');
+      const next=sequence(event.id);if(cursor&&next<=sequence(cursor))throw Error('non-monotonic event');
+      if(!/^(OBSERVE|CLASSIFY|ACTION|EFFECT|READBACK|SUCCESSOR|HOLD)$/.test(event.kind)||typeof event.message!=='string')throw Error('invalid event content');
+      line(event.kind,event.message+' · '+event.subject.head+' · '+event.id);
+      localStorage.setItem(cursorKey,event.id);cursor=event.id;cursorEl.textContent=cursor;
+    }catch(err){source.close();hold(err.message);}};
+    source.addEventListener('hold',()=>{if(current===generation){source.close();hold('producer readback unavailable; fresh reconnect required');}});
+    source.onerror=()=>{if(current===generation){bound=false;hold('transport unavailable; native EventSource reconnect retains its cursor; repository execution unchanged');}};
+  }catch(err){if(current===generation)hold(err.message);}
+}
+document.getElementById('reconnect').onclick=connect;connect();
+</script></body></html>
