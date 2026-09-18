@@ -1,6 +1,6 @@
 {
   "schema": "qikvrt_repository_dod_v1",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "repository": "Goldkelch/qik-vrt",
   "composes": [
     "policy/GLOBAL_SYSTEM_CLOSURE_V1.json",
@@ -9,6 +9,7 @@
     "policy/GITHUB_MAIN_RULESET_V1.json",
     "src/qikvrt_effect_ack.py"
   ],
+  "exact_conjunction": true,
   "done_iff_all": [
     "ZERO_BUGS",
     "ALL_PULL_REQUESTS_REGARDED",
@@ -29,23 +30,22 @@
     "REDUNDANT",
     "HISTORICAL/RETAINED_BY_POLICY"
   ],
-  "noop_exclusions": [
-    "PRODUCTIVE_QUEUE_NONEMPTY",
-    "OPEN_ISSUE_EXISTS",
-    "OPEN_PULL_REQUEST_EXISTS",
-    "UNCLASSIFIED_BRANCH_EXISTS",
-    "PRODUCTIVE_CHANGE_OUTSIDE_MAIN_EXISTS",
-    "KNOWN_PRODUCTIVE_DEFECT_EXISTS",
-    "EXACT_MAIN_VALIDATION_MISSING_OR_STALE",
-    "EFFECT_READBACK_MISSING_STALE_OR_WRONG_MAIN"
-  ],
   "evidence": {
     "finite_inventory_required": true,
-    "exact_main_head_and_tree_required": true,
+    "exact_subject_head_and_tree_required": true,
     "predecessor_evidence_transfer": false,
     "unknown_or_incomplete_inventory": "HOLD_UNVERIFIED",
     "transport_ack_is_effect_ack": false,
     "green_local_gates_imply_repository_done": false
+  },
+  "separation": {
+    "queue_state_is_dod_conjunct": false,
+    "open_issue_count_is_dod_conjunct": false,
+    "ruleset_current_is_dod_conjunct": false,
+    "ruleset_current_remains_promotion_gate": true,
+    "noop_policy_may_be_stricter_than_dod": true,
+    "main_validation_does_not_imply_effect": true,
+    "effect_does_not_compensate_repository_red": true
   },
   "execution": {
     "event_driven": true,

@@ -1,91 +1,125 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Pure fail-closed repository-wide QIK-VRT Definition-of-Done evaluator."""
 
+from __future__ import annotations
+
 import json
 import sys
 
 PR_DISPOSITIONS = {"MERGE", "SUPERSEDE", "CLOSE_AS_REDUNDANT", "REJECT_WITH_EVIDENCE"}
 BRANCH_DISPOSITIONS = {"MERGED", "SUPERSEDED", "REDUNDANT", "HISTORICAL/RETAINED_BY_POLICY"}
+ORDER = (
+    "ZERO_BUGS",
+    "ALL_PULL_REQUESTS_REGARDED",
+    "ALL_BRANCHES_REGARDED",
+    "ALL_PRODUCTIVE_BRANCHES_MERGED",
+    "FRESH_EXACT_MAIN_VALIDATION_PASS",
+    "FRESH_EXACT_MAIN_EFFECT_READBACK",
+)
 
 
 def _bool(value):
     return value is True
 
 
+def _exact_subject(value, head, tree):
+    return (
+        isinstance(value, dict)
+        and _bool(value.get("fresh"))
+        and value.get("head") == head
+        and value.get("tree") == tree
+    )
+
+
 def evaluate(observation):
     required = {
-        "repository", "main_head", "main_tree", "inventory_complete", "queue_empty",
-        "open_issues", "pull_requests", "branches", "known_productive_defects",
-        "all_productive_changes_on_main", "main_validation", "effect_readback",
-        "ruleset_current"
+        "repository",
+        "subject_head",
+        "subject_tree",
+        "inventory_complete",
+        "zero_bugs",
+        "pull_requests",
+        "branches",
+        "all_productive_branches_merged",
+        "main_validation",
+        "effect_readback",
     }
     missing = sorted(required.difference(observation))
     if missing:
         return _hold("INCOMPLETE_OBSERVATION_ENVELOPE", missing=missing)
     if observation["repository"] != "Goldkelch/qik-vrt":
         return _hold("WRONG_REPOSITORY")
-    if not observation["main_head"] or not observation["main_tree"]:
-        return _hold("UNBOUND_MAIN")
-    if not _bool(observation["inventory_complete"]):
-        return _hold("INVENTORY_INCOMPLETE")
 
-    blockers = []
-    if not _bool(observation["queue_empty"]):
-        blockers.append("PRODUCTIVE_QUEUE_NONEMPTY")
-    if observation["open_issues"]:
-        blockers.append("OPEN_ISSUE_EXISTS")
+    head = observation["subject_head"]
+    tree = observation["subject_tree"]
+    if not isinstance(head, str) or len(head) != 40 or not isinstance(tree, str) or len(tree) != 40:
+        return _hold("UNBOUND_SUBJECT")
+    if not _bool(observation["inventory_complete"]):
+        return _hold("INVENTORY_INCOMPLETE", subject_head=head, subject_tree=tree)
+
+    zero = observation["zero_bugs"]
+    zero_ok = (
+        _exact_subject(zero, head, tree)
+        and zero.get("state") in {"ZERO_KNOWN_DETERMINISTIC_BUGS_LOCAL", "PASS"}
+        and _bool(zero.get("known_deterministic_defects_zero"))
+    )
 
     prs = observation["pull_requests"]
-    if any(p.get("state") == "open" and p.get("disposition") not in PR_DISPOSITIONS for p in prs):
-        blockers.append("OPEN_PULL_REQUEST_UNREGARDED")
-    if any(p.get("state") == "open" for p in prs):
-        blockers.append("OPEN_PULL_REQUEST_EXISTS")
+    prs_ok = (
+        isinstance(prs, list)
+        and all(isinstance(p, dict) and p.get("disposition") in PR_DISPOSITIONS for p in prs)
+    )
 
     branches = observation["branches"]
-    if any(b.get("name") != "main" and b.get("disposition") not in BRANCH_DISPOSITIONS for b in branches):
-        blockers.append("UNCLASSIFIED_BRANCH_EXISTS")
-    if observation["known_productive_defects"]:
-        blockers.append("KNOWN_PRODUCTIVE_DEFECT_EXISTS")
-    if not _bool(observation["all_productive_changes_on_main"]):
-        blockers.append("PRODUCTIVE_CHANGE_OUTSIDE_MAIN_EXISTS")
-    if not _bool(observation["ruleset_current"]):
-        blockers.append("AUTHORITY_CONTROL_PLANE_DRIFT")
+    branches_ok = (
+        isinstance(branches, list)
+        and all(
+            isinstance(b, dict)
+            and (
+                b.get("name") == "main"
+                or b.get("disposition") in BRANCH_DISPOSITIONS
+            )
+            for b in branches
+        )
+    )
+
+    productive_ok = _bool(observation["all_productive_branches_merged"])
 
     validation = observation["main_validation"]
-    if not (_bool(validation.get("fresh")) and validation.get("head") == observation["main_head"]
-            and validation.get("tree") == observation["main_tree"] and validation.get("state") == "PASS"):
-        blockers.append("EXACT_MAIN_VALIDATION_MISSING_OR_STALE")
+    main_ok = (
+        _exact_subject(validation, head, tree)
+        and validation.get("state") == "PASS"
+    )
 
     effect = observation["effect_readback"]
-    if not (_bool(effect.get("fresh")) and effect.get("head") == observation["main_head"]
-            and effect.get("tree") == observation["main_tree"]
-            and effect.get("effect_ack") == "EFFECT_ACK_DONE"
-            and _bool(effect.get("observed"))):
-        blockers.append("EFFECT_READBACK_MISSING_STALE_OR_WRONG_MAIN")
+    effect_ok = (
+        _exact_subject(effect, head, tree)
+        and _bool(effect.get("observed"))
+        and effect.get("effect_ack") == "EFFECT_ACK_DONE"
+    )
 
-    if blockers:
-        ordered = list(dict.fromkeys(blockers))
-        return {
-            "schema": "qikvrt_repository_dod_evaluation_v1",
-            "state": "CONTINUE",
-            "done": False,
-            "noop_allowed": False,
-            "effect_ack_done": False,
-            "first_unsatisfied": ordered[0],
-            "blockers": ordered,
-            "main_head": observation["main_head"],
-            "main_tree": observation["main_tree"]
-        }
+    conjuncts = {
+        "ZERO_BUGS": zero_ok,
+        "ALL_PULL_REQUESTS_REGARDED": prs_ok,
+        "ALL_BRANCHES_REGARDED": branches_ok,
+        "ALL_PRODUCTIVE_BRANCHES_MERGED": productive_ok,
+        "FRESH_EXACT_MAIN_VALIDATION_PASS": main_ok,
+        "FRESH_EXACT_MAIN_EFFECT_READBACK": effect_ok,
+    }
+    blockers = [name for name in ORDER if not conjuncts[name]]
+    done = not blockers
     return {
         "schema": "qikvrt_repository_dod_evaluation_v1",
-        "state": "DONE",
-        "done": True,
-        "noop_allowed": True,
-        "effect_ack_done": True,
-        "first_unsatisfied": None,
-        "blockers": [],
-        "main_head": observation["main_head"],
-        "main_tree": observation["main_tree"]
+        "state": "DONE" if done else "CONTINUE",
+        "done": done,
+        "effect_ack_done": done and effect_ok,
+        "noop_evaluated": False,
+        "noop_allowed": None,
+        "conjuncts": conjuncts,
+        "first_unsatisfied": blockers[0] if blockers else None,
+        "blockers": blockers,
+        "subject_head": head,
+        "subject_tree": tree,
     }
 
 
@@ -94,10 +128,12 @@ def _hold(reason, **extra):
         "schema": "qikvrt_repository_dod_evaluation_v1",
         "state": "HOLD_UNVERIFIED",
         "done": False,
-        "noop_allowed": False,
         "effect_ack_done": False,
+        "noop_evaluated": False,
+        "noop_allowed": None,
+        "conjuncts": None,
         "first_unsatisfied": reason,
-        "blockers": [reason]
+        "blockers": [reason],
     }
     result.update(extra)
     return result
