@@ -121,6 +121,16 @@ jobs:
               "resume_input": "FRESH_NODE_REVALIDATION",
               "qikvrt_run_id": run_id,
               "source_revalidation_run_id": result["run_id"],
+              "dashboard_execution": "NOT_EXECUTED",
+              "current_dashboard_evidence": "NOT_ESTABLISHED",
+              "historical_dashboard_evidence_promoted": False,
+              "current_run_evidence_set": [
+                  ".qikvrt/seed-workflow/dashboard.log",
+                  ".qikvrt/seed-workflow/dashboard-exact-head-binding.json",
+                  ".qikvrt/seed-workflow/dashboard-nonterminal-boundary.json",
+                  f"evidence/seed_mesh_maintenance/runs/{run_id}.json",
+                  f"evidence/seed_node_revalidation/runs/{run_id}.json",
+              ],
           })
           PY
             echo "HOLD QIKVRT_SEED_DASHBOARD NODE_REVALIDATION_CONTINUE" | tee -a .qikvrt/seed-workflow/dashboard.log
