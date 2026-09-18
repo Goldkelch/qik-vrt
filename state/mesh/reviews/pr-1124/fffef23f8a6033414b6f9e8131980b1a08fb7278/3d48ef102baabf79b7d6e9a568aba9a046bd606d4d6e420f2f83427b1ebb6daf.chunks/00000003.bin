@@ -1,0 +1,1083 @@
+-wide QIK-VRT Definition-of-Done evaluator."""
++
++from __future__ import annotations
++
++import json
++import sys
++
++PR_DISPOSITIONS = {"MERGE", "SUPERSEDE", "CLOSE_AS_REDUNDANT", "REJECT_WITH_EVIDENCE"}
++BRANCH_DISPOSITIONS = {"MERGED", "SUPERSEDED", "REDUNDANT", "HISTORICAL/RETAINED_BY_POLICY", "PRODUCTIVE_CURRENT_CANDIDATE", "PRODUCTIVE_UNMERGED"}
++ORDER = (
++    "ZERO_BUGS",
++    "ALL_PULL_REQUESTS_REGARDED",
++    "ALL_BRANCHES_REGARDED",
++    "ALL_PRODUCTIVE_BRANCHES_MERGED",
++    "FRESH_EXACT_MAIN_VALIDATION_PASS",
++    "FRESH_EXACT_MAIN_EFFECT_READBACK",
++)
++
++
++def _bool(value):
++    return value is True
++
++
++def _exact_subject(value, head, tree):
++    return (
++        isinstance(value, dict)
++        and _bool(value.get("fresh"))
++        and value.get("head") == head
++        and value.get("tree") == tree
++    )
++
++
++def evaluate(observation):
++    required = {
++        "repository",
++        "subject_head",
++        "subject_tree",
++        "inventory_complete",
++        "zero_bugs",
++        "pull_requests",
++        "branches",
++        "all_productive_branches_merged",
++        "main_validation",
++        "effect_readback",
++    }
++    missing = sorted(required.difference(observation))
++    if missing:
++        return _hold("INCOMPLETE_OBSERVATION_ENVELOPE", missing=missing)
++    if observation["repository"] != "Goldkelch/qik-vrt":
++        return _hold("WRONG_REPOSITORY")
++
++    head = observation["subject_head"]
++    tree = observation["subject_tree"]
++    if not isinstance(head, str) or len(head) != 40 or not isinstance(tree, str) or len(tree) != 40:
++        return _hold("UNBOUND_SUBJECT")
++    if not _bool(observation["inventory_complete"]):
++        return _hold("INVENTORY_INCOMPLETE", subject_head=head, subject_tree=tree)
++
++    zero = observation["zero_bugs"]
++    zero_ok = (
++        _exact_subject(zero, head, tree)
++        and zero.get("state") in {"ZERO_KNOWN_DETERMINISTIC_BUGS_LOCAL", "PASS"}
++        and _bool(zero.get("known_deterministic_defects_zero"))
++    )
++
++    prs = observation["pull_requests"]
++    prs_ok = (
++        isinstance(prs, list)
++        and all(isinstance(p, dict) and p.get("disposition") in PR_DISPOSITIONS for p in prs)
++    )
++
++    branches = observation["branches"]
++    branches_ok = (
++        isinstance(branches, list)
++        and all(
++            isinstance(b, dict)
++            and (
++                b.get("name") == "main"
++                or b.get("disposition") in BRANCH_DISPOSITIONS
++            )
++            for b in branches
++        )
++    )
++
++    productive_ok = _bool(observation["all_productive_branches_merged"])
++
++    validation = observation["main_validation"]
++    main_ok = (
++        _exact_subject(validation, head, tree)
++        and validation.get("state") == "PASS"
++    )
++
++    effect = observation["effect_readback"]
++    effect_ok = (
++        _exact_subject(effect, head, tree)
++        and _bool(effect.get("observed"))
++        and effect.get("effect_ack") == "EFFECT_ACK_DONE"
++    )
++
++    conjuncts = {
++        "ZERO_BUGS": zero_ok,
++        "ALL_PULL_REQUESTS_REGARDED": prs_ok,
++        "ALL_BRANCHES_REGARDED": branches_ok,
++        "ALL_PRODUCTIVE_BRANCHES_MERGED": productive_ok,
++        "FRESH_EXACT_MAIN_VALIDATION_PASS": main_ok,
++        "FRESH_EXACT_MAIN_EFFECT_READBACK": effect_ok,
++    }
++    blockers = [name for name in ORDER if not conjuncts[name]]
++    done = not blockers
++    return {
++        "schema": "qikvrt_repository_dod_evaluation_v1",
++        "state": "DONE" if done else "CONTINUE",
++        "done": done,
++        "effect_ack_done": done and effect_ok,
++        "noop_evaluated": False,
++        "noop_allowed": None,
++        "conjuncts": conjuncts,
++        "first_unsatisfied": blockers[0] if blockers else None,
++        "blockers": blockers,
++        "subject_head": head,
++        "subject_tree": tree,
++    }
++
++
++def _hold(reason, **extra):
++    result = {
++        "schema": "qikvrt_repository_dod_evaluation_v1",
++        "state": "HOLD_UNVERIFIED",
++        "done": False,
++        "effect_ack_done": False,
++        "noop_evaluated": False,
++        "noop_allowed": None,
++        "conjuncts": None,
++        "first_unsatisfied": reason,
++        "blockers": [reason],
++    }
++    result.update(extra)
++    return result
++
++
++def main():
++    observation = json.load(sys.stdin)
++    json.dump(evaluate(observation), sys.stdout, sort_keys=True, indent=2)
++    sys.stdout.write("\n")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/tools/qikvrt_repository_dod_census.py b/tools/qikvrt_repository_dod_census.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..b34d07087d9490e0137e9bb0c5f8c0076ab0579e
+--- /dev/null
++++ b/tools/qikvrt_repository_dod_census.py
+@@ -0,0 +1,317 @@
++#!/usr/bin/env python3
++"""Read-only exact-subject census for QIK-VRT repository DoD carriers."""
++
++from __future__ import annotations
++
++import argparse
++import json
++from pathlib import Path
++import subprocess
++from typing import Any, Mapping
++
++PR_ALLOWED = {"MERGE", "SUPERSEDE", "CLOSE_AS_REDUNDANT", "REJECT_WITH_EVIDENCE"}
++BRANCH_ALLOWED = {
++    "MERGED",
++    "SUPERSEDED",
++    "REDUNDANT",
++    "HISTORICAL/RETAINED_BY_POLICY",
++    "PRODUCTIVE_CURRENT_CANDIDATE",
++    "PRODUCTIVE_UNMERGED",
++}
++MARKER = "<!-- qikvrt-dod-pr-disposition:"
++OBSERVED_SCHEMA = "qikvrt_open_pr_snapshot_v1"
++UNAVAILABLE_SCHEMA = "qikvrt_open_pr_snapshot_unavailable_v1"
++
++
++def git(*args: str) -> str:
++    return subprocess.check_output(["git", *args], text=True).strip()
++
++
++def ancestor(commit: str, subject: str) -> bool | None:
++    probe = subprocess.run(
++        ["git", "merge-base", "--is-ancestor", commit, subject],
++        text=True,
++        capture_output=True,
++        check=False,
++    )
++    if probe.returncode == 0:
++        return True
++    if probe.returncode == 1:
++        return False
++    return None
++
++
++def same_tree(left: str, right: str) -> bool | None:
++    try:
++        return git("rev-parse", left + "^{tree}") == git("rev-parse", right + "^{tree}")
++    except subprocess.CalledProcessError:
++        return None
++
++
++def explicit_pr_disposition(body: Any) -> str | None:
++    if not isinstance(body, str):
++        return None
++    for value in PR_ALLOWED:
++        if f"{MARKER}{value} -->" in body:
++            return value
++    return None
++
++
++def classify_pr(pr: Mapping[str, Any], subject: str, current_pr: int) -> dict[str, Any]:
++    number = pr.get("number")
++    head_obj = pr.get("head") or {}
++    head = head_obj.get("sha") if isinstance(head_obj, Mapping) else None
++    head_ref = head_obj.get("ref") if isinstance(head_obj, Mapping) else None
++    row = {
++        "number": number,
++        "head": head,
++        "head_ref": head_ref,
++        "state": pr.get("state"),
++    }
++    if not isinstance(number, int) or not isinstance(head, str) or len(head) != 40:
++        return {**row, "regarded": False, "disposition": "UNREGARDED", "reason": "INVALID_PR_IDENTITY"}
++    if number == current_pr and head == subject:
++        return {**row, "regarded": True, "disposition": "MERGE", "reason": "CURRENT_FINAL_CANDIDATE"}
++    rel = ancestor(head, subject)
++    if rel is True:
++        return {**row, "regarded": True, "disposition": "SUPERSEDE", "reason": "HEAD_ANCESTOR_OF_CANDIDATE"}
++    explicit = explicit_pr_disposition(pr.get("body"))
++    if explicit is not None:
++        return {**row, "regarded": True, "disposition": explicit, "reason": "EXPLICIT_EVIDENCE_BOUND_DISPOSITION"}
++    return {
++        **row,
++        "regarded": False,
++        "disposition": "UNREGARDED",
++        "reason": "HEAD_NOT_PROVED_ABSORBED_OR_DISPOSED",
++        "ancestor_probe": rel,
++    }
++
++
++def _linked_branch_disposition(pr: Mapping[str, Any]) -> tuple[str, str] | None:
++    if pr.get("regarded") is not True:
++        return None
++    disposition = pr.get("disposition")
++    if disposition == "SUPERSEDE":
++        return "SUPERSEDED", "OPEN_PR_PROVES_SUPERSESSION"
++    if disposition == "CLOSE_AS_REDUNDANT":
++        return "REDUNDANT", "OPEN_PR_PROVES_REDUNDANCY"
++    if disposition == "REJECT_WITH_EVIDENCE":
++        return "HISTORICAL/RETAINED_BY_POLICY", "OPEN_PR_EVIDENCE_BOUND_REJECTION"
++    if disposition == "MERGE":
++        return "PRODUCTIVE_UNMERGED", "REGARDED_OPEN_PR_REMAINS_PRODUCTIVE"
++    return None
++
++
++def classify_branch(
++    name: str,
++    tip: str,
++    subject: str,
++    main_head: str,
++    pr_by_ref: Mapping[str, Mapping[str, Any]] | None = None,
++) -> dict[str, Any]:
++    row = {"name": name, "tip": tip}
++    if name == "main":
++        return {**row, "regarded": True, "disposition": "MERGED", "reason": "DEFAULT_BRANCH"}
++    if tip == subject:
++        if subject == main_head:
++            return {**row, "regarded": True, "disposition": "REDUNDANT", "reason": "TIP_EQUALS_EXACT_MAIN"}
++        return {
++            **row,
++            "regarded": True,
++            "disposition": "PRODUCTIVE_CURRENT_CANDIDATE",
++            "reason": "EXACT_FINAL_CANDIDATE",
++        }
++
++    rel = ancestor(tip, subject)
++    if rel is True:
++        return {**row, "regarded": True, "disposition": "SUPERSEDED", "reason": "TIP_ANCESTOR_OF_CANDIDATE"}
++
++    equal = same_tree(tip, subject)
++    if equal is True:
++        return {**row, "regarded": True, "disposition": "REDUNDANT", "reason": "TREE_IDENTICAL_TO_CANDIDATE"}
++
++    linked = (pr_by_ref or {}).get(name)
++    if isinstance(linked, Mapping) and linked.get("head") == tip:
++        derived = _linked_branch_disposition(linked)
++        if derived is not None:
++            disposition, reason = derived
++            return {
++                **row,
++                "regarded": True,
++                "disposition": disposition,
++                "reason": reason,
++                "pull_request": linked.get("number"),
++            }
++
++    return {
++        **row,
++        "regarded": False,
++        "disposition": "UNREGARDED",
++        "reason": "TIP_NOT_PROVED_ABSORBED_OR_DISPOSED",
++        "ancestor_probe": rel,
++        "tree_equal_probe": equal,
++    }
++
++
++def flatten_pages(value: Any) -> list[dict[str, Any]]:
++    if not isinstance(value, list):
++        raise ValueError("open PR snapshot must be a JSON list")
++    if value and all(isinstance(page, list) for page in value):
++        rows = [row for page in value for row in page]
++    else:
++        rows = value
++    if not all(isinstance(row, dict) for row in rows):
++        raise ValueError("open PR snapshot contains a non-object")
++    return rows
++
++
++def load_pr_snapshot(path: Path) -> tuple[list[dict[str, Any]], bool, str | None, str]:
++    value = json.loads(path.read_text(encoding="utf-8"))
++    if isinstance(value, Mapping) and value.get("schema") == UNAVAILABLE_SCHEMA:
++        if value.get("state") != "HOLD_UNVERIFIED":
++            raise ValueError("unavailable PR snapshot must be HOLD_UNVERIFIED")
++        reason = value.get("reason")
++        if not isinstance(reason, str) or not reason:
++            raise ValueError("unavailable PR snapshot requires reason")
++        return [], False, reason, "UNAVAILABLE"
++
++    if isinstance(value, Mapping) and value.get("schema") == OBSERVED_SCHEMA:
++        if value.get("state") != "OBSERVED":
++            raise ValueError("observed PR snapshot must be OBSERVED")
++        source = value.get("source")
++        if source not in {"REST", "GRAPHQL"}:
++            raise ValueError("observed PR snapshot requires REST or GRAPHQL source")
++        return flatten_pages(value.get("pull_requests")), True, None, source
++
++    return flatten_pages(value), True, None, "LEGACY_LIST"
++
++
++def branch_rows() -> list[tuple[str, str]]:
++    raw = git("for-each-ref", "--format=%(refname:short)\t%(objectname)", "refs/remotes/origin/")
++    rows: list[tuple[str, str]] = []
++    for line in raw.splitlines():
++        if not line.strip():
++            continue
++        name, tip = line.split("\t", 1)
++        if name == "origin/HEAD":
++            continue
++        if not name.startswith("origin/"):
++            continue
++        rows.append((name[len("origin/"):], tip))
++    return rows
++
++
++def build(repository: str, subject: str, tree: str, current_pr: int, open_prs: Path) -> dict[str, Any]:
++    actual_head = git("rev-parse", "HEAD")
++    actual_tree = git("rev-parse", "HEAD^{tree}")
++    if (actual_head, actual_tree) != (subject, tree):
++        raise ValueError("EXACT_SUBJECT_DRIFT")
++
++    main_head = git("rev-parse", "refs/remotes/origin/main")
++    prs, pr_snapshot_complete, pr_snapshot_reason, pr_snapshot_source = load_pr_snapshot(open_prs)
++    pr_rows = [classify_pr(pr, subject, current_pr) for pr in prs]
++    pr_by_ref = {
++        row["head_ref"]: row
++        for row in pr_rows
++        if isinstance(row.get("head_ref"), str) and row["head_ref"]
++    }
++    branches = [
++        classify_branch(name, tip, subject, main_head, pr_by_ref)
++        for name, tip in branch_rows()
++    ]
++
++    unregarded_prs = [row["number"] for row in pr_rows if not row["regarded"]]
++    unregarded_branches = [row["name"] for row in branches if not row["regarded"]]
++    productive_unmerged = [
++        row["name"]
++        for row in branches
++        if row.get("disposition") in {"PRODUCTIVE_CURRENT_CANDIDATE", "PRODUCTIVE_UNMERGED"}
++    ]
++    candidate_on_main = subject == main_head
++    inventory_complete = pr_snapshot_complete
++
++    all_prs_regarded = pr_snapshot_complete and not unregarded_prs
++    all_branches_regarded = not unregarded_branches
++    all_productive_merged = (
++        inventory_complete
++        and candidate_on_main
++        and all_prs_regarded
++        and all_branches_regarded
++        and not productive_unmerged
++    )
++
++    reasons: list[str] = []
++    if not pr_snapshot_complete:
++        reasons.append("OPEN_PR_SNAPSHOT_UNAVAILABLE:" + str(pr_snapshot_reason))
++
++    return {
++        "schema": "qikvrt_repository_dod_census_v1",
++        "repository": repository,
++        "subject": {"head": subject, "tree": tree},
++        "main_head": main_head,
++        "state": "OBSERVED" if inventory_complete else "HOLD_UNVERIFIED",
++        "inventory_complete": inventory_complete,
++        "inventory_reasons": reasons,
++        "pr_snapshot": {
++            "complete": pr_snapshot_complete,
++            "reason": pr_snapshot_reason,
++            "source": pr_snapshot_source,
++            "fabricated_fallback": False,
++        },
++        "branch_snapshot": {
++            "complete": True,
++            "source": "FETCHED_GIT_REFS",
++        },
++        "counts": {
++            "open_pull_requests": len(pr_rows) if pr_snapshot_complete else None,
++            "branch_refs": len(branches),
++            "unregarded_pull_requests": len(unregarded_prs) if pr_snapshot_complete else None,
++            "unregarded_branches": len(unregarded_branches),
++            "productive_unmerged_branches": len(productive_unmerged),
++        },
++        "all_pull_requests_regarded": all_prs_regarded,
++        "all_branches_regarded": all_branches_regarded,
++        "all_productive_branches_merged": all_productive_merged,
++        "pull_requests": pr_rows,
++        "branches": branches,
++        "unregarded_pull_requests": unregarded_prs if pr_snapshot_complete else [],
++        "unregarded_branches": unregarded_branches,
++        "productive_unmerged_branches": productive_unmerged,
++        "predecessor_evidence_transfer": False,
++    }
++
++
++def main() -> int:
++    p = argparse.ArgumentParser()
++    p.add_argument("--repository", required=True)
++    p.add_argument("--subject-head", required=True)
++    p.add_argument("--subject-tree", required=True)
++    p.add_argument("--current-pr", required=True, type=int)
++    p.add_argument("--open-prs", required=True, type=Path)
++    p.add_argument("--output", required=True, type=Path)
++    args = p.parse_args()
++    try:
++        report = build(
++            args.repository,
++            args.subject_head,
++            args.subject_tree,
++            args.current_pr,
++            args.open_prs,
++        )
++    except (OSError, ValueError, subprocess.CalledProcessError) as exc:
++        print("HOLD_UNVERIFIED " + str(exc))
++        return 2
++
++    args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
++    print(json.dumps({
++        "state": report["state"],
++        "inventory_complete": report["inventory_complete"],
++        "counts": report["counts"],
++        "inventory_reasons": report["inventory_reasons"],
++        "pr_snapshot_source": report["pr_snapshot"]["source"],
++    }, sort_keys=True))
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/tools/qikvrt_requested_review_executor.py b/tools/qikvrt_requested_review_executor.py
+index 37352e3f6305284b166b88e97a4a7504af3ac07d..4461ea11760588acf547475982696c1113067e8c 100644
+--- a/tools/qikvrt_requested_review_executor.py
++++ b/tools/qikvrt_requested_review_executor.py
+@@ -43,6 +43,7 @@ TRUSTED_EVALUATOR_PATH = "tools/qikvrt_requested_review_executor.py"
+ TRUSTED_WORKFLOW_PATH = ".github/workflows/qikvrt_requested_review_executor.yml"
+ REVIEW_MARKER = "qikvrt-mesh-review:v1"
+ LIVE_STATUS_MARKER = "qikvrt-live-status-watch"
++HUMAN_AUTHORITY_REVIEW_MARKER = "qikvrt-human-exact-scope-review-confirmation-v1"
+ TRUSTED_AUTOMATION_DISCUSSION_PREFIXES = (
+     f"<!-- {REVIEW_MARKER} ",
+     f"<!-- {LIVE_STATUS_MARKER} -->",
+@@ -176,10 +177,10 @@ def review_queue_intent(
+         raise ReviewSnapshotError("queue pull request number is invalid")
+     if not isinstance(receipt_path, str) or not isinstance(diff_path, str):
+         raise ReviewSnapshotError("queue evidence paths are invalid")
+-    path = f"{REVIEW_QUEUE_ROOT}/pr-{pr_number}/{head}/{fingerprint}.json"
++    path = f"{REVIEW_QUEUE_ROOT}/pr-{pr_number}/{head}/{predecessor}/{fingerprint}.json"
+     return path, {
+         "schema": "qikvrt_mesh_review_queue_intent_v1",
+-        "work_unit_id": f"pr-{pr_number}/{head}/{fingerprint}",
++        "work_unit_id": f"pr-{pr_number}/{head}/{predecessor}/{fingerprint}",
+         "repository": repository,
+         "pr_number": pr_number,
+         "head_sha": head,
+@@ -1200,18 +1201,24 @@ def _discussion_items(snapshot: Mapping[str, Any]) -> list[dict[str, Any]]:
+         if key in seen:
+             raise ReviewSnapshotError(f"duplicate discussion item: {kind}/{identifier}")
+         seen.add(key)
+-        result.append(
+-            {
+-                "kind": kind,
+-                "id": identifier,
+-                "author": item.get("author"),
+-                "author_association": item.get("author_association"),
+-                "state": item.get("state"),
+-                "commit_id": item.get("commit_id"),
+-                "updated_at": updated_at,
+-                "body_sha256": body_sha256,
+-            }
+-        )
++        entry = {
++            "kind": kind,
++            "id": identifier,
++            "author": item.get("author"),
++            "author_association": item.get("author_association"),
++            "state": item.get("state"),
++            "commit_id": item.get("commit_id"),
++            "updated_at": updated_at,
++            "body_sha256": body_sha256,
++        }
++        if "authority_scope_paths" in item:
++            authority_scope_paths = item.get("authority_scope_paths")
++            if not isinstance(authority_scope_paths, list) or not all(
++                isinstance(path, str) for path in authority_scope_paths
++            ):
++                raise ReviewSnapshotError("discussion authority_scope_paths must be a string list")
++            entry["authority_scope_paths"] = sorted(set(authority_scope_paths))
++        result.append(entry)
+     result.sort(key=lambda item: (item["kind"], item["id"]))
+     return result
+ 
+@@ -1843,19 +1850,49 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
+             findings=findings,
+             **common,
+         )
+-    authority = next(
+-        (finding for finding in findings if finding["severity"] == "AUTHORITY_REQUIRED"),
++    authority_findings = [
++        finding for finding in findings if finding["severity"] == "AUTHORITY_REQUIRED"
++    ]
++    authority_paths: set[str] = set()
++    for item in discussion:
++        if (
++            item.get("kind") == "PULL_REQUEST_REVIEW"
++            and item.get("state") == "COMMENTED"
++            and item.get("commit_id") == head
++            and item.get("author") != "github-actions[bot]"
++            and item.get("author_association") in {"OWNER", "MEMBER", "COLLABORATOR"}
++        ):
++            raw_paths = item.get("authority_scope_paths", [])
++            if isinstance(raw_paths, list) and all(isinstance(path, str) for path in raw_paths):
++                authority_paths.update(raw_paths)
++    unsatisfied_authority = next(
++        (
++            finding for finding in authority_findings
++            if not isinstance(finding.get("path"), str)
++            or finding.get("path") not in authority_paths
++        ),
+         None,
+     )
+-    if authority is not None:
++    if unsatisfied_authority is not None:
+         return _result(
+             snapshot,
+             "COMMENT_WITH_BLOCKER",
+-            str(authority["finding_id"]),
+-            str(authority["detail"]),
++            str(unsatisfied_authority["finding_id"]),
++            str(unsatisfied_authority["detail"]),
+             findings=findings,
+             **common,
+         )
++    for authority in authority_findings:
++        findings.append(
++            _finding(
++                "MESH_AUTHORITY_SATISFIED_BY_OWNER_DECLARATION",
++                "INFO",
++                "exact-head native human review satisfies this workflow permission finding",
++                path=str(authority["path"]),
++                line=authority.get("line"),
++                evidence_sha256=authority.get("evidence_sha256"),
++            )
++        )
+ 
+     if writers:
+         return _result(
+@@ -2693,6 +2730,23 @@ def _discussion_observation(repository: str, number: int) -> list[dict[str, Any]
+             )
+             if not isinstance(updated, str) or not updated:
+                 raise ReviewObservationError(f"{kind} lacks an observation timestamp")
++            authority_scope_paths: list[str] = []
++            if (
++                kind == "PULL_REQUEST_REVIEW"
++                and author != "github-actions[bot]"
++                and item.get("state") == "COMMENTED"
++                and item.get("author_association") in {"OWNER", "MEMBER", "COLLABORATOR"}
++            ):
++                marker = re.match(
++                    rf"^<!-- {re.escape(HUMAN_AUTHORITY_REVIEW_MARKER)}:{number}:([0-9a-f]{{40}}) -->",
++                    body,
++                )
++                if marker is not None and item.get("commit_id") == marker.group(1):
++                    authority_scope_paths = sorted(set(re.findall(
++                        r"^- \`(\.github/workflows/[^\`]+)\`: Git-Blob \`[0-9a-f]{40}\`; Workflow-Deklaration \`permissions\.contents: write\`\.$",
++                        body,
++                        flags=re.MULTILINE,
++                    )))
+             result.append(
+                 {
+                     "kind": kind,
+@@ -2703,6 +2757,7 @@ def _discussion_observation(repository: str, number: int) -> list[dict[str, Any]
+                     "commit_id": item.get("commit_id"),
+                     "updated_at": updated,
+                     "body_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
++                    "authority_scope_paths": authority_scope_paths,
+                 }
+             )
+     result.sort(key=lambda item: (item["kind"], item["id"]))
+diff --git a/tools/qikvrt_smalltalk.py b/tools/qikvrt_smalltalk.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..20ef6eff3399f89e4e449ee2db5662edd8062eb5
+--- /dev/null
++++ b/tools/qikvrt_smalltalk.py
+@@ -0,0 +1,192 @@
++#!/usr/bin/env python3
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++"""Pinned Pharo bootstrap, reproducible source loading and exhaustive C90 comparison.
++
++Extends bootstrap-runtime's language profiles. Base image/cache bytes never acquire
++authority through a mutable live image; every build starts from the hash-locked ZIP.
++"""
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++import os
++from pathlib import Path
++import platform
++import shutil
++import subprocess
++import sys
++import tempfile
++import urllib.request
++import zipfile
++
++ROOT = Path(__file__).resolve().parents[1]
++LOCK_PATH = ROOT / "runtime/toolchains/pharo-13.lock.json"
++
++
++def digest(path: Path) -> str:
++    with path.open("rb") as stream:
++        return hashlib.file_digest(stream, "sha256").hexdigest()
++
++
++def run(command: list[str], cwd: Path) -> None:
++    subprocess.run(command, cwd=cwd, check=True, timeout=600)
++
++
++def cache_path(cache: Path, lock: dict) -> Path:
++    return cache / "pharo" / lock["version"]
++
++
++def verify(cache: Path, lock: dict) -> Path:
++    directory = cache_path(cache, lock)
++    for kind in ("image", "vm"):
++        archive = directory / (kind + ".zip")
++        if digest(archive) != lock[kind]["sha256"]:
++            raise ValueError(f"{kind}: archive digest mismatch")
++        with zipfile.ZipFile(archive) as source:
++            for member in source.infolist():
++                if member.is_dir():
++                    continue
++                path = directory / kind / member.filename
++                if path.is_symlink() or not path.resolve().is_relative_to((directory / kind).resolve()):
++                    raise ValueError("unsafe cache member")
++                if digest(path) != hashlib.sha256(source.read(member)).hexdigest():
++                    raise ValueError(f"{kind}: extracted bytes changed: {member.filename}")
++    return directory
++
++
++def install(cache: Path, lock: dict, archive_dir: Path | None = None) -> Path:
++    if platform.system() != "Linux" or platform.machine() not in ("x86_64", "AMD64"):
++        raise ValueError("Pharo lock is for Linux x86_64")
++    target = cache_path(cache, lock)
++    if target.exists():
++        return verify(cache, lock)
++    target.parent.mkdir(parents=True, exist_ok=True)
++    temporary = Path(tempfile.mkdtemp(prefix=".install-", dir=target.parent))
++    try:
++        for kind in ("image", "vm"):
++            archive = temporary / (kind + ".zip")
++            print(f"PHARO_FETCH {kind}", flush=True)
++            if archive_dir:
++                shutil.copyfile(archive_dir / (kind + ".zip"), archive)
++            else:
++                with urllib.request.urlopen(lock[kind]["url"], timeout=120) as response, archive.open("wb") as output:
++                    shutil.copyfileobj(response, output)
++            if digest(archive) != lock[kind]["sha256"]:
++                raise ValueError(f"{kind}: downloaded archive digest mismatch")
++            with zipfile.ZipFile(archive) as source:
++                for member in source.infolist():
++                    path = temporary / kind / member.filename
++                    if not path.resolve().is_relative_to((temporary / kind).resolve()):
++                        raise ValueError("unsafe archive path")
++                source.extractall(temporary / kind)
++                for member in source.infolist():
++                    path = temporary / kind / member.filename
++                    if path.is_file() and member.external_attr >> 16 & 0o111:
++                        path.chmod(0o755)
++        temporary.rename(target)
++    finally:
++        if temporary.exists():
++            shutil.rmtree(temporary)
++    print("PHARO_INSTALL_COMPLETE", flush=True)
++    return verify(cache, lock)
++
++
++def build(directory: Path, lock: dict, output: Path) -> Path:
++    output.mkdir(parents=True, exist_ok=True)
++    image = output / "QIKVRT.image"
++    if image.exists():
++        raise ValueError("Refusing to overwrite an existing mutable image")
++    shutil.copyfile(directory / "image" / lock["image"]["file"], image)
++    original_changes = (directory / "image" / lock["image"]["file"]).with_suffix(".changes")
++    shutil.copyfile(original_changes, image.with_suffix(".changes"))
++    for source in (directory / "image").glob("*.sources"):
++        shutil.copyfile(source, output / source.name)
++    vm = str(directory / "vm" / lock["vm"]["file"])
++    run([vm, "--headless", str(image), "st", str(ROOT / "src/smalltalk/QikvrtEffectAck.st"), str(ROOT / "src/smalltalk/save-image.st")], output)
++    run([vm, "--headless", str(image), "st", str(ROOT / "src/smalltalk/smoke.st")], output)
++    receipt = {"schema": "qikvrt_smalltalk_image_v1", "lock_sha256": digest(LOCK_PATH),
++               "source_sha256": digest(ROOT / "src/smalltalk/QikvrtEffectAck.st"),
++               "image_sha256": digest(image), "image_restored": True, "effect_ack_done": False}
++    (output / "smalltalk-image-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
++    return image
++
++
++def test(directory: Path, lock: dict) -> None:
++    with tempfile.TemporaryDirectory(prefix="qikvrt-smalltalk-") as temp:
++        work = Path(temp)
++        image = build(directory, lock, work)
++        run([str(directory / "vm" / lock["vm"]["file"]), "--headless", str(image), "st", str(ROOT / "tests/smalltalk/core-vectors.st")], work)
++        executable = work / "c90-vectors"
++        run([os.environ.get("CC", "cc"), "-std=c90", "-pedantic", "-Wall", "-Wextra", "-Werror", "-O2", "-I" + str(ROOT / "include"), str(ROOT / "src/effect_ack_core.c"), str(ROOT / "tests/smalltalk/core-vectors.c"), "-o", str(executable)], work)
++        with (work / "c90-vectors.bin").open("wb") as output:
++            subprocess.run([str(executable)], stdout=output, check=True, timeout=60)
++        a, b = work / "c90-vectors.bin", work / "smalltalk-vectors.bin"
++        if a.stat().st_size != 2621440 or b.stat().st_size != 2621440 or digest(a) != digest(b):
++            raise ValueError("Smalltalk/C90 exhaustive result mismatch")
++        # Also use the existing rich Python engine on representable boundary
++        # cases. Its evidence parser is intentionally not replaced by the C ABI.
++        sys.path.insert(0, str(ROOT / "src"))
++        from qikvrt_effect_ack import EffectAckEngine, ConnectionDecision, RiskLevel
++        sys.path.insert(0, str(ROOT))
++        from tests.test_effect_ack_conformance import request
++        vectors = a.read_bytes()
++        cases = [(122879, 2, {}, 100)]
++        fields = {0: "transport_ack", 1: "input_id", 3: "origin_checked", 4: "context_checked",
++                  5: "semantics_reconstructed", 6: "effect_anticipated", 7: "risk_classified",
++                  8: "risk_level", 9: "responsibility_assigned", 10: "responsibility_owner",
++                  12: "policy_allows_release", 14: "open_questions", 15: "next_required_checks", 16: "evidence_refs"}
++        for bit, field in fields.items():
++            value = False
++            if field in ("input_id", "responsibility_owner"): value = ""
++            if field == "risk_level": value = RiskLevel.UNKNOWN
++            if field in ("open_questions", "next_required_checks"): value = ("pending",)
++            if field == "evidence_refs": value = ()
++            mask = 122879 & ~(1 << bit)
++            if field == "transport_ack":
++                # A rich Python request without acknowledged reception has no
++                # effect-checkable input identity. The core consumes verified
++                # facts, not the raw request's non-empty identifier string.
++                mask &= ~(1 << 1)
++            cases.append((mask, 2, {field: value}, 100))
++        for code, decision in enumerate(ConnectionDecision):
++            mask = 122879 if code != 0 else 122879 & ~(1 << 11)
++            cases.append((mask, code, {"connection_decision": decision}, 100))
++        cases += [(122879 | (1 << 13), 2, {}, 0),
++                  (122879 | (1 << 18), 2, {"declared_input_hash": "0" * 64}, 100),
++                  (122879 & ~(1 << 2), 2, {"payload": None, "declared_input_hash": None}, 100)]
++        names = ["EFFECT_NACK", "EFFECT_ACK_CONTINUE", "EFFECT_ACK_DONE", "EFFECT_ACK_ISOLATE", "EFFECT_ACK_BLOCK"]
++        for mask, decision, changes, timeout in cases:
++            result = EffectAckEngine(clock_ns=lambda: 0).evaluate(request(**changes), timeout_ms=timeout)
++            if result.state.value != names[vectors[mask * 5 + decision]]:
++                raise ValueError(f"Python/C90/Smalltalk boundary mismatch: {mask}/{decision}")
++        print(f"QIKVRT_PYTHON_C90_SMALLTALK_BOUNDARIES={len(cases)}")
++        print(f"QIKVRT_SMALLTALK_C90_EXHAUSTIVE_MATCH vectors=2621440 sha256={digest(a)}")
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("command", choices=("verify", "install", "build", "test"))
++    parser.add_argument("--cache-dir", type=Path, default=Path(os.environ.get("QIKVRT_TOOLCHAIN_CACHE", ROOT / ".qikvrt/toolchains")))
++    parser.add_argument("--archive-dir", type=Path)
++    parser.add_argument("--output", type=Path)
++    args = parser.parse_args()
++    lock = json.loads(LOCK_PATH.read_text())
++    try:
++        directory = install(args.cache_dir.resolve(), lock, args.archive_dir) if args.command == "install" else verify(args.cache_dir.resolve(), lock)
++        if args.command == "build":
++            if not args.output:
++                parser.error("build requires --output")
++            build(directory, lock, args.output.resolve())
++        if args.command == "test":
++            test(directory, lock)
++        print(f"PHARO_{args.command.upper()}_OK version={lock['version']}")
++        return 0
++    except (OSError, ValueError, zipfile.BadZipFile, subprocess.SubprocessError) as error:
++        print(f"BLOCK: {error}")
++        return 1
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/tools/qikvrt_temdd.py b/tools/qikvrt_temdd.py
+new file mode 100755
+index 0000000000000000000000000000000000000000..740b757baca640ca4f3300b8669d0ebf09439efc
+--- /dev/null
++++ b/tools/qikvrt_temdd.py
+@@ -0,0 +1,30 @@
++#!/usr/bin/env python3
++"""TEMDD v0.1 deterministic reference parser/elaborator."""
++import json,re,sys
++from pathlib import Path
++ID=r"[A-Za-z][A-Za-z0-9_-]*"
++QIKVRT_DOD={'ZERO_BUGS','ALL_PULL_REQUESTS_REGARDED','ALL_BRANCHES_REGARDED','ALL_PRODUCTIVE_BRANCHES_MERGED','FRESH_EXACT_MAIN_VALIDATION_PASS','FRESH_EFFECT_READBACK'}
++def parse(text):
++ def one(p,label,src=None):
++  m=re.search(p,text if src is None else src,re.S)
++  if not m: raise ValueError('missing '+label)
++  return m
++ v=one(r"^\s*temdd\s+([0-9.]+)\s*;",'version').group(1)
++ if v!='0.1': raise ValueError('unsupported version')
++ a=one(r"authority\s+"+ID+r"\s*=\s*\"([^\"]+)\"\s*;",'authority').group(1)
++ s=one(r"subject\s+("+ID+r")\s*\{(.*?)\}",'subject'); sb=s.group(2)
++ rm=one(r"repository\s*=\s*\"([^\"]+)\"\s*;",'repository',sb); one(r"binding\s*=\s*exact\s*;",'exact binding',sb)
++ q=one(r"request\s+("+ID+r")\s*\{\s*target\s*=\s*("+ID+r")\s*;\s*\}",'request'); target=q.group(2)
++ handlers=[]
++ for m in re.finditer(r"on\s+(event|blocker)\s*\{(.*?)\}",text,re.S): handlers.append({'event':m.group(1),'statements':[x.strip() for x in m.group(2).split(';') if x.strip()]})
++ d=one(r"until\s*\{(.*?)\}",'until').group(1).strip().rstrip(';'); dod=[x.strip() for x in d.split('&&') if x.strip()]
++ if not handlers or not dod: raise ValueError('handlers and DoD required')
++ if len(set(dod))!=len(dod): raise ValueError('duplicate DoD predicate')
++ if target=='QIKVRT_DOD' and set(dod)!=QIKVRT_DOD: raise ValueError('QIKVRT_DOD requires complete canonical predicate')
++ return {'schema':'temdd_ir_v0_1','version':v,'authority':a,'subject':{'name':s.group(1),'repository':rm.group(1),'binding':'exact'},'request':{'name':q.group(1),'target':target},'handlers':handlers,'dod':dod}
++def main(argv):
++ if len(argv)!=2:return 64
++ try: ir=parse(Path(argv[1]).read_text(encoding='utf-8'))
++ except (OSError,ValueError) as e: print('BLOCK '+str(e),file=sys.stderr);return 2
++ print(json.dumps(ir,sort_keys=True,separators=(',',':')));return 0
++if __name__=='__main__':raise SystemExit(main(sys.argv))
+diff --git a/tools/qikvrt_temdd_conformance.py b/tools/qikvrt_temdd_conformance.py
+new file mode 100755
+index 0000000000000000000000000000000000000000..d8d3b99ea7eabb11e048757856f2ee1b43ce30ad
+--- /dev/null
++++ b/tools/qikvrt_temdd_conformance.py
+@@ -0,0 +1,21 @@
++#!/usr/bin/env python3
++"""TEMDD semantic conformance T01-T12. Fail closed."""
++from collections import namedtuple
++Evidence=namedtuple('Evidence','subject kind fresh')
++DOD=('ZERO_BUGS','ALL_PULL_REQUESTS_REGARDED','ALL_BRANCHES_REGARDED','ALL_PRODUCTIVE_BRANCHES_MERGED','FRESH_EXACT_MAIN_VALIDATION_PASS','FRESH_EFFECT_READBACK')
++def evidence(subject,kind,fresh=True): return Evidence(subject,kind,fresh)
++def admits(e,subject,kind): return e.subject==subject and e.kind==kind and e.fresh
++def successor(subject,mutation): return subject+'@successor:'+mutation
++def done(predicates): return all(bool(predicates.get(x,False)) for x in DOD)
++def check():
++ s='repo@head/tree'; t=successor(s,'m1'); e=evidence(s,'validation')
++ assert admits(e,s,'validation') and not admits(e,t,'validation')
++ assert 'TRANSPORT_ACK'!='EFFECT_ACK' and 'RESULT'!='EFFECT'
++ assert {'HOLD','CONTINUE'}.isdisjoint({'NOOP','DONE'})
++ assert not done({x:True for x in DOD if x!='ALL_PULL_REQUESTS_REGARDED'})
++ assert not admits(evidence(s,'authority',False),s,'authority')
++ p={x:True for x in DOD}; p['FRESH_EFFECT_READBACK']=False; assert not done(p)
++ assert 'UNKNOWN' not in {'EFFECT_ACK','DONE'}
++ assert t!=s and not admits(e,t,'validation')
++ print('TEMDD_CONFORMANCE T01-T12 PASS')
++if __name__=='__main__': check()
+diff --git a/tools/qikvrt_unattended_pr_disposition.py b/tools/qikvrt_unattended_pr_disposition.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..dc1930079e39ff61b52eec3d7cb0fd0961f37055
+--- /dev/null
++++ b/tools/qikvrt_unattended_pr_disposition.py
+@@ -0,0 +1,196 @@
++#!/usr/bin/env python3
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++"""Deterministic fail-closed disposition classifier for unattended pull requests.
++
++This module is intentionally effect-free. It projects one exact-bound pull-request
++observation to exactly one current disposition from the canonical Issue #929
++state set. Repository workflows may consume the result, but review, merge, close,
++publication and other effects remain separate authority-bearing operations.
++"""
++from __future__ import annotations
++
++import argparse
++import json
++import sys
++from dataclasses import asdict, dataclass
++from pathlib import Path
++from typing import Any, Mapping, Sequence
++
++DISPOSITIONS = frozenset(
++    {
++        "ACTIVE_EXECUTION",
++        "READY_FOR_INDEPENDENT_REVIEW",
++        "HOLD_WITH_FIRST_CAUSAL_BLOCKER",
++        "REBIND_REQUIRED",
++        "MERGE_READY",
++        "EXTERNAL_EFFECT_PENDING",
++        "CLOSE_AS_SUPERSEDED",
++        "MERGED",
++        "CLOSED_NOT_PLANNED_WITH_CAUSE",
++    }
++)
++
++
++@dataclass(frozen=True)
++class Disposition:
++    disposition: str
++    first_causal_blocker: str | None
++    next_action: str
++
++    def to_mapping(self) -> dict[str, object]:
++        value: dict[str, object] = asdict(self)
++        value["PASS"] = False
++        value["FINAL_PASS"] = False
++        value["EFFECT_ACK_DONE"] = False
++        return value
++
++
++def _required_str(value: object, field: str) -> str:
++    if not isinstance(value, str) or not value.strip():
++        raise ValueError(f"{field} must be a non-empty string")
++    return value.strip()
++
++
++def _required_bool(value: object, field: str) -> bool:
++    if not isinstance(value, bool):
++        raise ValueError(f"{field} must be boolean")
++    return value
++
++
++def _required_nonnegative_int(value: object, field: str) -> int:
++    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
++        raise ValueError(f"{field} must be a non-negative integer")
++    return value
++
++
++def classify(observation: Mapping[str, object]) -> Disposition:
++    """Return exactly one disposition for one exact-bound PR observation.
++
++    Precedence is causal and fail-closed: terminal repository state first; then
++    supersession and base drift; then active execution; then observed blockers;
++    then independent-review and external-effect boundaries; finally merge-ready.
++    Missing evidence cannot become MERGE_READY.
++    """
++
++    repository = _required_str(observation.get("repository"), "repository")
++    del repository  # validation is the binding; no repository-specific behavior.
++    _required_nonnegative_int(observation.get("pull_request"), "pull_request")
++    head_sha = _required_str(observation.get("head_sha"), "head_sha")
++    base_sha = _required_str(observation.get("base_sha"), "base_sha")
++    current_main_sha = _required_str(
++        observation.get("current_main_sha"), "current_main_sha"
++    )
++    if not all(len(value) == 40 for value in (head_sha, base_sha, current_main_sha)):
++        raise ValueError("head_sha, base_sha and current_main_sha must be 40 characters")
++
++    state = _required_str(observation.get("state"), "state")
++    merged = _required_bool(observation.get("merged"), "merged")
++    superseded = _required_bool(observation.get("superseded"), "superseded")
++    active_workflows = _required_nonnegative_int(
++        observation.get("active_workflows"), "active_workflows"
++    )
++    failed_workflows = _required_nonnegative_int(
++        observation.get("failed_workflows"), "failed_workflows"
++    )
++    gates_complete = _required_bool(observation.get("gates_complete"), "gates_complete")
++    review_required = _required_bool(
++        observation.get("review_required"), "review_required"
++    )
++    review_satisfied = _required_bool(
++        observation.get("review_satisfied"), "review_satisfied"
++    )
++    external_effect_pending = _required_bool(
++        observation.get("external_effect_pending"), "external_effect_pending"
++    )
++
++    raw_blocker = observation.get("first_causal_blocker")
++    if raw_blocker is not None and (
++        not isinstance(raw_blocker, str) or not raw_blocker.strip()
++    ):
++        raise ValueError("first_causal_blocker must be null or a non-empty string")
++    blocker = raw_blocker.strip() if isinstance(raw_blocker, str) else None
++
++    if merged:
++        if state != "closed":
++            raise ValueError("merged pull request must be closed")
++        return Disposition("MERGED", None, "NOOP")
++    if state == "closed":
++        return Disposition(
++            "CLOSED_NOT_PLANNED_WITH_CAUSE",
++            blocker or "CLOSED_WITHOUT_MERGE",
++            "NOOP",
++        )
++    if state != "open":
++        raise ValueError("state must be open or closed")
++    if superseded:
++        return Disposition("CLOSE_AS_SUPERSEDED", blocker or "SUPERSEDED", "CLOSE_PR")
++    if base_sha != current_main_sha:
++        return Disposition(
++            "REBIND_REQUIRED",
++            "BASE_DRIFT",
++            "HISTORY_PRESERVING_REBIND_TO_CURRENT_MAIN",
++        )
++    if active_workflows:
++        return Disposition("ACTIVE_EXECUTION", None, "REOBSERVE_ON_TERMINAL_DELTA")
++    if blocker is not None:
++        return Disposition("HOLD_WITH_FIRST_CAUSAL_BLOCKER", blocker, "PRESERVE_HOLD")
++    if failed_workflows:
++        return Disposition(
++            "HOLD_WITH_FIRST_CAUSAL_BLOCKER",
++            "EXACT_HEAD_GATE_FAILURE",
++            "CLASSIFY_FIRST_FAILED_GATE",
++        )
++    if not gates_complete:
++        return Disposition(
++            "HOLD_WITH_FIRST_CAUSAL_BLOCKER",
++            "EXACT_HEAD_EVIDENCE_INCOMPLETE",
++            "REOBSERVE_EXACT_HEAD_GATES",
++        )
++    if review_required and not review_satisfied:
++        return Disposition(
++            "READY_FOR_INDEPENDENT_REVIEW",
++            None,
++            "REQUEST_OR_REOBSERVE_INDEPENDENT_REVIEW",
++        )
++    if external_effect_pending:
++        return Disposition(
++            "EXTERNAL_EFFECT_PENDING",
++            None,
++            "PRESERVE_EXTERNAL_EFFECT_BOUNDARY",
++        )
++    return Disposition("MERGE_READY", None, "REQUEST_AUTHORIZED_PROMOTION")
++
++
++def _read(path: str) -> Mapping[str, object]:
++    stream = sys.stdin if path == "-" else Path(path).open(encoding="utf-8")
++    try:
++        value: Any = json.load(stream)
++    finally:
++        if stream is not sys.stdin:
++            stream.close()
++    if not isinstance(value, Mapping):
++        raise ValueError("input must be a JSON object")
++    return value
++
++
++def main(argv: Sequence[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--input", required=True)
++    parser.add_argument("--output", default="-")
++    args = parser.parse_args(argv)
++    try:
++        value = classify(_read(args.input)).to_mapping()
++        text = json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n"
++        if args.output == "-":
++            sys.stdout.write(text)
++        else:
++            Path(args.output).write_text(text, encoding="utf-8")
++    except (OSError, ValueError, json.JSONDecodeError) as exc:
++        print(f"BLOCK: {exc}", file=sys.stderr)
++        return 2
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
