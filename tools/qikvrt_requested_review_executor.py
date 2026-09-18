@@ -755,7 +755,6 @@ def _threads(snapshot: Mapping[str, Any]) -> list[dict[str, Any]]:
                 "id": identifier,
                 "is_resolved": resolved,
                 "body_sha256": body_sha256,
-                **({"authority_scope_paths": list(item.get("authority_scope_paths", []))} if "authority_scope_paths" in item else {}),
             }
         )
     result.sort(key=lambda item: item["id"])
@@ -1202,18 +1201,24 @@ def _discussion_items(snapshot: Mapping[str, Any]) -> list[dict[str, Any]]:
         if key in seen:
             raise ReviewSnapshotError(f"duplicate discussion item: {kind}/{identifier}")
         seen.add(key)
-        result.append(
-            {
-                "kind": kind,
-                "id": identifier,
-                "author": item.get("author"),
-                "author_association": item.get("author_association"),
-                "state": item.get("state"),
-                "commit_id": item.get("commit_id"),
-                "updated_at": updated_at,
-                "body_sha256": body_sha256,
-            }
-        )
+        entry = {
+            "kind": kind,
+            "id": identifier,
+            "author": item.get("author"),
+            "author_association": item.get("author_association"),
+            "state": item.get("state"),
+            "commit_id": item.get("commit_id"),
+            "updated_at": updated_at,
+            "body_sha256": body_sha256,
+        }
+        if "authority_scope_paths" in item:
+            authority_scope_paths = item.get("authority_scope_paths")
+            if not isinstance(authority_scope_paths, list) or not all(
+                isinstance(path, str) for path in authority_scope_paths
+            ):
+                raise ReviewSnapshotError("discussion authority_scope_paths must be a string list")
+            entry["authority_scope_paths"] = sorted(set(authority_scope_paths))
+        result.append(entry)
     result.sort(key=lambda item: (item["kind"], item["id"]))
     return result
 
