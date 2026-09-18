@@ -6,7 +6,8 @@
   "additionalProperties": false,
   "required": [
     "schema",
-    "version",
+    "ir_version",
+    "language_version",
     "authority",
     "subject",
     "request",
@@ -18,8 +19,12 @@
     "schema": {
       "const": "temdd_ir_v1"
     },
-    "version": {
+    "ir_version": {
       "const": "1"
+    },
+    "language_version": {
+      "type": "string",
+      "minLength": 1
     },
     "authority": {
       "type": "string",
@@ -102,6 +107,7 @@
       "type": "array",
       "uniqueItems": true,
       "minItems": 4,
+      "maxItems": 4,
       "items": {
         "enum": [
           "T13_CAUSAL_BINDING",
