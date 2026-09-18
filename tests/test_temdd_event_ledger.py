@@ -57,6 +57,28 @@ class ProducerTests(unittest.TestCase):
         event.update(changes)
         return event
 
+    def conformance_report(self, head=None):
+        exact=self.runtime.subject
+        return {
+            'schema':'temdd_conformance_report_v1',
+            'temdd_conformance':'1',
+            'implementation':{
+                'repository':exact['repository'],
+                'head':head or exact['head'],
+                'tree':exact['tree'],
+                'digest':'sha256:'+'1'*64,
+            },
+            'suite':{'version':'1','digest':'sha256:'+'2'*64,'files':[{'path':'fixture'}]},
+            'language':'PASS','ir':'PASS','ide':'PASS','event_semantics':'PASS',
+            'ledger':'PASS','evidence_binding':'PASS','causality':'PASS','effect_ack':'PASS',
+            'formal_invariants':'PASS','tests':'PASS','negative_vectors':'PASS',
+            'backends':{'c90':'EXECUTED_SUCCESS','smalltalk':'EXECUTED_SUCCESS',
+                        'm68000':'EXECUTED_SUCCESS_QEMU_USER','lean':'COMPILED_SUCCESS_LEAN_4_19_LAKE'},
+            'overall':'PASS','predecessor_evidence_transfer':False,
+            'stable_language_claim':False,'main_adoption':False,
+            'production_effect':False,'effect_ack_done':False,
+        }
+
     def start_servers(self):
         self.http = m.terminal.ThreadingHTTPServer(('127.0.0.1', 0), m.make_handler(self.runtime))
         self.ingress = m.make_ingress(self.runtime)
@@ -325,6 +347,24 @@ class ProducerTests(unittest.TestCase):
         self.assertEqual(envelope['state'], 'HOLD_UNVERIFIED')
         self.assertFalse(envelope['dod'])
 
+    def test_conformance_readback_is_exact_subject_and_fail_closed(self):
+        self.start_servers()
+        status, data = self.request('GET', '/api/temdd/conformance')
+        self.assertEqual(status, 409)
+        self.assertEqual(json.loads(data)['state'], 'HOLD')
+        path=self.runtime.ledger.directory/'conformance-report.json'
+        path.write_text(json.dumps(self.conformance_report(head='0'*40)), encoding='utf-8')
+        status, data = self.request('GET', '/api/temdd/conformance')
+        self.assertEqual(status, 409)
+        self.assertEqual(json.loads(data)['state'], 'HOLD')
+        path.write_text(json.dumps(self.conformance_report()), encoding='utf-8')
+        status, data = self.request('GET', '/api/temdd/conformance')
+        report=json.loads(data)
+        self.assertEqual(status, 200)
+        self.assertEqual(report['overall'], 'PASS')
+        self.assertEqual(report['implementation']['head'], self.runtime.subject['head'])
+        self.assertFalse(report['effect_ack_done'])
+
     def test_legacy_effect_ack_remains_exact_bound_and_single_use(self):
         self.start_servers()
         status, data = self.request('GET', '/.well-known/effect-ack')
@@ -382,6 +422,11 @@ class ProducerTests(unittest.TestCase):
     def test_browser_ide_is_local_editable_and_effect_free(self):
         page = (ROOT/'docs/terminal/temdd/index.html').read_text(encoding='utf-8')
         self.assertIn('id="ideSource"', page)
+        for view in ('source','ir','event-graph','ledger','conformance'):
+            self.assertIn(f'data-temdd-view="{view}"', page)
+        self.assertIn('/api/temdd/conformance', page)
+        self.assertIn('cause_event_ids', page)
+        self.assertIn('SEQUENCE != CAUSALITY', page)
         self.assertIn('ANALYZE → IR', page)
         self.assertIn('function analyzeTemdd(text)', page)
         self.assertIn('QIKVRT_DOD requires complete canonical predicate', page)
@@ -409,7 +454,12 @@ const subj={repository:'Goldkelch/qik-vrt',pr:1103,head:'a'.repeat(40),tree:'b'.
 class ES{constructor(url){this.url=url;this.handlers={};this.closed=false;sources.push(this);}addEventListener(n,f){this.handlers[n]=f;}close(){this.closed=true;}}
 const ctx={document:{getElementById(id){if(!elements.has(id))elements.set(id,{textContent:'',className:'',scrollHeight:0});return elements.get(id);}},
  localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},EventSource:ES,
- fetch:async()=>({ok:true,json:async()=>({subject:subj,ledger_id:epoch,dod:false,evidence_transfer:'DENY'})}),Date,JSON,BigInt,Number,Error,console};
+ fetch:async(url)=>url==='/api/temdd/conformance'
+   ?({ok:true,json:async()=>({schema:'temdd_conformance_report_v1',temdd_conformance:'1',overall:'PASS',
+      implementation:{repository:subj.repository,head:subj.head,tree:subj.tree},
+      predecessor_evidence_transfer:false,effect_ack_done:false})})
+   :({ok:true,json:async()=>({subject:subj,ledger_id:epoch,dod:false,evidence_transfer:'DENY'})}),
+ Date,JSON,BigInt,Number,Error,console};
 vm.createContext(ctx);vm.runInContext(script,ctx);
 setImmediate(()=>{try{
  const es=sources[0];assert(es);es.onopen();assert.equal(elements.get('state').textContent,'CONNECTED');

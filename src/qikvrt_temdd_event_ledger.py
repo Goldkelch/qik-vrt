@@ -35,6 +35,7 @@ except ImportError:
     import qikvrt_effect_ack_http_terminal as terminal
 
 MAX_EVENT = 65536
+MAX_CONFORMANCE_REPORT = 1048576
 KINDS = frozenset({'OBSERVE', 'CLASSIFY', 'ACTION', 'EFFECT', 'READBACK',
                    'SUCCESSOR', 'HOLD'})
 SCHEMA = 'qikvrt_temdd_native_event_v1'
@@ -279,6 +280,40 @@ class Runtime:
         self.ensure_subject()
         return self.ledger.append(event)
 
+    def conformance_report(self):
+        """Read one exact-subject report from persistent state; never infer PASS."""
+        exact = self.ensure_subject()
+        path = self.ledger.directory / 'conformance-report.json'
+        if path.is_symlink() or not path.exists():
+            raise Hold('CONFORMANCE_REPORT_NOT_MATERIALIZED')
+        info = path.stat()
+        if not stat.S_ISREG(info.st_mode) or info.st_size < 2 or info.st_size > MAX_CONFORMANCE_REPORT:
+            raise Hold('UNSAFE_CONFORMANCE_REPORT')
+        try:
+            report = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise Hold('INVALID_CONFORMANCE_REPORT') from exc
+        if not isinstance(report, dict) or report.get('schema') != 'temdd_conformance_report_v1':
+            raise Hold('CONFORMANCE_REPORT_SCHEMA_MISMATCH')
+        if report.get('temdd_conformance') != '1' or report.get('overall') != 'PASS':
+            raise Hold('CONFORMANCE_REPORT_NOT_PASS')
+        implementation = report.get('implementation')
+        if not isinstance(implementation, dict):
+            raise Hold('CONFORMANCE_IMPLEMENTATION_BINDING_REQUIRED')
+        for key in ('repository', 'head', 'tree'):
+            if implementation.get(key) != exact[key]:
+                raise Hold('CONFORMANCE_REPORT_SUBJECT_MISMATCH')
+        for key in ('language','ir','ide','event_semantics','ledger','evidence_binding',
+                    'causality','effect_ack','formal_invariants','tests','negative_vectors'):
+            if report.get(key) != 'PASS':
+                raise Hold('CONFORMANCE_REPORT_PARTIAL_PASS')
+        if report.get('predecessor_evidence_transfer') is not False:
+            raise Hold('CONFORMANCE_EVIDENCE_TRANSFER_FORBIDDEN')
+        if any(report.get(key) is not False for key in
+               ('stable_language_claim','main_adoption','production_effect','effect_ack_done')):
+            raise Hold('CONFORMANCE_REPORT_SCOPE_WIDENING')
+        return report
+
 
 def make_handler(runtime):
     class Handler(terminal.Handler):
@@ -296,7 +331,7 @@ def make_handler(runtime):
 
         def do_GET(self):
             path = urlsplit(self.path).path
-            if path not in ('/AI', '/AI/', '/api/temdd/subject', '/api/temdd/events'):
+            if path not in ('/AI', '/AI/', '/api/temdd/subject', '/api/temdd/conformance', '/api/temdd/events'):
                 return super().do_GET()
             host = self.headers.get('Host', '')
             allowed_hosts = {f'127.0.0.1:{self.server.server_port}', f'localhost:{self.server.server_port}'}
@@ -319,6 +354,11 @@ def make_handler(runtime):
                 if path == '/api/temdd/subject':
                     return self._json(200, {'subject': exact, 'ledger_id': runtime.ledger.epoch,
                         'state': 'HOLD_UNVERIFIED', 'dod': False, 'evidence_transfer': 'DENY'})
+                if path == '/api/temdd/conformance':
+                    try:
+                        return self._json(200, runtime.conformance_report())
+                    except Hold as exc:
+                        return self._hold(str(exc), 409)
                 query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
                 if set(query) - {'after'} or len(query.get('after', [''])) != 1:
                     raise Hold('INVALID_REPLAY_QUERY')
