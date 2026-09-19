@@ -2,13 +2,13 @@
 """Verify this exact essay's coverage and negative scope boundaries; no network or publication."""
 import collections,copy,hashlib,json,pathlib
 D=pathlib.Path(__file__).resolve().parent
-S='fb865db33137a184e059f7caa0b532ffbe15680aae7098c62f05d3f0d4254cf8'
-B='03e7b116568e9470bd66cb0460392f5b3021c682'
+S='01545bdd5714c32ca91928daea8aefb32a3ca2508fd1e850106c0a162a44a610'
+B='26d8afb67477e0e5b4e793236963477171d3abef'
 def check(raw,matrix,sources):
-    assert len(raw)==10202 and hashlib.sha256(raw).hexdigest()==S,'ARTICLE_IDENTITY'
+    assert len(raw)==13618 and hashlib.sha256(raw).hexdigest()==S,'ARTICLE_IDENTITY'
     assert hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()==B,'ARTICLE_BLOB'
     lines=raw.decode('utf-8').splitlines()
-    assert len(lines)==287,'LINE_COUNT'
+    assert len(lines)==319,'LINE_COUNT'
     wanted={i for i,l in enumerate(lines,1) if l.strip()}
     claims=matrix['claims'];excluded=matrix['structural_lines']
     assigned=[c['line'] for c in claims]+[e['line'] for e in excluded]
