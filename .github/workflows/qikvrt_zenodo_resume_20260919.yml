@@ -1,0 +1,109 @@
+name: QIKVRT Zenodo exact-decision resume 2026-09-19
+on:
+  push:
+    branches: [publication/zenodo-catchup-20260919]
+    paths:
+      - .github/workflows/qikvrt_zenodo_resume_20260919.yml
+      - tests/test_zenodo_git_tagger_precision.py
+permissions:
+  contents: write
+concurrency:
+  group: qikvrt-zenodo-pr1128-catchup-20260919
+  cancel-in-progress: false
+jobs:
+  resume:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 16
+      - name: Diagnose exact remote tag and preserve the original decision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/Goldkelch/qik-vrt/pulls/1128 --jq .head.sha)" = ee8c95af54a7d6035b3ca5d204cc02121dc3199c
+          gh api repos/Goldkelch/qik-vrt/git/tags/d440999fd8472f1fb96ef0a0a1dc18ea35feeec5 > /tmp/qikvrt-observed-tag.json
+          python3 -B - <<'PY'
+          import copy,hashlib,json,pathlib
+          from tools import qikvrt_zenodo_publish as p
+          root=pathlib.Path.cwd()
+          path=root/'release/zenodo-catchup-20260919/pr1128/publication-manifest.json'
+          if hashlib.sha256(path.read_bytes()).hexdigest()!='a817d7b93a89da0b27032d5b0e7b0b277444e9778211d98dca0434f42f34b33d': raise SystemExit('MANIFEST_CHANGED')
+          m=p.load_manifest(path,root)
+          expected=p._expected_consumption_tag(m,'0cbd480a519e6313a477505cc88d1fe6bcc812ec')
+          actual=json.loads(pathlib.Path('/tmp/qikvrt-observed-tag.json').read_text())
+          corrected=copy.deepcopy(expected)
+          corrected['tagger']['date']='2026-09-19T04:21:17Z'
+          p._validate_github_tag_response(actual,corrected,'d440999fd8472f1fb96ef0a0a1dc18ea35feeec5')
+          if expected['tagger']['date']!='2026-09-19T04:21:17.149683Z': raise SystemExit('UNEXPECTED_DIAGNOSIS')
+          diagnosis={'schema':'qikvrt_git_tagger_precision_diagnosis_v1','expected_transport_date':expected['tagger']['date'],'observed_transport_date':actual['tagger']['date'],'all_other_tag_fields_exact':True,'observed_tag_sha':actual['sha'],'authorization_and_manifest_unchanged':True,'original_authorized_at_preserved':m['owner_authorization']['authorization_event']['authorized_at'],'source':'https://docs.github.com/en/rest/git/tags'}
+          out=root/'release/zenodo-catchup-20260919/pr1128/TAGGER_PRECISION_DIAGNOSIS.json'
+          out.write_text(json.dumps(diagnosis,sort_keys=True,indent=2)+'\n')
+          source=root/'tools/qikvrt_zenodo_publish.py'
+          raw=source.read_bytes()
+          if p._git_blob_sha(raw)!='886f614106fe05f3c8f10cd485dd11455845cc54': raise SystemExit('PUBLISHER_SOURCE_CHANGED')
+          before=b'normalized = parsed.astimezone(datetime.timezone.utc).isoformat()'
+          after=b'normalized = parsed.astimezone(datetime.timezone.utc).replace(microsecond=0).isoformat()'
+          if raw.count(before)!=1: raise SystemExit('PATCH_SCOPE_MISMATCH')
+          source.write_bytes(raw.replace(before,after))
+          PY
+      - name: Fresh precision and exact-binding regression tests
+        run: |
+          set -euo pipefail
+          python3 -B tests/test_zenodo_git_tagger_precision.py
+          python3 -B -m unittest discover -s tests -p '*zenodo_publish*.py' -v
+          python3 -B docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/verify_publication_scope.py
+      - name: Persist corrected publisher without changing authorization or upload bytes
+        id: execution
+        run: |
+          set -euo pipefail
+          git config user.name qikvrt-publication-materializer
+          git config user.email qikvrt-publication-materializer@users.noreply.github.com
+          git add tools/qikvrt_zenodo_publish.py release/zenodo-catchup-20260919/pr1128/TAGGER_PRECISION_DIAGNOSIS.json
+          python3 -B tools/qikvrt_integrity.py generate
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git diff --cached --check
+          git commit -m 'fix(zenodo): bind annotated tagger date to native Git second precision'
+          execution=$(git rev-parse HEAD)
+          git push origin HEAD:publication/zenodo-catchup-20260919
+          test "$(git ls-remote origin refs/heads/publication/zenodo-catchup-20260919 | cut -f1)" = "$execution"
+          python3 -B tools/qikvrt_integrity.py verify
+          python3 -B tests/test_zenodo_git_tagger_precision.py
+          echo "head=$execution" >> "$GITHUB_OUTPUT"
+          echo "EXACT_EXECUTION_HEAD=$execution TREE=$(git rev-parse 'HEAD^{tree}')"
+      - name: Publish the persisted ten-file decision with all original v2 gates
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+          EXECUTION_HEAD: ${{ steps.execution.outputs.head }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXECUTION_HEAD"
+          test "$(git ls-remote origin refs/heads/publication/zenodo-catchup-20260919 | cut -f1)" = "$EXECUTION_HEAD"
+          GITHUB_SHA="$EXECUTION_HEAD" python3 -B tools/qikvrt_zenodo_publish.py --manifest release/zenodo-catchup-20260919/pr1128/publication-manifest.json
+      - name: Persist publication or recovery evidence
+        if: always() && steps.execution.outcome == 'success'
+        run: |
+          set -euo pipefail
+          git add release/zenodo-catchup-20260919
+          if ! git diff --cached --quiet; then
+            python3 -B tools/qikvrt_integrity.py generate
+            git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+            git diff --cached --check
+            git commit -m 'publication: persist exact Zenodo public byte readback or recovery state'
+            git push origin HEAD:publication/zenodo-catchup-20260919
+            test "$(git ls-remote origin refs/heads/publication/zenodo-catchup-20260919 | cut -f1)" = "$(git rev-parse HEAD)"
+          fi
+      - name: Retain fresh publication evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qikvrt-zenodo-resume-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release/zenodo-catchup-20260919/
+          retention-days: 30
+          if-no-files-found: error
