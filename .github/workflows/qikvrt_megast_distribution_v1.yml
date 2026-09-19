@@ -8,6 +8,7 @@ on:
       - 'tests/test_qikvrt_megast_distribution.py'
       - 'tests/test_qikvrt_netboot.py'
       - 'tests/test_qikvrt_distribution_readback.py'
+      - 'tests/test_qikvrt_distribution_execution.py'
       - 'tools/qikvrt_distribution_readback.py'
       - 'deploy/universal-terminal/**'
       - '.dockerignore'
@@ -23,6 +24,7 @@ on:
       - 'tests/test_qikvrt_megast_distribution.py'
       - 'tests/test_qikvrt_netboot.py'
       - 'tests/test_qikvrt_distribution_readback.py'
+      - 'tests/test_qikvrt_distribution_execution.py'
       - 'tools/qikvrt_distribution_readback.py'
       - 'deploy/universal-terminal/**'
       - '.dockerignore'
@@ -50,8 +52,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+      - name: Install nginx for the unprivileged log regression
+        run: sudo apt-get update && sudo apt-get install -y nginx
       - name: Verify distribution contract
-        run: python -m unittest tests.test_qikvrt_megast_distribution tests.test_qikvrt_netboot tests.test_qikvrt_distribution_readback -v
+        run: python -m unittest tests.test_qikvrt_megast_distribution tests.test_qikvrt_netboot tests.test_qikvrt_distribution_readback tests.test_qikvrt_distribution_execution -v
 
   build:
     needs: contract
@@ -279,6 +283,7 @@ jobs:
       QIKVRT_EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       QIKVRT_EXACT_TREE: ${{ needs.build.outputs.source_tree }}
       QIKVRT_MANIFEST_SHA256: ${{ needs.build.outputs.manifest_sha256 }}
+      QIKVRT_TEMDD_PR: ${{ github.event.pull_request.number || vars.QIKVRT_TEMDD_PR }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -341,6 +346,7 @@ jobs:
           grep -F qikvrt-megast-amd64.iso out/release-readback.json
           grep -F qikvrt-universal-terminal-amd64.docker.tar out/release-readback.json
       - name: Fresh unauthenticated complete public payload readback
+        id: public_readback
         env:
           GH_TOKEN: ""
         run: |
@@ -353,14 +359,26 @@ jobs:
       - name: Load public Docker archive and execute exact runtime
         run: |
           set -euo pipefail
+          case "${QIKVRT_TEMDD_PR:-}" in
+            ''|*[!0-9]*|0*) echo 'BLOCK: explicit positive TEMDD PR is required' >&2; exit 64 ;;
+          esac
           image="qikvrt/universal-terminal:${QIKVRT_EXACT_SHA}"
           docker load --input /tmp/qikvrt-public-readback/qikvrt-universal-terminal-amd64.docker.tar
           test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")" = "$QIKVRT_EXACT_SHA"
           test "$(docker image inspect --format '{{index .Config.Labels "io.qikvrt.source.tree"}}' "$image")" = "$QIKVRT_EXACT_TREE"
           cid=$(docker run -d --shm-size=256m -e QIKVRT_SERVICE_MODE=cloud \
             -e QIKVRT_EXACT_HEAD="$QIKVRT_EXACT_SHA" -e QIKVRT_EXACT_TREE="$QIKVRT_EXACT_TREE" \
+            -e QIKVRT_TEMDD_PR="$QIKVRT_TEMDD_PR" \
             -p 127.0.0.1:18080:8080 "$image")
-          trap 'docker logs "$cid" > /tmp/qikvrt-public-readback/qikvrt-public-container.log 2>&1; docker rm -f "$cid" >/dev/null' EXIT
+          cleanup_container() {
+            result=$?
+            trap - EXIT
+            docker logs "$cid" > /tmp/qikvrt-public-readback/qikvrt-public-container.log 2>&1 || true
+            docker cp "$cid:/tmp/nginx-access.log" /tmp/qikvrt-public-readback/qikvrt-public-nginx-access.log || true
+            docker rm -f "$cid" >/dev/null || true
+            exit "$result"
+          }
+          trap cleanup_container EXIT
           ready=0
           for _ in $(seq 1 90); do
             if docker exec "$cid" /usr/local/bin/qikvrt-runtime-health >/dev/null 2>&1 && curl -fsS http://127.0.0.1:18080/qik-vrt/mesh/v1/healthz > /tmp/qikvrt-public-readback/qikvrt-public-container-health.json; then ready=1; break; fi
@@ -372,9 +390,19 @@ jobs:
           curl -fsS http://127.0.0.1:18080/AI/ > /tmp/qikvrt-public-readback/qikvrt-public-surface.html
           curl -fsS http://127.0.0.1:18080/qik-vrt/mesh/v1/terminal/vnc.html > /tmp/qikvrt-public-readback/qikvrt-public-novnc.html
           curl -fsS http://127.0.0.1:18080/qik-vrt/mesh/v1/effect-ack/AI > /tmp/qikvrt-public-readback/qikvrt-public-temdd.html
+          curl -fsS http://127.0.0.1:18080/api/temdd/subject > /tmp/qikvrt-public-readback/qikvrt-public-temdd-subject.json
+          python3 - <<'PYCODE'
+          import json,os
+          expected={'repository':os.environ['GITHUB_REPOSITORY'],'pr':int(os.environ['QIKVRT_TEMDD_PR']),
+                    'head':os.environ['QIKVRT_EXACT_SHA'],'tree':os.environ['QIKVRT_EXACT_TREE']}
+          observed=json.load(open('/tmp/qikvrt-public-readback/qikvrt-public-temdd-subject.json'))
+          if observed.get('subject') != expected:
+              raise SystemExit('PUBLIC_TEMDD_SUBJECT_MISMATCH')
+          PYCODE
           docker exec "$cid" qemu-m68k /usr/local/bin/qikvrt-m68k-selftest > /tmp/qikvrt-public-readback/qikvrt-public-m68k.txt
           echo 'PUBLIC_DOCKER_ARCHIVE_EXECUTION_VERIFIED; OCI_REGISTRY_PULL_NOT_IMPLIED; FULL_PRODUCT_DONE_NOT_IMPLIED'
       - name: Boot downloaded ISO through BIOS firmware, not a supplied kernel
+        if: ${{ !cancelled() && steps.public_readback.outcome == 'success' }}
         run: |
           set -euo pipefail
           sudo apt-get update
