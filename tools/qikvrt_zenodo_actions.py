@@ -705,6 +705,19 @@ def _published_metadata_matches(
     return True
 
 
+def _editable_metadata_matches(
+    actual: Any,
+    expected: Mapping[str, Any],
+) -> bool:
+    """Accept either documented legacy or normalized draft readback shape."""
+    expected_metadata = dict(expected)
+    expected_metadata.pop("prereserve_doi", None)
+    return _metadata_matches(
+        actual,
+        expected_metadata,
+    ) or _published_metadata_matches(actual, expected_metadata)
+
+
 class ZenodoClient:
     def __init__(
         self,
@@ -1139,11 +1152,9 @@ class ZenodoClient:
         if published:
             metadata_ok = _published_metadata_matches(actual_metadata, metadata)
         else:
-            expected_metadata = dict(metadata)
-            # ``prereserve_doi: true`` is a write-time instruction.  Zenodo
-            # replaces it in GET responses with an object containing the DOI.
-            expected_metadata.pop("prereserve_doi", None)
-            metadata_ok = _metadata_matches(actual_metadata, expected_metadata)
+            # ``prereserve_doi: true`` is a write-time instruction. Zenodo may
+            # also normalize legacy resource and license fields before publish.
+            metadata_ok = _editable_metadata_matches(actual_metadata, metadata)
         if not metadata_ok:
             raise ZenodoError("Zenodo metadata does not contain the exact manifest values")
         if _doi_from_deposition(value, "gated record") != expected_doi:
@@ -1153,8 +1164,6 @@ class ZenodoClient:
     def wait_for_editable_metadata(
         self, record_id: int, metadata: Mapping[str, Any]
     ) -> dict[str, Any]:
-        expected_metadata = dict(metadata)
-        expected_metadata.pop("prereserve_doi", None)
         for attempt in range(self.poll_attempts):
             status, value = self.get(
                 f"/api/deposit/depositions/{record_id}", accept=(200, 202)
@@ -1162,7 +1171,7 @@ class ZenodoClient:
             links = value.get("links")
             if (
                 status == 200
-                and _metadata_matches(value.get("metadata"), expected_metadata)
+                and _editable_metadata_matches(value.get("metadata"), metadata)
                 and isinstance(links, dict)
                 and isinstance(links.get("bucket"), str)
             ):
