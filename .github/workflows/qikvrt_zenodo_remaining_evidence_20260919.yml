@@ -1,0 +1,88 @@
+name: QIKVRT remaining Zenodo publication evidence 2026-09-19
+on:
+  push:
+    branches: [publication/zenodo-remaining-20260919]
+    paths: [.github/workflows/qikvrt_zenodo_remaining_evidence_20260919.yml]
+permissions:
+  contents: read
+jobs:
+  remaining-paper-evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pr: 1085
+            head: f30d4bcc8c54d915981abad03ed5f5985779191b
+            tree: 70ac5b752180d971a308363e17316e9d43302c04
+            package: docs/publications/2026-09-13-future-message-present-receiver
+            kernel: false
+          - pr: 1092
+            head: f15849cdd926d295dc98a143621803dffad71147
+            tree: b06006e5fb1fbc0680fb5984fa4b56ed0d0f2ddc
+            package: docs/publications/2026-09-15-answer-cycle-reuse
+            kernel: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ matrix.head }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Bind actual clean checkout and live source PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: ${{ matrix.head }}
+          EXPECTED_TREE: ${{ matrix.tree }}
+          SUBJECT_PR: ${{ matrix.pr }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git rev-parse 'HEAD^{tree}')" = "$EXPECTED_TREE"
+          test -z "$(git status --porcelain)"
+          test "$(gh api repos/Goldkelch/qik-vrt/pulls/$SUBJECT_PR --jq .head.sha)" = "$EXPECTED_HEAD"
+          mkdir -p "$RUNNER_TEMP/zenodo-remaining"
+          python3 - <<'PY'
+          import datetime,json,os,pathlib
+          p=pathlib.Path(os.environ['RUNNER_TEMP'])/'zenodo-remaining/SUBJECT.json'
+          p.write_text(json.dumps({'observed_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'repository':'Goldkelch/qik-vrt','pr':int(os.environ['SUBJECT_PR']),'head':os.environ['EXPECTED_HEAD'],'tree':os.environ['EXPECTED_TREE'],'checkout_clean':True,'actual_workflow_event_head':os.environ['GITHUB_SHA'],'workflow_run_id':os.environ['GITHUB_RUN_ID'],'source_checkout_is_not_the_workflow_event_head':True,'PREDECESSOR_EVIDENCE_TRANSFER':False},indent=2)+'\n')
+          PY
+      - name: Export immutable source package and actual validation controls
+        env:
+          PACKAGE: ${{ matrix.package }}
+        run: |
+          set -euo pipefail
+          git archive --format=tar HEAD "$PACKAGE" tools policy LICENSES formalization/QIKVRT_Formalization_v2.0 > "$RUNNER_TEMP/zenodo-remaining/source-kit.tar"
+          sha256sum "$RUNNER_TEMP/zenodo-remaining/source-kit.tar"
+      - name: Restore declared Lean toolchain and dependencies
+        if: matrix.kernel
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: |
+            ~/.elan
+            formalization/QIKVRT_Formalization_v2.0/.lake/packages
+          key: qikvrt-lean-${{ runner.os }}-${{ hashFiles('formalization/QIKVRT_Formalization_v2.0/lean-toolchain', 'formalization/QIKVRT_Formalization_v2.0/lakefile.toml', 'formalization/QIKVRT_Formalization_v2.0/lake-manifest.json') }}-${{ matrix.head }}
+          restore-keys: |
+            qikvrt-lean-${{ runner.os }}-${{ hashFiles('formalization/QIKVRT_Formalization_v2.0/lean-toolchain', 'formalization/QIKVRT_Formalization_v2.0/lakefile.toml', 'formalization/QIKVRT_Formalization_v2.0/lake-manifest.json') }}-
+            qikvrt-lean-${{ runner.os }}-
+      - name: Provision and build the declared Lean project
+        if: matrix.kernel
+        uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: formalization/QIKVRT_Formalization_v2.0
+          test: false
+      - name: Fresh thirteen-theorem kernel and four negative-control executions
+        if: matrix.kernel
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.elan/bin:$PATH"
+          python3 -B docs/publications/2026-09-15-answer-cycle-reuse/verify_package.py --output-dir "$RUNNER_TEMP/zenodo-remaining/fresh-kernel"
+          test -z "$(git status --porcelain)"
+      - name: Preserve source kit and fresh evidence without publication claims
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qikvrt-remaining-zenodo-pr${{ matrix.pr }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/zenodo-remaining/
+          retention-days: 30
+          if-no-files-found: error
