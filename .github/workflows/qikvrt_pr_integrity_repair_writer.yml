@@ -1,4 +1,4 @@
-# Exact-subject, idempotent PR integrity repair writer.
+# One-shot exact-subject integrity repair and cleanup writer.
 name: QIKVRT PR integrity repair writer
 
 on:
@@ -34,30 +34,22 @@ jobs:
         with:
           ref: ${{ env.EXPECTED_HEAD }}
           fetch-depth: 2
-      - name: Regenerate and verify deterministic repository integrity
+      - name: Materialize clean exact-subject successor
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
-          python3 -B tools/qikvrt_integrity.py generate
-          python3 -B tools/qikvrt_integrity.py verify
-      - name: Persist exact integrity successor when required
-        shell: bash
-        run: |
-          set -euo pipefail
-          paths=(REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt)
-          if git diff --quiet -- "${paths[@]}"; then
-            echo "Integrity outputs already canonical for exact subject $EXPECTED_HEAD."
-            exit 0
-          fi
           git fetch --no-tags origin "refs/heads/$TARGET_REF:refs/remotes/origin/$TARGET_REF"
           remote_head="$(git rev-parse --verify "refs/remotes/origin/$TARGET_REF^{commit}")"
           if [ "$remote_head" != "$EXPECTED_HEAD" ]; then
-            echo "BLOCK exact subject moved before persistence: expected=$EXPECTED_HEAD observed=$remote_head" >&2
+            echo "BLOCK exact subject moved before cleanup: expected=$EXPECTED_HEAD observed=$remote_head" >&2
             exit 1
           fi
+          git rm -- .github/workflows/qikvrt_pr_integrity_snapshot.yml .github/workflows/qikvrt_pr_integrity_repair_writer.yml
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          git add -- REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
           git config user.name "qik-vrt-integrity-writer"
           git config user.email "qik-vrt-integrity-writer@users.noreply.github.com"
-          git add -- "${paths[@]}"
-          git commit -m "chore(integrity): regenerate exact PR manifest"
+          git commit -m "chore(integrity): finalize clean monitor subject"
           git push origin "HEAD:refs/heads/$TARGET_REF"
