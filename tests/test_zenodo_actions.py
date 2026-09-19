@@ -566,6 +566,17 @@ class ZenodoActionsTests(unittest.TestCase):
             "license": {"id": "cc-by-nc-nd-4.0"},
         }
         self.assertTrue(zenodo._editable_metadata_matches(normalized, legacy))
+        self.assertEqual(
+            zenodo._controlled_metadata_projection(normalized, legacy),
+            {
+                "creators": [{"name": "Lohmann, Ingolf"}],
+                "license": "cc-by-nc-nd-4.0",
+                "publication_type": "other",
+                "title": "Normalized editable fixture",
+                "upload_type": "publication",
+                "version": "1.0.0",
+            },
+        )
         changed = copy.deepcopy(normalized)
         changed["license"]["id"] = "cc-by-4.0"
         self.assertFalse(zenodo._editable_metadata_matches(changed, legacy))

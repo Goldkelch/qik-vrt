@@ -718,6 +718,42 @@ def _editable_metadata_matches(
     ) or _published_metadata_matches(actual, expected_metadata)
 
 
+def _controlled_metadata_projection(
+    actual: Any,
+    expected: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Project only author-approved fields from a Zenodo metadata readback."""
+    if not isinstance(actual, dict):
+        return {"metadata_type": type(actual).__name__}
+    resource_type = actual.get("resource_type")
+    projection: dict[str, Any] = {}
+    for key in expected:
+        if key == "prereserve_doi":
+            continue
+        if key == "license":
+            license_value = actual.get("license")
+            projection[key] = (
+                license_value.get("id")
+                if isinstance(license_value, dict)
+                else license_value
+            )
+        elif key == "upload_type":
+            projection[key] = (
+                resource_type.get("type")
+                if isinstance(resource_type, dict)
+                else actual.get(key)
+            )
+        elif key == "publication_type":
+            projection[key] = (
+                resource_type.get("subtype")
+                if isinstance(resource_type, dict)
+                else actual.get(key)
+            )
+        else:
+            projection[key] = actual.get(key)
+    return projection
+
+
 class ZenodoClient:
     def __init__(
         self,
@@ -1164,10 +1200,14 @@ class ZenodoClient:
     def wait_for_editable_metadata(
         self, record_id: int, metadata: Mapping[str, Any]
     ) -> dict[str, Any]:
+        last_status: int | None = None
+        last_value: dict[str, Any] = {}
         for attempt in range(self.poll_attempts):
             status, value = self.get(
                 f"/api/deposit/depositions/{record_id}", accept=(200, 202)
             )
+            last_status = status
+            last_value = value
             links = value.get("links")
             if (
                 status == 200
@@ -1178,7 +1218,19 @@ class ZenodoClient:
                 return value
             if attempt + 1 < self.poll_attempts:
                 self.sleeper(self.poll_interval)
-        raise ZenodoError(f"timed out waiting for editable Zenodo metadata {record_id}")
+        links = last_value.get("links")
+        diagnostic = {
+            "status": last_status,
+            "controlled_metadata": _controlled_metadata_projection(
+                last_value.get("metadata"),
+                metadata,
+            ),
+            "link_keys": sorted(links) if isinstance(links, dict) else [],
+        }
+        raise ZenodoError(
+            f"timed out waiting for editable Zenodo metadata {record_id}: "
+            + json.dumps(diagnostic, ensure_ascii=True, sort_keys=True)
+        )
 
     def wait_for_gated_record(
         self,
