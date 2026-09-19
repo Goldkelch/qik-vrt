@@ -1,0 +1,121 @@
+name: QIKVRT PR1128 bounded integrity executor
+'on':
+  push:
+    branches: ['repair/pr1128-integrity-executor-18f435c8-v1']
+permissions:
+  contents: write
+concurrency:
+  group: qikvrt-pr1128-integrity-18f435c8
+  cancel-in-progress: false
+jobs:
+  materialize:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the immutable PR source, never the executor tree
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 18f435c8a7f2f10c07edcb44439ca41529c27cdd
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Derive, test and store only the three-file direct successor
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PYTHONDONTWRITEBYTECODE: '1'
+          PYTHONNOUSERSITE: '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import hashlib, json, os, pathlib, shlex, subprocess
+          REPO='Goldkelch/qik-vrt'
+          HEAD='18f435c8a7f2f10c07edcb44439ca41529c27cdd'
+          TREE='ed2bbacae4b0cf847a5b7fac52d4b0898094c881'
+          BASE='a86054139b49c13c5cd344753b248b46b5daf66f'
+          BRANCH='publication/truth-no-conspiracy-theory-2026-09-19'
+          TRANSPORT='materialize/pr1128-integrity-18f435c8-v1'
+          ARTICLE='docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/Die_Wahrheit_braucht_keine_Verschwoerungstheorie.txt'
+          PATHS=sorted(['REPOSITORY_FILE_MANIFEST.json','REPOSITORY_FILE_MANIFEST.json.sha256','SHA256SUMS.txt'])
+          OUT=pathlib.Path(os.environ['RUNNER_TEMP'])/'pr1128-integrity-receipt'
+          OUT.mkdir(exist_ok=True)
+          def need(ok, message):
+              if not ok: raise RuntimeError('BLOCK: '+message)
+          def run(*args):
+              print('$ '+shlex.join(args), flush=True)
+              p=subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+              raw=p.stdout.decode('utf-8', errors='replace')
+              with (OUT/'EXECUTION.log').open('a',encoding='utf-8') as log:
+                  log.write('$ '+shlex.join(args)+'\n'+raw+'\n')
+              if p.returncode:
+                  print(raw[-16000:],flush=True)
+                  raise RuntimeError('command failed: '+args[0]+' exit='+str(p.returncode))
+              return raw.strip()
+          def git(*args): return run('git','-c','core.hooksPath=/dev/null',*args)
+          def api(path): return json.loads(run('gh','api','repos/'+REPO+'/'+path))
+          def guard():
+              p=api('pulls/1128')
+              need(p['number']==1128 and p['state']=='open' and not p['merged'] and not p['draft'],'PR metadata changed')
+              need(p['head']['sha']==HEAD and p['head']['ref']==BRANCH and p['head']['repo']['full_name']==REPO,'PR subject changed')
+              need(p['base']['sha']==BASE and p['base']['ref']=='main' and p['base']['repo']['full_name']==REPO,'PR base changed')
+              c=api('git/commits/'+HEAD)
+              need(c['sha']==HEAD and c['tree']['sha']==TREE,'source Git object mismatch')
+          def hashes(): return {p:hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() for p in PATHS}
+          def integrity(mode): run('python3','-B','tools/qikvrt_integrity.py',mode)
+          need(os.environ.get('GITHUB_REPOSITORY')==REPO,'wrong executor repository')
+          need(os.environ.get('GITHUB_REF')=='refs/heads/repair/pr1128-integrity-executor-18f435c8-v1','wrong executor ref')
+          guard()
+          need(git('rev-parse','HEAD')==HEAD and git('rev-parse','HEAD^{tree}')==TREE,'checkout mismatch')
+          need(git('status','--porcelain')=='','unclean source checkout')
+          article_sha256=hashlib.sha256(pathlib.Path(ARTICLE).read_bytes()).hexdigest()
+          article_blob=git('rev-parse',HEAD+':'+ARTICLE)
+          integrity('generate')
+          integrity('verify')
+          generated=hashes()
+          integrity('generate')
+          need(hashes()==generated,'non-idempotent generator')
+          integrity('verify')
+          def scope():
+              need(git('diff','--name-status',HEAD,'--').splitlines()==['M\t'+p for p in PATHS],'not exactly three integrity modifications')
+              need(git('diff','--summary',HEAD,'--')=='','mode or path change')
+              need(hashlib.sha256(pathlib.Path(ARTICLE).read_bytes()).hexdigest()==article_sha256,'article bytes changed')
+              need(hashes()==generated,'integrity bytes changed')
+          scope()
+          run('make','test')
+          integrity('verify')
+          scope()
+          git('add','--',*PATHS)
+          result_tree=git('write-tree')
+          need(result_tree!=TREE,'empty mutation forbidden')
+          git('config','user.name','qikvrt-integrity-materializer')
+          git('config','user.email','qikvrt-integrity-materializer@users.noreply.github.com')
+          message='fix(integrity): materialize PR #1128 publication metadata\n\nParent: '+HEAD+'\nSource TREE: '+TREE+'\nOnly the three canonical integrity files change; article bytes unchanged.\nPREDECESSOR_EVIDENCE_TRANSFER=false\nNo native review, Main, release, publication or EFFECT claim.'
+          result_commit=git('commit-tree',result_tree,'-p',HEAD,'-m',message)
+          need(git('rev-list','--parents','-n','1',result_commit).split()==[result_commit,HEAD],'not a direct child')
+          need(git('rev-parse',result_commit+':'+ARTICLE)==article_blob,'article blob changed')
+          git('checkout','--detach',result_commit)
+          need(git('rev-parse','HEAD')==result_commit,'successor checkout mismatch')
+          run('make','test')
+          integrity('verify')
+          need(git('diff','HEAD','--')=='','successor tests changed tracked bytes')
+          scope()
+          guard()
+          ref='refs/heads/'+TRANSPORT
+          need(git('ls-remote','--heads','origin',ref)=='','transport ref already exists; inspect instead of rewriting')
+          run('gh','auth','setup-git')
+          git('push','--porcelain','origin',result_commit+':'+ref)
+          need(git('ls-remote','--heads','origin',ref).split()==[result_commit,ref],'transport readback mismatch')
+          c=api('git/commits/'+result_commit)
+          need(c['sha']==result_commit and c['tree']['sha']==result_tree and [x['sha'] for x in c['parents']]==[HEAD],'remote successor object mismatch')
+          guard()
+          receipt={'schema':'qikvrt_pr1128_bounded_integrity_receipt_v1','repository':REPO,'pr':1128,'source_head':HEAD,'source_tree':TREE,'result_commit':result_commit,'result_tree':result_tree,'transport_ref':ref,'article_sha256':article_sha256,'article_blob':article_blob,'changed_paths':PATHS,'files':{p:{'sha256':generated[p],'bytes':pathlib.Path(p).stat().st_size,'git_blob':git('rev-parse',result_commit+':'+p)} for p in PATHS},'generator_idempotence':True,'successor_make_test':'success_on_exact_committed_subject','successor_integrity_verify':True,'pr_ref_mutation':False,'PREDECESSOR_EVIDENCE_TRANSFER':False,'native_P3':False,'P4':False,'Main_promotion':False,'release':False,'publication':False,'EFFECT_ACK_DONE':False,'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT']}
+          (OUT/'RECEIPT.json').write_text(json.dumps(receipt,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps(receipt,sort_keys=True),flush=True)
+          PY
+      - name: Preserve only the receipt generated by this successful execution
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: pr1128-integrity-18f435c8-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pr1128-integrity-receipt/
+          if-no-files-found: error
+          retention-days: 30
