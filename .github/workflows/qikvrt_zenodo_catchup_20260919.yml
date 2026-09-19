@@ -1,0 +1,101 @@
+name: QIKVRT Zenodo catchup 2026-09-19
+
+on:
+  push:
+    branches: [publication/zenodo-catchup-20260919]
+    paths:
+      - .github/workflows/qikvrt_zenodo_catchup_20260919.yml
+      - tools/qikvrt_zenodo_catchup_20260919.py
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-zenodo-pr1128-catchup-20260919
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 8
+      - name: Reobserve exact PR1128 subject before any publication preparation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = publication/zenodo-catchup-20260919
+          test "$(gh api repos/Goldkelch/qik-vrt/pulls/1128 --jq .head.sha)" = ee8c95af54a7d6035b3ca5d204cc02121dc3199c
+          test "$(git rev-parse 'ee8c95af54a7d6035b3ca5d204cc02121dc3199c^{tree}')" = 1306d1a313ab9998d0708042cb93c4d3c5b8eb9d
+          git config user.name qikvrt-publication-materializer
+          git config user.email qikvrt-publication-materializer@users.noreply.github.com
+      - name: Fresh anonymous readback of the already published PR1120 record
+        id: prior_readback
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin c23b2ca377e7bd57589fc8b656fb76167bea9b6b
+          python3 -B tools/qikvrt_zenodo_catchup_20260919.py readback-1120
+      - name: Materialize exact ten-file PR1128 v2 envelope and persist execution subject
+        id: prepare
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_zenodo_catchup_20260919.py prepare
+          git add docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/ZENODO_METADATA.json
+          git add docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/MACHINE_PROOF_BUNDLE.json
+          git add release/zenodo-catchup-20260919
+          python3 -B tools/qikvrt_integrity.py generate
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git diff --cached --check
+          git commit -m 'publication: bind PR1128 exact ten-file v2 Zenodo envelope'
+          prepared=$(git rev-parse HEAD)
+          git push origin HEAD:publication/zenodo-catchup-20260919
+          test "$(git ls-remote origin refs/heads/publication/zenodo-catchup-20260919 | cut -f1)" = "$prepared"
+          python3 -B tools/qikvrt_integrity.py verify
+          python3 -B docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/verify_publication_scope.py
+          echo "prepared_head=$prepared" >> "$GITHUB_OUTPUT"
+          echo "EXACT_EXECUTION_HEAD=$prepared TREE=$(git rev-parse 'HEAD^{tree}')"
+      - name: Execute unchanged v2 publisher and verify public payload bytes
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+          PREPARED_HEAD: ${{ steps.prepare.outputs.prepared_head }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$PREPARED_HEAD"
+          test "$(git ls-remote origin refs/heads/publication/zenodo-catchup-20260919 | cut -f1)" = "$PREPARED_HEAD"
+          # The validated execution subject is the newly persisted checkout;
+          # the carrier workflow SHA remains visible independently in Actions.
+          GITHUB_SHA="$PREPARED_HEAD" python3 -B tools/qikvrt_zenodo_publish.py --manifest release/zenodo-catchup-20260919/pr1128/publication-manifest.json
+      - name: Persist publication or reconciliation evidence without changing source PRs
+        if: always() && steps.prepare.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add release/zenodo-catchup-20260919
+          if ! git diff --cached --quiet; then
+            python3 -B tools/qikvrt_integrity.py generate
+            git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+            git diff --cached --check
+            git commit -m 'publication: retain Zenodo catchup execution and public readback evidence'
+            git push origin HEAD:publication/zenodo-catchup-20260919
+            test "$(git ls-remote origin refs/heads/publication/zenodo-catchup-20260919 | cut -f1)" = "$(git rev-parse HEAD)"
+          fi
+      - name: Preserve bounded evidence even when publication fails
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qikvrt-zenodo-catchup-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release/zenodo-catchup-20260919/
+          if-no-files-found: warn
+          retention-days: 30
