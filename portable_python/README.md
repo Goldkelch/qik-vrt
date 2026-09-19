@@ -6,13 +6,13 @@ automation. The primary path is PowerShell-only.
 If you still want Python helpers, place a portable Python runtime here:
 
 ```text
-.\python\python.exe
+.\\python\\python.exe
 ```
 
-Then run:
+Then run the preserved historical launcher:
 
 ```cmd
-QIKVRT_V45_12_RUN_PYTHON_VERIFY_OPTIONAL.cmd
+legacy\\v45\\QIKVRT_V45_12_RUN_PYTHON_VERIFY_OPTIONAL.cmd
 ```
 
 The optional resolver must never expose Windows alias exit code 9009 as repository
