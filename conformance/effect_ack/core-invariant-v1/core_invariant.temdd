@@ -1,0 +1,151 @@
+temdd 0.1;
+authority owner = "Goldkelch/qik-vrt";
+context invariant { perspective = "cross-conformance"; }
+subject core_invariant { repository = "Goldkelch/qik-vrt"; binding = exact; }
+relation v01 {
+  source = "t0_b0_i0_r0";
+  predicate = "maps_to";
+  target = "EFFECT_NACK";
+  epistemic = TRUE;
+  source_order = 1;
+  observation_order = 1;
+  freshness = FRESH;
+}
+relation v02 {
+  source = "t0_b0_i0_r1";
+  predicate = "maps_to";
+  target = "EFFECT_NACK";
+  epistemic = TRUE;
+  source_order = 2;
+  observation_order = 2;
+  freshness = FRESH;
+}
+relation v03 {
+  source = "t0_b0_i1_r0";
+  predicate = "maps_to";
+  target = "EFFECT_NACK";
+  epistemic = TRUE;
+  source_order = 3;
+  observation_order = 3;
+  freshness = FRESH;
+}
+relation v04 {
+  source = "t0_b0_i1_r1";
+  predicate = "maps_to";
+  target = "EFFECT_NACK";
+  epistemic = TRUE;
+  source_order = 4;
+  observation_order = 4;
+  freshness = FRESH;
+}
+relation v05 {
+  source = "t0_b1_i0_r0";
+  predicate = "maps_to";
+  target = "EFFECT_NACK";
+  epistemic = TRUE;
+  source_order = 5;
+  observation_order = 5;
+  freshness = FRESH;
+}
+relation v06 {
+  source = "t0_b1_i0_r1";
+  predicate = "maps_to";
+  target = "EFFECT_NACK";
+  epistemic = TRUE;
+  source_order = 6;
+  observation_order = 6;
+  freshness = FRESH;
+}
+relation v07 {
+  source = "t0_b1_i1_r0";
+  predicate = "maps_to";
+  target = "EFFECT_NACK";
+  epistemic = TRUE;
+  source_order = 7;
+  observation_order = 7;
+  freshness = FRESH;
+}
+relation v08 {
+  source = "t0_b1_i1_r1";
+  predicate = "maps_to";
+  target = "EFFECT_NACK";
+  epistemic = TRUE;
+  source_order = 8;
+  observation_order = 8;
+  freshness = FRESH;
+}
+relation v09 {
+  source = "t1_b0_i0_r0";
+  predicate = "maps_to";
+  target = "EFFECT_ACK_CONTINUE";
+  epistemic = TRUE;
+  source_order = 9;
+  observation_order = 9;
+  freshness = FRESH;
+}
+relation v10 {
+  source = "t1_b0_i0_r1";
+  predicate = "maps_to";
+  target = "EFFECT_ACK_DONE";
+  epistemic = TRUE;
+  source_order = 10;
+  observation_order = 10;
+  freshness = FRESH;
+}
+relation v11 {
+  source = "t1_b0_i1_r0";
+  predicate = "maps_to";
+  target = "EFFECT_ACK_ISOLATE";
+  epistemic = TRUE;
+  source_order = 11;
+  observation_order = 11;
+  freshness = FRESH;
+}
+relation v12 {
+  source = "t1_b0_i1_r1";
+  predicate = "maps_to";
+  target = "EFFECT_ACK_ISOLATE";
+  epistemic = TRUE;
+  source_order = 12;
+  observation_order = 12;
+  freshness = FRESH;
+}
+relation v13 {
+  source = "t1_b1_i0_r0";
+  predicate = "maps_to";
+  target = "EFFECT_ACK_BLOCK";
+  epistemic = TRUE;
+  source_order = 13;
+  observation_order = 13;
+  freshness = FRESH;
+}
+relation v14 {
+  source = "t1_b1_i0_r1";
+  predicate = "maps_to";
+  target = "EFFECT_ACK_BLOCK";
+  epistemic = TRUE;
+  source_order = 14;
+  observation_order = 14;
+  freshness = FRESH;
+}
+relation v15 {
+  source = "t1_b1_i1_r0";
+  predicate = "maps_to";
+  target = "EFFECT_ACK_BLOCK";
+  epistemic = TRUE;
+  source_order = 15;
+  observation_order = 15;
+  freshness = FRESH;
+}
+relation v16 {
+  source = "t1_b1_i1_r1";
+  predicate = "maps_to";
+  target = "EFFECT_ACK_BLOCK";
+  epistemic = TRUE;
+  source_order = 16;
+  observation_order = 16;
+  freshness = FRESH;
+}
+request prove_invariant { target = CORE_INVARIANT_V1; }
+on event { follow exact; classify causal; }
+until { FRESH_EFFECT_READBACK; }
