@@ -64,6 +64,7 @@ open checks, controlled isolation, responsible blocking, and a fully bound
 - [Project site](https://goldkelch.github.io/qik-vrt/)
 - [Canonical publication and reference overview](https://goldkelch.github.io/qik-vrt/publications/)
 - [Machine-readable publication index](docs/publications/index.json)
+- [Das universale Universalprinzip](docs/publications/2026-09-19-universales-universalprinzip/Universales_Universalprinzip.md) — philosophische Grundsatzerklärung von Ingolf Lohmann, 19. September 2026.
 
 ### Current release and synchronized snapshot evidence
 

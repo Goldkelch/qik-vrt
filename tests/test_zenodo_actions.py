@@ -545,6 +545,69 @@ class ZenodoActionsTests(unittest.TestCase):
         changed["resource_type"]["subtype"] = "article"
         self.assertFalse(zenodo._published_metadata_matches(changed, legacy))
 
+    def test_editable_record_accepts_only_bounded_zenodo_normalization(self) -> None:
+        legacy = {
+            "title": "Normalized editable fixture",
+            "version": "1.0.0",
+            "creators": [{"name": "Lohmann, Ingolf"}],
+            "description": "<p>Die Erklärung heißt „universell“.</p>",
+            "upload_type": "publication",
+            "publication_type": "other",
+            "license": "cc-by-nc-nd-4.0",
+            "prereserve_doi": True,
+        }
+        normalized = {
+            "title": "Normalized editable fixture",
+            "version": "1.0.0",
+            "creators": [
+                {"name": "Lohmann, Ingolf", "affiliation": None}
+            ],
+            "description": '<p>Die Erklärung heißt "universell".</p>',
+            "resource_type": {
+                "type": "publication",
+                "subtype": "other",
+            },
+            "license": {"id": "cc-by-nc-nd-4.0"},
+        }
+        self.assertTrue(zenodo._editable_metadata_matches(normalized, legacy))
+        hybrid_legacy = {
+            "title": "Normalized editable fixture",
+            "version": "1.0.0",
+            "creators": [
+                {"name": "Lohmann, Ingolf", "affiliation": None}
+            ],
+            "description": '<p>Die Erklärung heißt "universell".</p>',
+            "upload_type": "publication",
+            "publication_type": "other",
+            "license": "cc-by-nc-nd-4.0",
+        }
+        self.assertTrue(
+            zenodo._editable_metadata_matches(hybrid_legacy, legacy)
+        )
+        self.assertEqual(
+            zenodo._controlled_metadata_projection(normalized, legacy),
+            {
+                "creators": [
+                    {"name": "Lohmann, Ingolf", "affiliation": None}
+                ],
+                "description": '<p>Die Erklärung heißt "universell".</p>',
+                "license": "cc-by-nc-nd-4.0",
+                "publication_type": "other",
+                "title": "Normalized editable fixture",
+                "upload_type": "publication",
+                "version": "1.0.0",
+            },
+        )
+        changed = copy.deepcopy(normalized)
+        changed["license"]["id"] = "cc-by-4.0"
+        self.assertFalse(zenodo._editable_metadata_matches(changed, legacy))
+        changed = copy.deepcopy(normalized)
+        changed["description"] = '<p>Die Erklärung heißt "anders".</p>'
+        self.assertFalse(zenodo._editable_metadata_matches(changed, legacy))
+        changed = copy.deepcopy(hybrid_legacy)
+        changed["description"] = '<p>Die Erklärung heißt "anders".</p>'
+        self.assertFalse(zenodo._editable_metadata_matches(changed, legacy))
+
     def test_new_version_prefers_prereserved_doi_over_inherited_legacy_doi(self) -> None:
         value = {
             "doi": "10.5281/zenodo.21488116",

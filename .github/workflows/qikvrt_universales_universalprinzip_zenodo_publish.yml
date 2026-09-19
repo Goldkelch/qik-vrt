@@ -1,0 +1,311 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: Publish Universales Universalprinzip v1 to Zenodo
+
+on:
+  push:
+    branches:
+      - docs/universales-universalprinzip-20260919-v1
+    paths:
+      - .github/workflows/qikvrt_universales_universalprinzip_zenodo_publish.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-universales-universalprinzip-zenodo-v1
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      EXPECTED_BRANCH: docs/universales-universalprinzip-20260919-v1
+      EXPECTED_PARENT: 8abeb2656ff91a5bd0e377eec4a51af117b5b832
+      MANIFEST_PATH: state/work_units/UNIVERSALES_UNIVERSALPRINZIP_20260919_V1/publish-request.json
+      EVIDENCE_PATH: state/work_units/UNIVERSALES_UNIVERSALPRINZIP_20260919_V1/zenodo-publication.json
+      ZENODO_API_BASE: https://zenodo.org/api
+    steps:
+      - name: Check out exact execution head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact one-shot execution boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/$EXPECTED_BRANCH"
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
+          test "$(git show -s --format=%P HEAD)" = "$EXPECTED_PARENT"
+          test -f "$EVIDENCE_PATH"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          expected_delta="$(
+            printf '%s\n' \
+              'M	.github/workflows/qikvrt_universales_universalprinzip_zenodo_publish.yml' \
+              'M	REPOSITORY_FILE_MANIFEST.json' \
+              'M	REPOSITORY_FILE_MANIFEST.json.sha256' \
+              'M	SHA256SUMS.txt' \
+              'M	tests/test_zenodo_actions.py' \
+              'M	tools/qikvrt_zenodo_actions.py'
+          )"
+          observed_delta="$(
+            git diff \
+              --name-status \
+              --no-renames \
+              "$EXPECTED_PARENT" \
+              "$GITHUB_SHA" \
+              --
+          )"
+          test "$observed_delta" = "$expected_delta"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$EXPECTED_BRANCH" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_head" = "$GITHUB_SHA"
+          GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+          GITHUB_SHA="$GITHUB_SHA" \
+          python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = Path.cwd().resolve()
+          manifest_path = root / (
+              "state/work_units/UNIVERSALES_UNIVERSALPRINZIP_20260919_V1/"
+              "publish-request.json"
+          )
+          manifest = publish.load_manifest(manifest_path, root)
+          execution_head = publish._validate_repository_source_head(
+              root,
+              manifest_path,
+              manifest,
+          )
+          publish._validate_origin_repository(root, manifest["repository"])
+          if execution_head != os.environ["GITHUB_SHA"]:
+              raise SystemExit("BLOCK: normalized execution head differs")
+          if len(manifest["files"]) != 12:
+              raise SystemExit("BLOCK: exact Zenodo upload count differs")
+          evidence = publish.zenodo._load_json_file(
+              root / os.environ["EVIDENCE_PATH"]
+          )[0]
+          if (
+              evidence.get("state")
+              != "EFFECT_RELEASED/AWAITING_REMOTE_RECONCILIATION"
+              or evidence.get("phase") != "record_created"
+              or evidence.get("record_id") != 22847245
+              or evidence.get("repository_commit")
+              != "f57c298754a2e423ed6b89d04b78417476b9ba69"
+          ):
+              raise SystemExit("BLOCK: exact Zenodo recovery boundary differs")
+          print("ZENODO_EXECUTION_PREFLIGHT=VALID")
+          PY
+          python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Run complete repository gates before effect
+        shell: bash
+        run: |
+          set -euo pipefail
+          make test
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Recheck remote exact head immediately before effect
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$EXPECTED_BRANCH" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_head" = "$GITHUB_SHA"
+
+      - name: Diagnose GitHub authorization-lock access before publication
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 -B - <<'PYPROBE'
+          import json
+          import os
+          import pathlib
+          import re
+          import urllib.error
+          import urllib.request
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = pathlib.Path.cwd().resolve()
+          manifest = publish.load_manifest(root / os.environ['MANIFEST_PATH'], root)
+          token = os.environ['GITHUB_TOKEN']
+          ref = manifest['owner_authorization']['remote_consumption_ref']
+          url = publish.GITHUB_API_BASE + publish._github_ref_path(ref)
+          request = urllib.request.Request(url, headers={
+              'Accept': 'application/vnd.github+json',
+              'Authorization': 'Bearer ' + token,
+              'User-Agent': 'qik-vrt-zenodo-publication-access-probe',
+              'X-GitHub-Api-Version': '2022-11-28',
+          }, method='GET')
+          result = {'schema': 'qikvrt_zenodo_publication_access_probe_v1',
+                    'head': os.environ['GITHUB_SHA'], 'repository': os.environ['GITHUB_REPOSITORY'],
+                    'ref': ref, 'method': 'GET', 'external_mutations': False}
+          try:
+              try:
+                  response = urllib.request.build_opener(publish._NoCredentialRedirect()).open(request, timeout=30)
+              except urllib.error.HTTPError as exc:
+                  response = exc
+              with response:
+                  if response.geturl() != url:
+                      raise RuntimeError('origin_changed')
+                  raw = response.read(publish.MAX_GITHUB_RESPONSE_BYTES + 1)
+                  status = int(response.status)
+                  result['http_status'] = status
+                  for name in ('x-ratelimit-limit', 'x-ratelimit-remaining', 'x-ratelimit-reset', 'retry-after'):
+                      value = response.headers.get(name, '')
+                      result[name] = int(value) if re.fullmatch(r'[0-9]{1,12}', value) else None
+              lowered = raw.lower()
+              if status in (200, 404):
+                  reason = 'REF_READ_ALLOWED'
+              elif b'rate limit' in lowered or b'rate-limit' in lowered:
+                  reason = 'GITHUB_RATE_LIMIT'
+              elif b'resource not accessible' in lowered:
+                  reason = 'GITHUB_RESOURCE_NOT_ACCESSIBLE'
+              elif b'bad credentials' in lowered:
+                  reason = 'GITHUB_CREDENTIAL_REJECTED'
+              else:
+                  reason = 'GITHUB_HTTP_REJECTED_UNCLASSIFIED'
+              result['classification'] = reason
+          except (OSError, urllib.error.URLError, RuntimeError):
+              result['classification'] = 'TRANSPORT_OR_ORIGIN_REJECTED'
+          target = pathlib.Path(os.environ['RUNNER_TEMP']) / 'universalprinzip-publication-access.json'
+          target.write_text(json.dumps(result, sort_keys=True, indent=2) + '\n')
+          print('GITHUB_PUBLICATION_ACCESS_PROBE=' + json.dumps(result, sort_keys=True))
+          if result.get('http_status') not in (200, 404):
+              raise SystemExit('BLOCK: publication authorization-lock access is not established')
+          PYPROBE
+
+      - name: Consume authorization and publish exact files
+        id: publish
+        continue-on-error: true
+        timeout-minutes: 20
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set +e
+          python3 -B tools/qikvrt_zenodo_publish.py \
+            --manifest "$MANIFEST_PATH"
+          status=$?
+          printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Persist published or recovery receipt
+        id: persist
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test ! -f "$EVIDENCE_PATH"; then
+            printf '%s\n' 'persisted=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          state="$(
+            python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path(
+              "state/work_units/UNIVERSALES_UNIVERSALPRINZIP_20260919_V1/"
+              "zenodo-publication.json"
+          )
+          value = json.loads(path.read_text(encoding="utf-8"))
+          state = value.get("state")
+          if state not in {
+              "published",
+              "EFFECT_RELEASED/AWAITING_REMOTE_RECONCILIATION",
+          }:
+              raise SystemExit("BLOCK: publication evidence state differs")
+          print(state)
+          PY
+          )"
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B - <<'PY'
+          import subprocess
+
+          expected = {
+              "REPOSITORY_FILE_MANIFEST.json",
+              "REPOSITORY_FILE_MANIFEST.json.sha256",
+              "SHA256SUMS.txt",
+              (
+                  "state/work_units/UNIVERSALES_UNIVERSALPRINZIP_20260919_V1/"
+                  "zenodo-publication.json"
+              ),
+          }
+          raw = subprocess.check_output(
+              [
+                  "git",
+                  "status",
+                  "--porcelain=v1",
+                  "-z",
+                  "--untracked-files=all",
+              ]
+          )
+          observed = set()
+          for item in raw.split(b"\0"):
+              if not item:
+                  continue
+              observed.add(item[3:].decode("utf-8"))
+          if observed != expected:
+              raise SystemExit(
+                  "BLOCK: post-publication repository delta differs: "
+                  + ",".join(sorted(observed))
+              )
+          PY
+          git config user.name 'qik-vrt-zenodo-publication[bot]'
+          git config user.email \
+            'qik-vrt-zenodo-publication[bot]@users.noreply.github.com'
+          git add -- \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt \
+            "$EVIDENCE_PATH"
+          git diff --cached --check
+          test -n "$(git diff --cached --name-only)"
+          if test "$state" = "published"; then
+            message='zenodo: persist Universales Universalprinzip publication'
+          else
+            message='zenodo: persist Universales Universalprinzip recovery receipt'
+          fi
+          git commit -m "$message"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$EXPECTED_BRANCH" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_head" = "$GITHUB_SHA"
+          git push origin "HEAD:refs/heads/$EXPECTED_BRANCH"
+          printf '%s\n' 'persisted=true' >> "$GITHUB_OUTPUT"
+          printf 'state=%s\n' "$state" >> "$GITHUB_OUTPUT"
+
+      - name: Upload publication recovery evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: universales-universalprinzip-zenodo-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: ignore
+          path: |
+            state/work_units/UNIVERSALES_UNIVERSALPRINZIP_20260919_V1/zenodo-publication.json
+            ${{ runner.temp }}/universalprinzip-publication-access.json
+
+      - name: Enforce publication and persistence result
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.publish.outputs.status }}" = "0"
+          test "${{ steps.persist.outputs.persisted }}" = "true"
+          test "${{ steps.persist.outputs.state }}" = "published"

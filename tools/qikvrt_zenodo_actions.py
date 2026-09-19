@@ -661,6 +661,35 @@ def _metadata_matches(actual: Any, expected: Any) -> bool:
     return actual == expected
 
 
+def _description_matches(actual: Any, expected: Any) -> bool:
+    """Accept only Zenodo's observed German-quote normalization."""
+    if actual == expected:
+        return True
+    if not isinstance(actual, str) or not isinstance(expected, str):
+        return False
+    return actual == expected.replace("„", '"').replace("“", '"')
+
+
+def _editable_legacy_metadata_matches(
+    actual: Any,
+    expected: Mapping[str, Any],
+) -> bool:
+    """Compare editable legacy fields with bounded description normalization."""
+    if not isinstance(actual, dict):
+        return False
+    for key, expected_value in expected.items():
+        if key not in actual:
+            return False
+        actual_value = actual[key]
+        if key == "description" and _description_matches(
+            actual_value, expected_value
+        ):
+            continue
+        if not _metadata_matches(actual_value, expected_value):
+            return False
+    return True
+
+
 def _published_metadata_matches(
     actual: Any, expected: Mapping[str, Any]
 ) -> bool:
@@ -700,9 +729,62 @@ def _published_metadata_matches(
             if key not in actual:
                 return False
             actual_value = actual[key]
+        if key == "description" and _description_matches(
+            actual_value, expected_value
+        ):
+            continue
         if not _metadata_matches(actual_value, expected_value):
             return False
     return True
+
+
+def _editable_metadata_matches(
+    actual: Any,
+    expected: Mapping[str, Any],
+) -> bool:
+    """Accept either documented legacy or normalized draft readback shape."""
+    expected_metadata = dict(expected)
+    expected_metadata.pop("prereserve_doi", None)
+    return _editable_legacy_metadata_matches(
+        actual,
+        expected_metadata,
+    ) or _published_metadata_matches(actual, expected_metadata)
+
+
+def _controlled_metadata_projection(
+    actual: Any,
+    expected: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Project only author-approved fields from a Zenodo metadata readback."""
+    if not isinstance(actual, dict):
+        return {"metadata_type": type(actual).__name__}
+    resource_type = actual.get("resource_type")
+    projection: dict[str, Any] = {}
+    for key in expected:
+        if key == "prereserve_doi":
+            continue
+        if key == "license":
+            license_value = actual.get("license")
+            projection[key] = (
+                license_value.get("id")
+                if isinstance(license_value, dict)
+                else license_value
+            )
+        elif key == "upload_type":
+            projection[key] = (
+                resource_type.get("type")
+                if isinstance(resource_type, dict)
+                else actual.get(key)
+            )
+        elif key == "publication_type":
+            projection[key] = (
+                resource_type.get("subtype")
+                if isinstance(resource_type, dict)
+                else actual.get(key)
+            )
+        else:
+            projection[key] = actual.get(key)
+    return projection
 
 
 class ZenodoClient:
@@ -1139,11 +1221,9 @@ class ZenodoClient:
         if published:
             metadata_ok = _published_metadata_matches(actual_metadata, metadata)
         else:
-            expected_metadata = dict(metadata)
-            # ``prereserve_doi: true`` is a write-time instruction.  Zenodo
-            # replaces it in GET responses with an object containing the DOI.
-            expected_metadata.pop("prereserve_doi", None)
-            metadata_ok = _metadata_matches(actual_metadata, expected_metadata)
+            # ``prereserve_doi: true`` is a write-time instruction. Zenodo may
+            # also normalize legacy resource and license fields before publish.
+            metadata_ok = _editable_metadata_matches(actual_metadata, metadata)
         if not metadata_ok:
             raise ZenodoError("Zenodo metadata does not contain the exact manifest values")
         if _doi_from_deposition(value, "gated record") != expected_doi:
@@ -1153,23 +1233,37 @@ class ZenodoClient:
     def wait_for_editable_metadata(
         self, record_id: int, metadata: Mapping[str, Any]
     ) -> dict[str, Any]:
-        expected_metadata = dict(metadata)
-        expected_metadata.pop("prereserve_doi", None)
+        last_status: int | None = None
+        last_value: dict[str, Any] = {}
         for attempt in range(self.poll_attempts):
             status, value = self.get(
                 f"/api/deposit/depositions/{record_id}", accept=(200, 202)
             )
+            last_status = status
+            last_value = value
             links = value.get("links")
             if (
                 status == 200
-                and _metadata_matches(value.get("metadata"), expected_metadata)
+                and _editable_metadata_matches(value.get("metadata"), metadata)
                 and isinstance(links, dict)
                 and isinstance(links.get("bucket"), str)
             ):
                 return value
             if attempt + 1 < self.poll_attempts:
                 self.sleeper(self.poll_interval)
-        raise ZenodoError(f"timed out waiting for editable Zenodo metadata {record_id}")
+        links = last_value.get("links")
+        diagnostic = {
+            "status": last_status,
+            "controlled_metadata": _controlled_metadata_projection(
+                last_value.get("metadata"),
+                metadata,
+            ),
+            "link_keys": sorted(links) if isinstance(links, dict) else [],
+        }
+        raise ZenodoError(
+            f"timed out waiting for editable Zenodo metadata {record_id}: "
+            + json.dumps(diagnostic, ensure_ascii=True, sort_keys=True)
+        )
 
     def wait_for_gated_record(
         self,
