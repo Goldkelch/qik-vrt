@@ -1,0 +1,59 @@
+{
+  "schema": "qikvrt_work_unit_v1",
+  "work_unit_id": "PHARO_CACHE_IDENTITY_CLOSURE_20260917_V1",
+  "request": "Continue the existing universal-terminal carrier through bounded repair, persistence, exact readback and fresh validation.",
+  "human_contribution": {
+    "human": "Ingolf Lohmann",
+    "scope": "Architecture, requirements and explicit implementation/continuation authorization on 2026-09-17."
+  },
+  "artificial_cognitive_contribution": {
+    "system": "ChatGPT",
+    "scope": "Current-source inspection, cache identity repair, regression tests and source persistence."
+  },
+  "origin_class": "JOINT_SEPARABLE",
+  "base_commit": "cd101b3e326b4f217100e8d7442e7bd627582033",
+  "base_tree": "afca1a6d8e7ffc0ef90492a3ce6ffd126280e6e4",
+  "reuse_sources": [
+    "runtime/toolchains/pharo-13.lock.json",
+    "runtime/toolchains/TOOLCHAIN.lock.tsv",
+    "runtime/toolchains/CACHE_REGISTRY.json",
+    "runtime/toolchains/CACHE_COVERAGE.json",
+    "distribution/qikvrt-megast/build.sh",
+    "tests/test_qikvrt_megast_distribution.py"
+  ],
+  "root_cause": {
+    "type": "DEPENDENCY_CACHE_IDENTITY_DRIFT",
+    "detail": "The explicit VM digest replacement in 691ab043 retained the previous vm33501fd6 cache version. A pre-existing cache prevents installation of the replacement; the ISO build also hardcodes that previous cache version."
+  },
+  "bounded_mutation": {
+    "dependency_url_and_sha256": "UNCHANGED_FROM_BASE",
+    "cache_version": "13.1-4f7563dfe5-vm80b106bb",
+    "build_source_of_truth": "runtime/toolchains/pharo-13.lock.json version",
+    "strict_installer": "UNCHANGED",
+    "existing_cache": "Never overwritten or removed by this repair."
+  },
+  "local_validation": {
+    "scope": "File-bounded checkout with original Git blob verification; not full-repository or real Pharo/ISO execution.",
+    "tests_passed": 9,
+    "tests_file": "tests/test_qikvrt_megast_distribution.py",
+    "negative_cases": [
+      "invalid image rejected",
+      "invalid VM rejected after valid synthetic image; prior cache retained",
+      "warm-cache extracted-byte tampering rejected"
+    ],
+    "baseline_red": "The new lock-driven build regression fails against the inspected base.",
+    "shell_syntax": "sh -n distribution/qikvrt-megast/build.sh passed",
+    "fixtures_executed": false
+  },
+  "closure_rule": "Persist the bounded source and canonical integrity; read back exact HEAD/TREE; freshly verify cache coverage, regressions and C90/Smalltalk on that persisted subject. Distribution closure additionally requires fresh ISO and real boot/runtime evidence.",
+  "remaining": [
+    "canonical integrity persistence and exact successor readback",
+    "fresh native exact-head validation including real Smalltalk and distribution",
+    "independent exact-head review and legitimate Main progression",
+    "exact-Main and public runtime/effect readback"
+  ],
+  "candidate_validation_transferred": false,
+  "predecessor_evidence_transfer": false,
+  "ordinary_release": false,
+  "effect_ack_done": false
+}

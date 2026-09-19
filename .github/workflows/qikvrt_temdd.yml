@@ -1,0 +1,203 @@
+name: QIKVRT TEMDD conformance
+on:
+  pull_request:
+    paths: ['spec/temdd/**','examples/temdd/**','conformance/temdd/**','src/temdd/**','schemas/temdd-*','tools/qikvrt_temdd.py','tools/qikvrt_temdd_conformance.py','tests/test_temdd.py','tests/temdd/**','src/temdd_core.c','include/temdd_core.h','tests/test_temdd_core.c','runtime/temdd/**','runtime/m68000/temdd_transition.s','runtime/toolchains/pharo-13.lock.json','formalization/TEMDDCore.lean','src/qikvrt_temdd_event_ledger.py','src/qikvrt_effect_ack_http_terminal.py','tests/test_temdd_event_ledger.py','docs/terminal/temdd/**','deploy/universal-terminal/**','Makefile','.github/workflows/qikvrt_temdd.yml']
+  push: {branches: [main]}
+permissions: {contents: read}
+jobs:
+ conformance:
+  runs-on: ubuntu-24.04
+  timeout-minutes: 30
+  steps:
+   - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+     with:
+      ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      persist-credentials: false
+   - uses: actions/setup-python@v6
+     with:
+      python-version: '3.12.13'
+   - uses: actions/setup-node@v6
+     with:
+      node-version: '24.x'
+      package-manager-cache: false
+   - name: Provision pinned Lean 4.19 / Lake runtime
+     uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+     with:
+      lake-package-directory: formalization/QIKVRT_Formalization_v2.0
+      build: false
+      test: false
+      lint: false
+   - name: Fresh exact-head persistent producer and browser regressions
+     env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+     shell: bash
+     run: |
+      set -euo pipefail
+      test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+      git diff --exit-code
+      python3 -B tools/qikvrt_tool_cache.py verify
+      python3 --version
+      node --version
+      make temdd-event-ledger-test 2>&1 | tee "$RUNNER_TEMP/temdd-producer-tests.log"
+      git diff --exit-code
+      printf 'HEAD=%s\nTREE=%s\nEVIDENCE_TRANSFER=DENY\nSCOPE=producer-regression-only\nDOD=NOT_PROVEN\n' "$EXPECTED_HEAD" "$(git rev-parse 'HEAD^{tree}')" | tee "$RUNNER_TEMP/temdd-producer-binding.txt"
+   - name: Python parser T01-T12 and corpus
+     run: |
+      python3 -B -m unittest tests.test_temdd
+      python3 -B tools/qikvrt_temdd_conformance.py
+      python3 -B tools/qikvrt_temdd.py tests/temdd/positive/minimal.temdd >/tmp/minimal.json
+      for f in tests/temdd/negative/*.temdd; do if python3 -B tools/qikvrt_temdd.py "$f" >/dev/null 2>&1; then echo "negative corpus admitted: $f"; exit 1; fi; done
+      python3 -B tools/qikvrt_temdd.py examples/temdd/qikvrt_convergence_v0_1.temdd >/tmp/temdd-ir.json
+      python3 - <<'PY'
+      import json
+      x=json.load(open('/tmp/temdd-ir.json'))
+      required={'ZERO_BUGS','ALL_PULL_REQUESTS_REGARDED','ALL_BRANCHES_REGARDED','ALL_PRODUCTIVE_BRANCHES_MERGED','FRESH_EXACT_MAIN_VALIDATION_PASS','FRESH_EFFECT_READBACK'}
+      assert required == set(x['dod']); assert x['subject']['binding']=='exact'
+      PY
+   - name: C90 differential kernel
+     run: cc -std=c90 -pedantic -Wall -Wextra -Werror -Iinclude src/temdd_core.c tests/test_temdd_core.c -o /tmp/temdd-core && /tmp/temdd-core
+   - name: Execute M68000 backend under qemu-m68k
+     shell: bash
+     run: |
+      set -euo pipefail
+      sudo apt-get update
+      sudo apt-get install -y --no-install-recommends gcc-m68k-linux-gnu libc6-dev-m68k-cross qemu-user
+      mkdir -p "$RUNNER_TEMP/temdd-backends"
+      m68k-linux-gnu-gcc -m68000 -c runtime/m68000/temdd_transition.s -o /tmp/temdd-transition.o
+      m68k-linux-gnu-gcc -m68000 -std=c90 -pedantic -Wall -Wextra -Werror -static \
+        tests/temdd/runtime-m68000.c /tmp/temdd-transition.o -o /tmp/temdd-m68000
+      m68k-linux-gnu-objdump -d /tmp/temdd-m68000 > "$RUNNER_TEMP/temdd-backends/m68000-objdump.txt"
+      qemu-m68k /tmp/temdd-m68000 | tee "$RUNNER_TEMP/temdd-backends/m68000-execution.log"
+      grep -F 'TEMDD_M68000_EXECUTED vectors=4' "$RUNNER_TEMP/temdd-backends/m68000-execution.log"
+   - name: Execute Smalltalk backend in pinned Pharo 13
+     shell: bash
+     run: |
+      set -euo pipefail
+      mkdir -p "$RUNNER_TEMP/temdd-backends" /tmp/temdd-pharo/image /tmp/temdd-pharo/vm
+      python3 -B - <<'PY' > "$RUNNER_TEMP/temdd-backends/pharo-lock.env"
+      import json
+      from pathlib import Path
+      lock=json.loads(Path('runtime/toolchains/pharo-13.lock.json').read_text())
+      for kind in ('image','vm'):
+          print(f"TEMDD_PHARO_{kind.upper()}_URL={lock[kind]['url']}")
+          print(f"TEMDD_PHARO_{kind.upper()}_SHA256={lock[kind]['sha256']}")
+          print(f"TEMDD_PHARO_{kind.upper()}_FILE={lock[kind]['file']}")
+      print(f"TEMDD_PHARO_VERSION={lock['version']}")
+      PY
+      set -a
+      . "$RUNNER_TEMP/temdd-backends/pharo-lock.env"
+      set +a
+      curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 3 --connect-timeout 15 --max-time 180 \
+        "$TEMDD_PHARO_IMAGE_URL" -o /tmp/temdd-pharo/image.zip
+      curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 3 --connect-timeout 15 --max-time 180 \
+        "$TEMDD_PHARO_VM_URL" -o /tmp/temdd-pharo/vm.zip
+      printf '%s  %s\n' "$TEMDD_PHARO_IMAGE_SHA256" /tmp/temdd-pharo/image.zip | sha256sum -c -
+      printf '%s  %s\n' "$TEMDD_PHARO_VM_SHA256" /tmp/temdd-pharo/vm.zip | sha256sum -c -
+      unzip -q /tmp/temdd-pharo/image.zip -d /tmp/temdd-pharo/image
+      unzip -q /tmp/temdd-pharo/vm.zip -d /tmp/temdd-pharo/vm
+      chmod +x "/tmp/temdd-pharo/vm/$TEMDD_PHARO_VM_FILE"
+      "/tmp/temdd-pharo/vm/$TEMDD_PHARO_VM_FILE" --headless \
+        "/tmp/temdd-pharo/image/$TEMDD_PHARO_IMAGE_FILE" st \
+        runtime/temdd/TEMDDRuntime.st tests/temdd/runtime-smalltalk.st \
+        | tee "$RUNNER_TEMP/temdd-backends/smalltalk-execution.log"
+      grep -F 'TEMDD_SMALLTALK_EXECUTED vectors=6' "$RUNNER_TEMP/temdd-backends/smalltalk-execution.log"
+   - name: Compile Lean obligations with Lean 4.19 / Lake
+     working-directory: formalization/QIKVRT_Formalization_v2.0
+     shell: bash
+     run: |
+      set -euo pipefail
+      mkdir -p "$RUNNER_TEMP/temdd-backends"
+      test "$(cat lean-toolchain)" = 'leanprover/lean4:v4.19.0'
+      lake --version | tee "$RUNNER_TEMP/temdd-backends/lake-version.log"
+      lake env lean --version | tee "$RUNNER_TEMP/temdd-backends/lean-version.log"
+      lake clean
+      lake build 2>&1 | tee "$RUNNER_TEMP/temdd-backends/lake-build.log"
+      lake env lean ../TEMDDCore.lean 2>&1 | tee "$RUNNER_TEMP/temdd-backends/temdd-lean.log"
+      grep -q 'theorem missing_effect_readback_not_done' ../TEMDDCore.lean
+   - name: Seal exact-head executable-backend receipt
+     env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+     shell: bash
+     run: |
+      set -euo pipefail
+      python3 -B - <<'PY'
+      import hashlib,json,os,re,subprocess
+      from pathlib import Path
+      head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+      tree=subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip()
+      if head != os.environ['EXPECTED_HEAD'] or re.fullmatch(r'[0-9a-f]{40}',tree) is None:
+          raise SystemExit('exact TEMDD backend subject drift')
+      evidence=Path(os.environ['RUNNER_TEMP'])/'temdd-backends'
+      required={'m68000':'m68000-execution.log','smalltalk':'smalltalk-execution.log','lean':'temdd-lean.log','lake':'lake-build.log'}
+      outputs={}
+      for key,name in required.items():
+          raw=(evidence/name).read_bytes()
+          outputs[key]={'path':name,'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
+      sources={}
+      for name in ['runtime/m68000/temdd_transition.s','tests/temdd/runtime-m68000.c','runtime/temdd/TEMDDRuntime.st','tests/temdd/runtime-smalltalk.st','formalization/TEMDDCore.lean','runtime/toolchains/pharo-13.lock.json']:
+          raw=Path(name).read_bytes()
+          sources[name]={'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
+      receipt={'schema':'qikvrt_temdd_executable_backends_v1','repository':os.environ['GITHUB_REPOSITORY'],'source_sha':head,'source_tree':tree,'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'backends':{'c90':'EXECUTED_SUCCESS','smalltalk':'EXECUTED_SUCCESS','m68000':'EXECUTED_SUCCESS_QEMU_USER','lean':'COMPILED_SUCCESS_LEAN_4_19_LAKE'},'sources':sources,'outputs':outputs,'predecessor_evidence_transfer':False,'physical_m68000_execution_observed':False,'stable_language_claim':False,'remaining_semantic_closure':['FRESH_V1_CONFORMANCE_REQUIRED'],'effect_ack_done':False}
+      (evidence/'backend-receipt.json').write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
+      print('TEMDD_EXECUTABLE_BACKENDS_RECEIPT head='+head+' tree='+tree)
+      PY
+   - name: TEMDD v1 exact-subject seven-layer conformance
+     env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+     shell: bash
+     run: |
+      set -euo pipefail
+      test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+      mkdir -p "$RUNNER_TEMP/temdd-backends"
+      python3 -B conformance/temdd/runner.py --repository Goldkelch/qik-vrt \
+        --backend-receipt "$RUNNER_TEMP/temdd-backends/backend-receipt.json" \
+        --output "$RUNNER_TEMP/temdd-backends/temdd-conformance-v1.json"
+      python3 - "$RUNNER_TEMP/temdd-backends/temdd-conformance-v1.json" <<'PY'
+      import json,subprocess,sys
+      report=json.load(open(sys.argv[1],encoding='utf-8'))
+      head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+      tree=subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip()
+      assert report['overall']=='PASS'
+      assert report['temdd_conformance']=='1'
+      assert report['implementation']['head']==head
+      assert report['implementation']['tree']==tree
+      PY
+   - name: Materialize bounded integrity candidate without adopting or promoting
+     shell: bash
+     run: |
+      set -euo pipefail
+      python3 -B tools/qikvrt_integrity.py generate
+      python3 -B tools/qikvrt_integrity.py verify
+      python3 - <<'PYCODE'
+      import hashlib, json, os, shutil, subprocess
+      from pathlib import Path
+      def git(*args):
+          return subprocess.check_output(['git', *args], text=True).strip()
+      allow = ['REPOSITORY_FILE_MANIFEST.json', 'REPOSITORY_FILE_MANIFEST.json.sha256', 'SHA256SUMS.txt']
+      changed = git('diff', '--name-only').splitlines()
+      assert set(changed) <= set(allow), changed
+      assert not git('diff', '--cached', '--name-only')
+      out = Path(os.environ['RUNNER_TEMP']) / 'temdd-integrity'
+      out.mkdir()
+      files = {}
+      for name in allow:
+          shutil.copyfile(name, out / name)
+          files[name] = {'sha256': hashlib.sha256(Path(name).read_bytes()).hexdigest(), 'blob': git('hash-object', name)}
+      receipt = {'schema': 'qikvrt_temdd_integrity_candidate_v1', 'repository': os.environ['GITHUB_REPOSITORY'],
+                 'parent_head': git('rev-parse', 'HEAD'), 'parent_tree': git('rev-parse', 'HEAD^{tree}'),
+                 'run_id': os.environ['GITHUB_RUN_ID'], 'allowlist': allow, 'files': files,
+                 'state': 'MATERIALIZED_WORKTREE_ONLY', 'adopted': False, 'p2_pass': False,
+                 'evidence_transfer': 'DENY', 'dod': False}
+      (out / 'receipt.json').write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
+      PYCODE
+   - name: Preserve exact-head focused evidence and bounded integrity candidate
+     if: always()
+     uses: actions/upload-artifact@v4
+     with:
+      name: temdd-producer-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}
+      path: |
+       ${{ runner.temp }}/temdd-producer-tests.log
+       ${{ runner.temp }}/temdd-producer-binding.txt
+       ${{ runner.temp }}/temdd-backends/
+       ${{ runner.temp }}/temdd-integrity/
+      if-no-files-found: error

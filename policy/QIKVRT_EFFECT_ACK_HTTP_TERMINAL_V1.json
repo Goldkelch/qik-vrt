@@ -1,6 +1,6 @@
 {
   "schema": "qikvrt_effect_ack_http_terminal_v1",
-  "version": "1.1",
+  "version": "1.2",
   "status": "PRODUCT_OWNER_AUTHORIZED_EXTERNAL_DELIVERY",
   "authority_repository": "Goldkelch/qik-vrt",
   "base_commit": "88dde0ba2394e941f11b8e848fcd4899bbc5d29c",
@@ -29,7 +29,12 @@
     "text": true,
     "audio": "EXPLICIT_CAPTURE_AND_SUBMIT",
     "video": "EXPLICIT_PREVIEW_SNAPSHOT_AND_SUBMIT",
-    "personalization": ["accent", "font_scale", "density", "panel_position"],
+    "personalization": [
+      "accent",
+      "font_scale",
+      "density",
+      "panel_position"
+    ],
     "counterpart": "QIKVRT_REPOSITORY_BACKEND_ADAPTER",
     "default_external_effect": "NONE_UNLESS_BOUND_DELIVERY_REQUEST",
     "delivery_ledger": "state/delivery/ACTIVE_DELIVERY_OBLIGATIONS_V1.json",
@@ -41,12 +46,138 @@
       "ietf",
       "ieee",
       "generic_authenticated_web"
-    ]
+    ],
+    "ui_localization": {
+      "baseline": "G20_INDIVIDUAL_COUNTRY_COVERAGE_V1",
+      "coverage_rule": "At least one appropriate interface language for each of the 19 individual member countries; not every official or regional language.",
+      "membership_source": "https://www.dfat.gov.au/trade/organisations/g20",
+      "membership_observed_date": "2026-09-15",
+      "locales": [
+        "ar",
+        "de",
+        "en",
+        "es",
+        "fr",
+        "hi",
+        "id",
+        "it",
+        "ja",
+        "ko",
+        "pt_BR",
+        "ru",
+        "tr",
+        "zh_CN"
+      ],
+      "default_locale": "en",
+      "locale_selection": "FIREFOX_NATIVE_I18N",
+      "implemented_surfaces": [
+        "terminal_panel",
+        "preferences"
+      ],
+      "translation_status": "MACHINE_GENERATED_DRAFT_PENDING_LINGUISTIC_REVIEW",
+      "rtl_locales": [
+        "ar"
+      ],
+      "protocol_values_translated": false,
+      "firefox_chrome_language_packs": "REQUIRED_AT_BROWSER_DELIVERY_NOT_INSTALLED_BY_EXTENSION",
+      "country_locales": {
+        "AR": [
+          "es"
+        ],
+        "AU": [
+          "en"
+        ],
+        "BR": [
+          "pt_BR"
+        ],
+        "CA": [
+          "en",
+          "fr"
+        ],
+        "CN": [
+          "zh_CN"
+        ],
+        "FR": [
+          "fr"
+        ],
+        "DE": [
+          "de"
+        ],
+        "IN": [
+          "hi",
+          "en"
+        ],
+        "ID": [
+          "id"
+        ],
+        "IT": [
+          "it"
+        ],
+        "JP": [
+          "ja"
+        ],
+        "KR": [
+          "ko"
+        ],
+        "MX": [
+          "es"
+        ],
+        "RU": [
+          "ru"
+        ],
+        "SA": [
+          "ar"
+        ],
+        "ZA": [
+          "en"
+        ],
+        "TR": [
+          "tr"
+        ],
+        "GB": [
+          "en"
+        ],
+        "US": [
+          "en"
+        ]
+      }
+    },
+    "browser_delivery": {
+      "priority": "PRIMARY_PRODUCT_OBLIGATION",
+      "obligation": "AI_PERSONAL_FIREFOX_V1",
+      "canonical_entrypoint": "https://github.com/Goldkelch/qik-vrt/blob/main/AI",
+      "request": "state/delivery/requests/AI_PERSONAL_FIREFOX_V1.json",
+      "required_result": "PERSONALIZED_INTELLIGENT_FIREFOX_WITH_EFFECT_ACK_AND_UNIVERSAL_TERMINAL",
+      "publication_translation_priority": "SECONDARY",
+      "existing_integration_carriers": [
+        {
+          "pull_request": 893,
+          "role": "CANONICAL_AI_BRIDGE"
+        },
+        {
+          "pull_request": 1079,
+          "role": "UNIVERSAL_TERMINAL_RUNTIME"
+        }
+      ],
+      "native_review_required_separately": true,
+      "every_visitor_requires_isolated_profile": true,
+      "shared_owner_desktop_satisfies_delivery": false,
+      "future_capabilities_require_verified_authorized_adapters": true,
+      "terminal_dod": "policy/QIKVRT_UNIVERSAL_TERMINAL_DOD_V1.json",
+      "completion": "PENDING"
+    }
   },
   "proxy_pattern": {
     "name": "QIKVRT_FIREFOX_TERMINAL_PROXY_V1",
     "purpose": "Normalize repository, backend and other client observations into one source-bound terminal frame and gate protected writes through EFFECT_ACK prepare/commit. Bound delivery requests may execute authorized external web effects and must persist authoritative readback before completion.",
-    "input_adapters": ["github_public_read", "http_backend", "local_qikvrt_api_shim", "mcp_agent", "other_client_snapshot", "delivery_ledger"],
+    "input_adapters": [
+      "github_public_read",
+      "http_backend",
+      "local_qikvrt_api_shim",
+      "mcp_agent",
+      "other_client_snapshot",
+      "delivery_ledger"
+    ],
     "output_schema": "qikvrt_terminal_frame_v1",
     "may_render_non_done": true,
     "may_release_non_done": false,
@@ -61,5 +192,9 @@
     "html_element": "link",
     "new_html_parser_feature": false
   },
-  "completion_claims": {"PASS": false, "FINAL_PASS": false, "EFFECT_ACK_DONE": false}
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
 }

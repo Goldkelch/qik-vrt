@@ -78,3 +78,21 @@ python3 -B src/qikvrt_effect_ack_http_terminal.py --host 127.0.0.1 --port 8771
 ```
 
 The loopback bridge demonstrates the complete local prepare/commit/reobserve shape but deliberately cannot perform repository writes, releases, deployments, publication or actuator effects. Authenticated web delivery is a distinct, request-bound Firefox adapter path and must not be inferred from the loopback backend.
+
+## Interface languages and distribution
+
+The panel and preferences use Firefox's native `browser.i18n` API and 14 locale
+catalogs. The default is English. Arabic is right-to-left. Translations are draft
+human-interface text; EFFECT_ACK wire values and authorization remain unchanged.
+Firefox browser chrome requires separate Mozilla language packs.
+
+Build the complete unsigned review artifact from the repository root with:
+
+```sh
+python3 -B tools/qikvrt_firefox_package.py --output /tmp/qikvrt-ai-terminal.xpi
+```
+
+The package includes every manifest-referenced script and all catalogs. Production
+distribution still requires the supported signing or managed deployment path.
+The canonical public /AI and personal session acceptance contract is in
+`docs/terminal/FIREFOX_EFFECT_ACK_TERMINAL_PROXY_V1.md`.

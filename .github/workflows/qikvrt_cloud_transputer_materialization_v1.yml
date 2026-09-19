@@ -1,0 +1,173 @@
+name: QIKVRT Cloud Transputer materialization v1
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/universal-terminal/**'
+      - 'src/cloud_transputer/**'
+      - 'policy/QIKVRT_CLOUD_TRANSPUTER_V1.json'
+      - 'docs/terminal/QIKVRT_CLOUD_TRANSPUTER_MATERIALIZATION_V1.md'
+      - 'tests/test_qikvrt_cloud_transputer_materialization.py'
+      - '.github/workflows/qikvrt_cloud_transputer_materialization_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-cloud-transputer-materialization-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-reobserve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      IMAGE: qikvrt/universal-terminal:${{ github.event.pull_request.head.sha || github.sha }}
+      QIKVRT_UNIVERSAL_TERMINAL_IMAGE: qikvrt/universal-terminal:${{ github.event.pull_request.head.sha || github.sha }}
+      QIKVRT_DB_PASSWORD: ci-only-${{ github.run_id }}-${{ github.run_attempt }}
+      QIKVRT_EVIDENCE_DIR: /tmp/qikvrt-evidence
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Bind exact checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          test "$(git rev-parse HEAD)" = "$expected"
+          mkdir -p "$QIKVRT_EVIDENCE_DIR"
+          printf 'HEAD=%s\nTREE=%s\n' "$expected" "$(git rev-parse 'HEAD^{tree}')" | tee "$QIKVRT_EVIDENCE_DIR/subject.txt"
+          git rev-parse HEAD > "$QIKVRT_EVIDENCE_DIR/head.txt"
+          git rev-parse 'HEAD^{tree}' > "$QIKVRT_EVIDENCE_DIR/tree.txt"
+      - name: Validate recovered contract
+        run: python3 -B -m unittest -v tests.test_qikvrt_cloud_transputer_materialization
+      - name: Validate Infrastructure as Code
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f deploy/universal-terminal/compose.yaml config | tee "$QIKVRT_EVIDENCE_DIR/compose-config.yaml" >/dev/null
+          docker compose -f deploy/universal-terminal/compose.yaml config --format json > "$QIKVRT_EVIDENCE_DIR/compose-config.json"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          cfg = json.loads(Path('/tmp/qikvrt-evidence/compose-config.json').read_text())
+          expected = {
+              'qikvrt-universal-terminal', 'qikvrt-gateway', 'qikvrt-smtpd',
+              'qikvrt-dnsd', 'qikvrt-snmpd', 'qikvrt-sshd', 'qikvrt-sqld',
+              'qikvrt-mirror', 'qikvrt-mc68000'
+          }
+          assert expected <= set(cfg['services'])
+          for name in expected:
+              mounts = cfg['services'][name].get('tmpfs', [])
+              assert mounts, f'{name}: tmpfs missing after compose normalization'
+              for mount in mounts:
+                  assert mount.startswith('/'), f'{name}: split tmpfs option token: {mount!r}'
+                  assert ':' in mount and ',mode=' in mount, f'{name}: unbound tmpfs options: {mount!r}'
+          PY
+      - name: Build exact Cloud Transputer image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker version > "$QIKVRT_EVIDENCE_DIR/docker-version.txt" 2>&1
+          docker info > "$QIKVRT_EVIDENCE_DIR/docker-info.txt" 2>&1
+          docker build --pull --progress=plain --file deploy/universal-terminal/Dockerfile --tag "$IMAGE" . \
+            2>&1 | tee "$QIKVRT_EVIDENCE_DIR/build.log"
+          docker image inspect "$IMAGE" > "$QIKVRT_EVIDENCE_DIR/image-inspect.json"
+          docker image inspect --format '{{.Id}}' "$IMAGE" | tee "$QIKVRT_EVIDENCE_DIR/image-id.txt"
+          docker image inspect --format '{{json .RepoTags}}' "$IMAGE" > "$QIKVRT_EVIDENCE_DIR/image-tags.json"
+          docker image inspect --format '{{json .RepoDigests}}' "$IMAGE" > "$QIKVRT_EVIDENCE_DIR/image-repodigests.json"
+      - name: Execute MC68000 contract in image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint /bin/sh "$IMAGE" -c '
+            set -eu
+            command -v firefox-esr
+            command -v m68k-linux-gnu-gcc
+            command -v qemu-m68k
+            test -s /usr/share/novnc/vnc.html
+            grep -Eq "Machine:[[:space:]]+MC68000" /opt/qikvrt/runtime/m68k/qikvrt-m68k-selftest.readelf.txt
+            (cd /opt/qikvrt/runtime/m68k && sha256sum -c qikvrt-m68k-selftest.sha256 qikvrt_ip_bootstrap.sha256)
+            qemu-m68k /usr/local/bin/qikvrt-m68k-selftest
+          ' | tee "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
+          grep -F "ARCH=MC68000_FAMILY" "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
+          grep -F "D0_BOUNDARY_CODES=0,1,2,3" "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
+          grep -F "D0_COMPOSITION_3=1+2" "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
+          grep -F "NEXT_ORTHOGONAL_WEIGHT=4" "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
+          grep -F "EFFECT_ACK_CODES=0,1,2,3,4" "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
+          grep -F "EFFECT_ACK_REGISTER=D4" "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
+          grep -F "ORDINARY_RELEASE=EFFECT_ACK_DONE_ONLY" "$QIKVRT_EVIDENCE_DIR/m68k-contract.txt"
+      - name: Start IaC service plane
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f deploy/universal-terminal/compose.yaml up -d --no-build qikvrt-universal-terminal qikvrt-gateway qikvrt-smtpd qikvrt-dnsd qikvrt-snmpd qikvrt-sshd qikvrt-sqld qikvrt-mc68000
+      - name: Reobserve runtime planes
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=0
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8080/qik-vrt/mesh/v1/healthz >/dev/null 2>&1 \
+              && curl -fsS http://127.0.0.1:6080/vnc.html >/dev/null 2>&1 \
+              && nc -z 127.0.0.1 2222 \
+              && nc -z 127.0.0.1 2525 \
+              && nc -z 127.0.0.1 15432; then ready=1; break; fi
+            sleep 2
+          done
+          test "$ready" = 1
+          curl -fsS http://127.0.0.1:8080/qik-vrt/mesh/v1/healthz | tee "$QIKVRT_EVIDENCE_DIR/healthz.txt"
+          curl -fsS http://127.0.0.1:8080/qik-vrt/mesh/v1/ > "$QIKVRT_EVIDENCE_DIR/mesh-root.html"
+          python3 - <<'PY'
+          import socket
+          with socket.create_connection(('127.0.0.1',2222),timeout=5) as s:
+              banner=s.recv(64)
+              assert banner.startswith(b'SSH-2.0-')
+              open('/tmp/qikvrt-evidence/ssh-banner.txt','wb').write(banner)
+          PY
+          test "$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$(docker compose -f deploy/universal-terminal/compose.yaml ps -q qikvrt-universal-terminal)")" = 10.73.0.2
+          test "$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$(docker compose -f deploy/universal-terminal/compose.yaml ps -q qikvrt-sqld)")" = 10.73.0.3
+          test "$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$(docker compose -f deploy/universal-terminal/compose.yaml ps -q qikvrt-mc68000)")" = 10.73.0.6
+          docker compose -f deploy/universal-terminal/compose.yaml ps -a > "$QIKVRT_EVIDENCE_DIR/compose-ps-success.txt"
+      - name: Verify SQL-92 core path
+        shell: bash
+        env:
+          PGPASSWORD: ci-only-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          ready=0
+          for i in $(seq 1 45); do
+            if docker compose -f deploy/universal-terminal/compose.yaml exec -T -e PGPASSWORD="$PGPASSWORD" qikvrt-sqld psql -w -h 127.0.0.1 -U qikvrt -d qikvrt -At -c 'SELECT 1' 2>/dev/null | grep -qx 1; then ready=1; break; fi
+            sleep 2
+          done
+          test "$ready" = 1
+          docker compose -f deploy/universal-terminal/compose.yaml exec -T -e PGPASSWORD="$PGPASSWORD" qikvrt-sqld psql -w -h 127.0.0.1 -U qikvrt -d qikvrt -v ON_ERROR_STOP=1 <<'SQL' | tee "$QIKVRT_EVIDENCE_DIR/sql92-core.txt"
+          BEGIN;
+          CREATE TABLE qikvrt_probe (id INTEGER NOT NULL PRIMARY KEY, value VARCHAR(32));
+          INSERT INTO qikvrt_probe VALUES (1, 'mesh');
+          SELECT value FROM qikvrt_probe WHERE id = 1;
+          ROLLBACK;
+          SQL
+      - name: Preserve diagnostics
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p "$QIKVRT_EVIDENCE_DIR"
+          docker compose -f deploy/universal-terminal/compose.yaml ps -a > "$QIKVRT_EVIDENCE_DIR/compose-ps.txt" 2>&1 || true
+          docker compose -f deploy/universal-terminal/compose.yaml logs --no-color --tail 400 > "$QIKVRT_EVIDENCE_DIR/service.log" 2>&1 || true
+          git rev-parse HEAD > "$QIKVRT_EVIDENCE_DIR/head.txt"
+          git rev-parse 'HEAD^{tree}' > "$QIKVRT_EVIDENCE_DIR/tree.txt"
+          (cd "$QIKVRT_EVIDENCE_DIR" && sha256sum * > SHA256SUMS.txt) || true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: qikvrt-cloud-transputer-${{ github.run_id }}
+          path: /tmp/qikvrt-evidence
+          retention-days: 30
+      - name: Teardown
+        if: always()
+        run: docker compose -f deploy/universal-terminal/compose.yaml down -v --remove-orphans || true

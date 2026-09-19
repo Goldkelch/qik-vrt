@@ -1,38 +1,50 @@
 (() => {
   if (document.getElementById("qikvrt-ai-terminal-host")) return;
 
+  const message = (name, substitutions) => browser.i18n.getMessage(name, substitutions);
+
   const host = document.createElement("section");
   host.id = "qikvrt-ai-terminal-host";
+  host.lang = browser.i18n.getMessage("@@ui_locale").replaceAll("_", "-");
+  host.dir = browser.i18n.getMessage("@@bidi_dir");
   host.setAttribute("aria-label", "QIKVRT AI Terminal");
   host.innerHTML = `
     <header class="qv-head">
-      <div><strong>QIKVRT · AI TERMINAL</strong><small> source-bound · EFFECT_ACK gated</small></div>
-      <div class="qv-head-actions"><button data-act="observe">↻ Observe</button><button data-act="options" aria-label="Personalize">⚙</button><button data-act="collapse" aria-label="Collapse">—</button></div>
+      <div><strong>QIKVRT · AI TERMINAL</strong><small data-i18n="subtitle"></small></div>
+      <div class="qv-head-actions"><button data-act="observe" data-i18n="observe"></button><button data-act="options" data-i18n-label="personalize">⚙</button><button data-act="collapse" data-i18n-label="collapse">—</button></div>
     </header>
     <div class="qv-body">
       <div class="qv-status" data-role="status">OBSERVE</div>
-      <pre class="qv-output" data-role="output" aria-live="polite">Terminal initialized. No effect authorized.</pre>
-      <label class="qv-label" for="qv-command">Input</label>
-      <textarea id="qv-command" data-role="command" rows="3" placeholder="Text input to the repository-side terminal counterpart"></textarea>
+      <pre class="qv-output" data-role="output" dir="auto" aria-live="polite" data-i18n="initialized"></pre>
+      <label class="qv-label" for="qv-command" data-i18n="input"></label>
+      <textarea id="qv-command" data-role="command" rows="3" dir="auto"></textarea>
       <div class="qv-media-row">
-        <button data-act="audio">🎙 Start audio</button>
-        <button data-act="camera">📷 Start camera</button>
-        <button data-act="snapshot" disabled>◉ Snapshot</button>
-        <span data-role="media-state">media local</span>
+        <button data-act="audio" data-i18n="audioStart"></button>
+        <button data-act="camera" data-i18n="cameraStart"></button>
+        <button data-act="snapshot" data-i18n="snapshot" disabled></button>
+        <span data-role="media-state" data-i18n="mediaLocal"></span>
       </div>
       <video data-role="video" playsinline muted hidden></video>
       <div class="qv-effect-row">
-        <button class="qv-prepare" data-act="prepare">Prepare</button>
-        <button class="qv-commit" data-act="commit" disabled>Commit</button>
-        <span>Prepare ≠ effect · Commit requires DONE</span>
+        <button class="qv-prepare" data-act="prepare" data-i18n="prepare"></button>
+        <button class="qv-commit" data-act="commit" data-i18n="commit" disabled></button>
+        <span data-i18n="prepareBoundary"></span>
       </div>
     </div>`;
   document.body.appendChild(host);
+  // Prepare ≠ effect. Translations are text only; protocol values stay canonical.
+  host.querySelectorAll("[data-i18n]").forEach(node => {
+    node.textContent = message(node.dataset.i18n);
+  });
+  host.querySelectorAll("[data-i18n-label]").forEach(node => {
+    node.setAttribute("aria-label", message(node.dataset.i18nLabel));
+  });
 
   const $ = selector => host.querySelector(selector);
   const output = $("[data-role=output]");
   const status = $("[data-role=status]");
   const command = $("[data-role=command]");
+  command.placeholder = message("inputHint");
   const video = $("[data-role=video]");
   const mediaState = $("[data-role=media-state]");
   const commitButton = $("[data-act=commit]");
@@ -70,16 +82,16 @@
   }
 
   async function observe() {
-    setState("OBSERVE", "reobserving main/head/tree");
+    setState("OBSERVE", message("observing"));
     const result = await send("OBSERVE_AUTHORITY");
     render(result);
-    setState(result.ok ? "OBSERVE" : "HOLD", result.ok ? "fresh repository frame" : result.reason);
+    setState(result.ok ? "OBSERVE" : "HOLD", result.ok ? message("observed") : result.reason);
   }
 
   async function blobPayload(blob, mediaType) {
     if (!blob) return null;
     const MAX = 2 * 1024 * 1024;
-    if (blob.size > MAX) throw new Error(`${mediaType} exceeds 2 MiB terminal bound`);
+    if (blob.size > MAX) throw new Error(message("tooLarge"));
     const buffer = await blob.arrayBuffer();
     const bytes = new Uint8Array(buffer);
     let binary = "";
@@ -93,7 +105,7 @@
       audioRecorder.stop();
       audioStream.getTracks().forEach(t => t.stop());
       audioStream = null;
-      button.textContent = "🎙 Start audio";
+      button.textContent = message("audioStart");
       return;
     }
     audioStream = await navigator.mediaDevices.getUserMedia({audio: true, video: false});
@@ -103,11 +115,11 @@
     audioRecorder.ondataavailable = event => { if (event.data.size) audioChunks.push(event.data); };
     audioRecorder.onstop = () => {
       audioBlob = new Blob(audioChunks, {type: audioRecorder.mimeType || "audio/webm"});
-      mediaState.textContent = `audio local · ${audioBlob.size} B · explicit Prepare required`;
+      mediaState.textContent = message("audioLocal", String(audioBlob.size));
     };
     audioRecorder.start();
-    button.textContent = "■ Stop audio";
-    mediaState.textContent = "audio recording locally";
+    button.textContent = message("audioStop");
+    mediaState.textContent = message("audioRecording");
   }
 
   async function toggleCamera() {
@@ -118,8 +130,8 @@
       video.srcObject = null;
       video.hidden = true;
       snapshotButton.disabled = true;
-      button.textContent = "📷 Start camera";
-      mediaState.textContent = snapshotBlob ? "snapshot local · explicit Prepare required" : "media local";
+      button.textContent = message("cameraStart");
+      mediaState.textContent = snapshotBlob ? message("snapshotLocal", String(snapshotBlob.size)) : message("mediaLocal");
       return;
     }
     videoStream = await navigator.mediaDevices.getUserMedia({audio: false, video: {facingMode: "user"}});
@@ -127,12 +139,12 @@
     video.hidden = false;
     await video.play();
     snapshotButton.disabled = false;
-    button.textContent = "■ Stop camera";
-    mediaState.textContent = "camera preview local";
+    button.textContent = message("cameraStop");
+    mediaState.textContent = message("cameraPreview");
   }
 
   async function takeSnapshot() {
-    if (!videoStream || !video.videoWidth) throw new Error("camera preview unavailable");
+    if (!videoStream || !video.videoWidth) throw new Error(message("cameraUnavailable"));
     const canvas = document.createElement("canvas");
     const maxWidth = 1280;
     const scale = Math.min(1, maxWidth / video.videoWidth);
@@ -140,12 +152,12 @@
     canvas.height = Math.round(video.videoHeight * scale);
     canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
     snapshotBlob = await new Promise(resolve => canvas.toBlob(resolve, "image/webp", 0.86));
-    if (!snapshotBlob) throw new Error("snapshot encoding failed");
-    mediaState.textContent = `video snapshot local · ${snapshotBlob.size} B · explicit Prepare required`;
+    if (!snapshotBlob) throw new Error(message("snapshotFailed"));
+    mediaState.textContent = message("snapshotLocal", String(snapshotBlob.size));
   }
 
   async function prepare() {
-    setState("PREPARE", "no protected effect");
+    setState("PREPARE", message("preparing"));
     commitButton.disabled = true;
     prepared = null;
     preparedRequest = null;
@@ -163,19 +175,19 @@
     render(result);
     const done = result && result.effect_ack && result.effect_ack.state === "EFFECT_ACK_DONE";
     commitButton.disabled = !done;
-    setState(done ? "PREPARED_DONE" : "HOLD", done ? "exact prepared payload frozen for commit" : (result.reason || "non-DONE"));
+    setState(done ? "PREPARED_DONE" : "HOLD", done ? message("prepared") : (result.reason || "non-DONE"));
   }
 
   async function commit() {
     if (!prepared || !preparedRequest || !prepared.effect_ack || prepared.effect_ack.state !== "EFFECT_ACK_DONE") {
-      setState("HOLD", "DONE prepare required");
+      setState("HOLD", message("prepareRequired"));
       return;
     }
     commitButton.disabled = true;
-    setState("COMMIT", "exact prepared binding");
+    setState("COMMIT", message("committing"));
     const result = await send("COMMIT_EFFECT", {confirmed: true, prepared, request: preparedRequest});
     render(result);
-    setState(result && result.ordinary_release ? "EFFECT_ACK_DONE" : "HOLD", result && result.ordinary_release ? "post-effect reobserve required" : "commit not released");
+    setState(result && result.ordinary_release ? "EFFECT_ACK_DONE" : "HOLD", result && result.ordinary_release ? message("readbackRequired") : message("notReleased"));
     prepared = null;
     preparedRequest = null;
     await observe();

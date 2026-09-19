@@ -1,0 +1,89 @@
+{
+  "schema": "temdd_conformance_vectors_v1",
+  "t13": {
+    "sequence_without_cause": {
+      "earlier": {
+        "event_id": "event:1",
+        "sequence": 1,
+        "cause_event_ids": []
+      },
+      "later": {
+        "event_id": "event:2",
+        "sequence": 2,
+        "cause_event_ids": []
+      }
+    },
+    "explicit_cause": {
+      "cause": {
+        "event_id": "event:3",
+        "sequence": 3,
+        "cause_event_ids": []
+      },
+      "effect": {
+        "event_id": "event:4",
+        "sequence": 4,
+        "cause_event_ids": [
+          "event:3"
+        ]
+      }
+    }
+  },
+  "t14": {
+    "subject_s0": {
+      "subject_id": "s",
+      "repository": "Goldkelch/qik-vrt",
+      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "subject_s1": {
+      "subject_id": "s",
+      "repository": "Goldkelch/qik-vrt",
+      "head": "cccccccccccccccccccccccccccccccccccccccc",
+      "tree": "dddddddddddddddddddddddddddddddddddddddd"
+    },
+    "evidence": {
+      "schema": "temdd_evidence_v1",
+      "evidence_id": "e:1",
+      "evidence_type": "VALIDATION",
+      "observed_subject": {
+        "subject_id": "s",
+        "repository": "Goldkelch/qik-vrt",
+        "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "producer_event": "event:1",
+      "content_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "freshness": "FRESH",
+      "provenance": {
+        "source": "conformance-vector",
+        "observed_at": "2026-09-18T00:00:00Z"
+      },
+      "predecessor_evidence_transfer": false
+    }
+  },
+  "t15": {
+    "commit_only": {
+      "authority": true,
+      "committed": true,
+      "fresh_readback": false,
+      "exact_subject": true,
+      "expected_matches_observed": true,
+      "effect_ack": false
+    },
+    "fresh_exact_readback": {
+      "authority": true,
+      "committed": true,
+      "fresh_readback": true,
+      "exact_subject": true,
+      "expected_matches_observed": true,
+      "effect_ack": true
+    }
+  },
+  "t16": {
+    "require_exact_head": true,
+    "require_exact_tree": true,
+    "require_implementation_digest": true,
+    "require_suite_digest": true,
+    "predecessor_evidence_transfer": false
+  }
+}
