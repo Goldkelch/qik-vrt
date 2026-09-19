@@ -1871,6 +1871,55 @@ def _validate_recovery_evidence(
         )
     if value.get("schema") != EVIDENCE_SCHEMA_V2:
         _fail("publication recovery evidence schema is unsupported")
+    effect_head = value.get("repository_commit")
+    if not isinstance(effect_head, str) or HEX40.fullmatch(effect_head) is None:
+        _fail("publication recovery evidence has an invalid effect HEAD")
+    ancestor_status, _output = _git(
+        root,
+        "merge-base",
+        "--is-ancestor",
+        effect_head,
+        execution_head,
+        accepted=frozenset({0, 1}),
+    )
+    if ancestor_status != 0:
+        _fail("publication recovery effect HEAD is not an execution ancestor")
+    if effect_head != execution_head:
+        expected_relative = manifest_path.relative_to(root).parent.joinpath(
+            "zenodo-publication.json"
+        ).as_posix()
+        prior_status, _prior_blob = _git(
+            root,
+            "rev-parse",
+            "--verify",
+            f"{effect_head}:{expected_relative}",
+            accepted=frozenset({0, 128}),
+        )
+        if prior_status == 0:
+            _fail("publication recovery evidence predates its effect boundary")
+        _status, committed_blob = _git(
+            root,
+            "rev-parse",
+            "--verify",
+            f"{execution_head}:{expected_relative}",
+        )
+        evidence_path = root / expected_relative
+        evidence_raw = zenodo.read_regular_file(
+            evidence_path,
+            zenodo.MAX_JSON_BYTES,
+        )
+        if committed_blob != _git_blob_sha(evidence_raw):
+            _fail("publication recovery evidence is not committed byte-exactly")
+        _status, dirty = _git(
+            root,
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            "--",
+            expected_relative,
+        )
+        if dirty:
+            _fail("publication recovery evidence is dirty at the execution HEAD")
     phase = value.get("phase")
     if not isinstance(phase, str) or phase not in RECOVERY_PHASES:
         _fail("publication recovery evidence phase is unsupported")
@@ -1898,7 +1947,7 @@ def _validate_recovery_evidence(
     if phase == "public_verified":
         expected_keys |= {"conceptdoi", "record_url"}
     zenodo._check_exact_keys(value, expected_keys, "publication recovery evidence")
-    expected_binding = _recovery_binding(manifest, execution_head)
+    expected_binding = _recovery_binding(manifest, effect_head)
     if value.get("binding") != expected_binding:
         _fail("publication recovery evidence differs from the exact authorization")
     if value.get("governance_boundaries") != list(GOVERNANCE_BOUNDARIES):
@@ -1910,7 +1959,7 @@ def _validate_recovery_evidence(
         "machine_proof": manifest["machine_proof"],
         "owner_authorization": manifest["owner_authorization"],
         "repository": manifest["repository"],
-        "repository_commit": execution_head,
+        "repository_commit": effect_head,
         "source_head": manifest["source_head"],
         "recovery": _recovery_flags(phase),
     }
@@ -1944,7 +1993,7 @@ def _validate_recovery_evidence(
         or not isinstance(remote["tag_object"], str)
         or HEX40.fullmatch(remote["tag_object"]) is None
         or remote["object_type"] != "tag"
-        or remote["execution_head"] != execution_head
+        or remote["execution_head"] != effect_head
         or remote["acquisition"] != "GITHUB_GIT_DATA_REST_CREATE_ONLY"
         or remote["recovery_mode"]
         not in {"NEWLY_CREATED_REF", "EXISTING_EXACT_REF_NO_CREATE"}
@@ -2525,7 +2574,7 @@ def publish(manifest_path: pathlib.Path, root: pathlib.Path) -> dict[str, Any]:
             manifest_path,
             root,
             manifest,
-            execution_head,
+            evidence["repository_commit"],
             verified,
             client,
             secrets_by_name,

@@ -2667,6 +2667,63 @@ class MachineProofBeforeZenodoTests(unittest.TestCase):
                         publish.publish(manifest_path, root)
                     client_type.assert_called_once()
 
+    def test_committed_recovery_successor_preserves_effect_head(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            _, manifest_path = self.fixture(root)
+            _source_head, effect_head = materialize_git_history(
+                root,
+                manifest_path,
+            )
+            evidence_path = root / "release/fixture/zenodo-publication.json"
+            environment = {
+                "GITHUB_REPOSITORY": publish.PRODUCTION_REPOSITORY,
+                "GITHUB_SHA": effect_head,
+                publish.GITHUB_TOKEN_ENVIRONMENT_VARIABLE: TEST_GITHUB_TOKEN,
+                zenodo.TOKEN_ENVIRONMENT_VARIABLE: "z" * 32,
+            }
+            github = FakeGitHubGitData()
+            with mock.patch.dict(os.environ, environment, clear=True):
+                with mock.patch.object(
+                    publish,
+                    "_github_api_request",
+                    side_effect=github,
+                ), mock.patch.object(
+                    publish,
+                    "_list_all_owned_depositions",
+                    return_value=[],
+                ), mock.patch.object(zenodo, "ZenodoClient") as client_type:
+                    client_type.return_value.create_paper.side_effect = (
+                        zenodo.ZenodoError("simulated create failure")
+                    )
+                    with self.assertRaisesRegex(
+                        zenodo.ZenodoError,
+                        "simulated create failure",
+                    ):
+                        publish.publish(manifest_path, root)
+
+            run_git(root, "add", "--", str(evidence_path.relative_to(root)))
+            run_git(root, "commit", "--quiet", "-m", "persist recovery")
+            successor_head = run_git(root, "rev-parse", "HEAD")
+            environment["GITHUB_SHA"] = successor_head
+            with mock.patch.dict(os.environ, environment, clear=True):
+                manifest = publish.load_manifest(manifest_path, root)
+                execution_head = publish._validate_repository_source_head(
+                    root,
+                    manifest_path,
+                    manifest,
+                )
+                evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+                validated = publish._validate_recovery_evidence(
+                    evidence,
+                    manifest_path,
+                    root,
+                    manifest,
+                    execution_head,
+                )
+            self.assertEqual(validated["repository_commit"], effect_head)
+            self.assertNotEqual(execution_head, effect_head)
+
     def test_successful_publication_evidence_consumes_id_and_nonce_digest(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)

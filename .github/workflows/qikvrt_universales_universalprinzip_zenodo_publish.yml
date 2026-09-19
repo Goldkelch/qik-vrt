@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 30
     env:
       EXPECTED_BRANCH: docs/universales-universalprinzip-20260919-v1
-      EXPECTED_PARENT: 6f40d28610b2e7d997097d5af91ed0a03987aee3
+      EXPECTED_PARENT: aeb37d3cfcc171e8d973672084544d70ffb2fd44
       MANIFEST_PATH: state/work_units/UNIVERSALES_UNIVERSALPRINZIP_20260919_V1/publish-request.json
       EVIDENCE_PATH: state/work_units/UNIVERSALES_UNIVERSALPRINZIP_20260919_V1/zenodo-publication.json
       ZENODO_API_BASE: https://zenodo.org/api
@@ -42,7 +42,7 @@ jobs:
           test "$GITHUB_REF" = "refs/heads/$EXPECTED_BRANCH"
           test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
           test "$(git show -s --format=%P HEAD)" = "$EXPECTED_PARENT"
-          test ! -e "$EVIDENCE_PATH"
+          test -f "$EVIDENCE_PATH"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           expected_delta="$(
             printf '%s\n' \
@@ -90,6 +90,18 @@ jobs:
               raise SystemExit("BLOCK: normalized execution head differs")
           if len(manifest["files"]) != 12:
               raise SystemExit("BLOCK: exact Zenodo upload count differs")
+          evidence = publish.zenodo._load_json_file(
+              root / os.environ["EVIDENCE_PATH"]
+          )[0]
+          if (
+              evidence.get("state")
+              != "EFFECT_RELEASED/AWAITING_REMOTE_RECONCILIATION"
+              or evidence.get("phase") != "record_created"
+              or evidence.get("record_id") != 22847245
+              or evidence.get("repository_commit")
+              != "f57c298754a2e423ed6b89d04b78417476b9ba69"
+          ):
+              raise SystemExit("BLOCK: exact Zenodo recovery boundary differs")
           print("ZENODO_EXECUTION_PREFLIGHT=VALID")
           PY
           python3 -B tools/qikvrt_integrity.py verify
