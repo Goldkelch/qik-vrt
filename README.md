@@ -1,5 +1,19 @@
 # QIK-VRT
 
+<!-- qikvrt-welcome:start -->
+## Start here · Hier beginnen · 14 languages
+
+[Deutsch](WELCOME.md#de) · [English](WELCOME.md#en) · [Français](WELCOME.md#fr) · [Español](WELCOME.md#es) · [Português (Brasil)](WELCOME.md#pt-BR) · [Italiano](WELCOME.md#it) · [Türkçe](WELCOME.md#tr) · [Русский](WELCOME.md#ru) · [العربية](WELCOME.md#ar) · [हिन्दी](WELCOME.md#hi) · [Bahasa Indonesia](WELCOME.md#id) · [日本語](WELCOME.md#ja) · [한국어](WELCOME.md#ko) · [简体中文](WELCOME.md#zh-CN)
+
+**[QIK-VRT: Vom Unterschied zur verantwortlichen Wirkung / From difference to accountable effect](WELCOME.md)** explains what Ingolf Lohmann built, why it exists, how human conception and AI-assisted engineering contributed, and what each source, proof, publication and downloadable software candidate actually establishes. Each complete prose edition follows the same 39 linked sources and is suitable for continuous reading and reading aloud.
+
+**[HTML reader source](WELCOME.html)** · **[Pages-ready projection](docs/welcome.html)** · **[Exact source and attribution bindings](WELCOME_EVIDENCE.json)**
+
+The HTML reader selects a supported browser language, supports language/paragraph links and local search, and copies or downloads the whole article or bounded text parts for manual WhatsApp sharing. It sends nothing. GitHub's file view displays HTML source rather than executing it; serve the files as a static site to use the interactive reader. Adding these files alone does not establish a public Pages deployment. The 14 languages are the project's agreed G20 interface selection, not every language of the G20 countries, EU or African Union. These newly commissioned AI-assisted translations do not claim independent linguistic review.
+
+The technical README below is preserved. Its dated snapshots and bounded receipts are not revalidated by this introduction.
+<!-- qikvrt-welcome:end -->
+
 [![QIKVRT CI](https://github.com/Goldkelch/qik-vrt/actions/workflows/qikvrt_ci.yml/badge.svg?branch=main)](https://github.com/Goldkelch/qik-vrt/actions/workflows/qikvrt_ci.yml)
 [![Release](https://img.shields.io/badge/release-v2026.07.22--effect--ack--universality--1.0.0-1f6feb)](https://github.com/Goldkelch/qik-vrt/tree/v2026.07.22-effect-ack-universality-1.0.0)
 [![License: source--available](https://img.shields.io/badge/code-PolyForm%20Noncommercial-orange)](LICENSE)
