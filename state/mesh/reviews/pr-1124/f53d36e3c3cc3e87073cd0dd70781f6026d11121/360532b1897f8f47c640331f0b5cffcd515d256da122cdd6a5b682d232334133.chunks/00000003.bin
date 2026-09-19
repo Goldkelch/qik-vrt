@@ -1,0 +1,2609 @@
+t_main_sha": MAIN,
++        "state": "open",
++        "merged": False,
++        "superseded": False,
++        "active_workflows": 0,
++        "failed_workflows": 0,
++        "gates_complete": True,
++        "review_required": True,
++        "review_satisfied": True,
++        "external_effect_pending": False,
++        "first_causal_blocker": None,
++    }
++    value.update(overrides)
++    return value
++
++
++class UnattendedPrDispositionTests(unittest.TestCase):
++    def test_state_set_matches_canonical_backlog(self):
++        self.assertEqual(
++            DISPOSITIONS,
++            {
++                "ACTIVE_EXECUTION",
++                "READY_FOR_INDEPENDENT_REVIEW",
++                "HOLD_WITH_FIRST_CAUSAL_BLOCKER",
++                "REBIND_REQUIRED",
++                "MERGE_READY",
++                "EXTERNAL_EFFECT_PENDING",
++                "CLOSE_AS_SUPERSEDED",
++                "MERGED",
++                "CLOSED_NOT_PLANNED_WITH_CAUSE",
++            },
++        )
++
++    def test_merged_is_terminal(self):
++        result = classify(observation(state="closed", merged=True))
++        self.assertEqual(result.disposition, "MERGED")
++        self.assertEqual(result.next_action, "NOOP")
++
++    def test_closed_without_merge_preserves_cause(self):
++        result = classify(
++            observation(
++                state="closed",
++                first_causal_blocker="NOT_PLANNED",
++            )
++        )
++        self.assertEqual(result.disposition, "CLOSED_NOT_PLANNED_WITH_CAUSE")
++        self.assertEqual(result.first_causal_blocker, "NOT_PLANNED")
++
++    def test_supersession_precedes_execution(self):
++        result = classify(observation(superseded=True, active_workflows=2))
++        self.assertEqual(result.disposition, "CLOSE_AS_SUPERSEDED")
++
++    def test_base_drift_precedes_downstream_gate_state(self):
++        result = classify(
++            observation(
++                base_sha="c" * 40,
++                active_workflows=3,
++                failed_workflows=1,
++                first_causal_blocker="DOWNSTREAM",
++            )
++        )
++        self.assertEqual(result.disposition, "REBIND_REQUIRED")
++        self.assertEqual(result.first_causal_blocker, "BASE_DRIFT")
++        self.assertEqual(
++            result.next_action,
++            "HISTORY_PRESERVING_REBIND_TO_CURRENT_MAIN",
++        )
++
++    def test_active_execution_precedes_review(self):
++        result = classify(
++            observation(active_workflows=1, review_satisfied=False)
++        )
++        self.assertEqual(result.disposition, "ACTIVE_EXECUTION")
++
++    def test_explicit_first_blocker_is_preserved(self):
++        result = classify(
++            observation(first_causal_blocker="CODE_OWNER_RULE_NOT_ENFORCED")
++        )
++        self.assertEqual(result.disposition, "HOLD_WITH_FIRST_CAUSAL_BLOCKER")
++        self.assertEqual(
++            result.first_causal_blocker,
++            "CODE_OWNER_RULE_NOT_ENFORCED",
++        )
++
++    def test_failed_gate_fails_closed(self):
++        result = classify(observation(failed_workflows=1))
++        self.assertEqual(result.disposition, "HOLD_WITH_FIRST_CAUSAL_BLOCKER")
++        self.assertEqual(result.first_causal_blocker, "EXACT_HEAD_GATE_FAILURE")
++
++    def test_incomplete_evidence_cannot_be_merge_ready(self):
++        result = classify(observation(gates_complete=False))
++        self.assertEqual(result.disposition, "HOLD_WITH_FIRST_CAUSAL_BLOCKER")
++        self.assertEqual(result.first_causal_blocker, "EXACT_HEAD_EVIDENCE_INCOMPLETE")
++
++    def test_review_boundary_is_explicit(self):
++        result = classify(observation(review_satisfied=False))
++        self.assertEqual(result.disposition, "READY_FOR_INDEPENDENT_REVIEW")
++
++    def test_external_effect_boundary_follows_internal_convergence(self):
++        result = classify(observation(external_effect_pending=True))
++        self.assertEqual(result.disposition, "EXTERNAL_EFFECT_PENDING")
++
++    def test_merge_ready_requires_complete_internal_evidence(self):
++        result = classify(observation())
++        self.assertEqual(result.disposition, "MERGE_READY")
++        value = result.to_mapping()
++        self.assertFalse(value["PASS"])
++        self.assertFalse(value["FINAL_PASS"])
++        self.assertFalse(value["EFFECT_ACK_DONE"])
++
++    def test_missing_required_evidence_is_rejected(self):
++        candidate = observation()
++        del candidate["gates_complete"]
++        with self.assertRaises(ValueError):
++            classify(candidate)
++
++    def test_inconsistent_merged_open_state_is_rejected(self):
++        with self.assertRaises(ValueError):
++            classify(observation(merged=True))
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/test_qikvrt_universal_terminal_network_boundary.py b/tests/test_qikvrt_universal_terminal_network_boundary.py
+index ef90a7f2a0b6beac59e34426b9328bf662266de6..2cf818b801ee4c9dba5be2241a0c99cb1d070fde 100644
+--- a/tests/test_qikvrt_universal_terminal_network_boundary.py
++++ b/tests/test_qikvrt_universal_terminal_network_boundary.py
+@@ -6,6 +6,10 @@ import unittest
+ ROOT = pathlib.Path(__file__).resolve().parents[1]
+ COMPOSE = ROOT / "deploy/universal-terminal/compose.yaml"
+ POLICY = ROOT / "policy/QIKVRT_UNIVERSAL_TERMINAL_VIRTUALIZATION_V1.json"
++ENTRYPOINT = ROOT / "deploy/universal-terminal/entrypoint.sh"
++CLOUD_ENTRYPOINT = ROOT / "deploy/universal-terminal/cloud-entrypoint.sh"
++DOCKERFILE = ROOT / "deploy/universal-terminal/Dockerfile"
++WORKFLOW = ROOT / ".github/workflows/qikvrt_universal_terminal_container.yml"
+ 
+ 
+ class UniversalTerminalNetworkBoundaryTests(unittest.TestCase):
+@@ -37,6 +41,59 @@ class UniversalTerminalNetworkBoundaryTests(unittest.TestCase):
+             "REQUIRED",
+         )
+ 
++    def test_standalone_default_and_cloud_mesh_route_are_explicit_and_distinct(self):
++        policy = json.loads(POLICY.read_text(encoding="utf-8"))
++        self.assertEqual(policy["runtime_transport"]["default_start_surface"], "about:blank")
++        self.assertEqual(
++            policy["runtime_transport"]["runtime_state_schema"],
++            "qikvrt_universal_terminal_runtime_state_v2",
++        )
++        self.assertIn(
++            'START_URL="${QIKVRT_START_URL:-about:blank}"',
++            ENTRYPOINT.read_text(encoding="utf-8"),
++        )
++        dockerfile = DOCKERFILE.read_text(encoding="utf-8")
++        self.assertIn("QIKVRT_START_URL=about:blank", dockerfile)
++        self.assertIn('browser.startup.homepage", "about:blank"', dockerfile)
++        entrypoint = ENTRYPOINT.read_text(encoding="utf-8")
++        self.assertIn("QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION", entrypoint)
++        self.assertIn(
++            'user_pref("xpinstall.signatures.required", false);',
++            entrypoint,
++        )
++        self.assertIn(
++            'export QIKVRT_START_URL="${QIKVRT_CLOUD_START_URL:-http://127.0.0.1:8080/qik-vrt/mesh/v1/}"',
++            CLOUD_ENTRYPOINT.read_text(encoding="utf-8"),
++        )
++        workflow = WORKFLOW.read_text(encoding="utf-8")
++        self.assertIn("qikvrt_universal_terminal_runtime_state_v2", workflow)
++        self.assertNotIn("qikvrt_universal_terminal_runtime_state_v1", workflow)
++
++    def test_workflow_requires_bounded_stable_paired_readbacks(self):
++        workflow = WORKFLOW.read_text(encoding="utf-8")
++        self.assertEqual(workflow.count("reobserve_stable_terminal()"), 2)
++        self.assertEqual(workflow.count("for attempt in $(seq 1 40); do"), 2)
++        self.assertEqual(workflow.count('if [ "$stable" -eq 3 ]; then return 0; fi'), 2)
++        self.assertEqual(
++            workflow.count(
++                "curl --max-time 2 -fsS http://127.0.0.1:8771/.well-known/effect-ack"
++            ),
++            2,
++        )
++        self.assertIn("initial-readback-observations.log", workflow)
++        self.assertIn("restart-readback-observations.log", workflow)
++        self.assertIn("loopback-sockets.txt", workflow)
++        self.assertIn("initial-post-readback-checks.log", workflow)
++        self.assertIn("restart-post-readback-checks.log", workflow)
++        self.assertEqual(workflow.count("CHECK_NAME=stable_paired_readback"), 2)
++        self.assertEqual(
++            workflow.count("QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION=1"),
++            2,
++        )
++        self.assertIn("CHECK_NAME=reference_extension_signature_mode", workflow)
++        self.assertIn("CHECK_NAME=profile_extension", workflow)
++        self.assertIn("CHECK_NAME=initial_runtime_state_copy", workflow)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/tests/test_seed_workflows.py b/tests/test_seed_workflows.py
+index 25177e046b638891d0985d128d3d3400c8773a0c..65851a56f61028ba56e53eab73a82b7eb151100a 100644
+--- a/tests/test_seed_workflows.py
++++ b/tests/test_seed_workflows.py
+@@ -358,6 +358,18 @@ class SeedWorkflowTests(unittest.TestCase):
+         self.assertIn('"source_tree": os.environ["ACTUAL_TREE"]', workflow)
+         self.assertIn("qikvrt_seed_dashboard_exact_head_binding_v1", workflow)
+ 
++    def test_dashboard_continue_is_not_mislabelled_as_current_dashboard_evidence(self) -> None:
++        repository = Path(__file__).resolve().parents[1]
++        workflow = (
++            repository / ".github/workflows/qikvrt_seed_dashboard_publish.yml"
++        ).read_text(encoding="utf-8")
++        self.assertIn("dashboard_execution=NOT_EXECUTED", workflow)
++        self.assertIn("current_dashboard_evidence=NOT_ESTABLISHED", workflow)
++        self.assertIn("NODE_REVALIDATION_CONTINUE", workflow)
++        self.assertIn('"predecessor_evidence_transfer": False', workflow)
++        self.assertIn("Build dashboard only from PASS revalidation", workflow)
++        self.assertIn("steps.revalidate.outputs.dashboard_execution == 'ADMITTED'", workflow)
++
+     def test_seed_workflows_are_pinned_read_only_and_do_not_push(self) -> None:
+         repository = Path(__file__).resolve().parents[1]
+         for workflow in sorted((repository / ".github/workflows").glob("qikvrt_seed_*.yml")):
+diff --git a/tests/test_temdd.py b/tests/test_temdd.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..52e9464d877b1b263f6582ed8fe04dd8ca2f514a
+--- /dev/null
++++ b/tests/test_temdd.py
+@@ -0,0 +1,23 @@
++import unittest
++from tools.qikvrt_temdd import parse
++GOOD='''temdd 0.1; authority owner = "Goldkelch/qik-vrt"; subject s { repository = "Goldkelch/qik-vrt"; binding = exact; } request r { target = CUSTOM_DOD; } on event { follow exact; classify causal; } on blocker { learn smallest_sound_successor; execute successor; } until { ZERO_BUGS && FRESH_EFFECT_READBACK; }'''
++class TEMDDTests(unittest.TestCase):
++ def test_deterministic_ir(self): self.assertEqual(parse(GOOD),parse(GOOD))
++ def test_exact_binding(self): self.assertEqual(parse(GOOD)['subject']['binding'],'exact')
++ def test_dod_conjunction(self): self.assertEqual(parse(GOOD)['dod'],['ZERO_BUGS','FRESH_EFFECT_READBACK'])
++ def test_missing_authority_blocks(self):
++  with self.assertRaises(ValueError): parse(GOOD.replace('authority owner = "Goldkelch/qik-vrt";',''))
++ def test_nonexact_binding_blocks(self):
++  with self.assertRaises(ValueError): parse(GOOD.replace('binding = exact','binding = floating'))
++ def test_missing_repository_blocks(self):
++  with self.assertRaises(ValueError): parse(GOOD.replace('repository = "Goldkelch/qik-vrt";',''))
++ def test_subject_scope_not_global(self):
++  bad=GOOD.replace('repository = "Goldkelch/qik-vrt";','')+' repository = "evil/global";'
++  with self.assertRaises(ValueError): parse(bad)
++ def test_missing_handler_blocks(self):
++  with self.assertRaises(ValueError): parse(GOOD.replace('on event { follow exact; classify causal; }','').replace('on blocker { learn smallest_sound_successor; execute successor; }',''))
++ def test_qikvrt_dod_is_complete(self):
++  with self.assertRaises(ValueError): parse(GOOD.replace('CUSTOM_DOD','QIKVRT_DOD'))
++ def test_duplicate_dod_blocks(self):
++  with self.assertRaises(ValueError): parse(GOOD.replace('ZERO_BUGS &&','ZERO_BUGS && ZERO_BUGS &&'))
++if __name__=='__main__': unittest.main()
+diff --git a/tests/test_temdd_core.c b/tests/test_temdd_core.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..18c575d0fb3116dd951dc7e42bda63783bcb7ba1
+--- /dev/null
++++ b/tests/test_temdd_core.c
+@@ -0,0 +1,10 @@
++#include "temdd_core.h"
++int main(void) {
++ int no[6]={1,1,1,1,1,0}; int yes[6]={1,1,1,1,1,1};
++ if (temdd_transition(TEMDD_HOLD,TEMDD_EVENT_UNKNOWN)!=TEMDD_HOLD) return 1;
++ if (temdd_transition(TEMDD_HOLD,TEMDD_EVENT_EVIDENCE)!=TEMDD_CONTINUE) return 2;
++ if (temdd_transition(TEMDD_CONTINUE,TEMDD_EVENT_BLOCKER)!=TEMDD_SUCCESSOR_REQUIRED) return 3;
++ if (temdd_done(no)) return 4;
++ if (!temdd_done(yes)) return 5;
++ return 0;
++}
+diff --git a/tests/test_temdd_event_ledger.py b/tests/test_temdd_event_ledger.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..187230e0bab7512811c0e9d71c4f6498be5f06ef
+--- /dev/null
++++ b/tests/test_temdd_event_ledger.py
+@@ -0,0 +1,421 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++"""Fresh fixture-local producer, replay, HTTP, and consumer regression tests."""
++from __future__ import annotations
++
++import copy
++import http.client
++import json
++from pathlib import Path
++import shutil
++import socket
++import sqlite3
++import subprocess
++import sys
++import tempfile
++import threading
++import unittest
++from unittest import mock
++
++ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT / 'src'))
++import qikvrt_temdd_event_ledger as m
++
++
++class ProducerTests(unittest.TestCase):
++    def setUp(self):
++        self.temp = tempfile.TemporaryDirectory()
++        self.root = Path(self.temp.name) / 'repo'
++        self.root.mkdir()
++        self.state = Path(self.temp.name) / 'state'
++        page = self.root / 'docs/terminal/temdd/index.html'
++        page.parent.mkdir(parents=True)
++        shutil.copyfile(ROOT / 'docs/terminal/temdd/index.html', page)
++        self.git('init', '-q')
++        self.git('config', 'user.name', 'TEMDD fixture')
++        self.git('config', 'user.email', 'fixture@example.invalid')
++        self.git('add', '.')
++        self.git('commit', '-qm', 'fixture')
++        self.runtime = m.Runtime(self.root, self.state, 'Goldkelch/qik-vrt', 1103)
++        self.http = self.ingress = None
++        self.threads = []
++        m.terminal.STATE = m.terminal.State()
++
++    def tearDown(self):
++        self.stop_servers()
++        self.runtime.ledger.close()
++        self.temp.cleanup()
++
++    def git(self, *args):
++        return subprocess.check_output(['git', '-C', str(self.root), *args], stderr=subprocess.DEVNULL).decode().strip()
++
++    def event(self, native='native:1', **changes):
++        event = {'schema': m.SCHEMA, 'kind': 'READBACK', 'subject': copy.deepcopy(self.runtime.subject),
++                 'provenance': {'source': 'repository', 'native_event_id': native},
++                 'observed_at': '2026-09-15T20:00:00Z', 'message': 'native fixture readback',
++                 'payload': {'receipt': 'fixture-only; not production evidence'}}
++        event.update(changes)
++        return event
++
++    def start_servers(self):
++        self.http = m.terminal.ThreadingHTTPServer(('127.0.0.1', 0), m.make_handler(self.runtime))
++        self.ingress = m.make_ingress(self.runtime)
++        for server in (self.http, self.ingress):
++            t = threading.Thread(target=server.serve_forever, daemon=True)
++            t.start()
++            self.threads.append(t)
++
++    def stop_servers(self):
++        if self.http:
++            self.runtime.ledger.stop()
++            for server in (self.http, self.ingress):
++                server.shutdown()
++                server.server_close()
++            for t in self.threads:
++                t.join(timeout=3)
++                self.assertFalse(t.is_alive())
++            self.http = self.ingress = None
++            self.threads = []
++
++    def request(self, method, path, body=None, headers=None):
++        c = http.client.HTTPConnection(*self.http.server_address, timeout=3)
++        c.request(method, path, body=body, headers=headers or {})
++        r = c.getresponse()
++        data = r.read()
++        status = r.status
++        c.close()
++        return status, data
++
++    def stream(self, query='', headers=None):
++        c = http.client.HTTPConnection(*self.http.server_address, timeout=3)
++        c.request('GET', '/api/temdd/events' + query, headers=headers or {})
++        r = c.getresponse()
++        self.assertEqual(r.status, 200)
++        self.assertTrue(r.getheader('Content-Type').startswith('text/event-stream'))
++        first = self.frame(r)
++        self.assertEqual(first['event'], 'subject')
++        self.assertEqual(json.loads(first['data'])['subject'], self.runtime.subject)
++        return c, r
++
++    def frame(self, response):
++        result = {}
++        while True:
++            line = response.readline()
++            self.assertTrue(line, 'unexpected SSE EOF')
++            if line == b'\n':
++                return result
++            key, value = line.decode().rstrip('\n').split(': ', 1)
++            result[key] = value
++
++    def disconnect(self, c, r):
++        if c.sock:
++            c.sock.shutdown(socket.SHUT_RDWR)
++        r.close()
++        c.close()
++
++    def test_durable_restart_and_monotonic_ids(self):
++        first = self.runtime.append(self.event())
++        self.runtime.ledger.close()
++        self.runtime = m.Runtime(self.root, self.state, 'Goldkelch/qik-vrt', 1103)
++        self.assertEqual(self.runtime.ledger.replay(0), [first])
++        second = self.runtime.append(self.event('native:2'))
++        self.assertEqual(second['id'], first['id'].rsplit(':', 1)[0] + ':2')
++        self.assertFalse(first['dod'])
++        self.assertEqual(first['evidence_transfer'], 'DENY')
++        self.assertEqual(first['payload_digest'], m.digest(self.event()['payload']))
++
++    def test_idempotent_delivery_and_conflicting_native_id(self):
++        first = self.runtime.append(self.event())
++        self.assertEqual(self.runtime.append(self.event()), first)
++        with self.assertRaisesRegex(m.Hold, 'CONFLICT'):
++            self.runtime.append(self.event(message='changed'))
++        self.assertEqual(len(self.runtime.ledger.replay(0)), 1)
++
++    def test_wrong_head_tree_repository_and_pr_rejected(self):
++        for field, value in [('head', 'a'*40), ('tree', 'b'*40), ('repository', 'ingolf-lohmann/qik-vrt'), ('pr', 1104)]:
++            event = self.event()
++            event['subject'][field] = value
++            with self.subTest(field=field), self.assertRaisesRegex(m.Hold, 'SUBJECT_MISMATCH'):
++                self.runtime.append(event)
++        self.assertEqual(self.runtime.ledger.replay(0), [])
++
++    def test_malformed_and_oversized_ingress_rejected(self):
++        cases = [self.event(dod=True), self.event(kind='DONE'), self.event(payload=[]),
++                 self.event(observed_at='not-a-time'), self.event(message='x'*4097),
++                 self.event(payload={'oversized': 'x'*m.MAX_EVENT}), self.event(payload={'x': float('nan')})]
++        event = self.event()
++        event['provenance']['native_event_id'] = 'newline\nforgery'
++        cases.append(event)
++        for event in cases:
++            with self.subTest(event=str(event)[:100]), self.assertRaises(ValueError):
++                self.runtime.append(event)
++        self.assertEqual(self.runtime.ledger.replay(0), [])
++
++    def test_unknown_foreign_and_future_cursors_hold(self):
++        first = self.runtime.append(self.event())
++        bad = ['1', 'unknown:1', '0'*32+':1', first['id'].rsplit(':', 1)[0]+':999',
++               first['id'].rsplit(':', 1)[0]+':9223372036854775808', first['id']+'\n']
++        for cursor in bad:
++            with self.subTest(cursor=cursor), self.assertRaises(m.Hold):
++                self.runtime.ledger.cursor(cursor)
++        self.assertEqual(self.runtime.ledger.cursor(first['id']), 1)
++
++    def test_successor_never_replays_predecessor_evidence(self):
++        first = self.runtime.append(self.event())
++        self.runtime.ledger.close()
++        (self.root/'successor.txt').write_text('new subject\n')
++        self.git('add', '.')
++        self.git('commit', '-qm', 'successor')
++        self.runtime = m.Runtime(self.root, self.state, 'Goldkelch/qik-vrt', 1103)
++        self.assertEqual(self.runtime.ledger.replay(0), [])
++        with self.assertRaisesRegex(m.Hold, 'STALE'):
++            self.runtime.ledger.cursor(first['id'])
++        with self.assertRaisesRegex(m.Hold, 'CONFLICT'):
++            self.runtime.append(self.event())
++        second = self.runtime.append(self.event('successor:2'))
++        self.assertTrue(second['id'].endswith(':2'))
++        self.assertNotEqual(first['subject'], second['subject'])
++
++    def test_runtime_head_mutation_invalidates_observers(self):
++        (self.root/'changed.txt').write_text('changed\n')
++        self.git('add', '.')
++        self.git('commit', '-qm', 'changed')
++        with self.assertRaisesRegex(m.Hold, 'CHANGED'):
++            self.runtime.append(self.event())
++        self.assertTrue(self.runtime.ledger.stopped)
++        self.assertEqual(self.runtime.ledger.replay(0), [])
++
++    def test_dirty_checkout_is_unobservable(self):
++        (self.root/'docs/terminal/temdd/index.html').write_text('dirty')
++        with self.assertRaisesRegex(m.Hold, 'DIRTY'):
++            self.runtime.ensure_subject()
++        self.assertTrue(self.runtime.ledger.stopped)
++
++    def test_copied_checkout_ignores_stat_cache_drift_but_not_byte_changes(self):
++        copied = Path(self.temp.name) / 'image-checkout'
++        # Docker COPY changes cached inode/mtime metadata without changing Git bytes.
++        shutil.copytree(self.root, copied, copy_function=shutil.copyfile)
++        self.assertEqual(m.subject(copied, 'Goldkelch/qik-vrt', 1103), self.runtime.subject)
++        (copied/'docs/terminal/temdd/index.html').write_text('actual byte mutation')
++        with self.assertRaisesRegex(m.Hold, 'DIRTY'):
++            m.subject(copied, 'Goldkelch/qik-vrt', 1103)
++
++    def test_storage_failure_never_publishes(self):
++        self.runtime.ledger.db.execute("CREATE TRIGGER deny BEFORE INSERT ON events BEGIN SELECT RAISE(FAIL, 'disk failure fixture'); END")
++        with mock.patch.object(self.runtime.ledger.condition, 'notify_all') as notify:
++            with self.assertRaises(sqlite3.Error):
++                self.runtime.append(self.event())
++            notify.assert_not_called()
++        self.assertEqual(self.runtime.ledger.replay(0), [])
++
++    def test_commit_before_notification_failure_is_replayable(self):
++        with mock.patch.object(self.runtime.ledger.condition, 'notify_all', side_effect=RuntimeError('crash point')):
++            with self.assertRaises(RuntimeError):
++                self.runtime.append(self.event())
++        self.runtime.ledger.close()
++        self.runtime = m.Runtime(self.root, self.state, 'Goldkelch/qik-vrt', 1103)
++        rows = self.runtime.ledger.replay(0)
++        self.assertEqual(len(rows), 1)
++        self.assertEqual(self.runtime.append(self.event()), rows[0])
++
++    def test_tampered_readback_holds(self):
++        first = self.runtime.append(self.event())
++        self.runtime.ledger.db.execute("UPDATE events SET body = replace(body, 'native fixture readback', 'tampered')")
++        self.runtime.ledger.db.commit()
++        with self.assertRaisesRegex(m.Hold, 'READBACK_MISMATCH'):
++            self.runtime.ledger.replay(0)
++        with self.assertRaises(m.Hold):
++            self.runtime.ledger.cursor(first['id'])
++
++    def test_store_has_exclusive_owner_and_private_ingress(self):
++        with self.assertRaises(BlockingIOError):
++            m.Ledger(self.state, self.runtime.subject)
++        self.start_servers()
++        self.assertEqual((self.state/'temdd').stat().st_mode & 0o777, 0o700)
++        self.assertEqual((self.state/'temdd/ingress.sock').stat().st_mode & 0o777, 0o600)
++
++    def test_concurrent_native_deliveries_have_distinct_monotonic_ids(self):
++        results, errors = [], []
++        def append(i):
++            try:
++                results.append(self.runtime.ledger.append(self.event(f'parallel:{i}')))
++            except BaseException as exc:
++                errors.append(exc)
++        threads = [threading.Thread(target=append, args=(i,)) for i in range(12)]
++        for t in threads:
++            t.start()
++        for t in threads:
++            t.join(timeout=5)
++            self.assertFalse(t.is_alive())
++        self.assertEqual(errors, [])
++        self.assertEqual(sorted(int(x['id'].split(':')[1]) for x in results), list(range(1, 13)))
++
++    def test_real_socket_sse_disconnect_replay_and_header_precedence(self):
++        self.start_servers()
++        c, r = self.stream()
++        first = m.submit(self.state, self.event())['event']
++        frame = self.frame(r)
++        self.assertEqual(frame['id'], first['id'])
++        self.assertEqual(json.loads(frame['data']), first)
++        self.disconnect(c, r)
++        second = m.submit(self.state, self.event('native:2'))['event']
++        third = m.submit(self.state, self.event('native:3'))['event']
++        self.assertFalse(self.runtime.ledger.stopped)
++        c, r = self.stream('?after='+first['id'], {'Last-Event-ID': second['id']})
++        self.assertEqual(self.frame(r)['id'], third['id'])
++        self.disconnect(c, r)
++
++    def test_disconnect_releases_observer_without_a_new_event(self):
++        self.start_servers()
++        c, r = self.stream()
++        self.assertEqual(len(self.runtime.ledger.listeners), 1)
++        self.disconnect(c, r)
++        with self.runtime.ledger.condition:
++            released = self.runtime.ledger.condition.wait_for(
++                lambda: not self.runtime.ledger.listeners, timeout=3)
++        self.assertTrue(released)
++        self.assertFalse(self.runtime.ledger.stopped)
++        self.assertEqual(self.runtime.ledger.replay(0), [])
++
++    def test_real_socket_restart_preserves_replay(self):
++        self.start_servers()
++        first = m.submit(self.state, self.event())['event']
++        self.stop_servers()
++        self.runtime.ledger.close()
++        self.runtime = m.Runtime(self.root, self.state, 'Goldkelch/qik-vrt', 1103)
++        self.start_servers()
++        second = m.submit(self.state, self.event('native:2'))['event']
++        c, r = self.stream('?after='+first['id'])
++        self.assertEqual(self.frame(r)['id'], second['id'])
++        self.disconnect(c, r)
++
++    def test_invalid_http_cursor_and_browser_writes_fail_closed(self):
++        self.start_servers()
++        for method, path, expected in [('GET', '/api/temdd/events?after=bad', 409),
++                ('GET', '/api/temdd/events?after=x&after=y', 409),
++                ('POST', '/api/temdd/events', 405)]:
++            status, data = self.request(method, path, body='{}' if method=='POST' else None)
++            self.assertEqual(status, expected)
++            self.assertEqual(json.loads(data)['state'], 'HOLD')
++        self.assertEqual(self.runtime.ledger.replay(0), [])
++
++    def test_foreign_origin_and_rebinding_host_are_rejected(self):
++        self.start_servers()
++        for headers in [{'Origin': 'https://untrusted.invalid'}, {'Host': 'untrusted.invalid'}]:
++            status, data = self.request('GET', '/api/temdd/subject', headers=headers)
++            self.assertEqual(status, 403)
++            self.assertFalse(json.loads(data)['dod'])
++
++    def test_ai_surface_and_subject_are_served(self):
++        self.start_servers()
++        status, data = self.request('GET', '/AI')
++        self.assertEqual(status, 200)
++        self.assertIn(b'/api/temdd/events', data)
++        status, data = self.request('GET', '/api/temdd/subject')
++        envelope = json.loads(data)
++        self.assertEqual(status, 200)
++        self.assertEqual(envelope['subject'], self.runtime.subject)
++        self.assertEqual(envelope['state'], 'HOLD_UNVERIFIED')
++        self.assertFalse(envelope['dod'])
++
++    def test_legacy_effect_ack_remains_exact_bound_and_single_use(self):
++        self.start_servers()
++        status, data = self.request('GET', '/.well-known/effect-ack')
++        self.assertEqual(status, 200)
++        self.assertEqual(json.loads(data)['external_effects'], 'NONE')
++        payload = json.dumps({'schema': 'qikvrt_terminal_input_v1', 'text': 'fixture'})
++        headers = {'Content-Type': 'application/json', 'Effect-Ack-Request': 'v=1, mode=prepare'}
++        status, data = self.request('POST', '/terminal/prepare', payload, headers)
++        prepared = json.loads(data)
++        self.assertEqual(status, 200)
++        headers['Effect-Ack-Request'] = ('v=1, mode=commit, token=' + m.terminal.sf_bytes(prepared['commit_token'].encode())
++                                       + ', hash=' + m.terminal.sf_bytes(bytes.fromhex(prepared['record_hash'])))
++        status, _ = self.request('POST', '/terminal/commit', payload.replace('fixture', 'different'), headers)
++        self.assertEqual(status, 409)
++        status, _ = self.request('POST', '/terminal/commit', payload, headers)
++        self.assertEqual(status, 200)
++        status, _ = self.request('POST', '/terminal/commit', payload, headers)
++        self.assertEqual(status, 409)
++        self.assertEqual(self.runtime.ledger.replay(0), [])  # terminal ACK is not a TEMDD proof
++
++    def test_cli_append_is_finite_and_returns_durable_readback(self):
++        self.start_servers()
++        command = [sys.executable, '-B', str(ROOT/'src/qikvrt_temdd_event_ledger.py'),
++                   'append', '--state-dir', str(self.state)]
++        result = subprocess.run(command, input=json.dumps(self.event('cli:1')),
++                                capture_output=True, text=True, timeout=10)
++        self.assertEqual(result.returncode, 0, result.stderr)
++        receipt = json.loads(result.stdout)
++        self.assertEqual(receipt['state'], 'PERSISTED')
++        self.assertFalse(receipt['authority_effect'])
++        self.assertEqual(self.runtime.ledger.replay(0), [receipt['event']])
++        wrong = self.event('cli:2')
++        wrong['subject']['head'] = '0'*40
++        result = subprocess.run(command, input=json.dumps(wrong),
++                                capture_output=True, text=True, timeout=10)
++        self.assertEqual(result.returncode, 2)
++        self.assertEqual(json.loads(result.stderr)['state'], 'HOLD')
++        self.assertEqual(len(self.runtime.ledger.replay(0)), 1)
++
++    def test_repository_entrypoint_and_test_admission(self):
++        entrypoint = (ROOT/'deploy/universal-terminal/entrypoint.sh').read_text()
++        self.assertIn('src/qikvrt_temdd_event_ledger.py serve', entrypoint)
++        self.assertIn('--state-dir "$STATE_DIR"', entrypoint)
++        subprocess.run(['sh', '-n', str(ROOT/'deploy/universal-terminal/entrypoint.sh')],
++                       check=True, timeout=5)
++        makefile = (ROOT/'Makefile').read_text()
++        self.assertIn('test: temdd-event-ledger-test', makefile)
++        self.assertIn('tests/test_temdd_event_ledger.py', makefile)
++        workflow = (ROOT/'.github/workflows/qikvrt_temdd.yml').read_text()
++        self.assertIn('github.event.pull_request.head.sha || github.sha', workflow)
++        self.assertIn('make temdd-event-ledger-test', workflow)
++        self.assertIn("'REPOSITORY_FILE_MANIFEST.json.sha256'", workflow)
++        self.assertNotIn("'REPOSITORY_FILE_MANIFEST.sha256'", workflow)
++
++    def test_browser_ide_is_local_editable_and_effect_free(self):
++        page = (ROOT/'docs/terminal/temdd/index.html').read_text(encoding='utf-8')
++        self.assertIn('id="ideSource"', page)
++        self.assertIn('ANALYZE → IR', page)
++        self.assertIn('function analyzeTemdd(text)', page)
++        self.assertIn('QIKVRT_DOD requires complete canonical predicate', page)
++        self.assertIn('TRANSPORT_ACK != EFFECT_ACK', page)
++        self.assertNotIn("fetch('/api/temdd/events',{method:'POST'", page)
++        self.assertNotIn('fetch("/api/temdd/events",{method:"POST"', page)
++
++    def test_browser_ide_parser_matches_reference_example_shape(self):
++        page = (ROOT/'docs/terminal/temdd/index.html').read_text(encoding='utf-8')
++        self.assertIn("schema:'temdd_ir_v0_1'", page)
++        self.assertIn("version!=='0.1'", page)
++        self.assertIn("binding:'exact'", page)
++        self.assertIn('FRESH_EFFECT_READBACK', page)
++
++    def test_consumer_validation_and_reconnect_state_machine(self):
++        js = r'''
++const fs=require('fs'),vm=require('vm'),assert=require('assert');
++const html=fs.readFileSync(process.argv[1],'utf8'),script=html.match(/<script>([\s\S]*)<\/script>/)[1];
++const elements=new Map(),storage=new Map(),sources=[];
++const subj={repository:'Goldkelch/qik-vrt',pr:1103,head:'a'.repeat(40),tree:'b'.repeat(40)},epoch='c'.repeat(32);
++class ES{constructor(url){this.url=url;this.handlers={};this.closed=false;sources.push(this);}addEventListener(n,f){this.handlers[n]=f;}close(){this.closed=true;}}
++const ctx={document:{getElementById(id){if(!elements.has(id))elements.set(id,{textContent:'',className:'',scrollHeight:0});return elements.get(id);}},
++ localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},EventSource:ES,
++ fetch:async()=>({ok:true,json:async()=>({subject:subj,ledger_id:epoch,dod:false,evidence_transfer:'DENY'})}),Date,JSON,BigInt,Number,Error,console};
++vm.createContext(ctx);vm.runInContext(script,ctx);
++setImmediate(()=>{try{
++ const es=sources[0];assert(es);es.onopen();assert.equal(elements.get('state').textContent,'CONNECTED');
++ es.handlers.subject({data:JSON.stringify({subject:subj,ledger_id:epoch,dod:false,evidence_transfer:'DENY'})});
++ assert.equal(elements.get('state').textContent,'OBSERVING');
++ const event={schema:'qikvrt_temdd_event_v1',subject:subj,id:epoch+':1',kind:'READBACK',message:'<script>not html</script>',dod:false,evidence_transfer:'DENY'};
++ es.onmessage({data:JSON.stringify(event),lastEventId:event.id});assert.equal(storage.size,1);
++ es.onerror();assert.equal(es.closed,false);assert.equal(elements.get('state').textContent,'HOLD');assert.equal(elements.get('dod').textContent,'NOT PROVEN');
++ es.onopen();es.handlers.subject({data:JSON.stringify({subject:subj,ledger_id:epoch,dod:false,evidence_transfer:'DENY'})});
++ event.id=epoch+':2';event.dod=true;es.onmessage({data:JSON.stringify(event),lastEventId:event.id});
++ assert.equal(es.closed,true);assert.equal(elements.get('dod').textContent,'NOT PROVEN');assert.equal([...storage.values()][0],epoch+':1');
++ console.log('consumer reconnect, exact-subject binding, and false-DONE rejection PASS');
++}catch(e){console.error(e);process.exitCode=1;}});
++'''
++        result = subprocess.run(['node', '-e', js, str(ROOT/'docs/terminal/temdd/index.html')],
++                                capture_output=True, text=True, timeout=15)
++        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
++
++
++if __name__ == '__main__':
++    unittest.main(verbosity=2)
+diff --git a/tests/test_temdd_runtime_subject_binding.py b/tests/test_temdd_runtime_subject_binding.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..58f5af0d026dfa9319f99b3beb8dcd6e30aec18d
+--- /dev/null
++++ b/tests/test_temdd_runtime_subject_binding.py
+@@ -0,0 +1,84 @@
++"""Exercise the actual shell guard and ledger argv without starting GUI services."""
++import os
++from pathlib import Path
++import subprocess
++import unittest
++
++
++ROOT = Path(__file__).resolve().parents[1]
++ENTRYPOINT = ROOT / "deploy/universal-terminal/entrypoint.sh"
++BEGIN = "# BEGIN TEMDD deployment subject binding"
++END = "# END TEMDD deployment subject binding"
++
++
++class TEMDDRuntimeSubjectBindingTests(unittest.TestCase):
++    @classmethod
++    def setUpClass(cls):
++        cls.source = ENTRYPOINT.read_text(encoding="utf-8")
++        if cls.source.count(BEGIN) != 1 or cls.source.count(END) != 1:
++            raise AssertionError("The tested subject guard must occur exactly once")
++        cls.guard = cls.source.split(BEGIN, 1)[1].split(END, 1)[0]
++        start = cls.source.index("python3 -B /opt/qikvrt/src/qikvrt_temdd_event_ledger.py serve")
++        stop = cls.source.index("\n  >", start)
++        cls.command = cls.source[start:stop].replace("\\\n", " ").rstrip()
++
++    def invoke(self, variables):
++        env = {key: value for key, value in os.environ.items()
++               if not key.startswith("QIKVRT_")}
++        env.update(variables)
++        script = ('set -eu\n' + self.guard + '\n'
++                  'HTTP_HOST=127.0.0.1\nHTTP_PORT=8771\nSTATE_DIR=/tmp/state\n'
++                  'python3() { printf "%s\\n" "$@"; }\n' + self.command + '\n')
++        return subprocess.run(["/bin/sh", "-c", script], env=env,
++                              capture_output=True, text=True, timeout=5)
++
++    def assert_subject(self, variables, expected):
++        result = self.invoke(variables)
++        self.assertEqual(result.returncode, 0, result.stderr)
++        args = result.stdout.splitlines()
++        self.assertIn("/opt/qikvrt/src/qikvrt_temdd_event_ledger.py", args)
++        self.assertEqual(args.count("--pr"), int(expected is not None))
++        if expected is not None:
++            self.assertEqual(args[-2:], ["--pr", expected])
++
++    def test_unsealed_reference_launch_keeps_compatibility(self):
++        self.assert_subject({}, None)
++
++    def test_explicit_pr_is_passed_as_two_arguments(self):
++        self.assert_subject({"QIKVRT_TEMDD_PR": "1124"}, "1124")
++
++    def test_exact_head_requires_explicit_pr(self):
++        result = self.invoke({"QIKVRT_EXACT_HEAD": "a" * 40})
++        self.assertNotEqual(result.returncode, 0)
++        self.assertIn("QIKVRT_TEMDD_PR", result.stderr)
++        self.assertEqual(result.stdout, "")
++
++    def test_exact_tree_requires_explicit_pr(self):
++        result = self.invoke({"QIKVRT_EXACT_TREE": "b" * 40})
++        self.assertNotEqual(result.returncode, 0)
++        self.assertIn("QIKVRT_TEMDD_PR", result.stderr)
++        self.assertEqual(result.stdout, "")
++
++    def test_exact_subject_uses_configured_pr_not_legacy_default(self):
++        self.assert_subject({"QIKVRT_EXACT_HEAD": "a" * 40,
++                             "QIKVRT_EXACT_TREE": "b" * 40,
++                             "QIKVRT_TEMDD_PR": "1124"}, "1124")
++
++    def test_invalid_pr_cannot_start_ledger(self):
++        for value in ("", "0", "01124", "-1", "1124;echo BAD", " 1124", "1124\n", "abc"):
++            with self.subTest(value=value):
++                result = self.invoke({"QIKVRT_TEMDD_PR": value})
++                self.assertNotEqual(result.returncode, 0)
++                self.assertIn("QIKVRT_TEMDD_PR", result.stderr)
++                self.assertEqual(result.stdout, "")
++
++    def test_guard_precedes_runtime_side_effects(self):
++        self.assertLess(self.source.index(BEGIN), self.source.index("mkdir -p"))
++        self.assertIn('"$@"', self.command)
++        result = subprocess.run(["/bin/sh", "-n", str(ENTRYPOINT)],
++                                capture_output=True, text=True, timeout=5)
++        self.assertEqual(result.returncode, 0, result.stderr)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tools/bootstrap-runtime.sh b/tools/bootstrap-runtime.sh
+index 348b15daf0a0a10497d9b1ba5a68ec8829dd2bb6..7d14967aca2c38c61845e4bf481c20c0cfcfa073 100644
+--- a/tools/bootstrap-runtime.sh
++++ b/tools/bootstrap-runtime.sh
+@@ -23,7 +23,7 @@ usage() {
+     cat <<'EOF'
+ Usage: tools/bootstrap-runtime.sh [--check-only] [--install]
+        [--accept-third-party]
+-       [--profile core|ietf|formal|audio|publication|all]
++       [--profile core|ietf|formal|audio|publication|smalltalk|all]
+        [--cache-dir PATH]
+ 
+ Every profile checks GitHub CLI first. Only the verified GitHub CLI and
+@@ -91,7 +91,7 @@ while [ "$#" -gt 0 ]; do
+ done
+ 
+ case "$PROFILE" in
+-    core|ietf|formal|audio|publication|all) ;;
++    core|ietf|formal|audio|publication|smalltalk|all) ;;
+     *) usage >&2; exit 2 ;;
+ esac
+ if [ "$MODE" = install ] && [ "$ACCEPT_THIRD_PARTY" -ne 1 ]; then
+@@ -389,6 +389,14 @@ check_audio_profile() {
+     fi
+ }
+ 
++check_smalltalk_profile() {
++    if [ "$MODE" = install ]; then
++        python3 "$ROOT/tools/qikvrt_smalltalk.py" install --cache-dir "$CACHE_DIR" || fail "Pharo installation failed"
++    elif ! python3 "$ROOT/tools/qikvrt_smalltalk.py" verify --cache-dir "$CACHE_DIR"; then
++        mark_continue "Run --install --accept-third-party --profile smalltalk for the locked Pharo runtime"
++    fi
++}
++
+ check_publication_profile() {
+     missing=
+     for tool in xelatex pdftotext pdftoppm; do
+@@ -412,12 +420,14 @@ case "$PROFILE" in
+     formal) check_formal_profile ;;
+     audio) check_audio_profile ;;
+     publication) check_publication_profile ;;
++    smalltalk) check_smalltalk_profile ;;
+     all)
+         check_core_profile
+         check_ietf_profile
+         check_formal_profile
+         check_audio_profile
+         check_publication_profile
++        check_smalltalk_profile
+         ;;
+ esac
+ 
+diff --git a/tools/qikvrt_distribution_readback.py b/tools/qikvrt_distribution_readback.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..b52198bc9989854ba5a300b3b65b2930fba49301
+--- /dev/null
++++ b/tools/qikvrt_distribution_readback.py
+@@ -0,0 +1,156 @@
++#!/usr/bin/env python3
++"""Bind and re-download complete distribution bytes; never infer product DONE."""
++from __future__ import annotations
++import argparse
++import datetime as dt
++import hashlib
++import json
++from pathlib import Path
++import re
++import tempfile
++import urllib.parse
++import urllib.request
++
++MANIFEST = 'qikvrt-distribution-manifest.json'
++REQUIRED = (
++    'qikvrt-megast-amd64.iso', 'qikvrt-megast-amd64.iso.sha256',
++    'qikvrt-megast-vmlinuz', 'qikvrt-megast-initrd',
++    'qikvrt-megast-filesystem.squashfs', 'qikvrt-netboot.json',
++    'qikvrt-universal-terminal-amd64.docker.tar',
++    'qikvrt-universal-terminal-amd64.docker.tar.sha256',
++    'qikvrt-universal-terminal-image-inspect.json',
++)
++
++def digest(path: Path) -> str:
++    h = hashlib.sha256()
++    with path.open('rb') as stream:
++        for block in iter(lambda: stream.read(1024 * 1024), b''):
++            h.update(block)
++    return h.hexdigest()
++
++
++def validate(manifest: dict, head: str, tree: str) -> None:
++    if not re.fullmatch(r'[0-9a-f]{40}', head) or not re.fullmatch(r'[0-9a-f]{40}', tree):
++        raise ValueError('exact HEAD/TREE required')
++    if manifest.get('schema') != 'qikvrt_distribution_manifest_v1':
++        raise ValueError('manifest schema mismatch')
++    if manifest.get('source_head') != head or manifest.get('source_tree') != tree:
++        raise ValueError('manifest subject mismatch')
++    assets = manifest.get('assets')
++    if not isinstance(assets, dict) or not set(REQUIRED) <= set(assets):
++        raise ValueError('complete ISO/netboot/Docker payload required')
++    for name, item in assets.items():
++        if not isinstance(name, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,199}', name):
++            raise ValueError('unsafe asset name')
++        if not isinstance(item, dict) or type(item.get('bytes')) is not int or not 0 < item['bytes'] <= 2**32:
++            raise ValueError('invalid asset byte count')
++        if not re.fullmatch(r'[0-9a-f]{64}', str(item.get('sha256', ''))):
++            raise ValueError('invalid asset hash')
++
++
++def create(root: Path, head: str, tree: str) -> dict:
++    assets = {}
++    for path in sorted(root.iterdir()):
++        if path.name in (MANIFEST, MANIFEST + '.sha256', 'qikvrt-public-readback.json'):
++            continue
++        if path.name.startswith('qikvrt-') or path.name == 'QIKVRT_BOOT.BIN':
++            if path.is_symlink() or not path.is_file():
++                raise ValueError('release asset must be a regular file: ' + path.name)
++            if path.stat().st_size:
++                assets[path.name] = {'sha256': digest(path), 'bytes': path.stat().st_size}
++    manifest = {'schema': 'qikvrt_distribution_manifest_v1', 'source_head': head,
++                'source_tree': tree, 'assets': assets, 'acceptance_scope': 'artifact_bytes_only',
++                'full_product_done': False, 'linux_distribution_done': False}
++    validate(manifest, head, tree)
++    path = root / MANIFEST
++    path.write_text(json.dumps(manifest, sort_keys=True, indent=2) + '\n', encoding='utf-8')
++    (root / (MANIFEST + '.sha256')).write_text(digest(path) + '  ' + MANIFEST + '\n', encoding='ascii')
++    return manifest
++
++
++def verify_local(root: Path, manifest: dict, head: str, tree: str) -> None:
++    validate(manifest, head, tree)
++    for name, item in manifest['assets'].items():
++        path = root / name
++        if path.is_symlink() or not path.is_file() or path.stat().st_size != item['bytes'] or digest(path) != item['sha256']:
++            raise ValueError('asset integrity mismatch: ' + name)
++
++
++class HTTPSRedirect(urllib.request.HTTPRedirectHandler):
++    def redirect_request(self, req, fp, code, msg, headers, newurl):
++        if urllib.parse.urlsplit(newurl).scheme != 'https':
++            raise ValueError('non-HTTPS redirect rejected')
++        return super().redirect_request(req, fp, code, msg, headers, newurl)
++
++
++def download(url: str, path: Path, expected_hash: str, expected_bytes: int | None = None) -> dict:
++    if urllib.parse.urlsplit(url).scheme != 'https':
++        raise ValueError('public HTTPS URL required')
++    opener = urllib.request.build_opener(HTTPSRedirect())
++    request = urllib.request.Request(url, headers={'User-Agent': 'qikvrt-public-readback/1', 'Cache-Control': 'no-cache'})
++    limit = expected_bytes if expected_bytes is not None else 1024 * 1024
++    h, total = hashlib.sha256(), 0
++    path.parent.mkdir(parents=True, exist_ok=True)
++    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
++        temporary = Path(stream.name)
++        try:
++            with opener.open(request, timeout=60) as response:
++                if response.status != 200:
++                    raise ValueError('public response is not HTTP 200')
++                for block in iter(lambda: response.read(1024 * 1024), b''):
++                    total += len(block)
++                    if total > limit:
++                        raise ValueError('public payload exceeds expected size')
++                    stream.write(block)
++                    h.update(block)
++            stream.flush()
++            if h.hexdigest() != expected_hash or (expected_bytes is not None and total != expected_bytes):
++                raise ValueError('public payload digest/size mismatch')
++            stream.close()
++            temporary.replace(path)
++        finally:
++            temporary.unlink(missing_ok=True)
++    return {'url': url, 'http_status': 200, 'bytes': total, 'sha256': h.hexdigest()}
++
++
++def readback(base: str, root: Path, manifest_hash: str, head: str, tree: str) -> dict:
++    if not re.fullmatch(r'[0-9a-f]{64}', manifest_hash):
++        raise ValueError('trusted manifest hash required')
++    root.mkdir(parents=True, exist_ok=True)
++    observations = {MANIFEST: download(base.rstrip('/') + '/' + MANIFEST, root / MANIFEST, manifest_hash)}
++    manifest = json.loads((root / MANIFEST).read_text(encoding='utf-8'))
++    validate(manifest, head, tree)
++    for name, item in manifest['assets'].items():
++        observations[name] = download(base.rstrip('/') + '/' + name, root / name, item['sha256'], item['bytes'])
++        print('PUBLIC_PAYLOAD_VERIFIED ' + name, flush=True)
++    verify_local(root, manifest, head, tree)
++    result = {'schema': 'qikvrt_distribution_public_readback_v1', 'observed_at': dt.datetime.now(dt.timezone.utc).isoformat(),
++              'source_head': head, 'source_tree': tree, 'manifest_sha256': manifest_hash,
++              'anonymous': True, 'observations': observations, 'artifact_bytes_verified': True,
++              'full_product_done': False, 'linux_distribution_done': False}
++    (root / 'qikvrt-public-readback.json').write_text(json.dumps(result, sort_keys=True, indent=2) + '\n', encoding='utf-8')
++    return result
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('mode', choices=('manifest', 'verify', 'readback'))
++    parser.add_argument('directory', type=Path)
++    parser.add_argument('head')
++    parser.add_argument('tree')
++    parser.add_argument('--base-url')
++    parser.add_argument('--manifest-sha256')
++    args = parser.parse_args()
++    if args.mode == 'manifest':
++        create(args.directory, args.head, args.tree)
++        print(digest(args.directory / MANIFEST))
++    elif args.mode == 'verify':
++        verify_local(args.directory, json.loads((args.directory / MANIFEST).read_text()), args.head, args.tree)
++    else:
++        if not args.base_url or not args.manifest_sha256:
++            parser.error('readback requires --base-url and --manifest-sha256')
++        readback(args.base_url, args.directory, args.manifest_sha256, args.head, args.tree)
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/tools/qikvrt_execution_precedence.py b/tools/qikvrt_execution_precedence.py
+index be423bca9996e873fcbbdb2285d699fd3788eae4..f7ad0d3a8e46ced0771df8356bf1637b06484292 100644
+--- a/tools/qikvrt_execution_precedence.py
++++ b/tools/qikvrt_execution_precedence.py
+@@ -16,6 +16,18 @@ class PrecedenceError(ValueError):
+     pass
+ 
+ 
++_CONVERGENCE_REPOSITORIES = {
++    "Goldkelch/qik-vrt",
++    "ingolf-lohmann/qik-vrt",
++}
++_CONVERGENCE_METRICS = (
++    "open_issues",
++    "open_pull_requests",
++    "open_work_branches",
++    "unclassified_branch_refs",
++)
++
++
+ def load_policy(path: Path) -> dict[str, Any]:
+     value = json.loads(path.read_text(encoding="utf-8"))
+     if not isinstance(value, dict):
+@@ -92,6 +104,49 @@ def validate_policy(policy: Mapping[str, Any]) -> None:
+         if not isinstance(spec, Mapping) or spec.get("requires") != [barrier]:
+             raise PrecedenceError(f"{ident}: must depend exactly on common barrier")
+ 
++    convergence = policy.get("repository_convergence")
++    if not isinstance(convergence, Mapping):
++        raise PrecedenceError("repository_convergence missing")
++    if convergence.get("schema") != "qikvrt_repository_carrier_convergence_v1":
++        raise PrecedenceError("unexpected repository convergence schema")
++    if convergence.get("completion_role") != "NECESSARY_NOT_SUFFICIENT":
++        raise PrecedenceError("repository convergence must be necessary but not sufficient")
++    repositories = convergence.get("repositories")
++    if (
++        not isinstance(repositories, list)
++        or len(repositories) != len(_CONVERGENCE_REPOSITORIES)
++        or any(
++            not isinstance(repository, str)
++            or repository not in _CONVERGENCE_REPOSITORIES
++            for repository in repositories
++        )
++        or len({repository for repository in repositories}) != len(repositories)
++    ):
++        raise PrecedenceError("repository convergence must cover Authority and Mirror")
++    targets = convergence.get("target_counts")
++    if not isinstance(targets, Mapping) or set(targets) != set(_CONVERGENCE_METRICS):
++        raise PrecedenceError("repository convergence target counts are incomplete")
++    for metric in _CONVERGENCE_METRICS:
++        if type(targets.get(metric)) is not int or targets[metric] != 0:
++            raise PrecedenceError(f"{metric}: repository convergence target must be integer zero")
++    branch_semantics = convergence.get("branch_count_semantics")
++    if not isinstance(branch_semantics, Mapping):
++        raise PrecedenceError("branch_count_semantics missing")
++    if branch_semantics.get("unclassified_branch_ref") != "BLOCKING_AND_COUNTED":
++        raise PrecedenceError("unclassified branch refs must block convergence")
++    global_barrier = convergence.get("global_completion_barrier")
++    if not isinstance(global_barrier, Mapping):
++        raise PrecedenceError("global completion barrier missing")
++    required = global_barrier.get("requires")
++    if not isinstance(required, list):
++        raise PrecedenceError("global completion requirements must be a list")
++    for gate in (
++        "AUTHORITY_REPOSITORY_CARRIERS_ZERO",
++        "MIRROR_REPOSITORY_CARRIERS_ZERO",
++    ):
++        if gate not in required:
++            raise PrecedenceError(f"global completion barrier missing {gate}")
++
+ 
+ def next_eligible(policy: Mapping[str, Any], states: Mapping[str, str]) -> dict[str, Any]:
+     """Return exact eligible nodes from declared predecessor state only.
+@@ -130,3 +185,93 @@ def next_eligible(policy: Mapping[str, Any], states: Mapping[str, str]) -> dict[
+         "blocked": blocked,
+         "hold_unverified": not bool(eligible),
+     }
++
++
++def evaluate_repository_convergence(
++    policy: Mapping[str, Any],
++    observations: Mapping[str, Any],
++) -> dict[str, Any]:
++    """Evaluate only the Authority/Mirror zero-carrier prerequisite.
++
++    The observation is external input and must already be a fresh authoritative
++    readback. This function checks exact binding fields and the zero targets; it
++    never promotes the result to publication, PASS, FINAL_PASS or EFFECT_ACK.
++    """
++    validate_policy(policy)
++    convergence = policy["repository_convergence"]
++    targets = convergence["target_counts"]
++    blockers: list[dict[str, Any]] = []
++    repository_states: dict[str, dict[str, Any]] = {}
++
++    for repository in convergence["repositories"]:
++        observation = observations.get(repository)
++        repo_blockers: list[dict[str, Any]] = []
++        normalized_counts: dict[str, int] = {}
++
++        if not isinstance(observation, Mapping):
++            repo_blockers.append({
++                "code": "MISSING_REPOSITORY_OBSERVATION",
++                "repository": repository,
++            })
++        else:
++            if observation.get("repository") != repository:
++                repo_blockers.append({
++                    "code": "REPOSITORY_BINDING_MISMATCH",
++                    "repository": repository,
++                })
++            for field in ("observed_at", "exact_main_sha", "exact_main_tree"):
++                value = observation.get(field)
++                if not isinstance(value, str) or not value.strip():
++                    repo_blockers.append({
++                        "code": "MISSING_EXACT_OBSERVATION_BINDING",
++                        "repository": repository,
++                        "field": field,
++                    })
++            counts = observation.get("counts")
++            if not isinstance(counts, Mapping):
++                repo_blockers.append({
++                    "code": "MISSING_CARRIER_COUNTS",
++                    "repository": repository,
++                })
++            else:
++                for metric in _CONVERGENCE_METRICS:
++                    value = counts.get(metric)
++                    if type(value) is not int or value < 0:
++                        repo_blockers.append({
++                            "code": "INVALID_CARRIER_COUNT",
++                            "repository": repository,
++                            "metric": metric,
++                            "observed": value,
++                        })
++                        continue
++                    normalized_counts[metric] = value
++                    if value != targets[metric]:
++                        repo_blockers.append({
++                            "code": "NONZERO_OPEN_CARRIER_COUNT",
++                            "repository": repository,
++                            "metric": metric,
++                            "observed": value,
++                            "required": targets[metric],
++                        })
++
++        blockers.extend(repo_blockers)
++        repository_states[repository] = {
++            "state": "SATISFIED" if not repo_blockers else "HOLD",
++            "counts": normalized_counts,
++            "blockers": repo_blockers,
++        }
++
++    satisfied = not blockers
++    return {
++        "schema": "qikvrt_repository_carrier_convergence_disposition_v1",
++        "state": "SATISFIED" if satisfied else "HOLD",
++        "repository_convergence_satisfied": satisfied,
++        "repository_states": repository_states,
++        "blockers": blockers,
++        "completion_claims": {
++            "GLOBAL_REPOSITORY_CONVERGED": False,
++            "PASS": False,
++            "FINAL_PASS": False,
++            "EFFECT_ACK_DONE": False,
++        },
++    }
+diff --git a/tools/qikvrt_firefox_package.py b/tools/qikvrt_firefox_package.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..79ba86c49efe6fd1010d3be01ef46aa30cd5c33b
+--- /dev/null
++++ b/tools/qikvrt_firefox_package.py
+@@ -0,0 +1,59 @@
++#!/usr/bin/env python3
++"""Build the existing Firefox reference adapter with every locale and resource."""
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++import zipfile
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++SOURCE = ROOT / "browser/firefox/qikvrt-terminal"
++
++
++def package(output: Path, source: Path = SOURCE) -> dict:
++    manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
++    required = {"manifest.json", "options.js", manifest["options_ui"]["page"]}
++    required.update(manifest["background"]["scripts"])
++    for script in manifest["content_scripts"]:
++        required.update(script.get("js", []))
++        required.update(script.get("css", []))
++    files = {p.relative_to(source).as_posix(): p for p in source.rglob("*") if p.is_file()}
++    missing = required - files.keys()
++    if missing:
++        raise ValueError(f"Missing Firefox resources: {sorted(missing)}")
++    catalogs = sorted(source.glob("_locales/*/messages.json"))
++    default = source / "_locales" / manifest["default_locale"] / "messages.json"
++    if default not in catalogs:
++        raise ValueError("Missing default locale")
++    default_keys = set(json.loads(default.read_text(encoding="utf-8")))
++    for path in catalogs:
++        messages = json.loads(path.read_text(encoding="utf-8"))
++        if set(messages) != default_keys or any(not v.get("message") for v in messages.values()):
++            raise ValueError(f"Incomplete locale: {path.parent.name}")
++    output = output.resolve()
++    if output.is_relative_to(source.resolve()):
++        raise ValueError("Package output must be outside the extension source")
++    output.parent.mkdir(parents=True, exist_ok=True)
++    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
++        for name, path in sorted(files.items()):
++            info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
++            info.create_system = 3
++            info.external_attr = 0o100644 << 16
++            info.compress_type = zipfile.ZIP_DEFLATED
++            archive.writestr(info, path.read_bytes(), compresslevel=9)
++    return {"path": str(output), "sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
++            "files": len(files), "locales": len(catalogs), "signed": False}
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--output", type=Path, required=True)
++    args = parser.parse_args()
++    print(json.dumps(package(args.output), sort_keys=True))
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/tools/qikvrt_live_sse.py b/tools/qikvrt_live_sse.py
+old mode 100644
+new mode 100755
+index 1d2f242a8463feb874d149500131964ac4420f6f..7d08e85cc93e3f5ce638e999f5ef55b7563b4cd6
+--- a/tools/qikvrt_live_sse.py
++++ b/tools/qikvrt_live_sse.py
+@@ -1,84 +1,241 @@
+ #!/usr/bin/env python3
+-"""Minimal dependency-free SSE relay for QIK-VRT JSONL event receipts.
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++"""Read-only SSE over an append-only JSONL journal; Linux inotify is the clock.
+ 
+-Observational transport only: it never creates repository effects.
++Regular files support independent replay/live cursors for every subscriber.
++A destructive FIFO cannot implement broadcast or durable resume and is rejected.
++No timer, GitHub query, fabricated receipt or repository mutation drives follow.
++An explicit bootstrap option creates only an empty private runtime journal.
+ """
+ from __future__ import annotations
+ 
+ import argparse
++import ctypes
+ import json
+ import os
+-import time
++import re
++import select
++import stat
+ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+ from pathlib import Path
++from urllib.parse import parse_qs, urlsplit
++
++MAX_LINE = 65536
+ 
+ 
+ def valid_event(obj: dict) -> bool:
+     required = {"schema", "event_id", "observed_at", "repository", "subject", "phase", "verb", "causal_state", "source", "productive_effect", "effect_ack", "payload"}
+-    return obj.get("schema") == "qikvrt_live_event_v1" and required.issubset(obj)
++    if not isinstance(obj, dict) or obj.get("schema") != "qikvrt_live_event_v1" or not required.issubset(obj):
++        return False
++    eid = obj["event_id"]
++    return (isinstance(eid, str) and 0 < len(eid) <= 512
++            and not any(c in eid for c in "\r\n\0")
++            and isinstance(obj["repository"], str)
++            and isinstance(obj["subject"], dict)
++            and isinstance(obj["source"], dict)
++            and isinstance(obj["payload"], dict)
++            and type(obj["productive_effect"]) is bool
++            and all(isinstance(obj[k], str) for k in ("observed_at", "phase", "verb", "causal_state", "effect_ack"))
++            and isinstance(obj["subject"].get("head_sha"), str)
++            and re.fullmatch(r"[0-9a-f]{40}", obj["subject"]["head_sha"]) is not None)
++
++
++def decode_event(raw: str):
++    try:
++        obj = json.loads(raw)
++    except (ValueError, TypeError):
++        return None
++    return obj if valid_event(obj) else None
+ 
+ 
+-def iter_events(path: Path, after: str | None = None):
+-    seen_after = after is None
+-    if not path.exists():
++class CursorMissing(ValueError):
++    pass
++
++
++def seek_after(fh, after: str | None) -> None:
++    """Resolve an exact cursor. An absent cursor is a conflict, never silent EOF."""
++    fh.seek(0)
++    if after is None:
+         return
+-    with path.open("r", encoding="utf-8") as fh:
+-        for raw in fh:
+-            raw = raw.strip()
+-            if not raw:
+-                continue
+-            obj = json.loads(raw)
+-            if not valid_event(obj):
+-                continue
+-            if not seen_after:
+-                if obj["event_id"] == after:
+-                    seen_after = True
++    if len(after) > 512 or any(c in after for c in "\r\n\0"):
++        raise CursorMissing("invalid cursor")
++    while True:
++        raw = fh.readline(MAX_LINE + 1)
++        if not raw:
++            raise CursorMissing("resume cursor not retained in journal")
++        if len(raw) > MAX_LINE or not raw.endswith(b"\n"):
++            raise CursorMissing("resume cursor not present in complete journal")
++        event = decode_event(raw)
++        if event is None:
++            raise ValueError("invalid receipt before cursor")
++        if event["event_id"] == after:
++            return
++
++
++class JournalReader:
++    """One consumer with bounded readline() and notification armed before replay.
++
++    The byte bound prevents a malformed unterminated record from exhausting RAM;
++    incomplete records stay at their original offset until an append completes.
++    """
++    def __init__(self, path, after=None, live=False):
++        self.path = Path(path)
++        self.notify = -1
++        self.fh = None
++        try:
++            fd = os.open(self.path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
++            self.fh = os.fdopen(fd, "rb", buffering=0)
++            info = os.fstat(fd)
++            if not stat.S_ISREG(info.st_mode):
++                raise ValueError("durable regular journal required; FIFO is not broadcast")
++            self.identity = (info.st_dev, info.st_ino)
++            if live:
++                libc = ctypes.CDLL(None, use_errno=True)
++                init = libc.inotify_init1
++                init.argtypes = [ctypes.c_int]; init.restype = ctypes.c_int
++                add = libc.inotify_add_watch
++                add.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_uint32]
++                add.restype = ctypes.c_int
++                self.notify = init(os.O_CLOEXEC)
++                if self.notify < 0:
++                    raise OSError(ctypes.get_errno(), "inotify initialization failed")
++                # IN_MODIFY | IN_ATTRIB | IN_CLOSE_WRITE | IN_DELETE_SELF | IN_MOVE_SELF
++                if add(self.notify, os.fsencode(self.path), 0x00000C0E) < 0:
++                    raise OSError(ctypes.get_errno(), "journal notification unavailable")
++            seek_after(self.fh, after)
++        except BaseException:
++            self.close()
++            raise
++
++    def close(self):
++        if self.fh is not None:
++            self.fh.close(); self.fh = None
++        if self.notify >= 0:
++            os.close(self.notify); self.notify = -1
++
++    def events(self, client=None):
++        while True:
++            info = self.path.stat(follow_symlinks=False)
++            offset = self.fh.tell()
++            if (info.st_dev, info.st_ino) != self.identity or info.st_size < offset:
++                raise ValueError("append-only journal replaced or truncated")
++            raw = self.fh.readline(MAX_LINE + 1)
++            if len(raw) > MAX_LINE:
++                raise ValueError("receipt exceeds stream bound")
++            if raw.endswith(b"\n"):
++                event = decode_event(raw)
++                if event is None:
++                    raise ValueError("invalid journal receipt")
++                yield event
+                 continue
+-            yield obj
++            # Do not consume an incomplete record. Wait for its append event.
++            self.fh.seek(offset)
++            if self.notify < 0:
++                return
++            waiting = [self.notify] + ([client] if client is not None else [])
++            ready, _, _ = select.select(waiting, [], [])
++            if client is not None and client in ready:
++                # EOF or unexpected pipelining ends this streaming connection.
++                return
++            os.read(self.notify, 65536)
++
++
++def follow_events(path: Path, after: str | None = None, *, live=False, client=None):
++    """Finite replay by default; live=True waits on OS append notifications."""
++    reader = JournalReader(path, after, live)
++    try:
++        yield from reader.events(client)
++    finally:
++        reader.close()
+ 
+ 
+ class Handler(BaseHTTPRequestHandler):
+     protocol_version = "HTTP/1.1"
+     events_path: Path
+-    poll_seconds: float
+ 
+-    def do_GET(self):
+-        if self.path not in ("/events", "/events/"):
+-            self.send_response(404); self.end_headers(); return
+-        self.send_response(200)
+-        self.send_header("Content-Type", "text/event-stream")
+-        self.send_header("Cache-Control", "no-cache")
+-        self.send_header("Connection", "keep-alive")
++    def failure(self, status, reason):
++        body = json.dumps({"state": "HOLD", "reason": reason, "ordinary_release": False}).encode()
++        self.send_response(status)
++        self.send_header("Content-Type", "application/json")
++        self.send_header("Content-Length", str(len(body)))
++        self.send_header("Cache-Control", "no-store")
++        self.send_header("Connection", "close")
+         self.end_headers()
+-        last = self.headers.get("Last-Event-ID") or None
+-        sent = last
++        self.wfile.write(body)
++        self.close_connection = True
++
++    def do_GET(self):
++        url = urlsplit(self.path)
++        if url.path not in ("/events", "/events/"):
++            self.failure(404, "unknown endpoint"); return
++        query = parse_qs(url.query, keep_blank_values=True)
++        if set(query) - {"since"} or len(query.get("since", [])) > 1:
++            self.failure(400, "invalid cursor query"); return
++        # EventSource sends a newer Last-Event-ID on reconnect; it takes precedence
++        # over the persisted startup cursor still present in the original URL.
++        after = self.headers.get("Last-Event-ID") or query.get("since", [None])[0] or None
++        try:
++            reader = JournalReader(self.events_path, after, live=True)
++        except CursorMissing as error:
++            self.failure(409, str(error)); return
++        except (OSError, ValueError, AttributeError):
++            self.failure(503, "append-only journal or OS notification unavailable"); return
+         try:
+-            while True:
+-                emitted = False
+-                for event in iter_events(self.events_path, sent):
+-                    payload = json.dumps(event, separators=(",", ":"), ensure_ascii=False)
+-                    frame = f"id: {event['event_id']}\nevent: qikvrt\ndata: {payload}\n\n".encode()
+-                    self.wfile.write(frame); self.wfile.flush()
+-                    sent = event["event_id"]; emitted = True
+-                if not emitted:
+-                    self.wfile.write(b": keepalive\n\n"); self.wfile.flush()
+-                time.sleep(self.poll_seconds)
++            self.send_response(200)
++            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
++            self.send_header("Cache-Control", "no-store")
++            self.send_header("X-Accel-Buffering", "no")
++            self.send_header("Connection", "close")
++            self.end_headers()
++            self.wfile.flush()
++            for event in reader.events(self.connection):
++                payload = json.dumps(event, separators=(",", ":"), ensure_ascii=False)
++                frame = f"id: {event['event_id']}\nevent: qikvrt\ndata: {payload}\n\n".encode()
++                self.wfile.write(frame)
++                self.wfile.flush()
+         except (BrokenPipeError, ConnectionResetError):
+-            return
++            pass
++        except (OSError, ValueError):
++            try:
++                self.wfile.write(b'event: qikvrt_stream_error\ndata: {"state":"HOLD","reason":"journal invalidated"}\n\n')
++                self.wfile.flush()
++            except OSError:
++                pass
++        finally:
++            reader.close()
++            self.close_connection = True
+ 
+     def log_message(self, fmt, *args):
+         return
+ 
+ 
++def prepare_journal(path: Path) -> None:
++    """Create a private empty runtime journal without truncating existing bytes.
++
++    This is storage initialization, not an observed event or source subscription.
++    Symlinks, FIFOs and device nodes cannot become journal carriers.
++    """
++    path = Path(path)
++    path.parent.mkdir(parents=True, exist_ok=True)
++    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
++    fd = os.open(path, flags, 0o600)
++    try:
++        if not stat.S_ISREG(os.fstat(fd).st_mode):
++            raise ValueError("durable regular journal required for initialization")
++    finally:
++        os.close(fd)
++
++
+ def main():
+     p = argparse.ArgumentParser()
+     p.add_argument("--events", default="state/live/QIKVRT_LIVE_EVENTS.jsonl")
+     p.add_argument("--host", default="127.0.0.1")
+     p.add_argument("--port", type=int, default=8787)
+-    p.add_argument("--poll-seconds", type=float, default=0.5)
++    p.add_argument("--initialize-journal", action="store_true", help="create an empty private journal only when missing; never truncate")
+     a = p.parse_args()
+     Handler.events_path = Path(a.events)
+-    Handler.poll_seconds = a.poll_seconds
++    if a.initialize_journal:
++        prepare_journal(Handler.events_path)
+     server = ThreadingHTTPServer((a.host, a.port), Handler)
+     server.serve_forever()
+ 
+diff --git a/tools/qikvrt_repository_dod.py b/tools/qikvrt_repository_dod.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..4e32299410fba2f1ae6e0fbd0b88996d6493bcd0
+--- /dev/null
++++ b/tools/qikvrt_repository_dod.py
+@@ -0,0 +1,149 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++"""Pure fail-closed repository-wide QIK-VRT Definition-of-Done evaluator."""
++
++from __future__ import annotations
++
++import json
++import sys
++
++PR_DISPOSITIONS = {"MERGE", "SUPERSEDE", "CLOSE_AS_REDUNDANT", "REJECT_WITH_EVIDENCE"}
++BRANCH_DISPOSITIONS = {"MERGED", "SUPERSEDED", "REDUNDANT", "HISTORICAL/RETAINED_BY_POLICY", "PRODUCTIVE_CURRENT_CANDIDATE", "PRODUCTIVE_UNMERGED"}
++ORDER = (
++    "ZERO_BUGS",
++    "ALL_PULL_REQUESTS_REGARDED",
++    "ALL_BRANCHES_REGARDED",
++    "ALL_PRODUCTIVE_BRANCHES_MERGED",
++    "FRESH_EXACT_MAIN_VALIDATION_PASS",
++    "FRESH_EXACT_MAIN_EFFECT_READBACK",
++)
++
++
++def _bool(value):
++    return value is True
++
++
++def _exact_subject(value, head, tree):
++    return (
++        isinstance(value, dict)
++        and _bool(value.get("fresh"))
++        and value.get("head") == head
++        and value.get("tree") == tree
++    )
++
++
++def evaluate(observation):
++    required = {
++        "repository",
++        "subject_head",
++        "subject_tree",
++        "inventory_complete",
++        "zero_bugs",
++        "pull_requests",
++        "branches",
++        "all_productive_branches_merged",
++        "main_validation",
++        "effect_readback",
++    }
++    missing = sorted(required.difference(observation))
++    if missing:
++        return _hold("INCOMPLETE_OBSERVATION_ENVELOPE", missing=missing)
++    if observation["repository"] != "Goldkelch/qik-vrt":
++        return _hold("WRONG_REPOSITORY")
++
++    head = observation["subject_head"]
++    tree = observation["subject_tree"]
++    if not isinstance(head, str) or len(head) != 40 or not isinstance(tree, str) or len(tree) != 40:
++        return _hold("UNBOUND_SUBJECT")
++    if not _bool(observation["inventory_complete"]):
++        return _hold("INVENTORY_INCOMPLETE", subject_head=head, subject_tree=tree)
++
++    zero = observation["zero_bugs"]
++    zero_ok = (
++        _exact_subject(zero, head, tree)
++        and zero.get("state") in {"ZERO_KNOWN_DETERMINISTIC_BUGS_LOCAL", "PASS"}
++        and _bool(zero.get("known_deterministic_defects_zero"))
++    )
++
++    prs = observation["pull_requests"]
++    prs_ok = (
++        isinstance(prs, list)
++        and all(isinstance(p, dict) and p.get("disposition") in PR_DISPOSITIONS for p in prs)
++    )
++
++    branches = observation["branches"]
++    branches_ok = (
++        isinstance(branches, list)
++        and all(
++            isinstance(b, dict)
++            and (
++                b.get("name") == "main"
++                or b.get("disposition") in BRANCH_DISPOSITIONS
++            )
++            for b in branches
++        )
++    )
++
++    productive_ok = _bool(observation["all_productive_branches_merged"])
++
++    validation = observation["main_validation"]
++    main_ok = (
++        _exact_subject(validation, head, tree)
++        and validation.get("state") == "PASS"
++    )
++
++    effect = observation["effect_readback"]
++    effect_ok = (
++        _exact_subject(effect, head, tree)
++        and _bool(effect.get("observed"))
++        and effect.get("effect_ack") == "EFFECT_ACK_DONE"
++    )
++
++    conjuncts = {
++        "ZERO_BUGS": zero_ok,
++        "ALL_PULL_REQUESTS_REGARDED": prs_ok,
++        "ALL_BRANCHES_REGARDED": branches_ok,
++        "ALL_PRODUCTIVE_BRANCHES_MERGED": productive_ok,
++        "FRESH_EXACT_MAIN_VALIDATION_PASS": main_ok,
++        "FRESH_EXACT_MAIN_EFFECT_READBACK": effect_ok,
++    }
++    blockers = [name for name in ORDER if not conjuncts[name]]
++    done = not blockers
++    return {
++        "schema": "qikvrt_repository_dod_evaluation_v1",
++        "state": "DONE" if done else "CONTINUE",
++        "done": done,
++        "effect_ack_done": done and effect_ok,
++        "noop_evaluated": False,
++        "noop_allowed": None,
++        "conjuncts": conjuncts,
++        "first_unsatisfied": blockers[0] if blockers else None,
++        "blockers": blockers,
++        "subject_head": head,
++        "subject_tree": tree,
++    }
++
++
++def _hold(reason, **extra):
++    result = {
++        "schema": "qikvrt_repository_dod_evaluation_v1",
++        "state": "HOLD_UNVERIFIED",
++        "done": False,
++        "effect_ack_done": False,
++        "noop_evaluated": False,
++        "noop_allowed": None,
++        "conjuncts": None,
++        "first_unsatisfied": reason,
++        "blockers": [reason],
++    }
++    result.update(extra)
++    return result
++
++
++def main():
++    observation = json.load(sys.stdin)
++    json.dump(evaluate(observation), sys.stdout, sort_keys=True, indent=2)
++    sys.stdout.write("\n")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/tools/qikvrt_repository_dod_census.py b/tools/qikvrt_repository_dod_census.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..b34d07087d9490e0137e9bb0c5f8c0076ab0579e
+--- /dev/null
++++ b/tools/qikvrt_repository_dod_census.py
+@@ -0,0 +1,317 @@
++#!/usr/bin/env python3
++"""Read-only exact-subject census for QIK-VRT repository DoD carriers."""
++
++from __future__ import annotations
++
++import argparse
++import json
++from pathlib import Path
++import subprocess
++from typing import Any, Mapping
++
++PR_ALLOWED = {"MERGE", "SUPERSEDE", "CLOSE_AS_REDUNDANT", "REJECT_WITH_EVIDENCE"}
++BRANCH_ALLOWED = {
++    "MERGED",
++    "SUPERSEDED",
++    "REDUNDANT",
++    "HISTORICAL/RETAINED_BY_POLICY",
++    "PRODUCTIVE_CURRENT_CANDIDATE",
++    "PRODUCTIVE_UNMERGED",
++}
++MARKER = "<!-- qikvrt-dod-pr-disposition:"
++OBSERVED_SCHEMA = "qikvrt_open_pr_snapshot_v1"
++UNAVAILABLE_SCHEMA = "qikvrt_open_pr_snapshot_unavailable_v1"
++
++
++def git(*args: str) -> str:
++    return subprocess.check_output(["git", *args], text=True).strip()
++
++
++def ancestor(commit: str, subject: str) -> bool | None:
++    probe = subprocess.run(
++        ["git", "merge-base", "--is-ancestor", commit, subject],
++        text=True,
++        capture_output=True,
++        check=False,
++    )
++    if probe.returncode == 0:
++        return True
++    if probe.returncode == 1:
++        return False
++    return None
++
++
++def same_tree(left: str, right: str) -> bool | None:
++    try:
++        return git("rev-parse", left + "^{tree}") == git("rev-parse", right + "^{tree}")
++    except subprocess.CalledProcessError:
++        return None
++
++
++def explicit_pr_disposition(body: Any) -> str | None:
++    if not isinstance(body, str):
++        return None
++    for value in PR_ALLOWED:
++        if f"{MARKER}{value} -->" in body:
++            return value
++    return None
++
++
++def classify_pr(pr: Mapping[str, Any], subject: str, current_pr: int) -> dict[str, Any]:
++    number = pr.get("number")
++    head_obj = pr.get("head") or {}
++    head = head_obj.get("sha") if isinstance(head_obj, Mapping) else None
++    head_ref = head_obj.get("ref") if isinstance(head_obj, Mapping) else None
++    row = {
++        "number": number,
++        "head": head,
++        "head_ref": head_ref,
++        "state": pr.get("state"),
++    }
++    if not isinstance(number, int) or not isinstance(head, str) or len(head) != 40:
++        return {**row, "regarded": False, "disposition": "UNREGARDED", "reason": "INVALID_PR_IDENTITY"}
++    if number == current_pr and head == subject:
++        return {**row, "regarded": True, "disposition": "MERGE", "reason": "CURRENT_FINAL_CANDIDATE"}
++    rel = ancestor(head, subject)
++    if rel is True:
++        return {**row, "regarded": True, "disposition": "SUPERSEDE", "reason": "HEAD_ANCESTOR_OF_CANDIDATE"}
++    explicit = explicit_pr_disposition(pr.get("body"))
++    if explicit is not None:
++        return {**row, "regarded": True, "disposition": explicit, "reason": "EXPLICIT_EVIDENCE_BOUND_DISPOSITION"}
++    return {
++        **row,
++        "regarded": False,
++        "disposition": "UNREGARDED",
++        "reason": "HEAD_NOT_PROVED_ABSORBED_OR_DISPOSED",
++        "ancestor_probe": rel,
++    }
++
++
++def _linked_branch_disposition(pr: Mapping[str, Any]) -> tuple[str, str] | None:
++    if pr.get("regarded") is not True:
++        return None
++    disposition = pr.get("disposition")
++    if disposition == "SUPERSEDE":
++        return "SUPERSEDED", "OPEN_PR_PROVES_SUPERSESSION"
++    if disposition == "CLOSE_AS_REDUNDANT":
++        return "REDUNDANT", "OPEN_PR_PROVES_REDUNDANCY"
++    if disposition == "REJECT_WITH_EVIDENCE":
++        return "HISTORICAL/RETAINED_BY_POLICY", "OPEN_PR_EVIDENCE_BOUND_REJECTION"
++    if disposition == "MERGE":
++        return "PRODUCTIVE_UNMERGED", "REGARDED_OPEN_PR_REMAINS_PRODUCTIVE"
++    return None
++
++
++def classify_branch(
++    name: str,
++    tip: str,
++    subject: str,
++    main_head: str,
++    pr_by_ref: Mapping[str, Mapping[str, Any]] | None = None,
++) -> dict[str, Any]:
++    row = {"name": name, "tip": tip}
++    if name == "main":
++        return {**row, "regarded": True, "disposition": "MERGED", "reason": "DEFAULT_BRANCH"}
++    if tip == subject:
++        if subject == main_head:
++            return {**row, "regarded": True, "disposition": "REDUNDANT", "reason": "TIP_EQUALS_EXACT_MAIN"}
++        return {
++            **row,
++            "regarded": True,
++            "disposition": "PRODUCTIVE_CURRENT_CANDIDATE",
++            "reason": "EXACT_FINAL_CANDIDATE",
++        }
++
++    rel = ancestor(tip, subject)
++    if rel is True:
++        return {**row, "regarded": True, "disposition": "SUPERSEDED", "reason": "TIP_ANCESTOR_OF_CANDIDATE"}
++
++    equal = same_tree(tip, subject)
++    if equal is True:
++        return {**row, "regarded": True, "disposition": "REDUNDANT", "reason": "TREE_IDENTICAL_TO_CANDIDATE"}
++
++    linked = (pr_by_ref or {}).get(name)
++    if isinstance(linked, Mapping) and linked.get("head") == tip:
++        derived = _linked_branch_disposition(linked)
++        if derived is not None:
++            disposition, reason = derived
++            return {
++                **row,
++                "regarded": True,
++                "disposition": disposition,
++                "reason": reason,
++                "pull_request": linked.get("number"),
++            }
++
++    return {
++        **row,
++        "regarded": False,
++        "disposition": "UNREGARDED",
++        "reason": "TIP_NOT_PROVED_ABSORBED_OR_DISPOSED",
++        "ancestor_probe": rel,
++        "tree_equal_probe": equal,
++    }
++
++
++def flatten_pages(value: Any) -> list[dict[str, Any]]:
++    if not isinstance(value, list):
++        raise ValueError("open PR snapshot must be a JSON list")
++    if value and all(isinstance(page, list) for page in value):
++        rows = [row for page in value for row in page]
++    else:
++        rows = value
++    if not all(isinstance(row, dict) for row in rows):
++        raise ValueError("open PR snapshot contains a non-object")
++    return rows
++
++
++def load_pr_snapshot(path: Path) -> tuple[list[dict[str, Any]], bool, str | None, str]:
++    value = json.loads(path.read_text(encoding="utf-8"))
++    if isinstance(value, Mapping) and value.get("schema") == UNAVAILABLE_SCHEMA:
++        if value.get("state") != "HOLD_UNVERIFIED":
++            raise ValueError("unavailable PR snapshot must be HOLD_UNVERIFIED")
++        reason = value.get("reason")
++        if not isinstance(reason, str) or not reason:
++            raise ValueError("unavailable PR snapshot requires reason")
++        return [], False, reason, "UNAVAILABLE"
++
++    if isinstance(value, Mapping) and value.get("schema") == OBSERVED_SCHEMA:
++        if value.get("state") != "OBSERVED":
++            raise ValueError("observed PR snapshot must be OBSERVED")
++        source = value.get("source")
++        if source not in {"REST", "GRAPHQL"}:
++            raise ValueError("observed PR snapshot requires REST or GRAPHQL source")
++        return flatten_pages(value.get("pull_requests")), True, None, source
++
++    return flatten_pages(value), True, None, "LEGACY_LIST"
++
++
++def branch_rows() -> list[tuple[str, str]]:
++    raw = git("for-each-ref", "--format=%(refname:short)\t%(objectname)", "refs/remotes/origin/")
++    rows: list[tuple[str, str]] = []
++    for line in raw.splitlines():
++        if not line.strip():
++            continue
++        name, tip = line.split("\t", 1)
++        if name == "origin/HEAD":
++            continue
++        if not name.startswith("origin/"):
++            continue
++        rows.append((name[len("origin/"):], tip))
++    return rows
++
++
++def build(repository: str, subject: str, tree: str, current_pr: int, open_prs: Path) -> dict[str, Any]:
++    actual_head = git("rev-parse", "HEAD")
++    actual_tree = git("rev-parse", "HEAD^{tree}")
++    if (actual_head, actual_tree) != (subject, tree):
++        raise ValueError("EXACT_SUBJECT_DRIFT")
++
++    main_head = git("rev-parse", "refs/remotes/origin/main")
++    prs, pr_snapshot_complete, pr_snapshot_reason, pr_snapshot_source = load_pr_snapshot(open_prs)
++    pr_rows = [classify_pr(pr, subject, current_pr) for pr in prs]
++    pr_by_ref = {
++        row["head_ref"]: row
++        for row in pr_rows
++        if isinstance(row.get("head_ref"), str) and row["head_ref"]
++    }
++    branches = [
++        classify_branch(name, tip, subject, main_head, pr_by_ref)
++        for name, tip in branch_rows()
++    ]
++
++    unregarded_prs = [row["number"] for row in pr_rows if not row["regarded"]]
++    unregarded_branches = [row["name"] for row in branches if not row["regarded"]]
++    productive_unmerged = [
++        row["name"]
++        for row in branches
++        if row.get("disposition") in {"PRODUCTIVE_CURRENT_CANDIDATE", "PRODUCTIVE_UNMERGED"}
++    ]
++    candidate_on_main = subject == main_head
++    inventory_complete = pr_snapshot_complete
++
++    all_prs_regarded = pr_snapshot_complete and not unregarded_prs
++    all_branches_regarded = not unregarded_branches
++    all_productive_merged = (
++        inventory_complete
++        and candidate_on_main
++        and all_prs_regarded
++        and all_branches_regarded
++        and not productive_unmerged
++    )
++
++    reasons: list[str] = []
++    if not pr_snapshot_complete:
++        reasons.append("OPEN_PR_SNAPSHOT_UNAVAILABLE:" + str(pr_snapshot_reason))
++
++    return {
++        "schema": "qikvrt_repository_dod_census_v1",
++        "repository": repository,
++        "subject": {"head": subject, "tree": tree},
++        "main_head": main_head,
++        "state": "OBSERVED" if inventory_complete else "HOLD_UNVERIFIED",
++        "inventory_complete": inventory_complete,
++        "inventory_reasons": reasons,
++        "pr_snapshot": {
++            "complete": pr_snapshot_complete,
++            "reason": pr_snapshot_reason,
++            "source": pr_snapshot_source,
++            "fabricated_fallback": False,
++        },
++        "branch_snapshot": {
++            "complete": True,
++            "source": "FETCHED_GIT_REFS",
++        },
++        "counts": {
++            "open_pull_requests": len(pr_rows) if pr_snapshot_complete else None,
++            "branch_refs": len(branches),
++            "unregarded_pull_requests": len(unregarded_prs) if pr_snapshot_complete else None,
++            "unregarded_branches": len(unregarded_branches),
++            "productive_unmerged_branches": len(productive_unmerged),
++        },
++        "all_pull_requests_regarded": all_prs_regarded,
++        "all_branches_regarded": all_branches_regarded,
++        "all_productive_branches_merged": all_productive_merged,
++        "pull_requests": pr_rows,
++        "branches": branches,
++        "unregarded_pull_requests": unregarded_prs if pr_snapshot_complete else [],
++        "unregarded_branches": unregarded_branches,
++        "productive_unmerged_branches": productive_unmerged,
++        "predecessor_evidence_transfer": False,
++    }
++
++
++def main() -> int:
++    p = argparse.ArgumentParser()
++    p.add_argument("--repository", required=True)
++    p.add_argument("--subject-head", required=True)
++    p.add_argument("--subject-tree", required=True)
++    p.add_argument("--current-pr", required=True, type=int)
++    p.add_argument("--open-prs", required=True, type=Path)
++    p.add_argument("--output", required=True, type=Path)
++    args = p.parse_args()
++    try:
++        report = build(
++            args.repository,
++            args.subject_head,
++            args.subject_tree,
++            args.current_pr,
++            args.open_prs,
++        )
++    except (OSError, ValueError, subprocess.CalledProcessError) as exc:
++        print("HOLD_UNVERIFIED " + str(exc))
++        return 2
++
++    args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
++    print(json.dumps({
++        "state": report["state"],
++        "inventory_complete": report["inventory_complete"],
++        "counts": report["counts"],
++        "inventory_reasons": report["inventory_reasons"],
++        "pr_snapshot_source": report["pr_snapshot"]["source"],
++    }, sort_keys=True))
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/tools/qikvrt_requested_review_executor.py b/tools/qikvrt_requested_review_executor.py
+index 37352e3f6305284b166b88e97a4a7504af3ac07d..4461ea11760588acf547475982696c1113067e8c 100644
+--- a/tools/qikvrt_requested_review_executor.py
++++ b/tools/qikvrt_requested_review_executor.py
+@@ -43,6 +43,7 @@ TRUSTED_EVALUATOR_PATH = "tools/qikvrt_requested_review_executor.py"
+ TRUSTED_WORKFLOW_PATH = ".github/workflows/qikvrt_requested_review_executor.yml"
+ REVIEW_MARKER = "qikvrt-mesh-review:v1"
+ LIVE_STATUS_MARKER = "qikvrt-live-status-watch"
++HUMAN_AUTHORITY_REVIEW_MARKER = "qikvrt-human-exact-scope-review-confirmation-v1"
+ TRUSTED_AUTOMATION_DISCUSSION_PREFIXES = (
+     f"<!-- {REVIEW_MARKER} ",
+     f"<!-- {LIVE_STATUS_MARKER} -->",
+@@ -176,10 +177,10 @@ def review_queue_intent(
+         raise ReviewSnapshotError("queue pull request number is invalid")
+     if not isinstance(receipt_path, str) or not isinstance(diff_path, str):
+         raise ReviewSnapshotError("queue evidence paths are invalid")
+-    path = f"{REVIEW_QUEUE_ROOT}/pr-{pr_number}/{head}/{fingerprint}.json"
++    path = f"{REVIEW_QUEUE_ROOT}/pr-{pr_number}/{head}/{predecessor}/{fingerprint}.json"
+     return path, {
+         "schema": "qikvrt_mesh_review_queue_intent_v1",
+-        "work_unit_id": f"pr-{pr_number}/{head}/{fingerprint}",
++        "work_unit_id": f"pr-{pr_number}/{head}/{predecessor}/{fingerprint}",
+         "repository": repository,
+         "pr_number": pr_number,
+         "head_sha": head,
+@@ -1200,18 +1201,24 @@ def _discussion_items(snapshot: Mapping[str, Any]) -> list[dict[str, Any]]:
+         if key in seen:
+             raise ReviewSnapshotError(f"duplicate discussion item: {kind}/{identifier}")
+         seen.add(key)
+-        result.append(
+-            {
+-                "kind": kind,
+-                "id": identifier,
+-                "author": item.get("author"),
+-                "author_association": item.get("author_association"),
+-                "state": item.get("state"),
+-                "commit_id": item.get("commit_id"),
+-                "updated_at": updated_at,
+-                "body_sha256": body_sha256,
+-            }
+-        )
++        entry = {
++            "kind": kind,
++            "id": identifier,
++            "author": item.get("author"),
++            "author_association": item.get("author_association"),
++            "state": item.get("state"),
++            "commit_id": item.get("commit_id"),
++            "updated_at": updated_at,
++            "body_sha256": body_sha256,
++        }
++        if "authority_scope_paths" in item:
++            authority_scope_paths = item.get("authority_scope_paths")
++            if not isinstance(authority_scope_paths, list) or not all(
++                isinstance(path, str) for path in authority_scope_paths
++            ):
++                raise ReviewSnapshotError("discussion authority_scope_paths must be a string list")
++            entry["authority_scope_paths"] = sorted(set(authority_scope_paths))
++        result.append(entry)
+     result.sort(key=lambda item: (item["kind"], item["id"]))
+     return result
+ 
+@@ -1843,19 +1850,49 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
+             findings=findings,
+             **common,
+         )
+-    authority = next(
+-        (finding for finding in findings if finding["severity"] == "AUTHORITY_REQUIRED"),
++    authority_findings = [
++        finding for finding in findings if finding["severity"] == "AUTHORITY_REQUIRED"
++    ]
++    authority_paths: set[str] = set()
++    for item in discussion:
++        if (
++            item.get("kind") == "PULL_REQUEST_REVIEW"
++            and item.get("state") == "COMMENTED"
++            and item.get("commit_id") == head
++            and item.get("author") != "github-actions[bot]"
++            and item.get("author_association") in {"OWNER", "MEMBER", "COLLABORATOR"}
++        ):
++            raw_paths = item.get("authority_scope_paths", [])
++            if isinstance(raw_paths, list) and all(isinstance(path, str) for path in raw_paths):
++                authority_paths.update(raw_paths)
++    unsatisfied_authority = next(
++        (
++            finding for finding in authority_findings
++            if not isinstance(finding.get("path"), str)
++            or finding.get("path") not in authority_paths
++        ),
+         None,
+     )
+-    if authority is not None:
++    if unsatisfied_authority is not None:
+         return _result(
+             snapshot,
+             "COMMENT_WITH_BLOCKER",
+-            str(authority["finding_id"]),
+-            str(authority["detail"]),
++            str(unsatisfied_authority["finding_id"]),
++            str(unsatisfied_authority["detail"]),
+             findings=findings,
+             **common,
+         )
++    for authority in authority_findings:
++        findings.append(
++            _finding(
++                "MESH_AUTHORITY_SATISFIED_BY_OWNER_DECLARATION",
++                "INFO",
++                "exact-head native human review satisfies this workflow permission finding",
++                path=str(authority["path"]),
++                line=authority.get("line"),
++                evidence_sha256=authority.get("evidence_sha256"),
++            )
++        )
+ 
+     if writers:
+         return _result(
+@@ -2693,6 +2730,23 @@ def _discussion_observation(repository: str, number: int) -> list[dict[str, Any]
+             )
+             if not isinstance(updated, str) or not updated:
+                 raise ReviewObservationError(f"{kind} lacks an observation timestamp")
++            authority_scope_paths: list[str] = []
++            if (
++                kind == "PULL_REQUEST_REVIEW"
++                and author != "github-actions[bot]"
++                and item.get("state") == "COMMENTED"
++                and item.get("author_association") in {"OWNER", "MEMBER", "COLLABORATOR"}
++            ):
++                marker = re.match(
++                    rf"^<!-- {re.escape(HUMAN_AUTHORITY_REVIEW_MARKER)}:{number}:([0-9a-f]{{40}}) -->",
++                    body,
++                )
++                if marker is not None and item.get("commit_id") == marker.group(1):
++                    authority_scope_paths = sorted(set(re.findall(
++                        r"^- \`(\.github/workflows/[^\`]+)\`: Git-Blob \`[0-9a-f]{40}\`; Workflow-Deklaration \`permissions\.contents: write\`\.$",
++                        body,
++                        flags=re.MULTILINE,
++                    )))
+             result.append(
+                 {
+                     "kind": kind,
+@@ -2703,6 +2757,7 @@ def _discussion_observation(repository: str, number: int) -> list[dict[str, Any]
+                     "commit_id": item.get("commit_id"),
+                     "updated_at": updated,
+                     "body_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
++                    "authority_scope_paths": authority_scope_paths,
+                 }
+             )
+     result.sort(key=lambda item: (item["kind"], item["id"]))
+diff --git a/tools/qikvrt_smalltalk.py b/tools/qikvrt_smalltalk.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..20ef6eff3399f89e4e449ee2db5662edd8062eb5
+--- /dev/null
++++ b/tools/qikvrt_smalltalk.py
+@@ -0,0 +1,192 @@
++#!/usr/bin/env python3
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++"""Pinned Pharo bootstrap, reproducible source loading and exhaustive C90 comparison.
++
++Extends bootstrap-runtime's language profiles. Base image/cache bytes never acquire
++authority through a mutable live image; every build starts from the hash-locked ZIP.
++"""
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++import os
++from pathlib import Path
++import platform
++import shutil
++import subprocess
++import sys
++import tempfile
++import urllib.request
++import zipfile
++
++ROOT = Path(__file__).resolve().parents[1]
++LOCK_PATH = ROOT / "runtime/toolchains/pharo-13.lock.json"
++
++
++def digest(path: Path) -> str:
++    with path.open("rb") as stream:
++        return hashlib.file_digest(stream, "sha256").hexdigest()
++
++
++def run(command: list[str], cwd: Path) -> None:
++    subprocess.run(command, cwd=cwd, check=True, timeout=600)
++
++
++def cache_path(cache: Path, lock: dict) -> Path:
++    return cache / "pharo" / lock["version"]
++
++
++def verify(cache: Path, lock: dict) -> Path:
++    directory = cache_path(cache, lock)
++    for kind in ("image", "vm"):
++        archive = directory / (kind + ".zip")
++        if digest(archive) != lock[kind]["sha256"]:
++            raise ValueError(f"{kind}: archive digest mismatch")
++        with zipfile.ZipFile(archive) as source:
++            for member in source.infolist():
++                if member.is_dir():
++                    continue
++                path = directory / kind / member.filename
++                if path.is_symlink() or not path.resolve().is_relative_to((directory / kind).resolve()):
++                    raise ValueError("unsafe cache member")
++                if digest(path) != hashlib.sha256(source.read(member)).hexdigest():
++                    raise ValueError(f"{kind}: extracted bytes changed: {member.filename}")
++    return directory
++
++
++def install(cache: Path, lock: dict, archive_dir: Path | None = None) -> Path:
++    if platform.system() != "Linux" or platform.machine() not in ("x86_64", "AMD64"):
++        raise ValueError("Pharo lock is for Linux x86_64")
++    target = cache_path(cache, lock)
++    if target.exists():
++        return verify(cache, lock)
++    target.parent.mkdir(parents=True, exist_ok=True)
++    temporary = Path(tempfile.mkdtemp(prefix=".install-", dir=target.parent))
++    try:
++        for kind in ("image", "vm"):
++            archive = temporary / (kind + ".zip")
++            print(f"PHARO_FETCH {kind}", flush=True)
++            if archive_dir:
++                shutil.copyfile(archive_dir / (kind + ".zip"), archive)
++            else:
++                with urllib.request.urlopen(lock[kind]["url"], timeout=120) as response, archive.open("wb") as output:
++                    shutil.copyfileobj(response, output)
++            if digest(archive) != lock[kind]["sha256"]:
++                raise ValueError(f"{kind}: downloaded archive digest mismatch")
++            with zipfile.ZipFile(archive) as source:
++                for member in source.infolist():
++                    path = temporary / kind / member.filename
++                    if not path.resolve().is_relative_to((temporary / kind).resolve()):
++                        raise ValueError("unsafe archive path")
++                source.extractall(temporary / kind)
++                for member in source.infolist():
++                    path = temporary / kind / member.filename
++                    if path.is_file() and member.external_attr >> 16 & 0o111:
++                        path.chmod(0o755)
++        temporary.rename(target)
++    finally:
++        if temporary.exists():
++            shutil.rmtree(temporary)
++    print("PHARO_INSTALL_COMPLETE", flush=True)
++    return verify(cache, lock)
++
++
++def build(directory: Path, lock: dict, output: Path) -> Path:
++    output.mkdir(parents=True, exist_ok=True)
++    image = output / "QIKVRT.image"
++    if image.exists():
++        raise ValueError("Refusing to overwrite an existing mutable image")
++    shutil.copyfile(directory / "image" / lock["image"]["file"], image)
++    original_changes = (directory / "image" / lock["image"]["file"]).with_suffix(".changes")
++    shutil.copyfile(original_changes, image.with_suffix(".changes"))
++    for source in (directory / "image").glob("*.sources"):
++        shutil.copyfile(source, output / source.name)
++    vm = str(directory / "vm" / lock["vm"]["file"])
++    run([vm, "--headless", str(image), "st", str(ROOT / "src/smalltalk/QikvrtEffectAck.st"), str(ROOT / "src/smalltalk/save-image.st")], output)
++    run([vm, "--headless", str(image), "st", str(ROOT / "src/smalltalk/smoke.st")], output)
++    receipt = {"schema": "qikvrt_smalltalk_image_v1", "lock_sha256": digest(LOCK_PATH),
++               "source_sha256": digest(ROOT / "src/smalltalk/QikvrtEffectAck.st"),
++               "image_sha256": digest(image), "image_restored": True, "effect_ack_done": False}
++    (output / "smalltalk-image-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
++    return image
++
++
++def test(directory: Path, lock: dict) -> None:
++    with tempfile.TemporaryDirectory(prefix="qikvrt-smalltalk-") as temp:
++        work = Path(temp)
++        image = build(directory, lock, work)
++        run([str(directory / "vm" / lock["vm"]["file"]), "--headless", str(image), "st", str(ROOT / "tests/smalltalk/core-vectors.st")], work)
++        executable = work / "c90-vectors"
++        run([os.environ.get("CC", "cc"), "-std=c90", "-pedantic", "-Wall", "-Wextra", "-Werror", "-O2", "-I" + str(ROOT / "include"), str(ROOT / "src/effect_ack_core.c"), str(ROOT / "tests/smalltalk/core-vectors.c"), "-o", str(executable)], work)
++        with (work / "c90-vectors.bin").open("wb") as output:
++            subprocess.run([str(executable)], stdout=output, check=True, timeout=60)
++        a, b = work / "c90-vectors.bin", work / "smalltalk-vectors.bin"
++        if a.stat().st_size != 2621440 or b.stat().st_size != 2621440 or digest(a) != digest(b):
++            raise ValueError("Smalltalk/C90 exhaustive result mismatch")
++        # Also use the existing rich Python engine on representable boundary
++        # cases. Its evidence parser is intentionally not replaced by the C ABI.
++        sys.path.insert(0, str(ROOT / "src"))
++        from qikvrt_effect_ack import EffectAckEngine, ConnectionDecision, RiskLevel
++        sys.path.insert(0, str(ROOT))
++        from tests.test_effect_ack_conformance import request
++        vectors = a.read_bytes()
++        cases = [(122879, 2, {}, 100)]
++        fields = {0: "transport_ack", 1: "input_id", 3: "origin_checked", 4: "context_checked",
++                  5: "semantics_reconstructed", 6: "effect_anticipated", 7: "risk_classified",
++                  8: "risk_level", 9: "responsibility_assigned", 10: "responsibility_owner",
++                  12: "policy_allows_release", 14: "open_questions", 15: "next_required_checks", 16: "evidence_refs"}
++        for bit, field in fields.items():
++            value = False
++            if field in ("input_id", "responsibility_owner"): value = ""
++            if field == "risk_level": value = RiskLevel.UNKNOWN
++            if field in ("open_questions", "next_required_checks"): value = ("pending",)
++            if field == "evidence_refs": value = ()
++            mask = 122879 & ~(1 << bit)
++            if field == "transport_ack":
++                # A rich Python request without acknowledged reception has no
++                # effect-checkable input identity. The core consumes verified
++                # facts, not the raw request's non-empty identifier string.
++                mask &= ~(1 << 1)
++            cases.append((mask, 2, {field: value}, 100))
++        for code, decision in enumerate(ConnectionDecision):
++            mask = 122879 if code != 0 else 122879 & ~(1 << 11)
++            cases.append((mask, code, {"connection_decision": decision}, 100))
++        cases += [(122879 | (1 << 13), 2, {}, 0),
++                  (122879 | (1 << 18), 2, {"declared_input_hash": "0" * 64}, 100),
++                  (122879 & ~(1 << 2), 2, {"payload": None, "declared_input_hash": None}, 100)]
++        names = ["EFFECT_NACK", "EFFECT_ACK_CONTINUE", "EFFECT_ACK_DONE", "EFFECT_ACK_ISOLATE", "EFFECT_ACK_BLOCK"]
++        for mask, decision, changes, timeout in cases:
++            result = EffectAckEngine(clock_ns=lambda: 0).evaluate(request(**changes), timeout_ms=timeout)
++            if result.state.value != names[vectors[mask * 5 + decision]]:
++                raise ValueError(f"Python/C90/Smalltalk boundary mismatch: {mask}/{decision}")
++        print(f"QIKVRT_PYTHON_C90_SMALLTALK_BOUNDARIES={len(cases)}")
++        print(f"QIKVRT_SMALLTALK_C90_EXHAUSTIVE_MATCH vectors=2621440 sha256={digest(a)}")
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("command", choices=("verify", "install", "build", "test"))
++    parser.add_argument("--cache-dir", type=Path, default=Path(os.environ.get("QIKVRT_TOOLCHAIN_CACHE", ROOT / ".qikvrt/toolchains")))
++    parser.add_argument("--archive-dir", type=Path)
++    parser.add_argument("--output", type=Path)
++    args = parser.parse_args()
++    lock = json.loads(LOCK_PATH.read_text())
++    try:
++        directory = install(args.cache_dir.resolve(), lock, args.archive_dir) if args.command == "install" else verify(args.cache_dir.resolve(), lock)
++        if args.command == "build":
++            if not args.output:
++                parser.error("build requires --output")
++            build(directory, lock, args.output.resolve())
++        if args.command == "test":
++            test(directory, lock)
++        print(f"PHARO_{args.command.upper()}_OK version={lock['version']}")
++        return 0
++    except (OSError, ValueError, zipfile.BadZipFile, subprocess.SubprocessError) as error:
++        print(f"BLOCK: {error}")
++        return 1
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/tools/qikvrt_temdd.py b/tools/qikvrt_temdd.py
+new file mode 100755
+index 0000000000000000000000000000000000000000..740b757baca640ca4f3300b8669d0ebf09439efc
+--- /dev/null
++++ b/tools/qikvrt_temdd.py
+@@ -0,0 +1,30 @@
++#!/usr/bin/env python3
++"""TEMDD v0.1 deterministic reference parser/elaborator."""
++import json,re,sys
++from pathlib import Path
++ID=r"[A-Za-z][A-Za-z0-9_-]*"
++QIKVRT_DOD={'ZERO_BUGS','ALL_PULL_REQUESTS_REGARDED','ALL_BRANCHES_REGARDED','ALL_PRODUCTIVE_BRANCHES_MERGED','FRESH_EXACT_MAIN_VALIDATION_PASS','FRESH_EFFECT_READBACK'}
++def parse(text):
++ def one(p,label,src=None):
++  m=re.search(p,text if src is None else src,re.S)
++  if not m: raise ValueError('missing '+label)
++  return m
++ v=one(r"^\s*temdd\s+([0-9.]+)\s*;",'version').group(1)
++ if v!='0.1': raise ValueError('unsupported version')
++ a=one(r"authority\s+"+ID+r"\s*=\s*\"([^\"]+)\"\s*;",'authority').group(1)
++ s=one(r"subject\s+("+ID+r")\s*\{(.*?)\}",'subject'); sb=s.group(2)
++ rm=one(r"repository\s*=\s*\"([^\"]+)\"\s*;",'repository',sb); one(r"binding\s*=\s*exact\s*;",'exact binding',sb)
++ q=one(r"request\s+("+ID+r")\s*\{\s*target\s*=\s*("+ID+r")\s*;\s*\}",'request'); target=q.group(2)
++ handlers=[]
++ for m in re.finditer(r"on\s+(event|blocker)\s*\{(.*?)\}",text,re.S): handlers.append({'event':m.group(1),'statements':[x.strip() for x in m.group(2).split(';') if x.strip()]})
++ d=one(r"until\s*\{(.*?)\}",'until').group(1).strip().rstrip(';'); dod=[x.strip() for x in d.split('&&') if x.strip()]
++ if not handlers or not dod: raise ValueError('handlers and DoD required')
++ if len(set(dod))!=len(dod): raise ValueError('duplicate DoD predicate')
++ if target=='QIKVRT_DOD' and set(dod)!=QIKVRT_DOD: raise ValueError('QIKVRT_DOD requires complete canonical predicate')
++ return {'schema':'temdd_ir_v0_1','version':v,'authority':a,'subject':{'name':s.group(1),'repository':rm.group(1),'binding':'exact'},'request':{'name':q.group(1),'target':target},'handlers':handlers,'dod':dod}
++def main(argv):
++ if len(argv)!=2:return 64
++ try: ir=parse(Path(argv[1]).read_text(encoding='utf-8'))
++ except (OSError,ValueError) as e: print('BLOCK '+str(e),file=sys.stderr);return 2
++ print(json.dumps(ir,sort_keys=True,separators=(',',':')));return 0
++if __name__=='__main__':raise SystemExit(main(sys.argv))
+diff --git a/tools/qikvrt_temdd_conformance.py b/tools/qikvrt_temdd_conformance.py
+new file mode 100755
+index 0000000000000000000000000000000000000000..d8d3b99ea7eabb11e048757856f2ee1b43ce30ad
+--- /dev/null
++++ b/tools/qikvrt_temdd_conformance.py
+@@ -0,0 +1,21 @@
++#!/usr/bin/env python3
++"""TEMDD semantic conformance T01-T12. Fail closed."""
++from collections import namedtuple
++Evidence=namedtuple('Evidence','subject kind fresh')
++DOD=('ZERO_BUGS','ALL_PULL_REQUESTS_REGARDED','ALL_BRANCHES_REGARDED','ALL_PRODUCTIVE_BRANCHES_MERGED','FRESH_EXACT_MAIN_VALIDATION_PASS','FRESH_EFFECT_READBACK')
++def evidence(subject,kind,fresh=True): return Evidence(subject,kind,fresh)
++def admits(e,subject,kind): return e.subject==subject and e.kind==kind and e.fresh
++def successor(subject,mutation): return subject+'@successor:'+mutation
++def done(predicates): return all(bool(predicates.get(x,False)) for x in DOD)
++def check():
++ s='repo@head/tree'; t=successor(s,'m1'); e=evidence(s,'validation')
++ assert admits(e,s,'validation') and not admits(e,t,'validation')
++ assert 'TRANSPORT_ACK'!='EFFECT_ACK' and 'RESULT'!='EFFECT'
++ assert {'HOLD','CONTINUE'}.isdisjoint({'NOOP','DONE'})
++ assert not done({x:True for x in DOD if x!='ALL_PULL_REQUESTS_REGARDED'})
++ assert not admits(evidence(s,'authority',False),s,'authority')
++ p={x:True for x in DOD}; p['FRESH_EFFECT_READBACK']=False; assert not done(p)
++ assert 'UNKNOWN' not in {'EFFECT_ACK','DONE'}
++ assert t!=s and not admits(e,t,'validation')
++ print('TEMDD_CONFORMANCE T01-T12 PASS')
++if __name__=='__main__': check()
+diff --git a/tools/qikvrt_unattended_pr_disposition.py b/tools/qikvrt_unattended_pr_disposition.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..dc1930079e39ff61b52eec3d7cb0fd0961f37055
+--- /dev/null
++++ b/tools/qikvrt_unattended_pr_disposition.py
+@@ -0,0 +1,196 @@
++#!/usr/bin/env python3
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++"""Deterministic fail-closed disposition classifier for unattended pull requests.
++
++This module is intentionally effect-free. It projects one exact-bound pull-request
++observation to exactly one current disposition from the canonical Issue #929
++state set. Repository workflows may consume the result, but review, merge, close,
++publication and other effects remain separate authority-bearing operations.
++"""
++from __future__ import annotations
++
++import argparse
++import json
++import sys
++from dataclasses import asdict, dataclass
++from pathlib import Path
++from typing import Any, Mapping, Sequence
++
++DISPOSITIONS = frozenset(
++    {
++        "ACTIVE_EXECUTION",
++        "READY_FOR_INDEPENDENT_REVIEW",
++        "HOLD_WITH_FIRST_CAUSAL_BLOCKER",
++        "REBIND_REQUIRED",
++        "MERGE_READY",
++        "EXTERNAL_EFFECT_PENDING",
++        "CLOSE_AS_SUPERSEDED",
++        "MERGED",
++        "CLOSED_NOT_PLANNED_WITH_CAUSE",
++    }
++)
++
++
++@dataclass(frozen=True)
++class Disposition:
++    disposition: str
++    first_causal_blocker: str | None
++    next_action: str
++
++    def to_mapping(self) -> dict[str, object]:
++        value: dict[str, object] = asdict(self)
++        value["PASS"] = False
++        value["FINAL_PASS"] = False
++        value["EFFECT_ACK_DONE"] = False
++        return value
++
++
++def _required_str(value: object, field: str) -> str:
++    if not isinstance(value, str) or not value.strip():
++        raise ValueError(f"{field} must be a non-empty string")
++    return value.strip()
++
++
++def _required_bool(value: object, field: str) -> bool:
++    if not isinstance(value, bool):
++        raise ValueError(f"{field} must be boolean")
++    return value
++
++
++def _required_nonnegative_int(value: object, field: str) -> int:
++    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
++        raise ValueError(f"{field} must be a non-negative integer")
++    return value
++
++
++def classify(observation: Mapping[str, object]) -> Disposition:
++    """Return exactly one disposition for one exact-bound PR observation.
++
++    Precedence is causal and fail-closed: terminal repository state first; then
++    supersession and base drift; then active execution; then observed blockers;
++    then independent-review and external-effect boundaries; finally merge-ready.
++    Missing evidence cannot become MERGE_READY.
++    """
++
++    repository = _required_str(observation.get("repository"), "repository")
++    del repository  # validation is the binding; no repository-specific behavior.
++    _required_nonnegative_int(observation.get("pull_request"), "pull_request")
++    head_sha = _required_str(observation.get("head_sha"), "head_sha")
++    base_sha = _required_str(observation.get("base_sha"), "base_sha")
++    current_main_sha = _required_str(
++        observation.get("current_main_sha"), "current_main_sha"
++    )
++    if not all(len(value) == 40 for value in (head_sha, base_sha, current_main_sha)):
++        raise ValueError("head_sha, base_sha and current_main_sha must be 40 characters")
++
++    state = _required_str(observation.get("state"), "state")
++    merged = _required_bool(observation.get("merged"), "merged")
++    superseded = _required_bool(observation.get("superseded"), "superseded")
++    active_workflows = _required_nonnegative_int(
++        observation.get("active_workflows"), "active_workflows"
++    )
++    failed_workflows = _required_nonnegative_int(
++        observation.get("failed_workflows"), "failed_workflows"
++    )
++    gates_complete = _required_bool(observation.get("gates_complete"), "gates_complete")
++    review_required = _required_bool(
++        observation.get("review_required"), "review_required"
++    )
++    review_satisfied = _required_bool(
++        observation.get("review_satisfied"), "review_satisfied"
++    )
++    external_effect_pending = _required_bool(
++        observation.get("external_effect_pending"), "external_effect_pending"
++    )
++
++    raw_blocker = observation.get("first_causal_blocker")
++    if raw_blocker is not None and (
++        not isinstance(raw_blocker, str) or not raw_blocker.strip()
++    ):
++        raise ValueError("first_causal_blocker must be null or a non-empty string")
++    blocker = raw_blocker.strip() if isinstance(raw_blocker, str) else None
++
++    if merged:
++        if state != "closed":
++            raise ValueError("merged pull request must be closed")
++        return Disposition("MERGED", None, "NOOP")
++    if state == "closed":
++        return Disposition(
++            "CLOSED_NOT_PLANNED_WITH_CAUSE",
++            blocker or "CLOSED_WITHOUT_MERGE",
++            "NOOP",
++        )
++    if state != "open":
++        raise ValueError("state must be open or closed")
++    if superseded:
++        return Disposition("CLOSE_AS_SUPERSEDED", blocker or "SUPERSEDED", "CLOSE_PR")
++    if base_sha != current_main_sha:
++        return Disposition(
++            "REBIND_REQUIRED",
++            "BASE_DRIFT",
++            "HISTORY_PRESERVING_REBIND_TO_CURRENT_MAIN",
++        )
++    if active_workflows:
++        return Disposition("ACTIVE_EXECUTION", None, "REOBSERVE_ON_TERMINAL_DELTA")
++    if blocker is not None:
++        return Disposition("HOLD_WITH_FIRST_CAUSAL_BLOCKER", blocker, "PRESERVE_HOLD")
++    if failed_workflows:
++        return Disposition(
++            "HOLD_WITH_FIRST_CAUSAL_BLOCKER",
++            "EXACT_HEAD_GATE_FAILURE",
++            "CLASSIFY_FIRST_FAILED_GATE",
++        )
++    if not gates_complete:
++        return Disposition(
++            "HOLD_WITH_FIRST_CAUSAL_BLOCKER",
++            "EXACT_HEAD_EVIDENCE_INCOMPLETE",
++            "REOBSERVE_EXACT_HEAD_GATES",
++        )
++    if review_required and not review_satisfied:
++        return Disposition(
++            "READY_FOR_INDEPENDENT_REVIEW",
++            None,
++            "REQUEST_OR_REOBSERVE_INDEPENDENT_REVIEW",
++        )
++    if external_effect_pending:
++        return Disposition(
++            "EXTERNAL_EFFECT_PENDING",
++            None,
++            "PRESERVE_EXTERNAL_EFFECT_BOUNDARY",
++        )
++    return Disposition("MERGE_READY", None, "REQUEST_AUTHORIZED_PROMOTION")
++
++
++def _read(path: str) -> Mapping[str, object]:
++    stream = sys.stdin if path == "-" else Path(path).open(encoding="utf-8")
++    try:
++        value: Any = json.load(stream)
++    finally:
++        if stream is not sys.stdin:
++            stream.close()
++    if not isinstance(value, Mapping):
++        raise ValueError("input must be a JSON object")
++    return value
++
++
++def main(argv: Sequence[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--input", required=True)
++    parser.add_argument("--output", default="-")
++    args = parser.parse_args(argv)
++    try:
++        value = classify(_read(args.input)).to_mapping()
++        text = json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n"
++        if args.output == "-":
++            sys.stdout.write(text)
++        else:
++            Path(args.output).write_text(text, encoding="utf-8")
++    except (OSError, ValueError, json.JSONDecodeError) as exc:
++        print(f"BLOCK: {exc}", file=sys.stderr)
++        return 2
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
