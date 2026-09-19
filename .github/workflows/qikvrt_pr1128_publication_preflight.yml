@@ -25,7 +25,7 @@ jobs:
           fetch-depth: 2
           path: candidate
           persist-credentials: false
-      - name: Materialize bounded companion files and exact three integrity projections
+      - name: Materialize bounded companions, canonical publication indexes and integrity
         env:
           GH_TOKEN: ${{ github.token }}
           PYTHONDONTWRITEBYTECODE: '1'
@@ -60,19 +60,24 @@ jobs:
           expected=sorted(D+'/'+n for n in ['AUTHORIZE_EXACT_UPLOAD.txt','BOUNDARY_TEST_REPORT.json','CLAIM_MATRIX.json','MACHINE_PROOF_BUNDLE.json','PREPUBLICATION_RETURN_RECEIPT.json','PUBLICATION_CONTROL_PENDING.json','QUELLEN_UND_GELTUNGSBEREICH.md','README.md','SOURCE_BINDINGS.json','ZENODO_METADATA.json','verify_publication_scope.py'])
           assert sorted(git('ls-files','--others','--exclude-standard').splitlines())==expected,'extra untracked file'
           projections=['REPOSITORY_FILE_MANIFEST.json','REPOSITORY_FILE_MANIFEST.json.sha256','SHA256SUMS.txt']
+          indexes=['docs/publications/index.json','docs/publications/index.html']
+          # The new README participates in the existing mandatory discovery contract.
+          run('python3','-B','tools/qikvrt_publication_overview.py','materialize','--json')
+          run('python3','-B','tools/qikvrt_publication_overview.py','check','--json')
           run('python3','-B','tools/qikvrt_integrity.py','generate');run('python3','-B','tools/qikvrt_integrity.py','verify')
-          digest={p:sha(p) for p in projections}
-          run('python3','-B','tools/qikvrt_integrity.py','generate');assert digest=={p:sha(p) for p in projections}
-          assert sorted(git('diff','--name-only',H).splitlines())==sorted(projections)
+          digest={p:sha(p) for p in projections+indexes}
+          run('python3','-B','tools/qikvrt_publication_overview.py','materialize','--json')
+          run('python3','-B','tools/qikvrt_integrity.py','generate');assert digest=={p:sha(p) for p in projections+indexes}
+          assert sorted(git('diff','--name-only',H).splitlines())==sorted(projections+indexes)
           run('make','test');run('python3','-B',D+'/verify_publication_scope.py')
-          git('add','--',*expected,*projections)
+          git('add','--',*expected,*projections,*indexes)
           result_tree=git('write-tree')
           git('config','user.name','qikvrt-publication-materializer');git('config','user.email','qikvrt-publication-materializer@users.noreply.github.com')
-          message='docs(publication): bind PR1128 sources, claim disposition and exact return\n\nOriginal article bytes unchanged. Only publication companions and three canonical integrity projections.\nPREDECESSOR_EVIDENCE_TRANSFER=false\nIndependent native review and exact natural-person upload authorization remain separate and unestablished. No publication or EFFECT claim.'
+          message='docs(publication): bind PR1128 sources, claims and exact return\n\nOriginal article bytes unchanged. Only publication companions, two canonical discovery indexes and three integrity projections.\nPREDECESSOR_EVIDENCE_TRANSFER=false\nIndependent native review and exact natural-person upload authorization remain separate and unestablished. No publication or EFFECT claim.'
           result=git('commit-tree',result_tree,'-p',H,'-m',message)
           git('checkout','--detach',result)
           assert git('rev-list','--parents','-n','1',result).split()==[result,H]
-          assert sorted(git('diff','--name-only',H,result).splitlines())==sorted(expected+projections)
+          assert sorted(git('diff','--name-only',H,result).splitlines())==sorted(expected+projections+indexes)
           assert git('rev-parse',result+':'+A)=='03e7b116568e9470bd66cb0460392f5b3021c682'
           run('make','test');run('python3','-B',D+'/verify_publication_scope.py');run('python3','-B','tools/qikvrt_integrity.py','verify')
           sys.path.insert(0,str(pathlib.Path.cwd()))
@@ -81,7 +86,6 @@ jobs:
           from tools import qikvrt_zenodo_actions as transport
           control=json.loads(pathlib.Path(D+'/PUBLICATION_CONTROL_PENDING.json').read_text())
           checked=proof.validate_bundle(pathlib.Path.cwd(),pathlib.Path(D+'/MACHINE_PROOF_BUNDLE.json'),upload_paths=control['intended_upload_paths'])
-          # Independently exercise the missing-owner boundary; a proof is not authorization.
           try:pub._validate_owner_authorization(None,pathlib.Path.cwd(),'Goldkelch/qik-vrt',{},[],{},pathlib.Path(D+'/zenodo-publication.json'),result)
           except transport.ZenodoError:owner_rejected=True
           else:raise RuntimeError('missing owner authorization was admitted')
@@ -90,9 +94,8 @@ jobs:
           assert git('ls-remote','--heads','origin',ref)=='','transport already exists'
           run('gh','auth','setup-git');git('push','--porcelain','origin',result+':'+ref)
           assert git('ls-remote','--heads','origin',ref).split()==[result,ref]
-          receipt={'schema':'qikvrt_pr1128_proof_materialization_receipt_v1','source_head':H,'source_tree':T,'result_head':result,'result_tree':result_tree,'direct_parent':H,'transport_ref':ref,'article_sha256':S,'article_unchanged':True,'changed_paths':sorted(expected+projections),'successor_make_test':'success','successor_scope_tests':'success','successor_machine_proof':checked,'missing_owner_authorization_rejected':owner_rejected,'PR_ref_changed':False,'PREDECESSOR_EVIDENCE_TRANSFER':False,'native_P3':False,'owner_exact_upload_authorized':False,'production_mutations':0,'EFFECT_ACK_DONE':False,'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT']}
+          receipt={'schema':'qikvrt_pr1128_proof_materialization_receipt_v1','source_head':H,'source_tree':T,'result_head':result,'result_tree':result_tree,'direct_parent':H,'transport_ref':ref,'article_sha256':S,'article_unchanged':True,'changed_paths':sorted(expected+projections+indexes),'successor_make_test':'success','successor_scope_tests':'success','successor_machine_proof':checked,'missing_owner_authorization_rejected':owner_rejected,'PR_ref_changed':False,'PREDECESSOR_EVIDENCE_TRANSFER':False,'native_P3':False,'owner_exact_upload_authorized':False,'production_mutations':0,'EFFECT_ACK_DONE':False,'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT']}
           (OUT/'RECEIPT.json').write_text(json.dumps(receipt,indent=2,sort_keys=True)+'\n')
-          # Public unauthenticated readback binds the generated subject, not the carrier.
           url='https://raw.githubusercontent.com/Goldkelch/qik-vrt/'+result+'/'+A
           readback={'subject_head':result,'subject_tree':result_tree,'url':url,'authorization_header_sent':False,'observed_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'status':None,'byte_exact':False}
           class NoRedirect(urllib.request.HTTPRedirectHandler):
