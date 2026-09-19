@@ -52,14 +52,12 @@ jobs:
                   raise RuntimeError('command failed: '+args[0]+' exit='+str(p.returncode))
               return raw.strip()
           def git(*args): return run('git','-c','core.hooksPath=/dev/null',*args)
-          def api(path): return json.loads(run('gh','api','repos/'+REPO+'/'+path))
           def guard():
-              p=api('pulls/1128')
-              need(p['number']==1128 and p['state']=='open' and not p['merged'] and not p['draft'],'PR metadata changed')
-              need(p['head']['sha']==HEAD and p['head']['ref']==BRANCH and p['head']['repo']['full_name']==REPO,'PR subject changed')
-              need(p['base']['sha']==BASE and p['base']['ref']=='main' and p['base']['repo']['full_name']==REPO,'PR base changed')
-              c=api('git/commits/'+HEAD)
-              need(c['sha']==HEAD and c['tree']['sha']==TREE,'source Git object mismatch')
+              head_ref='refs/heads/'+BRANCH
+              base_ref='refs/heads/main'
+              refs={line.split()[1]:line.split()[0] for line in git('ls-remote','--heads','origin',head_ref,base_ref).splitlines()}
+              need(refs=={head_ref:HEAD,base_ref:BASE},'source or base branch changed')
+              need(git('rev-parse',HEAD+'^{tree}')==TREE,'source Git object mismatch')
           def hashes(): return {p:hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() for p in PATHS}
           def integrity(mode): run('python3','-B','tools/qikvrt_integrity.py',mode)
           need(os.environ.get('GITHUB_REPOSITORY')==REPO,'wrong executor repository')
@@ -105,10 +103,10 @@ jobs:
           run('gh','auth','setup-git')
           git('push','--porcelain','origin',result_commit+':'+ref)
           need(git('ls-remote','--heads','origin',ref).split()==[result_commit,ref],'transport readback mismatch')
-          c=api('git/commits/'+result_commit)
-          need(c['sha']==result_commit and c['tree']['sha']==result_tree and [x['sha'] for x in c['parents']]==[HEAD],'remote successor object mismatch')
+          need(git('rev-parse',result_commit+'^{tree}')==result_tree,'successor tree mismatch')
+          need(git('rev-list','--parents','-n','1',result_commit).split()==[result_commit,HEAD],'successor parent mismatch')
           guard()
-          receipt={'schema':'qikvrt_pr1128_bounded_integrity_receipt_v1','repository':REPO,'pr':1128,'source_head':HEAD,'source_tree':TREE,'result_commit':result_commit,'result_tree':result_tree,'transport_ref':ref,'article_sha256':article_sha256,'article_blob':article_blob,'changed_paths':PATHS,'files':{p:{'sha256':generated[p],'bytes':pathlib.Path(p).stat().st_size,'git_blob':git('rev-parse',result_commit+':'+p)} for p in PATHS},'generator_idempotence':True,'successor_make_test':'success_on_exact_committed_subject','successor_integrity_verify':True,'pr_ref_mutation':False,'PREDECESSOR_EVIDENCE_TRANSFER':False,'native_P3':False,'P4':False,'Main_promotion':False,'release':False,'publication':False,'EFFECT_ACK_DONE':False,'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT']}
+          receipt={'schema':'qikvrt_pr1128_bounded_integrity_receipt_v1','repository':REPO,'pr':1128,'source_head':HEAD,'source_tree':TREE,'result_commit':result_commit,'result_tree':result_tree,'transport_ref':ref,'article_sha256':article_sha256,'article_blob':article_blob,'changed_paths':PATHS,'files':{p:{'sha256':generated[p],'bytes':pathlib.Path(p).stat().st_size,'git_blob':git('rev-parse',result_commit+':'+p)} for p in PATHS},'generator_idempotence':True,'successor_make_test':'success_on_exact_committed_subject','successor_integrity_verify':True,'pr_ref_mutation':False,'canonical_pr_metadata_validation':'separate_connector_before_adoption','PREDECESSOR_EVIDENCE_TRANSFER':False,'native_P3':False,'P4':False,'Main_promotion':False,'release':False,'publication':False,'EFFECT_ACK_DONE':False,'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT']}
           (OUT/'RECEIPT.json').write_text(json.dumps(receipt,indent=2,sort_keys=True)+'\n',encoding='utf-8')
           print(json.dumps(receipt,sort_keys=True),flush=True)
           PY
