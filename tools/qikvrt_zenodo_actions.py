@@ -661,6 +661,15 @@ def _metadata_matches(actual: Any, expected: Any) -> bool:
     return actual == expected
 
 
+def _description_matches(actual: Any, expected: Any) -> bool:
+    """Accept only Zenodo's observed German-quote normalization."""
+    if actual == expected:
+        return True
+    if not isinstance(actual, str) or not isinstance(expected, str):
+        return False
+    return actual == expected.replace("„", '"').replace("“", '"')
+
+
 def _published_metadata_matches(
     actual: Any, expected: Mapping[str, Any]
 ) -> bool:
@@ -700,6 +709,10 @@ def _published_metadata_matches(
             if key not in actual:
                 return False
             actual_value = actual[key]
+        if key == "description" and _description_matches(
+            actual_value, expected_value
+        ):
+            continue
         if not _metadata_matches(actual_value, expected_value):
             return False
     return True

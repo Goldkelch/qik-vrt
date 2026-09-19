@@ -550,6 +550,7 @@ class ZenodoActionsTests(unittest.TestCase):
             "title": "Normalized editable fixture",
             "version": "1.0.0",
             "creators": [{"name": "Lohmann, Ingolf"}],
+            "description": "<p>Die Erklärung heißt „universell“.</p>",
             "upload_type": "publication",
             "publication_type": "other",
             "license": "cc-by-nc-nd-4.0",
@@ -558,7 +559,10 @@ class ZenodoActionsTests(unittest.TestCase):
         normalized = {
             "title": "Normalized editable fixture",
             "version": "1.0.0",
-            "creators": [{"name": "Lohmann, Ingolf"}],
+            "creators": [
+                {"name": "Lohmann, Ingolf", "affiliation": None}
+            ],
+            "description": '<p>Die Erklärung heißt "universell".</p>',
             "resource_type": {
                 "type": "publication",
                 "subtype": "other",
@@ -569,7 +573,10 @@ class ZenodoActionsTests(unittest.TestCase):
         self.assertEqual(
             zenodo._controlled_metadata_projection(normalized, legacy),
             {
-                "creators": [{"name": "Lohmann, Ingolf"}],
+                "creators": [
+                    {"name": "Lohmann, Ingolf", "affiliation": None}
+                ],
+                "description": '<p>Die Erklärung heißt "universell".</p>',
                 "license": "cc-by-nc-nd-4.0",
                 "publication_type": "other",
                 "title": "Normalized editable fixture",
@@ -579,6 +586,9 @@ class ZenodoActionsTests(unittest.TestCase):
         )
         changed = copy.deepcopy(normalized)
         changed["license"]["id"] = "cc-by-4.0"
+        self.assertFalse(zenodo._editable_metadata_matches(changed, legacy))
+        changed = copy.deepcopy(normalized)
+        changed["description"] = '<p>Die Erklärung heißt "anders".</p>'
         self.assertFalse(zenodo._editable_metadata_matches(changed, legacy))
 
     def test_new_version_prefers_prereserved_doi_over_inherited_legacy_doi(self) -> None:
