@@ -1,0 +1,32 @@
+{
+  "constraints": [
+    "Reuse unchanged native publisher and policy checks",
+    "No protected-main write",
+    "No force update",
+    "No unrelated secret use",
+    "No modification of authorized upload bytes or metadata",
+    "No inferred native code-owner review or Main approval"
+  ],
+  "existing_route_limitation": "Existing publication wrappers bind other branch names, parent commits, manifests and authorization subjects. They cannot execute this exact authorization without a new subject-specific transport binding.",
+  "generic_publisher": "tools/qikvrt_zenodo_publish.py",
+  "known_configuration_repair": "The current native publisher requires GITHUB_TOKEN as well as ZENODO_ACCESS_TOKEN. The adapter must bind the built-in GitHub token explicitly; the old template does not.",
+  "observed_head": "6a00bbb3481ed116dedf98410b892358799a51b3",
+  "planned_adapter": ".github/workflows/qikvrt_universales_universalprinzip_zenodo_publish.yml",
+  "planned_scope": {
+    "branch": "docs/universales-universalprinzip-20260919-v1",
+    "external_effects": [
+      "ACQUIRE_REPOSITORY_REMOTE_CONSUMPTION_LOCK",
+      "CREATE_PRODUCTION_ZENODO_RECORD",
+      "UPLOAD_EXACT_AUTHORIZED_FILES",
+      "PUBLISH_PRODUCTION_ZENODO_RECORD",
+      "VERIFY_PUBLIC_BYTE_EXACT_REDOWNLOAD",
+      "PERSIST_PUBLICATION_EVIDENCE"
+    ],
+    "files": 12,
+    "manifest": "state/work_units/UNIVERSALES_UNIVERSALPRINZIP_20260919_V1/publish-request.json",
+    "permission": "contents: write, required for the explicitly authorized remote consumption tag and publication-evidence persistence",
+    "repository": "Goldkelch/qik-vrt"
+  },
+  "reused_workflow_template": ".github/workflows/qikvrt_canonical_temporal_memory_zenodo_publish.yml",
+  "schema": "qikvrt_publication_writer_reuse_assessment_v1"
+}
