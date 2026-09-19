@@ -2,8 +2,8 @@
 
 Repository: Goldkelch/qik-vrt
 
-Source: eff0cdaef77de58ad69971b3f22172ef82267f20
+Execution: 225adce5e93cd9b8cdb08647e8142d93b78af58e
 
-Exact authorization validated for 14 files. No Zenodo effect yet.
+Publication receipt state: NO_EFFECT_RECEIPT
 
-Next: persist controls and execute the existing single-use publisher. Main promotion and reciprocal equality are not claimed.
+Next: read remote evidence and persist on Mirror. Main promotion and reciprocal repository equality are not claimed.
