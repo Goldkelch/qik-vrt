@@ -1,0 +1,121 @@
+name: QIKVRT PR1128 public-byte and publication preflight
+on:
+  push:
+    branches: ['observe/pr1128-publication-preflight-f2d249-v1']
+permissions:
+  contents: read
+concurrency:
+  group: qikvrt-pr1128-publication-preflight-f2d249-v1
+  cancel-in-progress: false
+jobs:
+  observe:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Check out the immutable publication candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: f2d249f0f070ec427621832a31d7a8a490184638
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Measure public bytes and reconcile matching Zenodo candidates without mutation
+        env:
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import datetime, hashlib, json, os, pathlib, subprocess, urllib.error, urllib.parse, urllib.request
+          H='f2d249f0f070ec427621832a31d7a8a490184638'
+          T='12aa0b905cb25b58c6d40f8b28b046f2093d859d'
+          B='publication/truth-no-conspiracy-theory-2026-09-19'
+          P='docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/Die_Wahrheit_braucht_keine_Verschwoerungstheorie.txt'
+          S='3b64cf2df4e205d15d0348a5dd095902010417fd41e2ba1bca215e3840eec5a1c'
+          TITLE='Die Wahrheit braucht keine Verschwörungstheorie'
+          OUT=pathlib.Path(os.environ['RUNNER_TEMP'])/'pr1128-publication-preflight'
+          OUT.mkdir(exist_ok=False)
+          now=lambda:datetime.datetime.now(datetime.timezone.utc).isoformat()
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl): return None
+          opener=urllib.request.build_opener(NoRedirect())
+          def sha(raw): return hashlib.sha256(raw).hexdigest()
+          def git(*args): return subprocess.check_output(['git',*args],timeout=60,text=True).strip()
+          def write(name,value):
+              (OUT/name).write_text(json.dumps(value,ensure_ascii=False,sort_keys=True,indent=2)+'\n',encoding='utf-8')
+          def get(url,token=None):
+              u=urllib.parse.urlsplit(url)
+              assert u.scheme=='https' and u.hostname in ('raw.githubusercontent.com','zenodo.org') and not u.username and not u.password
+              assert not token or u.hostname=='zenodo.org'
+              headers={'User-Agent':'QIKVRT-PR1128-readonly-preflight/1','Cache-Control':'no-cache'}
+              if token: headers['Authorization']='Bearer '+token
+              req=urllib.request.Request(url,headers=headers,method='GET')
+              try:
+                  with opener.open(req,timeout=25) as response:
+                      raw=response.read(4*1024*1024+1)
+                      if len(raw)>4*1024*1024: return {'status':response.status,'error':'RESPONSE_SIZE_BOUND'},None
+                      return {'status':response.status,'observed_at':now(),'content_type':response.headers.get('Content-Type'),'bytes':len(raw),'sha256':sha(raw)},raw
+              except urllib.error.HTTPError as exc:
+                  return {'status':exc.code,'observed_at':now(),'error':'HTTP_ERROR'},None
+              except Exception as exc:
+                  return {'status':None,'observed_at':now(),'error':type(exc).__name__},None
+          assert git('rev-parse','HEAD')==H and git('rev-parse','HEAD^{tree}')==T
+          raw=pathlib.Path(P).read_bytes()
+          assert len(raw)==10202 and sha(raw)==S
+          source={'repository':'Goldkelch/qik-vrt','pr':1128,'head':H,'tree':T,'article_path':P,'article_sha256':S,'article_git_blob':git('rev-parse',H+':'+P),'article_bytes':len(raw)}
+          write('SOURCE_FREEZE.json',source)
+          (OUT/pathlib.Path(P).name).write_bytes(raw)
+          for path in ['policy/ZENODO_MACHINE_PROOF_BEFORE_PUBLICATION.md','policy/zenodo-machine-proof-policy-v2.json','policy/qikvrt-zenodo-machine-proof-bundle-v2.schema.json','policy/qikvrt-prepublication-return-receipt-v2.schema.json']:
+              (OUT/pathlib.Path(path).name).write_bytes(pathlib.Path(path).read_bytes())
+          remote_before=git('ls-remote','--heads','origin','refs/heads/'+B)
+          head_stable_before=remote_before.split()==[H,'refs/heads/'+B]
+          public_url='https://raw.githubusercontent.com/Goldkelch/qik-vrt/'+H+'/'+P
+          public,received=get(public_url)
+          public.update({'url':public_url,'authorization_header_sent':False,'source':source,'byte_exact':received==raw if received is not None else False,'head_stable_before':head_stable_before})
+          if received is not None: (OUT/'PUBLIC_REDOWNLOAD.txt').write_bytes(received)
+          write('PUBLIC_READBACK.json',public)
+          token=os.environ.get('ZENODO_ACCESS_TOKEN','').strip()
+          inventory={'source':source,'production_mutations':0,'credential_materialized':bool(token),'public_search':{},'account_search':{},'matching_candidates':[],'record_publication_claim':False}
+          for mode in ['public','account']:
+              if mode=='account' and not token:
+                  inventory['account_search']={'state':'CREDENTIAL_NOT_MATERIALIZED','complete':False};continue
+              base='https://zenodo.org/api/records' if mode=='public' else 'https://zenodo.org/api/deposit/depositions'
+              complete=False
+              requests=[]
+              for page in range(1,6):
+                  query=urllib.parse.urlencode({'q':'title:"'+TITLE+'"','size':100,'page':page,'all_versions':'true'})
+                  result,body=get(base+'?'+query,token if mode=='account' else None)
+                  requests.append(result)
+                  if body is None: break
+                  try:
+                      obj=json.loads(body)
+                      if isinstance(obj,list): items=obj
+                      else: items=obj.get('hits',{}).get('hits',[])
+                      if not isinstance(items,list): raise ValueError('invalid inventory')
+                  except (ValueError,TypeError):
+                      result['error']='INVALID_JSON_INVENTORY';break
+                  for item in items:
+                      metadata=item.get('metadata') or {}
+                      if metadata.get('title','').casefold()!=TITLE.casefold(): continue
+                      inventory['matching_candidates'].append({'channel':mode,'id':item.get('id'),'title':metadata.get('title'),'creators':metadata.get('creators'),'doi':metadata.get('doi') or item.get('doi'),'submitted':item.get('submitted'),'state':item.get('state'),'files':[{'name':f.get('key') or f.get('filename'),'size':f.get('size') or f.get('filesize'),'checksum':f.get('checksum')} for f in item.get('files',[]) if isinstance(f,dict)]})
+                  if len(items)<100: complete=True;break
+              inventory[mode+'_search']={'requests':requests,'complete':complete,'bounded_pages':5}
+          write('ZENODO_READONLY_RECONCILIATION.json',inventory)
+          directory=pathlib.Path(P).parent
+          needed=['CLAIM_MATRIX.json','MACHINE_PROOF_BUNDLE.json','PREPUBLICATION_RETURN_RECEIPT.json','OWNER_ZENODO_AUTHORIZATION.json','publish-request.json']
+          present={name:(directory/name).is_file() for name in needed}
+          remote_after=git('ls-remote','--heads','origin','refs/heads/'+B)
+          stable=remote_after.split()==[H,'refs/heads/'+B] and head_stable_before
+          write('PUBLICATION_GATE.json',{'source':source,'candidate_local_files':present,'whole_repository_artifact_search_performed':False,'head_stable':stable,'native_review_not_asserted':True,'PREDECESSOR_EVIDENCE_TRANSFER':False,'production_mutations':0,'zenodo_upload_authorized':False,'machine_proof_complete':False,'Main_promotion':False,'EFFECT_ACK_DONE':False,'DONE':False,'observation_only':True,'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT']})
+          print(json.dumps({'public_http_status':public.get('status'),'public_byte_exact':public['byte_exact'],'head_stable':stable,'zenodo_credential_materialized':bool(token),'matching_candidates':len(inventory['matching_candidates']),'production_mutations':0},sort_keys=True))
+          assert stable, 'subject changed during observation'
+          assert public.get('status')==200 and public['byte_exact'], 'public-byte readback is not established'
+          PY
+      - name: Preserve only this execution's observations, including explicit failures
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: pr1128-publication-preflight-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pr1128-publication-preflight/
+          if-no-files-found: error
+          retention-days: 30
