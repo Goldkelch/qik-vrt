@@ -1,5 +1,7 @@
 name: QIKVRT core invariant multi-carrier proof
 on:
+  push:
+    branches: ['feat/core-invariant-six-carrier-proof-v1']
   pull_request:
     paths: ['spec/effect_ack/CORE_INVARIANT_V1.md','conformance/effect_ack/core-invariant-v1/**','.github/workflows/qikvrt_core_invariant_multicarrier.yml']
 permissions:
@@ -12,11 +14,11 @@ jobs:
    - name: Check out exact subject
      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
      with:
-      ref: ${{ github.event.pull_request.head.sha }}
+      ref: ${{ github.event.pull_request.head.sha || github.sha }}
       persist-credentials: false
    - name: Bind exact subject
      env:
-      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
      run: |
       set -euo pipefail
       test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
@@ -93,7 +95,7 @@ jobs:
       gnatprove -P conformance/effect_ack/core-invariant-v1/ada/core_invariant_spark.gpr --level=2 --warnings=error --checks-as-errors | tee "$RUNNER_TEMP/core-invariant/gnatprove.log"
       printf '%s\n' QIKVRT_CORE_INVARIANT_SPARK_PASS > "$RUNNER_TEMP/core-invariant/spark.marker"
    - name: Cross-conformance against language-neutral vectors
-     env: {EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}}
+     env: {EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}}
      run: |
       set -euo pipefail
       head="$(git rev-parse HEAD)"; tree="$(git rev-parse 'HEAD^{tree}')"
@@ -104,6 +106,6 @@ jobs:
      if: always()
      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
      with:
-      name: core-invariant-${{ github.event.pull_request.head.sha }}-${{ github.run_id }}
+      name: core-invariant-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}
       path: ${{ runner.temp }}/core-invariant/
       if-no-files-found: error
