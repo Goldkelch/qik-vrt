@@ -26,9 +26,23 @@ trap 'exit 130' INT
 emit_health() {
   state="$1"
   tmp=/tmp/qikvrt-mesh-health.json.tmp
-  commit="${RAILWAY_GIT_COMMIT_SHA:-${QIKVRT_EXACT_HEAD:-unknown}}"
+  # Observe the actual checked-out runtime, not a provider's base-image SHA.
+  commit="$(git -C /opt/qikvrt rev-parse --verify HEAD)"
+  tree="$(git -C /opt/qikvrt rev-parse --verify 'HEAD^{tree}')"
+  if [ -n "${QIKVRT_EXACT_HEAD:-}" ] && [ "$QIKVRT_EXACT_HEAD" != "$commit" ]; then
+    echo 'BLOCK: runtime HEAD differs from bound deployment subject' >&2
+    exit 78
+  fi
+  if [ -n "${QIKVRT_EXACT_TREE:-}" ] && [ "$QIKVRT_EXACT_TREE" != "$tree" ]; then
+    echo 'BLOCK: runtime TREE differs from bound deployment subject' >&2
+    exit 78
+  fi
+  git -C /opt/qikvrt diff --quiet HEAD -- src tools deploy browser distribution policy || {
+    echo 'BLOCK: tracked runtime source differs from its HEAD/TREE' >&2
+    exit 78
+  }
   cat > "$tmp" <<EOF
-{"schema":"qikvrt_cloud_transputer_mesh_health_v1","state":"$state","commit":"$commit","roles":{"terminal":"READY","gateway":"READY","m68k":"READY","smtp":"READY","dns":"READY","snmp":"READY","live_sse":"READY"},"optional":{"ssh":"${SSH_STATE:-DISABLED}","sql":"${SQL_STATE:-DISABLED}","mirror":"${MIRROR_STATE:-DISABLED}"},"effect_ack":"NOT_IMPLIED"}
+{"schema":"qikvrt_cloud_transputer_mesh_health_v1","state":"$state","commit":"$commit","tree":"$tree","subject_binding":"OBSERVED_GIT_HEAD_TREE","roles":{"terminal":"READY","gateway":"READY","m68k":"READY","smtp":"READY","dns":"READY","snmp":"READY","live_sse":"READY"},"optional":{"ssh":"${SSH_STATE:-DISABLED}","sql":"${SQL_STATE:-DISABLED}","mirror":"${MIRROR_STATE:-DISABLED}"},"effect_ack":"NOT_IMPLIED"}
 EOF
   mv "$tmp" /tmp/qikvrt-mesh-health.json
   chmod 0644 /tmp/qikvrt-mesh-health.json
