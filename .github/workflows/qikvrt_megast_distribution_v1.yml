@@ -7,6 +7,10 @@ on:
       - '.github/workflows/qikvrt_megast_distribution_v1.yml'
       - 'tests/test_qikvrt_megast_distribution.py'
       - 'tests/test_qikvrt_netboot.py'
+      - 'tests/test_qikvrt_distribution_readback.py'
+      - 'tools/qikvrt_distribution_readback.py'
+      - 'deploy/universal-terminal/**'
+      - '.dockerignore'
       - 'src/smalltalk/**'
       - 'src/cloud_transputer/**'
       - 'tools/qikvrt_smalltalk.py'
@@ -18,6 +22,10 @@ on:
       - '.github/workflows/qikvrt_megast_distribution_v1.yml'
       - 'tests/test_qikvrt_megast_distribution.py'
       - 'tests/test_qikvrt_netboot.py'
+      - 'tests/test_qikvrt_distribution_readback.py'
+      - 'tools/qikvrt_distribution_readback.py'
+      - 'deploy/universal-terminal/**'
+      - '.dockerignore'
       - 'src/smalltalk/**'
       - 'src/cloud_transputer/**'
       - 'tools/qikvrt_smalltalk.py'
@@ -27,6 +35,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: qikvrt-distribution-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
+
 jobs:
   contract:
     runs-on: ubuntu-latest
@@ -34,20 +46,25 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
       - name: Verify distribution contract
-        run: python -m unittest tests.test_qikvrt_megast_distribution tests.test_qikvrt_netboot -v
+        run: python -m unittest tests.test_qikvrt_megast_distribution tests.test_qikvrt_netboot tests.test_qikvrt_distribution_readback -v
 
   build:
     needs: contract
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    outputs:
+      source_tree: ${{ steps.export.outputs.source_tree }}
+      manifest_sha256: ${{ steps.export.outputs.manifest_sha256 }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - name: Install live-build and boot-test toolchain
         run: |
           sudo apt-get update
@@ -197,18 +214,38 @@ jobs:
           cp distribution/qikvrt-megast/boot.py out/qikvrt-netboot-client.py
           exit "$result"
       - name: Build and export exact-subject Docker image
+        id: export
         env:
           QIKVRT_EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$QIKVRT_EXACT_SHA"
+          tree=$(git rev-parse 'HEAD^{tree}')
+          context=$(mktemp -d /tmp/qikvrt-docker-context.XXXXXX)
+          trap 'rm -rf "$context"' EXIT
+          # A clean Git checkout excludes the root-owned live-build chroot and
+          # generated ISO/cache output, while retaining actual Git identity.
+          git clone --no-local --no-hardlinks --depth=1 --no-checkout "$PWD" "$context"
+          git -C "$context" checkout --detach "$QIKVRT_EXACT_SHA"
+          test "$(git -C "$context" rev-parse 'HEAD^{tree}')" = "$tree"
+          test ! -e "$context/.build/qikvrt-megast"
+          test ! -e "$context/out/qikvrt-megast-amd64.iso"
           image="qikvrt/universal-terminal:${QIKVRT_EXACT_SHA}"
-          docker build --pull --file deploy/universal-terminal/Dockerfile --tag "$image" .
+          docker build --pull --progress=plain \
+            --file "$context/deploy/universal-terminal/Dockerfile" \
+            --label "org.opencontainers.image.revision=$QIKVRT_EXACT_SHA" \
+            --label "io.qikvrt.source.tree=$tree" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --tag "$image" "$context" 2>&1 | tee out/qikvrt-docker-build.log
           docker image inspect "$image" > out/qikvrt-universal-terminal-image-inspect.json
           docker save --output out/qikvrt-universal-terminal-amd64.docker.tar "$image"
-          sha256sum out/qikvrt-universal-terminal-amd64.docker.tar > out/qikvrt-universal-terminal-amd64.docker.tar.sha256
+          (cd out && sha256sum qikvrt-universal-terminal-amd64.docker.tar > qikvrt-universal-terminal-amd64.docker.tar.sha256)
           docker load --input out/qikvrt-universal-terminal-amd64.docker.tar
           docker image inspect "$image" >/dev/null
-
+          cp tools/qikvrt_distribution_readback.py out/qikvrt-distribution-readback.py
+          python3 tools/qikvrt_distribution_readback.py manifest out "$QIKVRT_EXACT_SHA" "$tree"
+          printf 'source_tree=%s\n' "$tree" >> "$GITHUB_OUTPUT"
+          printf 'manifest_sha256=%s\n' "$(sha256sum out/qikvrt-distribution-manifest.json | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - name: Preserve inspectable startup evidence separately from the image
         uses: actions/upload-artifact@v4
         if: always()
@@ -220,6 +257,8 @@ jobs:
             out/qikvrt-megast-qemu-serial.log
             out/QIKVRT_BOOT.BIN
             out/qikvrt-netboot*
+            out/qikvrt-docker-build.log
+            out/qikvrt-distribution*
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
@@ -227,28 +266,21 @@ jobs:
         with:
           name: qikvrt-megast-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
-            out/qikvrt-megast-amd64.iso
-            out/qikvrt-megast-amd64.iso.sha256
-            out/qikvrt-megast-build-receipt.json
-            out/qikvrt-megast-qemu-serial.log
-            out/qikvrt-megast-vmlinuz
-            out/qikvrt-megast-initrd
-            out/qikvrt-megast-filesystem.squashfs
+            out/qikvrt-*
             out/QIKVRT_BOOT.BIN
-            out/qikvrt-netboot*
-            out/qikvrt-universal-terminal-amd64.docker.tar
-            out/qikvrt-universal-terminal-amd64.docker.tar.sha256
-            out/qikvrt-universal-terminal-image-inspect.json
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
 
   publish:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'pull_request'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'integration/qikvrt-product-temdd-cloud-v1')
     needs: build
     env:
       QIKVRT_EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      QIKVRT_EXACT_TREE: ${{ needs.build.outputs.source_tree }}
+      QIKVRT_MANIFEST_SHA256: ${{ needs.build.outputs.manifest_sha256 }}
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -256,63 +288,122 @@ jobs:
           path: out
       - name: Verify before publication
         run: |
+          set -euo pipefail
           cd out
           sha256sum -c qikvrt-megast-amd64.iso.sha256
           grep -F '"source_sha": "'"${QIKVRT_EXACT_SHA}"'"' qikvrt-megast-build-receipt.json
           grep -F "QIKVRT_MEGAST_BOOT_OK source_sha=${QIKVRT_EXACT_SHA}" qikvrt-megast-qemu-serial.log
           grep -F "QIKVRT_MEGAST_RUNTIME_OK source_sha=${QIKVRT_EXACT_SHA}" qikvrt-netboot-serial.log
           sha256sum -c qikvrt-universal-terminal-amd64.docker.tar.sha256
-      - name: Publish exact-Main release asset
+          printf '%s  %s\n' "$QIKVRT_MANIFEST_SHA256" qikvrt-distribution-manifest.json | sha256sum -c -
+          python3 qikvrt-distribution-readback.py verify . "$QIKVRT_EXACT_SHA" "$QIKVRT_EXACT_TREE"
+      - name: Publish exact-subject release assets without overwriting existing bytes
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          short=$(printf '%s' "${QIKVRT_EXACT_SHA}" | cut -c1-12)
+          set -euo pipefail
+          short=$(printf '%s' "$QIKVRT_EXACT_SHA" | cut -c1-12)
           tag="qikvrt-distribution-${short}"
-          gh release create "$tag" \
-            out/qikvrt-megast-amd64.iso \
-            out/qikvrt-megast-amd64.iso.sha256 \
-            out/qikvrt-megast-build-receipt.json \
-            out/qikvrt-megast-qemu-serial.log \
-            out/qikvrt-megast-vmlinuz out/qikvrt-megast-initrd \
-            out/qikvrt-megast-filesystem.squashfs out/QIKVRT_BOOT.BIN \
-            out/qikvrt-netboot* \
-            out/qikvrt-universal-terminal-amd64.docker.tar \
-            out/qikvrt-universal-terminal-amd64.docker.tar.sha256 \
-            out/qikvrt-universal-terminal-image-inspect.json \
-            --repo '${{ github.repository }}' \
-            --target "${QIKVRT_EXACT_SHA}" \
-            --title "QIK-VRT Linux Distribution ${short}" \
-            --notes "Exact-subject public Linux distribution: bootable ISO, HTTP netboot set, and Docker image. Repository governance is orthogonal to this delivery witness."
+          mapfile -t assets < <(python3 - <<'PY'
+          import json
+          m=json.load(open('out/qikvrt-distribution-manifest.json'))
+          for name in sorted(m['assets']): print('out/'+name)
+          print('out/qikvrt-distribution-manifest.json')
+          print('out/qikvrt-distribution-manifest.json.sha256')
+          PY
+          )
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json targetCommitish,assets > /tmp/qikvrt-existing-release.json; then
+            test "$(python3 -c 'import json; print(json.load(open("/tmp/qikvrt-existing-release.json"))["targetCommitish"])')" = "$QIKVRT_EXACT_SHA"
+            for asset in "${assets[@]}"; do
+              if ! python3 - "$asset" <<'PY'
+          import json,os,sys
+          names={a['name'] for a in json.load(open('/tmp/qikvrt-existing-release.json'))['assets']}
+          sys.exit(0 if os.path.basename(sys.argv[1]) in names else 1)
+          PY
+              then gh release upload "$tag" "$asset" --repo "$GITHUB_REPOSITORY"; fi
+            done
+          else
+            flags=()
+            if [ "$GITHUB_EVENT_NAME" = pull_request ]; then flags+=(--prerelease --latest=false); fi
+            gh release create "$tag" "${assets[@]}" \
+              --repo "$GITHUB_REPOSITORY" --target "$QIKVRT_EXACT_SHA" \
+              --title "QIK-VRT Linux Distribution ${short}" "${flags[@]}" \
+              --notes 'Exact-subject ISO, HTTP-netboot and Docker archive candidate. Publication is not product acceptance, registry delivery, or protected-Main adoption.'
+          fi
       - name: Read back published release metadata
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          short=$(printf '%s' "${QIKVRT_EXACT_SHA}" | cut -c1-12)
-          tag="qikvrt-distribution-${short}"
-          gh release view "$tag" --repo '${{ github.repository }}' --json tagName,targetCommitish,assets > out/release-readback.json
+          tag="qikvrt-distribution-$(printf '%s' "$QIKVRT_EXACT_SHA" | cut -c1-12)"
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName,targetCommitish,assets > out/release-readback.json
           grep -F "\"tagName\":\"$tag\"" out/release-readback.json
-          grep -F 'qikvrt-megast-amd64.iso' out/release-readback.json
-          grep -F 'qikvrt-netboot.json' out/release-readback.json
-          grep -F 'qikvrt-universal-terminal-amd64.docker.tar' out/release-readback.json
-
-      - name: Fresh unauthenticated public artifact readback
+          grep -F qikvrt-megast-amd64.iso out/release-readback.json
+          grep -F qikvrt-universal-terminal-amd64.docker.tar out/release-readback.json
+      - name: Fresh unauthenticated complete public payload readback
         env:
           GH_TOKEN: ""
         run: |
           set -euo pipefail
-          short=$(printf '%s' "${QIKVRT_EXACT_SHA}" | cut -c1-12)
-          tag="qikvrt-distribution-${short}"
+          tag="qikvrt-distribution-$(printf '%s' "$QIKVRT_EXACT_SHA" | cut -c1-12)"
           base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}"
-          mkdir -p /tmp/qikvrt-public-readback
-          for asset in \
-            qikvrt-megast-amd64.iso.sha256 \
-            qikvrt-netboot.json \
-            qikvrt-universal-terminal-amd64.docker.tar.sha256; do
-            code=$(curl -L --silent --show-error --output "/tmp/qikvrt-public-readback/${asset}" --write-out '%{http_code}' "${base}/${asset}")
-            test "$code" = 200
-            test -s "/tmp/qikvrt-public-readback/${asset}"
-            printf 'PUBLIC_READBACK_200 asset=%s url=%s/%s\n' "$asset" "$base" "$asset"
+          python3 out/qikvrt-distribution-readback.py readback /tmp/qikvrt-public-readback \
+            "$QIKVRT_EXACT_SHA" "$QIKVRT_EXACT_TREE" \
+            --base-url "$base" --manifest-sha256 "$QIKVRT_MANIFEST_SHA256"
+      - name: Load public Docker archive and execute exact runtime
+        run: |
+          set -euo pipefail
+          image="qikvrt/universal-terminal:${QIKVRT_EXACT_SHA}"
+          docker load --input /tmp/qikvrt-public-readback/qikvrt-universal-terminal-amd64.docker.tar
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")" = "$QIKVRT_EXACT_SHA"
+          test "$(docker image inspect --format '{{index .Config.Labels "io.qikvrt.source.tree"}}' "$image")" = "$QIKVRT_EXACT_TREE"
+          cid=$(docker run -d --shm-size=256m -e QIKVRT_SERVICE_MODE=cloud \
+            -e QIKVRT_EXACT_HEAD="$QIKVRT_EXACT_SHA" -e QIKVRT_EXACT_TREE="$QIKVRT_EXACT_TREE" \
+            -p 127.0.0.1:18080:8080 "$image")
+          trap 'docker logs "$cid" > /tmp/qikvrt-public-readback/qikvrt-public-container.log 2>&1; docker rm -f "$cid" >/dev/null' EXIT
+          ready=0
+          for _ in $(seq 1 90); do
+            if docker exec "$cid" /usr/local/bin/qikvrt-runtime-health >/dev/null 2>&1 && curl -fsS http://127.0.0.1:18080/qik-vrt/mesh/v1/healthz > /tmp/qikvrt-public-readback/qikvrt-public-container-health.json; then ready=1; break; fi
+            sleep 2
           done
-          printf 'QIKVRT_DISTRIBUTION_PUBLIC_INDEX=%s\n' "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${tag}"
-          printf 'QIKVRT_DISTRIBUTION_SOURCE_SHA=%s\n' "${QIKVRT_EXACT_SHA}"
+          test "$ready" = 1
+          test "$(docker exec "$cid" git -C /opt/qikvrt rev-parse HEAD)" = "$QIKVRT_EXACT_SHA"
+          test "$(docker exec "$cid" git -C /opt/qikvrt rev-parse 'HEAD^{tree}')" = "$QIKVRT_EXACT_TREE"
+          curl -fsS http://127.0.0.1:18080/AI/ > /tmp/qikvrt-public-readback/qikvrt-public-surface.html
+          curl -fsS http://127.0.0.1:18080/qik-vrt/mesh/v1/terminal/vnc.html > /tmp/qikvrt-public-readback/qikvrt-public-novnc.html
+          curl -fsS http://127.0.0.1:18080/qik-vrt/mesh/v1/effect-ack/AI > /tmp/qikvrt-public-readback/qikvrt-public-temdd.html
+          docker exec "$cid" qemu-m68k /usr/local/bin/qikvrt-m68k-selftest > /tmp/qikvrt-public-readback/qikvrt-public-m68k.txt
+          echo 'PUBLIC_DOCKER_ARCHIVE_EXECUTION_VERIFIED; OCI_REGISTRY_PULL_NOT_IMPLIED; FULL_PRODUCT_DONE_NOT_IMPLIED'
+      - name: Boot downloaded ISO through BIOS firmware, not a supplied kernel
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86
+          log=/tmp/qikvrt-public-readback/qikvrt-public-firmware-serial.log
+          qemu-system-x86_64 -accel tcg -m 2048 -smp 2 -boot order=d \
+            -cdrom /tmp/qikvrt-public-readback/qikvrt-megast-amd64.iso \
+            -display none -serial "file:$log" -no-reboot -no-shutdown &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true' EXIT
+          ok=0
+          for _ in $(seq 1 300); do
+            if grep -Fq "QIKVRT_MEGAST_BOOT_OK source_sha=$QIKVRT_EXACT_SHA" "$log"; then ok=1; break; fi
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 1
+          done
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          trap - EXIT
+          cat "$log"
+          test "$ok" = 1
+          echo 'PUBLIC_ISO_BIOS_BOOT_VERIFIED; UEFI_PXE_AND_FULL_PRODUCT_ACCEPTANCE_NOT_IMPLIED'
+      - name: Preserve fresh public readback and execution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qikvrt-public-delivery-evidence-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            out/release-readback.json
+            /tmp/qikvrt-public-readback/qikvrt-public-*
+          if-no-files-found: error
+          retention-days: 30
