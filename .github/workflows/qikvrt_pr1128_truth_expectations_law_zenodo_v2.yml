@@ -1,0 +1,103 @@
+name: QIKVRT PR1128 exact Zenodo v2 publication
+
+on:
+  push:
+    branches: [publication/pr1128-truth-expectations-law-zenodo-v2]
+    paths:
+      - .github/workflows/qikvrt_pr1128_truth_expectations_law_zenodo_v2.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-pr1128-truth-expectations-law-zenodo-v2
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 20
+          persist-credentials: true
+      - name: Reobserve exact authorized subject
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = publication/pr1128-truth-expectations-law-zenodo-v2
+          test "$(gh api repos/Goldkelch/qik-vrt/pulls/1128 --jq .head.sha)" = eff0cdaef77de58ad69971b3f22172ef82267f20
+          test "$(git rev-parse 'eff0cdaef77de58ad69971b3f22172ef82267f20^{tree}')" = 0856e248460000e0f1e53641821e894d98a34609
+          git merge-base --is-ancestor eff0cdaef77de58ad69971b3f22172ef82267f20 HEAD
+          git diff --exit-code
+      - name: Validate exact 14-file machine-proof envelope
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/verify_publication_scope.py
+          python3 -B tools/qikvrt_zenodo_machine_proof.py \
+            --proof-bundle docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/MACHINE_PROOF_BUNDLE.json \
+            --upload-path docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/Die_Wahrheit_braucht_keine_Verschwoerungstheorie.txt \
+            --upload-path docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/WENN_ERWARTUNGEN_HANDELBAR_WERDEN_DE.md \
+            --upload-path docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/WENN_AUS_EINER_WETTE_EINE_TAT_WIRD_DE.md \
+            --upload-path docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/AUTORENERKLAERUNG_UND_EVIDENZGRENZE.md \
+            --upload-path docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/CLAIM_MATRIX.json \
+            --upload-path docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/SOURCE_BINDINGS.json \
+            --upload-path docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/QUELLEN_UND_GELTUNGSBEREICH.md \
+            --upload-path docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/verify_publication_scope.py \
+            --upload-path docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/BOUNDARY_TEST_REPORT.json \
+            --upload-path docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/PREPUBLICATION_RETURN_RECEIPT.json \
+            --upload-path docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/CHANGE_NOTICE.md \
+            --upload-path docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/README.md \
+            --upload-path docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/ZENODO_METADATA.json \
+            --upload-path docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/MACHINE_PROOF_BUNDLE.json
+          GITHUB_REPOSITORY=Goldkelch/qik-vrt python3 - <<'PY'
+          from pathlib import Path
+          from tools.qikvrt_zenodo_publish import load_manifest
+          m=load_manifest(Path('release/pr1128-truth-expectations-law-zenodo-v2/publication-manifest.json'), Path('.').resolve())
+          assert m['source_head']=='eff0cdaef77de58ad69971b3f22172ef82267f20'
+          assert len(m['files'])==14
+          assert m['owner_authorization']['authorization_id']=='pr1128-truth-expectations-law-20260919-v2'
+          assert m['owner_authorization']['authorization_event']['statement_sha256']=='45bf36e2bed937f129c89e5e79cf2392bf3b813533356d0fcd4e07ec999e0be9'
+          print('TEMDD_EXACT_UPLOAD_ENVELOPE=PASS')
+          PY
+      - name: Execute exact authorized production publication and public byte readback
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          GITHUB_SHA="$(git rev-parse HEAD)" python3 -B tools/qikvrt_zenodo_publish.py \
+            --manifest release/pr1128-truth-expectations-law-zenodo-v2/publication-manifest.json
+      - name: Persist publication evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -f release/pr1128-truth-expectations-law-zenodo-v2/zenodo-publication.json; then
+            git config user.name qikvrt-publication-materializer
+            git config user.email qikvrt-publication-materializer@users.noreply.github.com
+            git add release/pr1128-truth-expectations-law-zenodo-v2/zenodo-publication.json
+            python3 -B tools/qikvrt_integrity.py generate
+            git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+            git diff --cached --check
+            if ! git diff --cached --quiet; then
+              git commit -m 'publication: retain PR1128 v2 Zenodo effect receipt'
+              git push origin HEAD:publication/pr1128-truth-expectations-law-zenodo-v2
+            fi
+          fi
+      - name: Preserve bounded evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pr1128-truth-expectations-law-zenodo-v2-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release/pr1128-truth-expectations-law-zenodo-v2/
+          if-no-files-found: warn
+          retention-days: 30
