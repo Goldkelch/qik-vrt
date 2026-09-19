@@ -13,6 +13,24 @@ DISPLAY_VALUE="${DISPLAY:-:99}"
 # remain addressable without assuming a peer service exists.
 START_URL="${QIKVRT_START_URL:-about:blank}"
 
+# BEGIN TEMDD deployment subject binding
+# Exact deployments must not silently inherit the language carrier's PR 1103.
+# Unsealed standalone/reference launches retain their existing compatibility.
+set --
+if [ -n "${QIKVRT_EXACT_HEAD:-}${QIKVRT_EXACT_TREE:-}" ]; then
+  : "${QIKVRT_TEMDD_PR:?BLOCK: QIKVRT_TEMDD_PR is required for an exact deployment}"
+fi
+if [ "${QIKVRT_TEMDD_PR+x}" = x ]; then
+  case "$QIKVRT_TEMDD_PR" in
+    ''|*[!0-9]*|0*)
+      echo "BLOCK: QIKVRT_TEMDD_PR must be a positive canonical PR number" >&2
+      exit 64
+      ;;
+  esac
+  set -- --pr "$QIKVRT_TEMDD_PR"
+fi
+# END TEMDD deployment subject binding
+
 # Firefox initializes its profile registry under HOME even with --profile.
 # Keep that registry and XDG state off the read-only container root.
 HOME="${STATE_DIR}/home"
@@ -78,7 +96,7 @@ LIVE_SSE_PID=$!
 PIDS="$PIDS ${LIVE_SSE_PID}"
 
 python3 -B /opt/qikvrt/src/qikvrt_temdd_event_ledger.py serve \
-  --host "$HTTP_HOST" --port "$HTTP_PORT" --state-dir "$STATE_DIR" \
+  --host "$HTTP_HOST" --port "$HTTP_PORT" --state-dir "$STATE_DIR" "$@" \
   > /opt/qikvrt/runtime/logs/effect-ack-http.log 2>&1 &
 HTTP_PID=$!
 PIDS="$PIDS ${HTTP_PID}"
