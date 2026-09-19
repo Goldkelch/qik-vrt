@@ -1,40 +1,114 @@
-name: QIKVRT PR1128 exact publication source export
-on:
+name: QIKVRT PR1128 bounded publication-proof materializer
+'on':
   push:
     branches: ['observe/pr1128-publication-preflight-f2d249-v1']
 permissions:
-  contents: read
+  contents: write
 concurrency:
-  group: qikvrt-pr1128-publication-preflight-f2d249-v1
+  group: qikvrt-pr1128-publication-proof-f2d249-v1
   cancel-in-progress: false
 jobs:
-  export:
+  materialize:
     if: github.repository == 'Goldkelch/qik-vrt'
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 20
     steps:
-      - name: Check out exact unchanged publication subject
+      - name: Check out isolated execution carrier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: carrier
+          persist-credentials: false
+      - name: Check out immutable original PR subject separately
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: f2d249f0f070ec427621832a31d7a8a490184638
-          fetch-depth: 1
+          fetch-depth: 2
+          path: candidate
           persist-credentials: false
-      - name: Bind source and export committed bytes only
+      - name: Materialize bounded companion files and exact three integrity projections
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PYTHONDONTWRITEBYTECODE: '1'
+          PYTHONNOUSERSITE: '1'
+        working-directory: candidate
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = f2d249f0f070ec427621832a31d7a8a490184638
-          test "$(git rev-parse HEAD^{tree})" = 12aa0b905cb25b58c6d40f8b28b046f2093d859d
-          mkdir -p "$RUNNER_TEMP/pr1128-exact-source"
-          git archive HEAD | gzip -n > "$RUNNER_TEMP/pr1128-exact-source/source.tar.gz"
-          git cat-file commit HEAD > "$RUNNER_TEMP/pr1128-exact-source/COMMIT_OBJECT.txt"
-          git ls-tree -r HEAD > "$RUNNER_TEMP/pr1128-exact-source/GIT_TREE.txt"
-          cd "$RUNNER_TEMP/pr1128-exact-source"
-          sha256sum source.tar.gz COMMIT_OBJECT.txt GIT_TREE.txt > SOURCE_SHA256SUMS.txt
-      - name: Preserve exact source export
+          python3 -B - <<'PY'
+          import datetime,hashlib,json,os,pathlib,subprocess,sys,urllib.request
+          H='f2d249f0f070ec427621832a31d7a8a490184638';T='12aa0b905cb25b58c6d40f8b28b046f2093d859d'
+          BASE='a86054139b49c13c5cd344753b248b46b5daf66f';B='publication/truth-no-conspiracy-theory-2026-09-19'
+          D='docs/publications/2026-09-19-truth-needs-no-conspiracy-theory'
+          A=D+'/Die_Wahrheit_braucht_keine_Verschwoerungstheorie.txt'
+          S='fb865db33137a184e059f7caa0b532ffbe15680aae7098c62f05d3f0d4254cf8'
+          OUT=pathlib.Path(os.environ['RUNNER_TEMP'])/'pr1128-proof-execution';OUT.mkdir(exist_ok=False)
+          def run(*args):
+              p=subprocess.run(args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+              with (OUT/'EXECUTION.log').open('ab') as f:f.write((' '.join(args)+'\n').encode()+p.stdout+b'\n')
+              if p.returncode:print(p.stdout.decode(errors='replace')[-14000:]);raise RuntimeError('command failed: '+args[0])
+              return p.stdout.decode().strip()
+          def git(*args):return run('git','-c','core.hooksPath=/dev/null',*args)
+          def guard():
+              refs=dict((l.split()[1],l.split()[0]) for l in git('ls-remote','--heads','origin','refs/heads/'+B,'refs/heads/main').splitlines())
+              if refs!={'refs/heads/'+B:H,'refs/heads/main':BASE}:raise RuntimeError('source or base moved')
+          def sha(p):return hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()
+          guard();assert git('rev-parse','HEAD')==H and git('rev-parse','HEAD^{tree}')==T
+          assert git('status','--porcelain')=='' and sha(A)==S
+          run('python3','-B','../carrier/.qikvrt/executors/pr1128_publication_payload.py','--root',str(pathlib.Path.cwd()),'--returned-at','2026-09-19T01:06:46Z')
+          assert sha(D+'/MACHINE_PROOF_BUNDLE.json')=='9d2ced07333febfc93d6c7f59aaac0dda7ca6aab156119e698e2df332e7038a0','returned proof bytes differ'
+          assert sha(D+'/PREPUBLICATION_RETURN_RECEIPT.json')=='067cb573f3d4d08d1b8399270ad62ed9d708114b6bff0d74d21f4e5cb4dd934a'
+          expected=sorted(D+'/'+n for n in ['AUTHORIZE_EXACT_UPLOAD.txt','BOUNDARY_TEST_REPORT.json','CLAIM_MATRIX.json','MACHINE_PROOF_BUNDLE.json','PREPUBLICATION_RETURN_RECEIPT.json','PUBLICATION_CONTROL_PENDING.json','QUELLEN_UND_GELTUNGSBEREICH.md','README.md','SOURCE_BINDINGS.json','ZENODO_METADATA.json','verify_publication_scope.py'])
+          assert sorted(git('ls-files','--others','--exclude-standard').splitlines())==expected,'extra untracked file'
+          projections=['REPOSITORY_FILE_MANIFEST.json','REPOSITORY_FILE_MANIFEST.json.sha256','SHA256SUMS.txt']
+          run('python3','-B','tools/qikvrt_integrity.py','generate');run('python3','-B','tools/qikvrt_integrity.py','verify')
+          digest={p:sha(p) for p in projections}
+          run('python3','-B','tools/qikvrt_integrity.py','generate');assert digest=={p:sha(p) for p in projections}
+          assert sorted(git('diff','--name-only',H).splitlines())==sorted(projections)
+          run('make','test');run('python3','-B',D+'/verify_publication_scope.py')
+          git('add','--',*expected,*projections)
+          result_tree=git('write-tree')
+          git('config','user.name','qikvrt-publication-materializer');git('config','user.email','qikvrt-publication-materializer@users.noreply.github.com')
+          message='docs(publication): bind PR1128 sources, claim disposition and exact return\n\nOriginal article bytes unchanged. Only publication companions and three canonical integrity projections.\nPREDECESSOR_EVIDENCE_TRANSFER=false\nIndependent native review and exact natural-person upload authorization remain separate and unestablished. No publication or EFFECT claim.'
+          result=git('commit-tree',result_tree,'-p',H,'-m',message)
+          git('checkout','--detach',result)
+          assert git('rev-list','--parents','-n','1',result).split()==[result,H]
+          assert sorted(git('diff','--name-only',H,result).splitlines())==sorted(expected+projections)
+          assert git('rev-parse',result+':'+A)=='03e7b116568e9470bd66cb0460392f5b3021c682'
+          run('make','test');run('python3','-B',D+'/verify_publication_scope.py');run('python3','-B','tools/qikvrt_integrity.py','verify')
+          sys.path.insert(0,str(pathlib.Path.cwd()))
+          from tools import qikvrt_zenodo_machine_proof as proof
+          from tools import qikvrt_zenodo_publish as pub
+          from tools import qikvrt_zenodo_actions as transport
+          control=json.loads(pathlib.Path(D+'/PUBLICATION_CONTROL_PENDING.json').read_text())
+          checked=proof.validate_bundle(pathlib.Path.cwd(),pathlib.Path(D+'/MACHINE_PROOF_BUNDLE.json'),upload_paths=control['intended_upload_paths'])
+          # Independently exercise the missing-owner boundary; a proof is not authorization.
+          try:pub._validate_owner_authorization(None,pathlib.Path.cwd(),'Goldkelch/qik-vrt',{},[],{},pathlib.Path(D+'/zenodo-publication.json'),result)
+          except transport.ZenodoError:owner_rejected=True
+          else:raise RuntimeError('missing owner authorization was admitted')
+          assert git('diff','HEAD','--')=='' and sha(A)==S
+          guard();ref='refs/heads/materialize/pr1128-publication-proof-f2d249-v1'
+          assert git('ls-remote','--heads','origin',ref)=='','transport already exists'
+          run('gh','auth','setup-git');git('push','--porcelain','origin',result+':'+ref)
+          assert git('ls-remote','--heads','origin',ref).split()==[result,ref]
+          receipt={'schema':'qikvrt_pr1128_proof_materialization_receipt_v1','source_head':H,'source_tree':T,'result_head':result,'result_tree':result_tree,'direct_parent':H,'transport_ref':ref,'article_sha256':S,'article_unchanged':True,'changed_paths':sorted(expected+projections),'successor_make_test':'success','successor_scope_tests':'success','successor_machine_proof':checked,'missing_owner_authorization_rejected':owner_rejected,'PR_ref_changed':False,'PREDECESSOR_EVIDENCE_TRANSFER':False,'native_P3':False,'owner_exact_upload_authorized':False,'production_mutations':0,'EFFECT_ACK_DONE':False,'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT']}
+          (OUT/'RECEIPT.json').write_text(json.dumps(receipt,indent=2,sort_keys=True)+'\n')
+          # Public unauthenticated readback binds the generated subject, not the carrier.
+          url='https://raw.githubusercontent.com/Goldkelch/qik-vrt/'+result+'/'+A
+          readback={'subject_head':result,'subject_tree':result_tree,'url':url,'authorization_header_sent':False,'observed_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'status':None,'byte_exact':False}
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,*args):return None
+          try:
+              with urllib.request.build_opener(NoRedirect()).open(urllib.request.Request(url,headers={'Cache-Control':'no-cache','User-Agent':'QIKVRT-exact-subject-readback/1'}),timeout=30) as r:
+                  body=r.read(10203);readback.update(status=r.status,bytes=len(body),sha256=hashlib.sha256(body).hexdigest(),byte_exact=body==pathlib.Path(A).read_bytes())
+          except Exception as e:readback['error']=type(e).__name__
+          (OUT/'PUBLIC_READBACK.json').write_text(json.dumps(readback,indent=2,sort_keys=True)+'\n')
+          guard();print(json.dumps(receipt,sort_keys=True));print(json.dumps(readback,sort_keys=True))
+          PY
+      - name: Preserve this execution's exact receipts including any failure log
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: pr1128-exact-source-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/pr1128-exact-source/
+          name: pr1128-proof-materialization-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pr1128-proof-execution/
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 30
