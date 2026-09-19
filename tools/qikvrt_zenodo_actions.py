@@ -670,6 +670,26 @@ def _description_matches(actual: Any, expected: Any) -> bool:
     return actual == expected.replace("„", '"').replace("“", '"')
 
 
+def _editable_legacy_metadata_matches(
+    actual: Any,
+    expected: Mapping[str, Any],
+) -> bool:
+    """Compare editable legacy fields with bounded description normalization."""
+    if not isinstance(actual, dict):
+        return False
+    for key, expected_value in expected.items():
+        if key not in actual:
+            return False
+        actual_value = actual[key]
+        if key == "description" and _description_matches(
+            actual_value, expected_value
+        ):
+            continue
+        if not _metadata_matches(actual_value, expected_value):
+            return False
+    return True
+
+
 def _published_metadata_matches(
     actual: Any, expected: Mapping[str, Any]
 ) -> bool:
@@ -725,7 +745,7 @@ def _editable_metadata_matches(
     """Accept either documented legacy or normalized draft readback shape."""
     expected_metadata = dict(expected)
     expected_metadata.pop("prereserve_doi", None)
-    return _metadata_matches(
+    return _editable_legacy_metadata_matches(
         actual,
         expected_metadata,
     ) or _published_metadata_matches(actual, expected_metadata)
