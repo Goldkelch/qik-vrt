@@ -1,26 +1,113 @@
 name: QIKVRT core invariant multi-carrier proof
 on:
   push:
-    branches:
-      - feat/core-invariant-six-carrier-proof-v1
+    branches: ['feat/core-invariant-six-carrier-proof-v1']
   pull_request:
-    paths:
-      - spec/effect_ack/CORE_INVARIANT_V1.md
-      - conformance/effect_ack/core-invariant-v1/**
-      - .github/workflows/qikvrt_core_invariant_multicarrier.yml
+    paths: ['spec/effect_ack/CORE_INVARIANT_V1.md','conformance/effect_ack/core-invariant-v1/**','.github/workflows/qikvrt_core_invariant_multicarrier.yml']
 permissions:
   contents: read
 jobs:
   proof:
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - run: |
+      - name: Bind exact subject
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          git diff --exit-code
+          mkdir -p "$RUNNER_TEMP/core-invariant"
+          printf 'HEAD=%s\nTREE=%s\nPREDECESSOR_EVIDENCE_TRANSFER=false\n' "$EXPECTED_HEAD" "$(git rev-parse 'HEAD^{tree}')" | tee "$RUNNER_TEMP/core-invariant/subject.txt"
+      - name: Provision Lean 4.19
+        uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: formalization/QIKVRT_Formalization_v2.0
+          build: false
+          test: false
+          lint: false
+      - name: C90 exhaustive carrier
+        run: |
+          set -euo pipefail
           cc -std=c90 -pedantic -Wall -Wextra -Werror conformance/effect_ack/core-invariant-v1/c90.c -o /tmp/core-c90
-          /tmp/core-c90 | tee /tmp/c90.out
-          test "$(wc -l < /tmp/c90.out)" -eq 16
+          /tmp/core-c90 | tee "$RUNNER_TEMP/core-invariant/c90.out"
+          test "$(wc -l < "$RUNNER_TEMP/core-invariant/c90.out")" -eq 16
+      - name: MC68000 exhaustive carrier under QEMU
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-m68k-linux-gnu libc6-dev-m68k-cross qemu-user
+          m68k-linux-gnu-gcc -m68000 -c conformance/effect_ack/core-invariant-v1/m68000.s -o /tmp/core-m68k.o
+          m68k-linux-gnu-gcc -m68000 -std=c90 -pedantic -Wall -Wextra -Werror -static conformance/effect_ack/core-invariant-v1/m68000_harness.c /tmp/core-m68k.o -o /tmp/core-m68k
+          qemu-m68k /tmp/core-m68k | tee "$RUNNER_TEMP/core-invariant/m68000.out"
+          test "$(wc -l < "$RUNNER_TEMP/core-invariant/m68000.out")" -eq 16
+      - name: Smalltalk exhaustive carrier in pinned Pharo 13
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/core-pharo/image /tmp/core-pharo/vm
+          python3 -B - <<'PY' > "$RUNNER_TEMP/core-invariant/pharo.env"
+          import json
+          from pathlib import Path
+          lock=json.loads(Path('runtime/toolchains/pharo-13.lock.json').read_text())
+          for kind in ('image','vm'):
+              print(f"PHARO_{kind.upper()}_URL={lock[kind]['url']}")
+              print(f"PHARO_{kind.upper()}_SHA256={lock[kind]['sha256']}")
+              print(f"PHARO_{kind.upper()}_FILE={lock[kind]['file']}")
+          PY
+          set -a; . "$RUNNER_TEMP/core-invariant/pharo.env"; set +a
+          curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 3 --connect-timeout 15 --max-time 180 "$PHARO_IMAGE_URL" -o /tmp/core-pharo/image.zip
+          curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 3 --connect-timeout 15 --max-time 180 "$PHARO_VM_URL" -o /tmp/core-pharo/vm.zip
+          printf '%s  %s\n' "$PHARO_IMAGE_SHA256" /tmp/core-pharo/image.zip | sha256sum -c -
+          printf '%s  %s\n' "$PHARO_VM_SHA256" /tmp/core-pharo/vm.zip | sha256sum -c -
+          unzip -q /tmp/core-pharo/image.zip -d /tmp/core-pharo/image
+          unzip -q /tmp/core-pharo/vm.zip -d /tmp/core-pharo/vm
+          chmod +x "/tmp/core-pharo/vm/$PHARO_VM_FILE"
+          "/tmp/core-pharo/vm/$PHARO_VM_FILE" --headless "/tmp/core-pharo/image/$PHARO_IMAGE_FILE" st conformance/effect_ack/core-invariant-v1/smalltalk.st |
+            grep -E '^[01] [01] [01] [01] [0-4] [01]$' | tee "$RUNNER_TEMP/core-invariant/smalltalk.out"
+          test "$(wc -l < "$RUNNER_TEMP/core-invariant/smalltalk.out")" -eq 16
+      - name: TEMDD independent semantic carrier
+        run: python3 -B src/temdd/v1_adapter.py conformance/effect_ack/core-invariant-v1/core_invariant.temdd > "$RUNNER_TEMP/core-invariant/temdd-ir.json"
+      - name: Lean kernel proof
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        run: |
+          set -euo pipefail
+          test "$(cat lean-toolchain)" = 'leanprover/lean4:v4.19.0'
+          lake env lean ../../conformance/effect_ack/core-invariant-v1/CoreInvariant.lean | tee "$RUNNER_TEMP/core-invariant/lean.log"
+          printf '%s\n' QIKVRT_CORE_INVARIANT_LEAN_PASS > "$RUNNER_TEMP/core-invariant/lean.marker"
+      - name: Ada SPARK exhaustive carrier and GNATprove
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gnat gprbuild
+          base='https://github.com/alire-project/GNAT-FSF-builds/releases/download/gnatprove-15.1.0-1'
+          curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 3 "$base/gnatprove-x86_64-linux-15.1.0-1.tar.gz" -o /tmp/gnatprove.tar.gz
+          curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 3 "$base/gnatprove-x86_64-linux-15.1.0-1.tar.gz.sha256" -o /tmp/gnatprove.sha256
+          printf '%s  %s\n' "$(cat /tmp/gnatprove.sha256)" /tmp/gnatprove.tar.gz | sha256sum -c -
+          tar -xzf /tmp/gnatprove.tar.gz -C /tmp
+          export PATH="/tmp/gnatprove-x86_64-linux-15.1.0-1/bin:$PATH"
+          gprbuild -P conformance/effect_ack/core-invariant-v1/ada/core_invariant.gpr
+          conformance/effect_ack/core-invariant-v1/ada/bin/core_invariant_main | tee "$RUNNER_TEMP/core-invariant/ada_spark.out"
+          test "$(wc -l < "$RUNNER_TEMP/core-invariant/ada_spark.out")" -eq 16
+          gnatprove -P conformance/effect_ack/core-invariant-v1/ada/core_invariant_spark.gpr --level=2 --warnings=error --checks-as-errors | tee "$RUNNER_TEMP/core-invariant/gnatprove.log"
+          printf '%s\n' QIKVRT_CORE_INVARIANT_SPARK_PASS > "$RUNNER_TEMP/core-invariant/spark.marker"
+      - name: Cross-conformance against neutral vectors
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          head="$(git rev-parse HEAD)"; tree="$(git rev-parse 'HEAD^{tree}')"
+          test "$head" = "$EXPECTED_HEAD"
+          python3 -B conformance/effect_ack/core-invariant-v1/runner.py --contract conformance/effect_ack/core-invariant-v1/vectors.json --temdd-ir "$RUNNER_TEMP/core-invariant/temdd-ir.json" --lean-marker "$RUNNER_TEMP/core-invariant/lean.marker" --spark-marker "$RUNNER_TEMP/core-invariant/spark.marker" --head "$head" --tree "$tree" --output "$RUNNER_TEMP/core-invariant/report.json" "$RUNNER_TEMP/core-invariant/c90.out" "$RUNNER_TEMP/core-invariant/m68000.out" "$RUNNER_TEMP/core-invariant/smalltalk.out" "$RUNNER_TEMP/core-invariant/ada_spark.out"
+          git diff --exit-code
+      - name: Preserve exact-subject proof evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: core-invariant-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/core-invariant/
+          if-no-files-found: error
