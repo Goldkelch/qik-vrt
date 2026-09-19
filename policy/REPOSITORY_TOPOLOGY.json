@@ -1,0 +1,58 @@
+{
+  "schema": "qikvrt_repository_topology_v1",
+  "purpose": "Keep the repository root as a bounded front door and route implementation, evidence, delivery, publication, and historical material into explicit surfaces.",
+  "root_entry_budget": 180,
+  "canonical_surfaces": {
+    "protocol_core": [
+      "src",
+      "include"
+    ],
+    "runtime_and_adapters": [
+      "runtime",
+      "tools",
+      "scripts"
+    ],
+    "delivery": [
+      "deploy",
+      "dist",
+      "release"
+    ],
+    "verification": [
+      "tests",
+      "formalization",
+      "hardware"
+    ],
+    "control_plane": [
+      ".github/workflows",
+      "policy",
+      "acceptance",
+      "state"
+    ],
+    "evidence": [
+      "evidence",
+      "ledger",
+      "receipts",
+      "audit"
+    ],
+    "publications": [
+      "docs/publications",
+      "release",
+      "zenodo"
+    ],
+    "historical_compatibility": [
+      "legacy"
+    ]
+  },
+  "root_forbidden_globs": [
+    "QIKVRT_V45_*.cmd"
+  ],
+  "historical_migrations": {
+    "QIKVRT_V45_*.cmd": "legacy/v45/"
+  },
+  "invariants": [
+    "TRANSPORT_ACK != EFFECT_ACK",
+    "repository root is a front door, not an archive",
+    "historical compatibility material does not become current authority",
+    "moving historical files does not transfer predecessor evidence"
+  ]
+}

@@ -1,60 +1,86 @@
-# QIKVRT Self-Contained GitHub Repository with REST/TCP-IP API V1
+# QIK-VRT repository architecture
 
-Created: 2026-06-26 05:43:26 CEST
+This is the canonical navigation map for the repository. It describes where
+active code, verification, evidence, delivery, publications, and historical
+material belong. It does not change protocol semantics or evidence status.
 
-This repository is a self-contained QIK-VRT repository root. It includes:
+## Thin waist
 
 ```text
-GitHub-compatible REST/TCP-IP API shim
-GitHub Actions workflow_dispatch / repository_dispatch workflow
-OpenAPI contract
-Handler implementation
-Client implementation
-Unit and TCP/IP E2E tests
-CI workflow
-Metagrammar test inventory
-Audit and uploadability gates
+transport / execution / storage
+            |
+            v
+exact subject + provenance + evidence
+            |
+            v
+five-state Effect-Acknowledgement decision
+            |
+            v
+ordinary effect only at EFFECT_ACK_DONE
 ```
 
-## Local TCP/IP API
+The normative invariant remains:
+
+```text
+TRANSPORT_ACK != EFFECT_ACK
+ordinary_release(result) == (result.state == EFFECT_ACK_DONE)
+```
+
+Everything outside that waist is an adapter, proof, delivery mechanism,
+publication carrier, or historical record.
+
+## Canonical surfaces
+
+| Surface | Canonical locations | Responsibility |
+|---|---|---|
+| Protocol core | `src/`, `include/` | Five-state semantics and executable core |
+| Runtime and adapters | `runtime/`, `tools/`, `scripts/` | Bounded execution, adapters, materializers |
+| Delivery | `deploy/`, `dist/`, `release/` | Runtime packaging and delivered artifacts |
+| Verification | `tests/`, `formalization/`, `hardware/` | Executable tests and machine-checkable obligations |
+| Control plane | `.github/workflows/`, `policy/`, `acceptance/`, `state/` | Admission, review, promotion and fail-closed orchestration |
+| Evidence | `evidence/`, `ledger/`, `receipts/`, `audit/` | Append-only observations and receipts |
+| Publications | `docs/publications/`, `release/`, `zenodo/` | Publication sources, requests, receipts and readbacks |
+| Historical compatibility | `legacy/` | Preserved superseded launchers and compatibility material |
+
+## Front doors
 
 ```bash
+python3 examples/effect_haltpoint_demo.py
+make test
+python3 qikvrt.py master-gate
 make run-api
 ```
 
-Health:
+One-off versioned launchers do not belong at repository root. Historical V45
+Windows launchers are preserved byte-for-byte under `legacy/v45/`.
 
-```bash
-curl http://127.0.0.1:8766/health
-```
-
-## Tests
-
-```bash
-make test
-```
-
-## GitHub REST API enablement
-
-After upload to GitHub, the repository can be triggered through GitHub REST:
+## Dependency direction
 
 ```text
-POST https://api.github.com/repos/{owner}/{repo}/actions/workflows/qikvrt_mesh_api.yml/dispatches
-POST https://api.github.com/repos/{owner}/{repo}/dispatches
+protocol core
+   ^      ^
+   |      |
+runtime  verification
+   ^      ^
+   |      |
+delivery  control-plane
+   \      /
+    evidence
+       |
+   publication
 ```
 
-## Boundaries
+Evidence may describe another layer but must not silently become authority for
+that layer. Publication does not imply product acceptance. CI does not imply
+review. Transport does not imply effect. A HEAD mutation creates a new exact
+subject and requires fresh validation.
 
-```text
-FIXED_RELEASE_COMMIT = a8a9cb2666a91411489d4fc90a5306908f8428ea
-FIXED_RELEASE_TREE = c5cefebd20b5836d730a4e9da82eeaa5c9363ebf
-LIVE_GITHUB_ACTIONS_RUN = SUCCESS (run 29764193906)
-GITHUB_PAGES_BUILD_AND_DEPLOY = SUCCESS (run 29764192834)
-ZENODO_DOI_FOR_EXACT_RELEASE = OPEN
-INDEPENDENT_THIRD_PARTY_REPRODUCTION = OPEN
-```
+## Repository-shape rule
 
-These hosted results establish the named GitHub effects only. They do not
-establish non-bypassability in every integration, production hardening,
-external adoption, or empirical validation of claims outside the executable
-software boundary.
+The root is a front door, not an archive. New implementation code belongs in a
+canonical surface above. Historical/versioned compatibility material belongs
+under `legacy/` or the domain-specific evidence/publication tree.
+
+The machine-readable companion is `policy/REPOSITORY_TOPOLOGY.json`; its
+regression test prevents the V45 launcher family from returning to root and
+keeps a bounded root-entry budget.
