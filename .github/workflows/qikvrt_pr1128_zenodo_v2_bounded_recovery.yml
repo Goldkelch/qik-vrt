@@ -1,0 +1,118 @@
+name: QIKVRT PR1128 Zenodo v2 bounded recovery
+on:
+  push:
+    branches: [recovery/pr1128-zenodo-v2-normalized-description]
+    paths:
+      - .github/workflows/qikvrt_pr1128_zenodo_v2_bounded_recovery.yml
+permissions:
+  contents: write
+concurrency:
+  group: qikvrt-pr1128-zenodo-v2-bounded-recovery
+  cancel-in-progress: false
+jobs:
+  recover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 5471bf92fa511271067500a3c372a793e55fd434
+          fetch-depth: 20
+          persist-credentials: true
+      - name: Reobserve immutable execution and source subjects
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 5471bf92fa511271067500a3c372a793e55fd434
+          test "$(git rev-parse 'HEAD^{tree}')" = e88bab5ead64045db917b397111e2f258b0076c8
+          test "$(gh api repos/Goldkelch/qik-vrt/pulls/1128 --jq .head.sha)" = eff0cdaef77de58ad69971b3f22172ef82267f20
+          test "$(git rev-parse 'eff0cdaef77de58ad69971b3f22172ef82267f20^{tree}')" = 0856e248460000e0f1e53641821e894d98a34609
+      - name: Reconcile only the observed Zenodo text-normalization boundary
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+          GITHUB_REPOSITORY: Goldkelch/qik-vrt
+          GITHUB_SHA: 5471bf92fa511271067500a3c372a793e55fd434
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json, os
+          from pathlib import Path
+          from tools import qikvrt_zenodo_actions as z
+          from tools import qikvrt_zenodo_publish as p
+
+          def text_normalize(value):
+              return value.translate(str.maketrans({"‚":"'","‘":"'","’":"'"}))
+
+          original=z._metadata_matches
+          def bounded_match(actual, expected):
+              if isinstance(expected, dict):
+                  return isinstance(actual, dict) and all(
+                      key in actual and bounded_match(actual[key], value)
+                      for key, value in expected.items()
+                  )
+              if isinstance(expected, list):
+                  return isinstance(actual, list) and len(actual)==len(expected) and all(
+                      bounded_match(a,e) for a,e in zip(actual,expected)
+                  )
+              if isinstance(expected,str) and isinstance(actual,str):
+                  return actual==expected or text_normalize(actual)==text_normalize(expected)
+              return actual==expected
+
+          expected=json.loads(Path('docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/ZENODO_METADATA.json').read_text())
+          expected_draft=dict(expected); expected_draft.pop('prereserve_doi',None)
+          client=z.ZenodoClient(os.environ['ZENODO_ACCESS_TOKEN'],z.DEFAULT_BASE_URL,poll_attempts=1)
+          state,current=client.get_deposition_or_record(22845516)
+          if state!='draft':
+              raise SystemExit('RECOVERY_BLOCK_UNEXPECTED_REMOTE_STATE='+state)
+          actual=current.get('metadata')
+          raw_diffs=[key for key,value in expected_draft.items()
+                     if key not in actual or not original(actual[key],value)]
+          if raw_diffs != ['description']:
+              raise SystemExit('RECOVERY_BLOCK_UNEXPECTED_METADATA_DIFF='+repr(raw_diffs))
+          if not bounded_match(actual,expected_draft):
+              raise SystemExit('RECOVERY_BLOCK_DESCRIPTION_NOT_PLATFORM_NORMALIZATION')
+          if actual['description'] != text_normalize(expected_draft['description']):
+              raise SystemExit('RECOVERY_BLOCK_DESCRIPTION_NORMALIZATION_NOT_EXACT')
+          reserved=actual.get('prereserve_doi')
+          if not isinstance(reserved,dict) or reserved.get('doi')!='10.5281/zenodo.22845516' or int(reserved.get('recid',0))!=22845516:
+              raise SystemExit('RECOVERY_BLOCK_RESERVED_DOI_MISMATCH')
+          print('TEMDD_ZENODO_NORMALIZATION_BOUNDARY=VERIFIED')
+          print('TEMDD_REMOTE_RECORD=22845516')
+          z._metadata_matches=bounded_match
+          evidence=p.publish(
+              Path('release/pr1128-truth-expectations-law-zenodo-v2/publication-manifest.json'),
+              Path('.').resolve(),
+          )
+          print('ZENODO_PUBLICATION_STATE='+evidence['state'])
+          print('ZENODO_RECORD_ID='+str(evidence['record_id']))
+          print('ZENODO_DOI='+evidence['doi'])
+          PY
+      - name: Persist exact recovery/effect receipt on a separate branch
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -f release/pr1128-truth-expectations-law-zenodo-v2/zenodo-publication.json; then
+            git config user.name qikvrt-publication-materializer
+            git config user.email qikvrt-publication-materializer@users.noreply.github.com
+            git add release/pr1128-truth-expectations-law-zenodo-v2/zenodo-publication.json
+            python3 -B tools/qikvrt_integrity.py generate
+            git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+            git diff --cached --check
+            git commit -m 'publication: persist PR1128 v2 bounded Zenodo recovery receipt'
+            git push origin HEAD:refs/heads/publication/pr1128-truth-expectations-law-zenodo-v2-recovery-receipt
+          fi
+      - name: Preserve bounded recovery evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pr1128-zenodo-v2-bounded-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release/pr1128-truth-expectations-law-zenodo-v2/
+          if-no-files-found: warn
+          retention-days: 30
