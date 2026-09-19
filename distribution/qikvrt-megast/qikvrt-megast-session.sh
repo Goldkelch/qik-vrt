@@ -18,8 +18,8 @@ cat > "$HOME/Desktop/QIK-VRT-Mega-ST.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application
 Name=Atari Mega ST (Hatari)
-Comment=Start the Atari ST hardware environment; provide a legally usable TOS image in Hatari configuration.
-Exec=hatari
+Comment=Start the Mega-ST hardware environment with the pinned redistributable EmuTOS ROM.
+Exec=hatari --machine st --tos /usr/share/qikvrt/emutos/etos256de.img
 Icon=computer
 Terminal=false
 EOF
