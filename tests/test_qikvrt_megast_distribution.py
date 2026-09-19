@@ -17,6 +17,18 @@ WORKFLOW = ROOT / ".github/workflows/qikvrt_megast_distribution_v1.yml"
 
 
 class MegaSTDistributionContract(unittest.TestCase):
+    def test_docker_context_excludes_only_generated_distribution_outputs(self):
+        # Run 35390074944 failed while Docker traversed the root-owned live-build
+        # cache. Exclude generated distribution outputs, not product sources,
+        # the Git subject, or the verified .qikvrt language/runtime cache.
+        rules = [line.strip() for line in (ROOT / '.dockerignore').read_text().splitlines()
+                 if line.strip() and not line.lstrip().startswith('#')]
+        self.assertEqual(rules, ['/.build/qikvrt-megast/', '/out/'])
+        self.assertFalse(
+            (ROOT / 'deploy/universal-terminal/Dockerfile.dockerignore').exists(),
+            'A Dockerfile-specific ignore file must preserve the distribution exclusions',
+        )
+
     def test_build_contract_is_fail_closed(self):
         text = BUILD.read_text()
         self.assertIn('set -eu', text)
