@@ -43,6 +43,21 @@ class MegaSTDistributionContract(unittest.TestCase):
         self.assertIn('qikvrt-megast-amd64.iso.sha256', text)
         self.assertIn('BLOCKED: live-build produced no ISO', text)
 
+    def test_megast_runtime_has_pinned_redistributable_emutos(self):
+        lock = json.loads((ROOT / 'runtime/toolchains/emutos-1.4.lock.json').read_text())
+        self.assertEqual(lock['version'], '1.4')
+        self.assertEqual(lock['rom'], 'etos256de.img')
+        self.assertEqual(lock['license'], 'GPL-2.0-or-later')
+        self.assertEqual(lock['sha256'], 'aadd90cf0c99925d3f2943149dd51ee4deb6015aefe22ade4a5e6c04fb6f2e9d')
+        build = BUILD.read_text()
+        self.assertIn('EMUTOS_LOCK="$ROOT/runtime/toolchains/emutos-1.4.lock.json"', build)
+        self.assertIn("sha256sum -c -", build)
+        self.assertIn('len(data) != 256 * 1024', build)
+        self.assertIn('/usr/share/hatari/tos.img', build)
+        session = SESSION.read_text()
+        self.assertIn('hatari --machine st --tos /usr/share/qikvrt/emutos/etos256de.img', session)
+        self.assertNotIn('provide a legally usable TOS image', session)
+
     def test_modern_compatibility_envelope_is_present(self):
         text = BUILD.read_text()
         for token in ('hatari', 'firefox-esr', 'flatpak', 'podman', 'xfce4'):
