@@ -1,8 +1,10 @@
 import hashlib
 import io
 import json
+import os
 import pathlib
 import runpy
+import subprocess
 import tempfile
 import unittest
 import zipfile
@@ -59,6 +61,96 @@ class MegaSTDistributionContract(unittest.TestCase):
         session = SESSION.read_text()
         self.assertIn('hatari --machine st --tos /usr/share/qikvrt/emutos/etos256de.img', session)
         self.assertNotIn('provide a legally usable TOS image', session)
+
+    def _check_emutos_materialization(self, entries, *, expected_error=None, bad_digest=False):
+        # Execute the real build prefix, not a second implementation of mkdir,
+        # extraction or linking. Only network transport uses a local fixture.
+        # Synthetic ROM bytes are never executed and do not witness a guest boot.
+        boundary = '# Compile the real C90 corpus and the CPU-family bootstrap program into the guest.'
+        build = BUILD.read_text()
+        self.assertEqual(build.count(boundary), 1)
+        lock_path = ROOT / 'runtime/toolchains/emutos-1.4.lock.json'
+        original_lock = lock_path.read_bytes()
+        lock = json.loads(original_lock)
+        with tempfile.TemporaryDirectory(prefix='qikvrt emutos ') as temp:
+            root = pathlib.Path(temp)
+            staged_build = root / 'distribution/qikvrt-megast/build.sh'
+            staged_build.parent.mkdir(parents=True)
+            staged_build.write_text(build.split(boundary, 1)[0])
+            archive_path = root / 'fixture.zip'
+            with zipfile.ZipFile(archive_path, 'w') as archive:
+                for name, payload in entries:
+                    archive.writestr(name, payload)
+            lock['sha256'] = ('0' * 64 if bad_digest else
+                              hashlib.sha256(archive_path.read_bytes()).hexdigest())
+            staged_lock = root / 'runtime/toolchains/emutos-1.4.lock.json'
+            staged_lock.parent.mkdir(parents=True)
+            staged_lock.write_text(json.dumps(lock))
+            commands = root / 'commands'
+            commands.mkdir()
+            curl = commands / 'curl'
+            curl.write_text(
+                '#!/bin/sh\nset -eu\n'
+                'while [ "$#" -gt 0 ]; do\n'
+                '  if [ "$1" = -o ]; then\n'
+                '    cp -- "$QIKVRT_TEST_EMUTOS_ARCHIVE" "$2"\n'
+                '    exit 0\n'
+                '  fi\n'
+                '  shift\n'
+                'done\nexit 64\n'
+            )
+            curl.chmod(0o755)
+            work = root / 'clean work'
+            out = root / 'output'
+            self.assertFalse(work.exists())
+            self.assertFalse(out.exists())
+            result = subprocess.run(
+                ['sh', str(staged_build)], cwd=root, capture_output=True,
+                text=True, timeout=30,
+                env=dict(os.environ, PATH=str(commands) + os.pathsep + os.environ['PATH'],
+                         QIKVRT_TEST_EMUTOS_ARCHIVE=str(archive_path),
+                         QIKVRT_MEGAST_WORK=str(work), QIKVRT_MEGAST_OUT=str(out),
+                         QIKVRT_EXACT_SHA='0' * 40),
+            )
+            diagnostics = result.stdout + result.stderr
+            guest = work / 'config/includes.chroot'
+            rom = guest / 'usr/share/qikvrt/emutos' / lock['rom']
+            link = guest / 'usr/share/hatari/tos.img'
+            if expected_error is None:
+                self.assertEqual(result.returncode, 0, diagnostics)
+                self.assertEqual(rom.read_bytes(), entries[0][1])
+                self.assertTrue(link.is_symlink())
+                self.assertEqual(os.readlink(link), '../qikvrt/emutos/' + lock['rom'])
+                self.assertEqual(link.resolve(strict=True), rom.resolve(strict=True))
+                self.assertEqual(link.read_bytes(), entries[0][1])
+            else:
+                self.assertNotEqual(result.returncode, 0, diagnostics)
+                self.assertIn(expected_error, diagnostics)
+                self.assertFalse(rom.exists())
+                self.assertFalse(link.is_symlink())
+        self.assertEqual(lock_path.read_bytes(), original_lock)
+
+    def test_emutos_materializes_rom_and_hatari_link_from_empty_workdir(self):
+        self._check_emutos_materialization([
+            ('emutos-1.4/etos256de.img', b'Q' * (256 * 1024)),
+        ])
+
+    def test_emutos_materialization_rejects_invalid_archives(self):
+        payload = b'Q' * (256 * 1024)
+        cases = [
+            ('checksum', [('emutos/etos256de.img', payload)], 'FAILED', True),
+            ('missing ROM', [('emutos/other.img', payload)],
+             'BLOCKED: exact EmuTOS ROM not uniquely present', False),
+            ('ambiguous ROM', [('one/etos256de.img', payload), ('two/etos256de.img', payload)],
+             'BLOCKED: exact EmuTOS ROM not uniquely present', False),
+            ('wrong size', [('emutos/etos256de.img', b'too short')],
+             'BLOCKED: EmuTOS ROM size mismatch', False),
+        ]
+        for name, entries, error, bad_digest in cases:
+            with self.subTest(case=name):
+                self._check_emutos_materialization(
+                    entries, expected_error=error, bad_digest=bad_digest,
+                )
 
     def test_modern_compatibility_envelope_is_present(self):
         text = BUILD.read_text()
