@@ -93,7 +93,8 @@ jobs:
           gprbuild -P conformance/effect_ack/core-invariant-v1/ada/core_invariant.gpr
           conformance/effect_ack/core-invariant-v1/ada/bin/core_invariant_main | tee "$RUNNER_TEMP/core-invariant/ada_spark.out"
           test "$(wc -l < "$RUNNER_TEMP/core-invariant/ada_spark.out")" -eq 16
-          gnatprove -P conformance/effect_ack/core-invariant-v1/ada/core_invariant_spark.gpr --level=2 --warnings=error | tee "$RUNNER_TEMP/core-invariant/gnatprove.log"
+          gnatprove -P conformance/effect_ack/core-invariant-v1/ada/core_invariant_spark.gpr --level=2 --checks-as-errors=on --warnings=error --report=all | tee "$RUNNER_TEMP/core-invariant/gnatprove.log"
+          cat conformance/effect_ack/core-invariant-v1/ada/obj-spark/gnatprove/gnatprove.out | tee -a "$RUNNER_TEMP/core-invariant/gnatprove.log"
           printf '%s\n' QIKVRT_CORE_INVARIANT_SPARK_PASS > "$RUNNER_TEMP/core-invariant/spark.marker"
       - name: Cross-conformance against neutral vectors
         env:
