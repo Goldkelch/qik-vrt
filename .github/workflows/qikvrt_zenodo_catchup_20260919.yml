@@ -1,0 +1,102 @@
+name: QIKVRT PR1128 exact authorized Zenodo v2
+
+on:
+  push:
+    branches: [publication/zenodo-pr1128-v2-20260919]
+    paths:
+      - .github/workflows/qikvrt_zenodo_catchup_20260919.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-zenodo-pr1128-expectations-law-v2-20260919
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 8
+      - name: Reobserve exact source and execution branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = publication/zenodo-pr1128-v2-20260919
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git ls-remote origin refs/heads/publication/zenodo-pr1128-v2-20260919 | cut -f1)" = "$GITHUB_SHA"
+          test "$(gh api repos/Goldkelch/qik-vrt/pulls/1128 --jq .head.sha)" = eff0cdaef77de58ad69971b3f22172ef82267f20
+          test "$(git rev-parse 'eff0cdaef77de58ad69971b3f22172ef82267f20^{tree}')" = 0856e248460000e0f1e53641821e894d98a34609
+          test "$(gh api repos/Goldkelch/qik-vrt/git/ref/heads/main --jq .object.sha)" = a86054139b49c13c5cd344753b248b46b5daf66f
+          git config user.name qikvrt-publication-materializer
+          git config user.email qikvrt-publication-materializer@users.noreply.github.com
+          echo "REPOSITORY=$GITHUB_REPOSITORY REF=$GITHUB_REF_NAME HEAD=$GITHUB_SHA TREE=$(git rev-parse 'HEAD^{tree}') PHASE=EXACT_SOURCE_VERIFIED"
+      - name: Verify repository integrity and frozen publication scope
+        id: validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_tool_cache.py verify
+          python3 -B tools/qikvrt_integrity.py verify
+          python3 -B docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/verify_publication_scope.py
+          python3 -B - <<'PY'
+          import pathlib
+          from tools import qikvrt_zenodo_publish as publish
+          root = pathlib.Path.cwd()
+          path = root / 'release/pr1128-expectations-law-zenodo-v2-20260919/publication-manifest.json'
+          manifest = publish.load_manifest(path, root)
+          assert len(manifest['files']) == 14
+          head = publish._validate_repository_source_head(root, path, manifest)
+          print('EXACT_AUTHORIZATION_VALIDATED execution_head=' + head)
+          PY
+      - name: Consume exact authorization once, publish and publicly redownload
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/publication/zenodo-pr1128-v2-20260919 | cut -f1)" = "$GITHUB_SHA"
+          python3 -B tools/qikvrt_zenodo_publish.py --manifest release/pr1128-expectations-law-zenodo-v2-20260919/publication-manifest.json
+      - name: Persist exact publication or recovery evidence
+        if: always() && steps.validate.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import datetime, json, os, pathlib
+          folder = pathlib.Path('release/pr1128-expectations-law-zenodo-v2-20260919')
+          receipt = folder / 'zenodo-publication.json'
+          evidence = json.loads(receipt.read_text()) if receipt.exists() else {}
+          progress = json.loads((folder / 'AI_PROGRESS.json').read_text())
+          progress.update(updated_at=datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds'), execution_head=os.environ['GITHUB_SHA'], workflow_run_id=os.environ['GITHUB_RUN_ID'], publication_phase=evidence.get('phase', evidence.get('state', 'NO_EFFECT_RECEIPT')), next_action='READ_REMOTE_RECEIPT_AND_PERSIST_ON_MIRROR')
+          (folder / 'AI_PROGRESS.json').write_text(json.dumps(progress, ensure_ascii=False, sort_keys=True, indent=2) + '\n')
+          (folder / 'AI_STATUS.md').write_text('# PR1128 v2 publication execution\n\nRepository: Goldkelch/qik-vrt\n\nExecution: ' + os.environ['GITHUB_SHA'] + '\n\nPublication receipt state: ' + progress['publication_phase'] + '\n\nNext: read remote evidence and persist on Mirror. Main promotion and reciprocal repository equality are not claimed.\n')
+          PY
+          git add release/pr1128-expectations-law-zenodo-v2-20260919
+          if ! git diff --cached --quiet; then
+            python3 -B tools/qikvrt_integrity.py generate
+            git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+            git diff --cached --check
+            git commit -m 'publication: persist PR1128 v2 Zenodo effect and exact public readback'
+            git push origin HEAD:publication/zenodo-pr1128-v2-20260919
+            test "$(git ls-remote origin refs/heads/publication/zenodo-pr1128-v2-20260919 | cut -f1)" = "$(git rev-parse HEAD)"
+            python3 -B tools/qikvrt_integrity.py verify
+            echo "REPOSITORY=$GITHUB_REPOSITORY REF=$GITHUB_REF_NAME HEAD=$(git rev-parse HEAD) TREE=$(git rev-parse 'HEAD^{tree}') PHASE=EVIDENCE_PERSISTED"
+          fi
+      - name: Preserve bounded execution evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qikvrt-pr1128-zenodo-v2-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release/pr1128-expectations-law-zenodo-v2-20260919/
+          if-no-files-found: warn
+          retention-days: 30
