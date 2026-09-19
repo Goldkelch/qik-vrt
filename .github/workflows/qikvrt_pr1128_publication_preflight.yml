@@ -1,117 +1,178 @@
-name: QIKVRT PR1128 bounded publication-proof materializer
+name: QIKVRT PR1128 actual TEMDD recovery observation
 'on':
   push:
     branches: ['observe/pr1128-publication-preflight-f2d249-v1']
 permissions:
-  contents: write
+  contents: read
+  actions: read
 concurrency:
-  group: qikvrt-pr1128-publication-proof-f2d249-v1
+  group: qikvrt-pr1128-temdd-observation
   cancel-in-progress: false
 jobs:
-  materialize:
-    if: github.repository == 'Goldkelch/qik-vrt'
+  apply-temdd:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 8
     steps:
-      - name: Check out isolated execution carrier
+      - name: Check out pinned TEMDD implementation separately
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          path: carrier
+          ref: ff2f5594dd0462b4e293ac80dbc20ace5e851f89
+          path: implementation
           persist-credentials: false
-      - name: Check out immutable original PR subject separately
+      - name: Check out unchanged publication subject
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: f2d249f0f070ec427621832a31d7a8a490184638
-          fetch-depth: 2
+          ref: ee8c95af54a7d6035b3ca5d204cc02121dc3199c
           path: candidate
           persist-credentials: false
-      - name: Materialize bounded companions, canonical publication indexes and integrity
+      - name: Read actual quota and bounded current-subject snapshot once
         env:
           GH_TOKEN: ${{ github.token }}
-          PYTHONDONTWRITEBYTECODE: '1'
-          PYTHONNOUSERSITE: '1'
-        working-directory: candidate
         shell: bash
         run: |
           set -euo pipefail
           python3 -B - <<'PY'
-          import datetime,hashlib,json,os,pathlib,subprocess,sys,urllib.request
-          H='f2d249f0f070ec427621832a31d7a8a490184638';T='12aa0b905cb25b58c6d40f8b28b046f2093d859d'
-          BASE='a86054139b49c13c5cd344753b248b46b5daf66f';B='publication/truth-no-conspiracy-theory-2026-09-19'
+          import datetime,json,os,pathlib,urllib.request,urllib.error
+          out=pathlib.Path(os.environ['RUNNER_TEMP'])/'pr1128-temdd-application'
+          out.mkdir(mode=0o700,exist_ok=False)
+          def now():return datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00','Z')
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,*args):return None
+          opener=urllib.request.build_opener(NoRedirect())
+          blocked=False
+          def get(path):
+              global blocked
+              if blocked:return {'observed':False,'reason':'STOP_AFTER_RATE_OR_ACCESS_BOUNDARY'}
+              req=urllib.request.Request('https://api.github.com/'+path,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Cache-Control':'no-cache','User-Agent':'QIKVRT-TEMDD-readonly/1'},method='GET')
+              try:
+                  with opener.open(req,timeout=20) as r:
+                      raw=r.read(2*1024*1024+1)
+                      if len(raw)>2*1024*1024:raise ValueError('RESPONSE_BOUND')
+                      result={'observed':True,'status':r.status,'observed_at':now(),'data':json.loads(raw),'rate_remaining':r.headers.get('X-RateLimit-Remaining'),'rate_reset':r.headers.get('X-RateLimit-Reset')}
+                      if result['rate_remaining']=='0':blocked=True
+                      return result
+              except urllib.error.HTTPError as e:
+                  blocked=True
+                  return {'observed':True,'status':e.code,'observed_at':now(),'rate_remaining':e.headers.get('X-RateLimit-Remaining'),'rate_reset':e.headers.get('X-RateLimit-Reset'),'retry_after':e.headers.get('Retry-After'),'data':None}
+              except Exception as e:
+                  blocked=True
+                  return {'observed':False,'observed_at':now(),'error':type(e).__name__,'data':None}
+          prefix='repos/Goldkelch/qik-vrt/'
+          snapshot={'collector_run':os.environ['GITHUB_RUN_ID'],'collector_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'request_methods':['GET'],'observed_at':now()}
+          snapshot['quota']=get('rate_limit')
+          core=((snapshot['quota'].get('data') or {}).get('resources') or {}).get('core') or {}
+          if core.get('remaining')==0:blocked=True
+          requests=[('pr','pulls/1128'),('commit','git/commits/ee8c95af54a7d6035b3ca5d204cc02121dc3199c'),('run','actions/runs/35412031035'),('jobs','actions/runs/35412031035/attempts/2/jobs?per_page=100'),('reviews','pulls/1128/reviews?per_page=100'),('active_runs','actions/runs?status=in_progress&per_page=100&exclude_pull_requests=true')]
+          for name,path in requests:snapshot[name]=get(prefix+path)
+          snapshot['api_boundary_encountered']=blocked
+          (out/'SNAPSHOT.json').write_text(json.dumps(snapshot,sort_keys=True,indent=2)+'\n')
+          print(json.dumps({'quota_core':core,'http_states':{k:v.get('status') for k,v in snapshot.items() if isinstance(v,dict)},'read_only':True},sort_keys=True))
+          PY
+      - name: Execute actual TEMDD parser C90 kernel ledger and exact-evidence guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset GH_TOKEN GITHUB_TOKEN
+          python3 -B - <<'PY'
+          import copy,ctypes,datetime,hashlib,json,os,pathlib,subprocess,sys,urllib.request
+          root=pathlib.Path.cwd(); impl=root/'implementation'; candidate=root/'candidate'
+          out=pathlib.Path(os.environ['RUNNER_TEMP'])/'pr1128-temdd-application'
+          def now():return datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00','Z')
+          def git(directory,*args):return subprocess.check_output(['git','-C',str(directory),*args],text=True,timeout=30).strip()
+          def canon(v):return json.dumps(v,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()
+          def digest(v):return hashlib.sha256(canon(v)).hexdigest()
+          def save(n,v):(out/n).write_text(json.dumps(v,sort_keys=True,indent=2,ensure_ascii=False)+'\n')
+          H='ee8c95af54a7d6035b3ca5d204cc02121dc3199c';T='1306d1a313ab9998d0708042cb93c4d3c5b8eb9d'
+          IH='ff2f5594dd0462b4e293ac80dbc20ace5e851f89';IT='6c332fde587ccf30ebfcb3b51fd8e47f5fe967dc'
+          assert git(candidate,'rev-parse','HEAD')==H and git(candidate,'rev-parse','HEAD^{tree}')==T
+          assert git(impl,'rev-parse','HEAD')==IH and git(impl,'rev-parse','HEAD^{tree}')==IT
+          S={'repository':'Goldkelch/qik-vrt','pr':1128,'head':H,'tree':T}
+          branch='refs/heads/publication/truth-no-conspiracy-theory-2026-09-19'
+          before=git(candidate,'ls-remote','--heads','origin',branch)
+          save('SUBJECT.json',{'subject':S,'implementation_head':IH,'implementation_tree':IT,'branch_readback_before':before,'collector_is_not_publication_subject':True})
+          assert before.split()==[H,branch],'SUBJECT_DRIFT'
+          snapshot=json.loads((out/'SNAPSHOT.json').read_text())
+          def data(k):return snapshot.get(k,{}).get('data')
+          run=data('run');jobs=data('jobs');pr=data('pr');commit=data('commit')
+          bound=bool(pr and commit and run and pr['head']['sha']==H and commit['sha']==H and commit['tree']['sha']==T and run['head_sha']==H)
+          current_attempt=run.get('run_attempt') if run else None
+          job_count=jobs.get('total_count') if jobs and current_attempt==2 else None
+          core=((data('quota') or {}).get('resources') or {}).get('core') or {}
+          holder_candidates=[{'id':r['id'],'head':r['head_sha'],'status':r['status'],'attempt':r['run_attempt']} for r in ((data('active_runs') or {}).get('workflow_runs') or []) if r.get('workflow_id')==335830906]
+          review={'run_id':35412031035,'attempt':current_attempt,'status':run.get('status') if run else 'UNOBSERVABLE','jobs_visible':job_count,'canonical_api_binding':bound,'quota_remaining':core.get('remaining'),'quota_reset':core.get('reset'),'concurrency_holder_candidates':holder_candidates,'deadlock_proved':False,'retry_authorized_by_this_observer':False,'cancel_executed':False,'recovery_established':False}
+          if not bound:review['decision']='REST_SNAPSHOT_UNOBSERVABLE'
+          elif current_attempt!=2:review['decision']='ATTEMPT_CHANGED_REBIND_REQUIRED'
+          elif run['status']=='pending' and job_count==0:review['decision']='ADMISSION_PENDING_CAUSE_NOT_PROVED'
+          elif run['status']=='completed':review['decision']='INSPECT_TERMINAL_RECEIPT';review['conclusion']=run.get('conclusion')
+          else:review['decision']='INSPECT_ADMITTED_EXECUTION'
           D='docs/publications/2026-09-19-truth-needs-no-conspiracy-theory'
-          A=D+'/Die_Wahrheit_braucht_keine_Verschwoerungstheorie.txt'
-          S='fb865db33137a184e059f7caa0b532ffbe15680aae7098c62f05d3f0d4254cf8'
-          OUT=pathlib.Path(os.environ['RUNNER_TEMP'])/'pr1128-proof-execution';OUT.mkdir(exist_ok=False)
-          def run(*args):
-              p=subprocess.run(args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
-              with (OUT/'EXECUTION.log').open('ab') as f:f.write((' '.join(args)+'\n').encode()+p.stdout+b'\n')
-              if p.returncode:print(p.stdout.decode(errors='replace')[-14000:]);raise RuntimeError('command failed: '+args[0])
-              return p.stdout.decode().strip()
-          def git(*args):return run('git','-c','core.hooksPath=/dev/null',*args)
-          def guard():
-              refs=dict((l.split()[1],l.split()[0]) for l in git('ls-remote','--heads','origin','refs/heads/'+B,'refs/heads/main').splitlines())
-              if refs!={'refs/heads/'+B:H,'refs/heads/main':BASE}:raise RuntimeError('source or base moved')
-          def sha(p):return hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()
-          guard();assert git('rev-parse','HEAD')==H and git('rev-parse','HEAD^{tree}')==T
-          assert git('status','--porcelain')=='' and sha(A)==S
-          run('python3','-B','../carrier/.qikvrt/executors/pr1128_publication_payload.py','--root',str(pathlib.Path.cwd()),'--returned-at','2026-09-19T01:06:46Z')
-          assert sha(D+'/MACHINE_PROOF_BUNDLE.json')=='9d2ced07333febfc93d6c7f59aaac0dda7ca6aab156119e698e2df332e7038a0','returned proof bytes differ'
-          assert sha(D+'/PREPUBLICATION_RETURN_RECEIPT.json')=='067cb573f3d4d08d1b8399270ad62ed9d708114b6bff0d74d21f4e5cb4dd934a'
-          expected=sorted(D+'/'+n for n in ['AUTHORIZE_EXACT_UPLOAD.txt','BOUNDARY_TEST_REPORT.json','CLAIM_MATRIX.json','MACHINE_PROOF_BUNDLE.json','PREPUBLICATION_RETURN_RECEIPT.json','PUBLICATION_CONTROL_PENDING.json','QUELLEN_UND_GELTUNGSBEREICH.md','README.md','SOURCE_BINDINGS.json','ZENODO_METADATA.json','verify_publication_scope.py'])
-          assert sorted(git('ls-files','--others','--exclude-standard').splitlines())==expected,'extra untracked file'
-          projections=['REPOSITORY_FILE_MANIFEST.json','REPOSITORY_FILE_MANIFEST.json.sha256','SHA256SUMS.txt']
-          indexes=['docs/publications/index.json','docs/publications/index.html']
-          # The new README participates in the existing mandatory discovery contract.
-          run('python3','-B','tools/qikvrt_publication_overview.py','materialize','--json')
-          run('python3','-B','tools/qikvrt_publication_overview.py','check','--json')
-          run('python3','-B','tools/qikvrt_integrity.py','generate');run('python3','-B','tools/qikvrt_integrity.py','verify')
-          digest={p:sha(p) for p in projections+indexes}
-          run('python3','-B','tools/qikvrt_publication_overview.py','materialize','--json')
-          run('python3','-B','tools/qikvrt_integrity.py','generate');assert digest=={p:sha(p) for p in projections+indexes}
-          assert sorted(git('diff','--name-only',H).splitlines())==sorted(projections+indexes)
-          run('make','test');run('python3','-B',D+'/verify_publication_scope.py')
-          git('add','--',*expected,*projections,*indexes)
-          result_tree=git('write-tree')
-          git('config','user.name','qikvrt-publication-materializer');git('config','user.email','qikvrt-publication-materializer@users.noreply.github.com')
-          message='docs(publication): bind PR1128 sources, claims and exact return\n\nOriginal article bytes unchanged. Only publication companions, two canonical discovery indexes and three integrity projections.\nPREDECESSOR_EVIDENCE_TRANSFER=false\nIndependent native review and exact natural-person upload authorization remain separate and unestablished. No publication or EFFECT claim.'
-          result=git('commit-tree',result_tree,'-p',H,'-m',message)
-          git('checkout','--detach',result)
-          assert git('rev-list','--parents','-n','1',result).split()==[result,H]
-          assert sorted(git('diff','--name-only',H,result).splitlines())==sorted(expected+projections+indexes)
-          assert git('rev-parse',result+':'+A)=='03e7b116568e9470bd66cb0460392f5b3021c682'
-          run('make','test');run('python3','-B',D+'/verify_publication_scope.py');run('python3','-B','tools/qikvrt_integrity.py','verify')
-          sys.path.insert(0,str(pathlib.Path.cwd()))
-          from tools import qikvrt_zenodo_machine_proof as proof
-          from tools import qikvrt_zenodo_publish as pub
-          from tools import qikvrt_zenodo_actions as transport
-          control=json.loads(pathlib.Path(D+'/PUBLICATION_CONTROL_PENDING.json').read_text())
-          checked=proof.validate_bundle(pathlib.Path.cwd(),pathlib.Path(D+'/MACHINE_PROOF_BUNDLE.json'),upload_paths=control['intended_upload_paths'])
-          try:pub._validate_owner_authorization(None,pathlib.Path.cwd(),'Goldkelch/qik-vrt',{},[],{},pathlib.Path(D+'/zenodo-publication.json'),result)
-          except transport.ZenodoError:owner_rejected=True
-          else:raise RuntimeError('missing owner authorization was admitted')
-          assert git('diff','HEAD','--')=='' and sha(A)==S
-          guard();ref='refs/heads/materialize/pr1128-publication-proof-f2d249-v1'
-          assert git('ls-remote','--heads','origin',ref)=='','transport already exists'
-          run('gh','auth','setup-git');git('push','--porcelain','origin',result+':'+ref)
-          assert git('ls-remote','--heads','origin',ref).split()==[result,ref]
-          receipt={'schema':'qikvrt_pr1128_proof_materialization_receipt_v1','source_head':H,'source_tree':T,'result_head':result,'result_tree':result_tree,'direct_parent':H,'transport_ref':ref,'article_sha256':S,'article_unchanged':True,'changed_paths':sorted(expected+projections+indexes),'successor_make_test':'success','successor_scope_tests':'success','successor_machine_proof':checked,'missing_owner_authorization_rejected':owner_rejected,'PR_ref_changed':False,'PREDECESSOR_EVIDENCE_TRANSFER':False,'native_P3':False,'owner_exact_upload_authorized':False,'production_mutations':0,'EFFECT_ACK_DONE':False,'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT']}
-          (OUT/'RECEIPT.json').write_text(json.dumps(receipt,indent=2,sort_keys=True)+'\n')
-          url='https://raw.githubusercontent.com/Goldkelch/qik-vrt/'+result+'/'+A
-          readback={'subject_head':result,'subject_tree':result_tree,'url':url,'authorization_header_sent':False,'observed_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'status':None,'byte_exact':False}
+          control=json.loads((candidate/D/'PUBLICATION_CONTROL_PENDING.json').read_text())
+          publication={'decision':'REQUEST_EXACT_UPLOAD_AUTHORITY','required_statement':control['required_statement'],'owner_authorization_supplied_to_this_execution':False,'production_mutations':0,'publication_established':False,'native_review_not_inferred':True,'no_review_to_publication_causal_edge_in_this_driver':True,'external_governance_requirements_not_discharged':True}
+          save('DECISIONS.json',{'review':review,'publication':publication,'PREDECESSOR_EVIDENCE_TRANSFER':False,'DONE':False})
+          text='temdd 0.1;\nauthority owner = "Ingolf Lohmann - observation request, not upload authorization";\ncontext pr1128 { perspective = "exact-subject recovery observer"; }\nsubject publication { repository = "Goldkelch/qik-vrt"; binding = exact; }\n'
+          for name,pred,target in [('head_binding','has_exact_head',H),('tree_binding','has_exact_tree',T),('review','requires_recovery','run-35412031035-attempt-2'),('upload','requires_exact_authority',control['publication_id'])]:
+              state='TRUE' if name in ('head_binding','tree_binding') else 'UNKNOWN'
+              text+=f'relation {name} {{ source = "PR1128"; predicate = "{pred}"; target = "{target}"; epistemic = {state}; source_order = 0; observation_order = 1; freshness = FRESH; }}\n'
+          text+='request continuation { target = PUBLICATION_CLOSURE; }\non event { observe; bind; classify; }\non blocker { request_authority; }\nuntil { REVIEW_RECOVERY && EXACT_UPLOAD_AUTHORIZATION && ZENODO_PUBLICATION && FRESH_EFFECT_READBACK; }\n'
+          (out/'recovery.temdd').write_text(text)
+          p=subprocess.run([sys.executable,'-B',str(impl/'src/temdd/v1_adapter.py'),str(out/'recovery.temdd')],text=True,capture_output=True,check=True)
+          ir=json.loads(p.stdout);save('PROGRAM_IR.json',ir)
+          subprocess.run(['gcc','-std=c90','-pedantic-errors','-Wall','-Wextra','-shared','-fPIC','-I',str(impl/'include'),str(impl/'src/temdd_core.c'),'-o',str(out/'libtemdd.so')],check=True)
+          lib=ctypes.CDLL(str(out/'libtemdd.so'));lib.temdd_transition.argtypes=[ctypes.c_int,ctypes.c_int];lib.temdd_transition.restype=ctypes.c_int
+          kernel_state=lib.temdd_transition(0,2);assert kernel_state==2
+          sys.path.insert(0,str(impl))
+          from src.qikvrt_temdd_event_ledger import Runtime,Hold
+          from src.qikvrt_temdd_semantic_ir import project_event,project_evidence,evidence_admitted
+          state=out/'state';runtime=Runtime(candidate,state,'Goldkelch/qik-vrt',1128)
+          emitted=[]
+          def emit(kind,message,payload):
+              seq=len(emitted)+1;t=now()
+              event={'schema':'qikvrt_temdd_native_event_v1','kind':kind,'subject':S,'provenance':{'source':'repository','native_event_id':'observer:'+os.environ['GITHUB_RUN_ID']+':'+os.environ['GITHUB_RUN_ATTEMPT']+':'+str(seq),'source_order':seq},'emitted_at':t,'observed_at':t,'message':message,'payload':dict(payload,producer_identity_scope='this Actions observer, not a native webhook delivery')}
+              row=runtime.append(event);emitted.append((event,row));return row
+          o=emit('OBSERVE','Bounded REST snapshot and immutable Git subject',{'evidence_refs':['sha256:'+digest(snapshot)],'cause_event_ids':[]})
+          r=emit('CLASSIFY','Review recovery disposition from actual observations',{'decision':review['decision'],'cause_event_ids':[o['id']],'review':review})
+          z=emit('CLASSIFY','Publication authority is not supplied by a recovery request',{'decision':publication['decision'],'cause_event_ids':[o['id']],'publication':publication})
+          k=emit('ACTION','Executed TEMDD parser and C90 kernel; no external recovery mutation',{'decision':'TEMDD_SUCCESSOR_REQUIRED','kernel_return':kernel_state,'cause_event_ids':[r['id'],z['id']],'executed_operation':'local parser/kernel/ledger evaluation','cancel_executed':False,'publish_executed':False})
+          replay=runtime.ledger.replay(0);assert [x[1] for x in emitted]==replay
+          assert runtime.append(emitted[0][0])==o
+          projected=[project_event(e) for e in replay]
+          evidence=project_evidence(projected[0],evidence_id='rest-snapshot',evidence_type='OBSERVATION_NOT_SUCCESS',content_digest=digest(snapshot),freshness='FRESH',epistemic='TRUE' if bound else 'UNOBSERVABLE')
+          assert evidence_admitted(evidence,S)
+          successor=dict(S,head='f2d249f0f070ec427621832a31d7a8a490184638')
+          assert not evidence_admitted(evidence,successor)
+          stale=dict(evidence,freshness='STALE');assert not evidence_admitted(stale,S)
+          tampered=copy.deepcopy(emitted[0][0]);tampered['message']='conflicting replay'
+          try:runtime.append(tampered)
+          except Hold:conflict_rejected=True
+          else:raise AssertionError('conflicting native ID accepted')
+          assert r['id'] not in projected[2]['cause_event_ids'],'sequence became cause'
+          runtime.ledger.close()
+          runtime=Runtime(candidate,state,'Goldkelch/qik-vrt',1128);assert runtime.ledger.replay(0)==replay;runtime.ledger.close()
+          (out/'LEDGER.jsonl').write_text(''.join(json.dumps(e,sort_keys=True)+'\n' for e in replay))
+          save('EVENT_IR.json',projected);save('EVIDENCE_IR.json',evidence)
+          names=['tools/qikvrt_temdd.py','src/temdd/v1_adapter.py','src/qikvrt_temdd_semantic_ir.py','src/qikvrt_temdd_event_ledger.py','src/temdd_core.c','include/temdd_core.h']
+          inventory=[{'path':n,'git_blob':git(impl,'rev-parse',IH+':'+n),'sha256':hashlib.sha256((impl/n).read_bytes()).hexdigest()} for n in names]
+          A=D+'/Die_Wahrheit_braucht_keine_Verschwoerungstheorie.txt';article=(candidate/A).read_bytes()
+          public={'url':'https://raw.githubusercontent.com/Goldkelch/qik-vrt/'+H+'/'+A,'head':H,'tree':T,'observed_at':now(),'authorization_header_sent':False,'byte_exact':False}
           class NoRedirect(urllib.request.HTTPRedirectHandler):
               def redirect_request(self,*args):return None
           try:
-              with urllib.request.build_opener(NoRedirect()).open(urllib.request.Request(url,headers={'Cache-Control':'no-cache','User-Agent':'QIKVRT-exact-subject-readback/1'}),timeout=30) as r:
-                  body=r.read(10203);readback.update(status=r.status,bytes=len(body),sha256=hashlib.sha256(body).hexdigest(),byte_exact=body==pathlib.Path(A).read_bytes())
-          except Exception as e:readback['error']=type(e).__name__
-          (OUT/'PUBLIC_READBACK.json').write_text(json.dumps(readback,indent=2,sort_keys=True)+'\n')
-          guard();print(json.dumps(receipt,sort_keys=True));print(json.dumps(readback,sort_keys=True))
+              with urllib.request.build_opener(NoRedirect()).open(urllib.request.Request(public['url'],headers={'Cache-Control':'no-cache','User-Agent':'QIKVRT-TEMDD-readback/1'}),timeout=25) as response:
+                  raw=response.read(len(article)+1);public.update(status=response.status,byte_exact=raw==article,sha256=hashlib.sha256(raw).hexdigest(),bytes=len(raw))
+          except Exception as e:public['error']=type(e).__name__
+          save('PUBLIC_ARTICLE_READBACK.json',public)
+          after=git(candidate,'ls-remote','--heads','origin',branch);assert after.split()==[H,branch]
+          assert git(candidate,'status','--porcelain')==''
+          receipt={'schema':'pr1128_actual_temdd_application_v1','subject':S,'implementation':{'head':IH,'tree':IT,'files':inventory},'parser_ir_v1':'EXECUTED','c90_kernel':'COMPILED_AND_EXECUTED','c90_result':'SUCCESSOR_REQUIRED','ledger':'APPENDED_REPLAYED_REOPENED','ledger_events':len(replay),'tests':{'native_replay_idempotent':True,'conflicting_replay_rejected':conflict_rejected,'tree_identical_different_head_rejected':True,'stale_evidence_rejected':True,'sequence_not_cause':True,'durable_reopen_readback':True},'review_recovery_established':False,'owner_upload_authorization':False,'native_P3':False,'zenodo_publication':False,'DONE':False,'PREDECESSOR_EVIDENCE_TRANSFER':False,'full_seven_layer_conformance_claim':False,'candidate_mutated':False,'decisions_sha256':digest({'review':review,'publication':publication}),'collector_run_id':os.environ['GITHUB_RUN_ID'],'collector_attempt':os.environ['GITHUB_RUN_ATTEMPT']}
+          save('EXECUTION_RECEIPT.json',receipt)
+          print(json.dumps({'TEMDD_application':'EXECUTED','ledger_events':len(replay),'review_decision':review['decision'],'publication_decision':publication['decision'],'public_article':public,'DONE':False},sort_keys=True))
           PY
-      - name: Preserve this execution's exact receipts including any failure log
+      - name: Preserve only this actual execution including explicit unresolved boundaries
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: pr1128-proof-materialization-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/pr1128-proof-execution/
+          name: pr1128-temdd-application-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pr1128-temdd-application/
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
