@@ -2830,6 +2830,20 @@ class MachineProofBeforeZenodoTests(unittest.TestCase):
                 {github.refs[expected_ref]},
             )
 
+    def test_github_tagger_date_uses_git_second_precision(self) -> None:
+        self.assertEqual(
+            publish._canonical_github_tagger_date(
+                "2026-09-19T15:14:33.747598+00:00"
+            ),
+            "2026-09-19T15:14:33Z",
+        )
+        self.assertEqual(
+            publish._canonical_github_tagger_date(
+                "2026-09-19T17:14:33.747598+02:00"
+            ),
+            "2026-09-19T15:14:33Z",
+        )
+
     def test_existing_ref_requires_the_exact_annotated_decision_tag(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)
