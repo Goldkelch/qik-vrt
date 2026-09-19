@@ -2,7 +2,8 @@ name: QIKVRT core invariant multi-carrier proof
 on:
   pull_request:
     paths: ['spec/effect_ack/CORE_INVARIANT_V1.md','conformance/effect_ack/core-invariant-v1/**','.github/workflows/qikvrt_core_invariant_multicarrier.yml']
-permissions: {contents: read}
+permissions:
+  contents: read
 jobs:
  proof:
   runs-on: ubuntu-24.04
@@ -14,7 +15,8 @@ jobs:
       ref: ${{ github.event.pull_request.head.sha }}
       persist-credentials: false
    - name: Bind exact subject
-     env: {EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}}
+     env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
      run: |
       set -euo pipefail
       test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
