@@ -31,7 +31,7 @@ jobs:
           T='12aa0b905cb25b58c6d40f8b28b046f2093d859d'
           B='publication/truth-no-conspiracy-theory-2026-09-19'
           P='docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/Die_Wahrheit_braucht_keine_Verschwoerungstheorie.txt'
-          S='3b64cf2df4e205d15d0348a5dd095902010417fd41e2ba1bca215e3840eec5a1c'
+          S='fb865db33137a184e059f7caa0b532ffbe15680aae7098c62f05d3f0d4254cf8'
           TITLE='Die Wahrheit braucht keine Verschwörungstheorie'
           OUT=pathlib.Path(os.environ['RUNNER_TEMP'])/'pr1128-publication-preflight'
           OUT.mkdir(exist_ok=False)
@@ -59,11 +59,12 @@ jobs:
                   return {'status':exc.code,'observed_at':now(),'error':'HTTP_ERROR'},None
               except Exception as exc:
                   return {'status':None,'observed_at':now(),'error':type(exc).__name__},None
-          assert git('rev-parse','HEAD')==H and git('rev-parse','HEAD^{tree}')==T
           raw=pathlib.Path(P).read_bytes()
-          assert len(raw)==10202 and sha(raw)==S
-          source={'repository':'Goldkelch/qik-vrt','pr':1128,'head':H,'tree':T,'article_path':P,'article_sha256':S,'article_git_blob':git('rev-parse',H+':'+P),'article_bytes':len(raw)}
+          source={'repository':'Goldkelch/qik-vrt','pr':1128,'head':git('rev-parse','HEAD'),'tree':git('rev-parse','HEAD^{tree}'),'article_path':P,'article_sha256':sha(raw),'article_git_blob':git('rev-parse',H+':'+P),'article_bytes':len(raw)}
           write('SOURCE_FREEZE.json',source)
+          assert source['head']==H and source['tree']==T
+          assert len(raw)==10202 and sha(raw)==S
+          assert source['article_git_blob']=='03e7b116568e9470bd66cb0460392f5b3021c682'
           (OUT/pathlib.Path(P).name).write_bytes(raw)
           for path in ['policy/ZENODO_MACHINE_PROOF_BEFORE_PUBLICATION.md','policy/zenodo-machine-proof-policy-v2.json','policy/qikvrt-zenodo-machine-proof-bundle-v2.schema.json','policy/qikvrt-prepublication-return-receipt-v2.schema.json']:
               (OUT/pathlib.Path(path).name).write_bytes(pathlib.Path(path).read_bytes())
@@ -90,8 +91,9 @@ jobs:
                   try:
                       obj=json.loads(body)
                       if isinstance(obj,list): items=obj
-                      else: items=obj.get('hits',{}).get('hits',[])
-                      if not isinstance(items,list): raise ValueError('invalid inventory')
+                      elif isinstance(obj,dict) and isinstance(obj.get('hits'),dict) and isinstance(obj['hits'].get('hits'),list): items=obj['hits']['hits']
+                      else: raise ValueError('invalid inventory')
+                      if any(not isinstance(item,dict) for item in items): raise ValueError('invalid item')
                   except (ValueError,TypeError):
                       result['error']='INVALID_JSON_INVENTORY';break
                   for item in items:
