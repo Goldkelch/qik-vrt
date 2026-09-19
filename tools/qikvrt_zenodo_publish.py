@@ -1373,7 +1373,7 @@ def _validate_github_ref_response(
 
 def _canonical_github_tagger_date(raw: str) -> str:
     parsed = datetime.datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    normalized = parsed.astimezone(datetime.timezone.utc).isoformat()
+    normalized = parsed.astimezone(datetime.timezone.utc).replace(microsecond=0).isoformat()
     return normalized.replace("+00:00", "Z")
 
 
