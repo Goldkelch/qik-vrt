@@ -47,6 +47,11 @@ TRANSPORT_ACK != EFFECT_ACK
 ordinary_release(result) == (result.state == EFFECT_ACK_DONE)
 ```
 
+The source-bound German note [Empfang, Freigabe und Wirkungsnachweis](docs/publications/2026-09-19-core-invariant-transport-effect/KERNINVARIANTE_DE.md)
+records this invariant and its integration, integrity and causal-evidence boundaries.
+Its [publication candidate](docs/publications/2026-09-19-core-invariant-transport-effect/README.md)
+keeps exact Zenodo authorization and public readback separate from repository persistence.
+
 ## One-minute evaluator path
 
 ```bash
