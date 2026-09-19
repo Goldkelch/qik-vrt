@@ -1,0 +1,45 @@
+name: QIKVRT PR1128 final publication receipt normalization
+on:
+  push:
+    branches: [publication/pr1128-truth-expectations-law-zenodo-v2-final-receipt]
+    paths:
+      - .github/workflows/qikvrt_pr1128_v2_receipt_normalize.yml
+permissions:
+  contents: write
+jobs:
+  normalize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: true
+      - name: Normalize receipt terminator and regenerate repository integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          path=Path('release/pr1128-truth-expectations-law-zenodo-v2/zenodo-publication.json')
+          raw=path.read_bytes()
+          if raw.endswith(b'}\\n'):
+              raw=raw[:-2]+b'\n'
+              path.write_bytes(raw)
+          value=json.loads(path.read_text(encoding='utf-8'))
+          assert value['state']=='published'
+          assert value['phase']=='public_verified'
+          assert value['record_id']==22845516
+          assert value['doi']=='10.5281/zenodo.22845516'
+          assert value['recovery']['public_verified'] is True
+          print('TEMDD_PUBLICATION_RECEIPT_JSON=VALID')
+          PY
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          git config user.name qikvrt-publication-materializer
+          git config user.email qikvrt-publication-materializer@users.noreply.github.com
+          git add release/pr1128-truth-expectations-law-zenodo-v2/zenodo-publication.json \
+            REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git diff --cached --check
+          git commit -m 'publication: normalize and verify PR1128 v2 public receipt'
+          git push origin HEAD:publication/pr1128-truth-expectations-law-zenodo-v2-final-receipt
