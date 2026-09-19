@@ -1,0 +1,148 @@
+{
+  "schema": "qikvrt_core_invariant_vectors_v1",
+  "normative_statement": "TRANSPORT_ACK does not imply authorization for downstream effect; ordinary release iff EFFECT_ACK_DONE for the bound valid decision.",
+  "state_order": [
+    "EFFECT_NACK",
+    "EFFECT_ACK_CONTINUE",
+    "EFFECT_ACK_DONE",
+    "EFFECT_ACK_ISOLATE",
+    "EFFECT_ACK_BLOCK"
+  ],
+  "decision_precedence": [
+    "NO_TRANSPORT=>EFFECT_NACK",
+    "BLOCK_REQUIRED=>EFFECT_ACK_BLOCK",
+    "ISOLATE_REQUIRED=>EFFECT_ACK_ISOLATE",
+    "RELEASE_READY=>EFFECT_ACK_DONE",
+    "OTHERWISE=>EFFECT_ACK_CONTINUE"
+  ],
+  "vectors": [
+    {
+      "transport_ack": false,
+      "block_required": false,
+      "isolate_required": false,
+      "release_ready": false,
+      "state": "EFFECT_NACK",
+      "ordinary_release": false
+    },
+    {
+      "transport_ack": false,
+      "block_required": false,
+      "isolate_required": false,
+      "release_ready": true,
+      "state": "EFFECT_NACK",
+      "ordinary_release": false
+    },
+    {
+      "transport_ack": false,
+      "block_required": false,
+      "isolate_required": true,
+      "release_ready": false,
+      "state": "EFFECT_NACK",
+      "ordinary_release": false
+    },
+    {
+      "transport_ack": false,
+      "block_required": false,
+      "isolate_required": true,
+      "release_ready": true,
+      "state": "EFFECT_NACK",
+      "ordinary_release": false
+    },
+    {
+      "transport_ack": false,
+      "block_required": true,
+      "isolate_required": false,
+      "release_ready": false,
+      "state": "EFFECT_NACK",
+      "ordinary_release": false
+    },
+    {
+      "transport_ack": false,
+      "block_required": true,
+      "isolate_required": false,
+      "release_ready": true,
+      "state": "EFFECT_NACK",
+      "ordinary_release": false
+    },
+    {
+      "transport_ack": false,
+      "block_required": true,
+      "isolate_required": true,
+      "release_ready": false,
+      "state": "EFFECT_NACK",
+      "ordinary_release": false
+    },
+    {
+      "transport_ack": false,
+      "block_required": true,
+      "isolate_required": true,
+      "release_ready": true,
+      "state": "EFFECT_NACK",
+      "ordinary_release": false
+    },
+    {
+      "transport_ack": true,
+      "block_required": false,
+      "isolate_required": false,
+      "release_ready": false,
+      "state": "EFFECT_ACK_CONTINUE",
+      "ordinary_release": false
+    },
+    {
+      "transport_ack": true,
+      "block_required": false,
+      "isolate_required": false,
+      "release_ready": true,
+      "state": "EFFECT_ACK_DONE",
+      "ordinary_release": true
+    },
+    {
+      "transport_ack": true,
+      "block_required": false,
+      "isolate_required": true,
+      "release_ready": false,
+      "state": "EFFECT_ACK_ISOLATE",
+      "ordinary_release": false
+    },
+    {
+      "transport_ack": true,
+      "block_required": false,
+      "isolate_required": true,
+      "release_ready": true,
+      "state": "EFFECT_ACK_ISOLATE",
+      "ordinary_release": false
+    },
+    {
+      "transport_ack": true,
+      "block_required": true,
+      "isolate_required": false,
+      "release_ready": false,
+      "state": "EFFECT_ACK_BLOCK",
+      "ordinary_release": false
+    },
+    {
+      "transport_ack": true,
+      "block_required": true,
+      "isolate_required": false,
+      "release_ready": true,
+      "state": "EFFECT_ACK_BLOCK",
+      "ordinary_release": false
+    },
+    {
+      "transport_ack": true,
+      "block_required": true,
+      "isolate_required": true,
+      "release_ready": false,
+      "state": "EFFECT_ACK_BLOCK",
+      "ordinary_release": false
+    },
+    {
+      "transport_ack": true,
+      "block_required": true,
+      "isolate_required": true,
+      "release_ready": true,
+      "state": "EFFECT_ACK_BLOCK",
+      "ordinary_release": false
+    }
+  ]
+}
