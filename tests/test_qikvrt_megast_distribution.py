@@ -54,6 +54,8 @@ class MegaSTDistributionContract(unittest.TestCase):
         self.assertIn("sha256sum -c -", build)
         self.assertIn('len(data) != 256 * 1024', build)
         self.assertIn('/usr/share/hatari/tos.img', build)
+        self.assertIn('"$WORK/config/includes.chroot/usr/share/qikvrt/emutos"', build)
+        self.assertIn('"$WORK/config/includes.chroot/usr/share/hatari"', build)
         session = SESSION.read_text()
         self.assertIn('hatari --machine st --tos /usr/share/qikvrt/emutos/etos256de.img', session)
         self.assertNotIn('provide a legally usable TOS image', session)

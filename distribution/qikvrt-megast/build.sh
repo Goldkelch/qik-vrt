@@ -10,6 +10,8 @@ rm -rf "$WORK"
 mkdir -p "$WORK/config/package-lists" \
          "$WORK/config/archives" \
          "$WORK/config/includes.chroot/usr/local/bin" \
+         "$WORK/config/includes.chroot/usr/share/qikvrt/emutos" \
+         "$WORK/config/includes.chroot/usr/share/hatari" \
          "$WORK/config/includes.chroot/etc/qikvrt" \
          "$WORK/config/includes.chroot/etc/xdg/autostart" \
          "$WORK/config/includes.chroot/etc/systemd/system/multi-user.target.wants" \
