@@ -24,6 +24,33 @@ python3 python3-venv nginx openssh-client
 fonts-dejavu-core qemu-user x11-utils procps
 EOF
 
+# Materialize a legally redistributable, exact-byte EmuTOS ROM for Hatari.
+# The real end-user VirtualBox witness reached Hatari but failed because
+# /usr/share/hatari/tos.img was absent. Keep proprietary Atari TOS excluded.
+EMUTOS_LOCK="$ROOT/runtime/toolchains/emutos-1.4.lock.json"
+EMUTOS_URL=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source"])' "$EMUTOS_LOCK")
+EMUTOS_SHA=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["sha256"])' "$EMUTOS_LOCK")
+EMUTOS_ROM=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["rom"])' "$EMUTOS_LOCK")
+EMUTOS_ARCHIVE="$WORK/emutos.zip"
+curl -fL --proto '=https' --proto-redir '=https' --max-redirs 5 --connect-timeout 20 --max-time 180 \
+  -o "$EMUTOS_ARCHIVE" "$EMUTOS_URL"
+printf '%s  %s\n' "$EMUTOS_SHA" "$EMUTOS_ARCHIVE" | sha256sum -c -
+python3 - "$EMUTOS_ARCHIVE" "$EMUTOS_ROM" "$WORK/config/includes.chroot/usr/share/qikvrt/emutos" <<'PY'
+import pathlib,sys,zipfile
+archive=pathlib.Path(sys.argv[1]); wanted=sys.argv[2]; out=pathlib.Path(sys.argv[3])
+with zipfile.ZipFile(archive) as z:
+    matches=[n for n in z.namelist() if pathlib.PurePosixPath(n).name == wanted]
+    if len(matches) != 1:
+        raise SystemExit("BLOCKED: exact EmuTOS ROM not uniquely present")
+    data=z.read(matches[0])
+    if len(data) != 256 * 1024:
+        raise SystemExit("BLOCKED: EmuTOS ROM size mismatch")
+    (out / wanted).write_bytes(data)
+PY
+ln -s "../qikvrt/emutos/$EMUTOS_ROM" "$WORK/config/includes.chroot/usr/share/hatari/tos.img"
+test -s "$WORK/config/includes.chroot/usr/share/qikvrt/emutos/$EMUTOS_ROM"
+test -L "$WORK/config/includes.chroot/usr/share/hatari/tos.img"
+
 # Compile the real C90 corpus and the CPU-family bootstrap program into the guest.
 GUEST="$WORK/config/includes.chroot"
 mkdir -p "$GUEST/opt/qikvrt/runtime" "$GUEST/opt/qikvrt/smalltalk" \
