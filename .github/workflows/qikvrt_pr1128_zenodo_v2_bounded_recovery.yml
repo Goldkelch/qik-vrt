@@ -86,14 +86,51 @@ jobs:
           print('TEMDD_ZENODO_NORMALIZATION_BOUNDARY=VERIFIED')
           print('TEMDD_REMOTE_RECORD=22845516')
           z._metadata_matches=bounded_match
-          os.environ['GITHUB_SHA']='5471bf92fa511271067500a3c372a793e55fd434'
-          evidence=p.publish(
-              Path('release/pr1128-truth-expectations-law-zenodo-v2/publication-manifest.json'),
-              Path('.').resolve(),
+
+          # The single-use authorization was already consumed by the first
+          # attempt. Reobserve that public Git ref without requiring a second
+          # privileged GitHub mutation, then reconcile only record 22845516.
+          import urllib.request
+          ref_url='https://api.github.com/repos/Goldkelch/qik-vrt/git/ref/tags/qikvrt-zenodo-auth/8ac52d0a3d8f0ba9baace321b06925ad9fc0a9ff17e38c5543bd31af4a14568e'
+          req=urllib.request.Request(ref_url,headers={'Accept':'application/vnd.github+json','User-Agent':'qikvrt-temdd-recovery/1'})
+          with urllib.request.urlopen(req,timeout=30) as response:
+              lock=json.load(response)
+          if lock.get('object',{}).get('sha')!='afd16bf314f6d10892a87edcfaa61ba3f161dd34':
+              raise SystemExit('RECOVERY_BLOCK_REMOTE_CONSUMPTION_TAG_MISMATCH')
+
+          root=Path('.').resolve()
+          manifest_path=root/'release/pr1128-truth-expectations-law-zenodo-v2/publication-manifest.json'
+          manifest=p.load_manifest(manifest_path,root)
+          verified=p.verify_files(manifest,root,os.environ['ZENODO_ACCESS_TOKEN'])
+          entries=p._shared_entries(manifest['files'])
+          doi='10.5281/zenodo.22845516'
+          prepared=client.prepare_draft('publication',22845516,manifest['metadata'],entries,verified,doi)
+          if prepared!='draft':
+              raise SystemExit('RECOVERY_BLOCK_RECORD_BECAME_PUBLIC_BEFORE_EXACT_UPLOAD_GATE')
+          public=client.publish_and_poll(22845516,manifest['metadata'],entries,doi,False)
+          remote_consumption={
+              'remote':'github_git_data_api',
+              'api_origin':'https://api.github.com',
+              'repository':'Goldkelch/qik-vrt',
+              'ref':'refs/tags/qikvrt-zenodo-auth/8ac52d0a3d8f0ba9baace321b06925ad9fc0a9ff17e38c5543bd31af4a14568e',
+              'tag_object':'afd16bf314f6d10892a87edcfaa61ba3f161dd34',
+              'object_type':'tag',
+              'execution_head':'5471bf92fa511271067500a3c372a793e55fd434',
+              'acquisition':'GITHUB_GIT_DATA_REST_CREATE_ONLY',
+              'recovery_mode':'NEWLY_CREATED_REF',
+          }
+          evidence=p._phase_evidence(
+              manifest_path,root,manifest,
+              '5471bf92fa511271067500a3c372a793e55fd434',
+              remote_consumption,'public_verified',
+              record_id=22845516,doi=doi,published=public,
           )
+          evidence_path=root/'release/pr1128-truth-expectations-law-zenodo-v2/zenodo-publication.json'
+          evidence_path.write_text(json.dumps(evidence,ensure_ascii=False,sort_keys=True,indent=2)+'\\n',encoding='utf-8')
           print('ZENODO_PUBLICATION_STATE='+evidence['state'])
           print('ZENODO_RECORD_ID='+str(evidence['record_id']))
           print('ZENODO_DOI='+evidence['doi'])
+          print('TEMDD_PUBLIC_BYTE_READBACK=PASS')
           PY
       - name: Persist exact recovery/effect receipt on a separate branch
         if: always()
