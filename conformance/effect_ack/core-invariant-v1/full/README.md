@@ -26,8 +26,10 @@ defensive BLOCK fallback on an invalid decision argument.
 
 The component product is defined as
 `(core(x), admit(core(x), declared, validators))`.
-Its equivalence follows from the two exhaustive component equalities by the
-Lean substitution theorem. The roughly 29 billion product elements are **not**
+Its equivalence follows from the two exhaustive component equalities and the
+core output bound (0 through 5) by the Lean substitution theorem. The theorem
+requires consumer equality only on those six classes; instantiate its input
+types with the finite core and consumer domains. The roughly 29 billion product elements are **not**
 individually executed. This proves the stated pure composition, not unmodelled
 application wiring or complete mediation of a real protected effect.
 
@@ -95,7 +97,11 @@ the 16-case regression and invokes `bash full/run.sh <evidence-directory>`.
 See the workflow for exact repository-relative paths and provisioning commands.
 The full artifact contains six 9,455,616-byte streams, canonical TEMDD IR,
 kernel axiom reports, complete GNATprove output, negative-control logs and an
-exact-HEAD/tree report. A failed comparator overwrites any previous PASS report.
+exact-HEAD/tree report. The report includes hashes of the canonical declared
+input enumeration: five-byte records (big-endian 24-bit mask, risk byte,
+decision byte) for the core and four-byte records (derived byte, declared byte,
+big-endian 16-bit validator mask) for the consumer. These describe the stated
+domain, not separately instrumented carrier input traces. A failed comparator overwrites any previous PASS report.
 
 Lean proves total state-selection correctness against a declarative disjoint-cube
 relation, DONE guard equivalence, admission equivalence, positive

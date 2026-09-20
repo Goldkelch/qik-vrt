@@ -52,6 +52,27 @@ def expected(contract):
     return bytes(output)
 
 
+def input_set_digests():
+    """Hash the declared ordered inputs, independently of carrier outputs."""
+    core = hashlib.sha256()
+    suffixes = [bytes((risk, decision)) for risk in range(6) for decision in range(6)]
+    for mask in range(262144):
+        prefix = mask.to_bytes(3, "big")
+        core.update(b"".join(prefix + suffix for suffix in suffixes))
+    consumer = hashlib.sha256()
+    for derived in range(6):
+        for declared in range(6):
+            prefix = bytes((derived, declared))
+            consumer.update(b"".join(prefix + mask.to_bytes(2, "big") for mask in range(512)))
+    return {
+        "core": {"sha256": core.hexdigest(), "bytes": CORE_CASES * 5,
+                 "encoding": "mask:u24be,risk:u8,decision:u8; contract order"},
+        "consumer": {"sha256": consumer.hexdigest(), "bytes": CONSUMER_CASES * 4,
+                     "encoding": "derived:u8,declared:u8,mask:u16be; contract order"},
+        "scope": "canonical declared enumeration, not separately instrumented carrier input traces",
+    }
+
+
 def carrier_paths(paths):
     names = [path.stem for path in paths]
     if len(names) != len(CARRIERS) or set(names) != CARRIERS:
@@ -124,6 +145,8 @@ def compare(args):
         "contract": digest(args.contract),
         "contract_frozen_before_carrier_commit": "62ce6932adfc5f557034be9b9f5662c52ff02c5c",
         "oracle_sha256": hashlib.sha256(oracle).hexdigest(),
+        "input_sets": input_set_digests(),
+        "core_output_bound": {"minimum": 0, "exclusive_maximum": 6},
         "core": {"cases": CORE_CASES, "boolean_inputs": 18, "risk_classes": 6,
                  "decision_classes": 6, "exhaustive": True,
                  "result_counts": {chr(k): v for k, v in sorted(Counter(oracle[:CORE_CASES]).items())}},
@@ -131,7 +154,7 @@ def compare(args):
                      "derived_classes": 6, "declared_classes": 6,
                      "exhaustive": True, "positive_cases": 1},
         "backends": backends, "proof_receipts": proofs,
-        "composition": "Kernel-checked substitution theorem plus finite component equality; full Cartesian product not individually executed.",
+        "composition": "Kernel-checked substitution theorem plus finite component equality and core output bound < 6; full Cartesian product not individually executed.",
         "proof_receipts_require_trusted_workflow": True,
         "independent_reviewer": "NOT_ESTABLISHED",
         "validator_implementations_verified": False,

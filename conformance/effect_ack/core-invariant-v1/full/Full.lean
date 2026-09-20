@@ -79,17 +79,21 @@ theorem positive_admission : admit (core 61439 1 2) 2 511 = 1 := by decide
 theorem transport_alone_insufficient : core 1 1 2 ≠ 2 := by decide
 
 /-- Component equality implies equality of every Cartesian composition.
-    Finite component equality is checked against the frozen neutral contract
+    The consumer equality is required only on the six checked result classes.
+    Finite component equality and the output bound are checked against the frozen neutral contract
     externally, not assumed to have been proved by this theorem. -/
 def compose (f : α → Nat) (g : Nat → β → Nat) (x : α) (y : β) : Nat × Nat :=
   (f x, g (f x) y)
 
 theorem composition_refinement
     (f fSpec : α → Nat) (g gSpec : Nat → β → Nat)
-    (hf : ∀ x, f x = fSpec x) (hg : ∀ s y, g s y = gSpec s y)
+    (hf : ∀ x, f x = fSpec x)
+    (hg : ∀ s y, s < 6 → g s y = gSpec s y)
+    (hbound : ∀ x, f x < 6)
     (x : α) (y : β) :
     compose f g x y = compose fSpec gSpec x y := by
-  simp [compose, hf, hg]
+  unfold compose
+  rw [hg (f x) y (hbound x), hf x]
 
 #print axioms choose_contract_iff
 #print axioms core_correct
