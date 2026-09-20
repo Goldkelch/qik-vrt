@@ -182,6 +182,18 @@ class MegaSTDistributionContract(unittest.TestCase):
         self.assertIn('cd out\n          sha256sum -c qikvrt-megast-amd64.iso.sha256', text)
         self.assertIn('Read back published release metadata', text)
 
+    def test_publish_retry_uses_authoritative_release_tag_readback(self):
+        text = WORKFLOW.read_text()
+        start = text.index('- name: Publish exact-subject release assets')
+        end = text.index('- name: Read back published release metadata', start)
+        publish = text[start:end]
+        self.assertIn(
+            'gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}"',
+            publish,
+        )
+        self.assertIn('["target_commitish"]', publish)
+        self.assertNotIn('gh release view', publish)
+
     def test_pull_request_build_is_literal_head_bound(self):
         text = WORKFLOW.read_text()
         subject = '${{ github.event.pull_request.head.sha || github.sha }}'
