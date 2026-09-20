@@ -10,7 +10,7 @@ Dieser Snapshot ist **byteidentisch** mit dem geprüften Download der [Roundtrip
 - SHA-256: `91bf9c944b18b83e720b7ac5acde49917878e03aa8abb79f17c3a652ab183ef9`.
 - Versionierter Release-Tag: `qikvrt-roundtrip-2026-09-20-v1`.
 
-Die HTML-Datei wird für diese Version nicht verändert. Eine spätere inhaltliche Erweiterung erhält eine neue Version. Die Sites-Adresse bezeichnet die laufende Website und ist deshalb kein unveränderlicher Inhaltsbeleg. Der feste Git-Commit-Link wird zusätzlich im Publikationsverzeichnis und im Release angegeben.
+Die HTML-Datei wird für diese Version nicht verändert. Eine spätere inhaltliche Erweiterung erhält eine neue Version. Die Sites-Adresse bezeichnet die laufende Website und ist deshalb kein unveränderlicher Inhaltsbeleg. Der [feste Inhaltsverweis](https://github.com/Goldkelch/qik-vrt/blob/c4bb95e9a1fed939cc1e582300af9b28daa614fa/docs/publications/2026-09-20-qikvrt-roundtrip-snapshot/QIKVRT_Roundtrip_2026-09-20.html) und der [direkte HTML-Download](https://github.com/Goldkelch/qik-vrt/raw/c4bb95e9a1fed939cc1e582300af9b28daa614fa/docs/publications/2026-09-20-qikvrt-roundtrip-snapshot/QIKVRT_Roundtrip_2026-09-20.html) sind an den vollständigen Commit `c4bb95e9a1fed939cc1e582300af9b28daa614fa` gebunden.
 
 ## Prüfung
 

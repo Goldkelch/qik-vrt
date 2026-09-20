@@ -84,7 +84,7 @@ open checks, controlled isolation, responsible blocking, and a fully bound
 
 ## Statischer Roundtrip-Snapshot
 
-[QIK-VRT Roundtrip vom 20. September 2026](docs/publications/2026-09-20-qikvrt-roundtrip-snapshot/README.md): eine vollständig eingebettete HTML-Datei mit 28 Originaltexten, 549.828 Byte, ohne nachzuladende Ressourcen.
+[QIK-VRT Roundtrip vom 20. September 2026](https://github.com/Goldkelch/qik-vrt/blob/c4bb95e9a1fed939cc1e582300af9b28daa614fa/docs/publications/2026-09-20-qikvrt-roundtrip-snapshot/README.md): eine vollständig eingebettete HTML-Datei mit 28 Originaltexten, 549.828 Byte, ohne nachzuladende Ressourcen.
 
 ## Scope of the claim
 
