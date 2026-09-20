@@ -82,6 +82,10 @@ open checks, controlled isolation, responsible blocking, and a fully bound
 | GitHub Release objects | Intentionally absent; the annotated tags are the repository identities |
 | IETF Datatracker | Active individual Internet-Draft revision `-01`; not an RFC or IETF consensus |
 
+## Statischer Roundtrip-Snapshot
+
+[QIK-VRT Roundtrip vom 20. September 2026](docs/publications/2026-09-20-qikvrt-roundtrip-snapshot/README.md): eine vollständig eingebettete HTML-Datei mit 28 Originaltexten, 549.828 Byte, ohne nachzuladende Ressourcen.
+
 ## Scope of the claim
 
 This repository defines, implements, and tests a policy/effect release
