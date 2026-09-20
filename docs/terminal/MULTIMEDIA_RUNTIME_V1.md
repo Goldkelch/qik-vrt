@@ -8,11 +8,16 @@ Do not publish the loopback service or the model port through a reverse proxy.
 
 ## Runtime
 
-`runtime/toolchains/multimedia.lock.json` pins llama.cpp b6500 (MIT) and the
-SmolVLM2-500M Q8 language/vision files (Apache-2.0) by upstream digest and size.
-The model download is about 546 MB; allow additional RAM for the model, vision
-encoder, context and Firefox. The small English-focused model is a CPU reference,
-not a general-purpose correctness oracle or a measured German-language solution.
+`runtime/toolchains/multimedia.lock.json` pins llama.cpp b6500 (MIT), the official
+Qwen2.5-1.5B-Instruct Q4_K_M text model and the SmolVLM2-500M Q8 language/vision
+files (both Apache-2.0) by upstream revision, digest and size. The combined model
+download is about 1.66 GB; allow additional RAM for both models, context and Firefox.
+Qwen handles text questions and repository synthesis. SmolVLM handles images; for
+questions with repository context or history, its description is marked unverified
+and then passed to Qwen alongside the excerpts. Each call gets its own model,
+input and output digest in the receipt. Neither model is a correctness oracle.
+The official text-model identity is documented by its
+[upstream weight commit](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/commit/dd26da440ef0330c47919d1ecae0966d24022222).
 This locked release was selected for the supported model and Debian-compatible
 CPU binary; it is not represented as the latest llama.cpp release.
 
@@ -33,8 +38,12 @@ python3 -B src/qikvrt_effect_ack_http_terminal.py --host 127.0.0.1 --port 8771
 uses the same installer. Installation is explicit. Opening a page cannot install
 a model. The default container build and ISO build include the verified weights;
 startup re-verifies cached inputs. `QIKVRT_ENABLE_MULTIMEDIA=0` disables the
-container's model child. `QIKVRT_MULTIMEDIA_CACHE` and `QIKVRT_MODEL_PORT` select
-the local cache and loopback port. Existing changed cache files produce HOLD;
+container's model service. `QIKVRT_MULTIMEDIA_CACHE`, `QIKVRT_MODEL_PORT` (8789)
+and `QIKVRT_TEXT_MODEL_PORT` (8790) select the local cache and distinct loopback
+ports. One supervisor starts both providers and stops both on shutdown or when
+either exits. Readiness requires both expected aliases and both health checks.
+A missing text model never silently falls back to the vision model.
+Existing changed cache files produce HOLD;
 remove or quarantine them deliberately before a fresh installation. Interrupted
 downloads remove their own staging file and preserve valid existing material.
 
@@ -149,12 +158,18 @@ references separately. Existing reference IDs never imply that the source
 entails the answer. The UI displays that distinction beside the model text.
 The first actual grounded smoke at 633a28b exposed repetitive, inaccurate
 explanations and absent citations from the compact model. It established the
-transport path, not adequate scientific answer quality. That quality remains
-OPEN and needs separate model/task evaluation; the original excerpts stay visible.
+transport path, not adequate scientific answer quality. This motivated the
+separate text model. The live smoke checks three finite proof-versus-physical-
+evidence questions (English, German and an image) and existing source references.
+Those checks do not establish general scientific answer quality, which remains
+OPEN and needs separate task evaluation; the original excerpts stay visible.
 
 The model-bundled ISO produced a 2115.20 MiB compressed root filesystem on the
 633a28b build. The receiver's former 2 GiB ceiling rejected it after ISO boot.
-The rootfs ceiling is therefore 2.5 GiB; other file bounds and exact digest checks
-remain in force. At that ceiling, the existing RAM calculation assigns 6 GiB
-to the guest; allow additional host memory. Older clients keep rejecting images
-over their 2 GiB bound and must be updated before receiving this carrier.
+The added text weights occupy 1065.56 MiB before filesystem compression. Large
+files now use the shared transfer-parts implementation: the standard is still
+2048 MiB per part, with a configurable sender size and receiver maximum. Per-part
+hashes, offsets, lengths and the complete file hash are checked before the
+reassembled image becomes usable. Already verified parts survive an interruption.
+This changes transport granularity, not the RAM needed to boot the assembled image.
+See [distribution transfer profiles](../../distribution/qikvrt-megast/README.md#transfer-parts-and-line-profiles).

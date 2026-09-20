@@ -14,7 +14,7 @@ function buttons(){
 }
 async function refresh(){
  try{const response=await fetch('/api/multimedia/status',{cache:'no-store'});if(!response.ok)throw Error('Lokaler Zugang erforderlich');status=await response.json();
- el('runtime').textContent=status.ready?status.model+' ist verbunden.':'Das lokale Modell ist noch nicht gestartet.';
+ el('runtime').textContent=status.ready?status.model+' für Gespräche und '+status.vision_model+' für Bilder sind verbunden.':'Die lokalen Modelle sind noch nicht gestartet.';
  if(!status.audio_ready)el('runtime').textContent+=' Offline-Spracherkennung ist noch nicht installiert.';
  el('repositoryStatus').textContent=status.repository_ready?'Repository-Inventar verfügbar. Relevante Auszüge werden mit ihrer Herkunft an das Modell übergeben.':'Repository-Inventar fehlt oder ist beschädigt. Quellensuche derzeit nicht verfügbar.';
  }catch(error){status=null;el('runtime').textContent='Verbindung nicht verfügbar: '+error.message;}

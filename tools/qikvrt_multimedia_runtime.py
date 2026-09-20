@@ -11,9 +11,11 @@ import os
 from pathlib import Path
 import platform
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 import zipfile
 
@@ -60,7 +62,7 @@ def download(directory, entry, url):
 def verify(directory, lock):
     archive = directory / lock['runner']['name']
     check(archive, lock['runner'])
-    for entry in lock['models']:
+    for entry in [*lock['models'], lock['text_model']]:
         check(directory / entry['name'], entry)
     # Compare every extracted file against the locked archive, not a mutable receipt.
     with zipfile.ZipFile(archive) as source:
@@ -83,6 +85,7 @@ def install(directory, lock):
     base = 'https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/resolve/' + lock['model_revision'] + '/'
     for entry in lock['models']:
         download(directory, entry, base + entry['name'])
+    download(directory, lock['text_model'], lock['text_model']['url'])
     if not (directory / 'runner').exists():
         with tempfile.TemporaryDirectory(dir=directory) as temporary:
             stage = Path(temporary) / 'runner'
@@ -101,6 +104,43 @@ def install(directory, lock):
     if '6500' not in result.stdout + result.stderr:
         raise ValueError('RUNNER_VERSION_MISMATCH')
     print('VERIFIED ' + lock['model_id'], flush=True)
+
+
+def serve(binary, directory, lock, vision_port, text_port):
+    """One supervised service; stop both providers if either exits or on shutdown."""
+    if vision_port == text_port:
+        raise ValueError('DISTINCT_MODEL_PORTS_REQUIRED')
+    common = [str(binary), '--host', '127.0.0.1', '-c', '8192', '-np', '1',
+              '-t', '4', '-ngl', '0', '--no-webui']
+    commands = [
+        common + ['--port', str(vision_port), '--alias', lock['model_id'],
+                  '-m', str(directory / lock['models'][0]['name']),
+                  '--mmproj', str(directory / lock['models'][1]['name'])],
+        common + ['--port', str(text_port), '--alias', lock['text_model']['model_id'],
+                  '-m', str(directory / lock['text_model']['name'])]]
+    children = []
+    def stop(_signum, _frame):
+        raise KeyboardInterrupt
+    previous = signal.signal(signal.SIGTERM, stop)
+    try:
+        for command in commands:
+            children.append(subprocess.Popen(command))
+        while all(child.poll() is None for child in children):
+            time.sleep(.25)
+        raise ValueError('MODEL_CHILD_EXITED')
+    except KeyboardInterrupt:
+        return
+    finally:
+        for child in children:
+            if child.poll() is None:
+                child.terminate()
+        for child in children:
+            try:
+                child.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait()
+        signal.signal(signal.SIGTERM, previous)
 
 
 def export_context(destination):
@@ -134,7 +174,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('operation', choices=('install', 'verify', 'serve', 'export-context'))
     parser.add_argument('--cache-dir', default=os.environ.get('QIKVRT_MULTIMEDIA_CACHE', str(ROOT / '.qikvrt/toolchains/multimedia')))
-    parser.add_argument('--port', type=int, default=8789)
+    parser.add_argument('--port', type=int, default=int(os.environ.get('QIKVRT_MODEL_PORT', '8789')))
+    parser.add_argument('--text-port', type=int, default=int(os.environ.get('QIKVRT_TEXT_MODEL_PORT', '8790')))
     parser.add_argument('--output-dir')
     args = parser.parse_args()
     try:
@@ -143,7 +184,7 @@ def main():
                 raise ValueError('OUTPUT_DIR_REQUIRED')
             export_context(Path(args.output_dir))
             return 0
-        if not 1024 <= args.port <= 65535:
+        if not all(1024 <= port <= 65535 for port in (args.port, args.text_port)):
             raise ValueError('INVALID_PORT')
         directory = Path(args.cache_dir).absolute()
         if any(p.is_symlink() for p in (directory, *directory.parents)):
@@ -154,11 +195,9 @@ def main():
         binary = verify(directory, lock)
         if args.operation == 'serve':
             print('SERVE loopback model; no repository execution authority', flush=True)
-            command = [str(binary), '--host', '127.0.0.1', '--port', str(args.port), '--alias', lock['model_id'],
-                       '-m', str(directory / lock['models'][0]['name']), '--mmproj', str(directory / lock['models'][1]['name']),
-                       '-c', '8192', '-np', '1', '-t', '4', '-ngl', '0', '--no-webui']
-            os.execv(binary, command)
-        print(json.dumps({'state': 'VERIFIED_LOCAL_BYTES', 'model': lock['model_id'], 'lock_sha256': digest(LOCK), 'effect_ack_done': False}))
+            serve(binary, directory, lock, args.port, args.text_port)
+        print(json.dumps({'state': 'VERIFIED_LOCAL_BYTES', 'model': lock['model_id'],
+                          'text_model': lock['text_model']['model_id'], 'lock_sha256': digest(LOCK), 'effect_ack_done': False}))
         return 0
     except (OSError, ValueError, subprocess.SubprocessError, zipfile.BadZipFile) as exc:
         print('HOLD ' + str(exc))

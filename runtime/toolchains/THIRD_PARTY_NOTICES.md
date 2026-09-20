@@ -99,6 +99,13 @@ upstream project links.
 
 ## Local multimedia reference
 
+Qwen2.5-1.5B-Instruct and its official Q4_K_M GGUF conversion are supplied by
+Qwen under Apache-2.0. The unchanged upstream bytes, revision and digest are
+identified as `text_model` in `multimedia.lock.json`; the full license is
+`LICENSES/Apache-2.0.txt`. Source:
+https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/tree/dd26da440ef0330c47919d1ecae0966d24022222.
+This upstream component does not change QIK-VRT's licensing model.
+
 SmolVLM2-500M-Video-Instruct is supplied by Hugging Face and the pinned GGUF
 conversion by ggml-org under Apache-2.0. The language and vision files are
 identified in `multimedia.lock.json`; the full license is

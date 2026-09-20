@@ -19,21 +19,50 @@ spec.loader.exec_module(boot)
 
 
 class ModelCarrierBoundsTests(unittest.TestCase):
-    def test_model_bundled_rootfs_above_two_gib_is_accepted_with_finite_ceiling(self):
+    def test_legacy_single_file_ceiling_remains_2048_mib(self):
         manifest = {'schema': 'qikvrt_netboot_v1', 'architecture': 'x86_64',
                     'source_sha': 'a'*40, 'boot_method': 'linux-live-http',
                     'files': {kind: {'name': name, 'sha256': 'b'*64, 'bytes': 1}
                               for kind, name in boot.FILES.items()}}
-        for size in (2*1024**3 + 1, 2116*1024**2, 2560*1024**2):
+        for size in (1, 2048*1024**2):
             manifest['files']['rootfs']['bytes'] = size
             boot.validate_manifest(manifest)
             self.assertGreaterEqual(boot.guest_memory_mib(manifest)*1024**2, 2*size+1024**3)
-        for size in (2560*1024**2+1, 0, True):
+        for size in (2048*1024**2+1, 0, True):
             manifest['files']['rootfs']['bytes'] = size
             with self.assertRaises(ValueError): boot.validate_manifest(manifest)
         manifest['files']['rootfs']['bytes'] = 1
         manifest['files']['kernel']['bytes'] = 2*1024**3+1
         with self.assertRaises(ValueError): boot.validate_manifest(manifest)
+
+    def test_default_chunked_manifest_and_smaller_line_profile_roundtrip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'source'; source.mkdir()
+            target = Path(directory) / 'target'
+            for name in boot.FILES.values(): (source/name).write_bytes(bytes(range(50)))
+            self.assertEqual(boot.make_manifest(source, 'a'*40)['part_bytes'], 2048*1024**2)
+            manifest = boot.make_manifest(source, 'a'*40, part_bytes=13)
+            self.assertEqual(len(manifest['files']['rootfs']['parts']), 4)
+            handler = lambda *a, **kw: boot.http.server.SimpleHTTPRequestHandler(*a, directory=str(source), **kw)
+            with boot.http.server.ThreadingHTTPServer(('127.0.0.1', 0), handler) as server:
+                thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+                try:
+                    received = boot.receive(f'http://127.0.0.1:{server.server_port}/qikvrt-netboot.json',
+                        boot.sha256(source/'qikvrt-netboot.json'), target)
+                finally:
+                    server.shutdown(); thread.join()
+            self.assertEqual(received, manifest)
+            for name in boot.FILES.values(): self.assertEqual((source/name).read_bytes(), (target/name).read_bytes())
+
+    def test_exported_client_with_adjacent_helper_is_runnable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copy(ROOT/'distribution/qikvrt-megast/boot.py', root/'qikvrt-netboot-client.py')
+            shutil.copy(ROOT/'tools/qikvrt_transfer_parts.py', root/'qikvrt_transfer_parts.py')
+            result = subprocess.run([__import__('sys').executable, '-B', str(root/'qikvrt-netboot-client.py'), 'manifest', '--help'],
+                                    cwd=root, capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('--part-mib', result.stdout)
 
 
 class NetbootTests(unittest.TestCase):

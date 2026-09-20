@@ -8,9 +8,11 @@ import json
 import os
 from pathlib import Path
 import struct
+import subprocess
 import sys
 import threading
 import tempfile
+import time
 import unittest
 import wave
 from unittest.mock import patch
@@ -29,13 +31,15 @@ def png(width=16, height=16):
 
 class Provider(BaseHTTPRequestHandler):
     observations = []
-    alias = 'qikvrt-smolvlm2-500m'
+    alias = None
+    vision_alias = 'qikvrt-smolvlm2-500m'
+    text_alias = 'qikvrt-qwen2.5-1.5b'
     def log_message(self, *args): pass
     def do_GET(self):
-        self.send_json({'status': 'ok'} if self.path == '/health' else {'data': [{'id': self.alias}]})
+        self.send_json({'status': 'ok'} if self.path == '/health' else {'data': [{'id': self.vision_alias}, {'id': self.text_alias}]})
     def do_POST(self):
         self.observations.append(json.loads(self.rfile.read(int(self.headers['Content-Length']))))
-        self.send_json({'model': self.alias, 'choices': [{'message': {'content': '<script>fixture</script>'}, 'finish_reason': 'stop'}]})
+        self.send_json({'model': self.alias or self.observations[-1]['model'], 'choices': [{'message': {'content': '<script>fixture</script>'}, 'finish_reason': 'stop'}]})
     def send_json(self, value):
         raw = json.dumps(value).encode()
         self.send_response(200); self.send_header('Content-Length', str(len(raw))); self.end_headers(); self.wfile.write(raw)
@@ -48,7 +52,8 @@ class MultimediaTests(unittest.TestCase):
         cls.server = ThreadingHTTPServer(('127.0.0.1', 0), terminal.Handler)
         for server in (cls.provider, cls.server):
             thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
-        cls.env = patch.dict(os.environ, {'QIKVRT_MODEL_PORT': str(cls.provider.server_port)})
+        cls.env = patch.dict(os.environ, {'QIKVRT_MODEL_PORT': str(cls.provider.server_port),
+                                        'QIKVRT_TEXT_MODEL_PORT': str(cls.provider.server_port)})
         cls.env.start()
         cls.origin = 'http://127.0.0.1:' + str(cls.server.server_port)
     @classmethod
@@ -168,7 +173,7 @@ class MultimediaTests(unittest.TestCase):
             self.assertEqual(context['sources'][0]['path'], 'docs/publications/channel/CLAIM_MATRIX.json')
             self.assertIn('OPEN', context['sources'][0]['excerpt'])
             observed = Provider.observations[-1]
-            prompt = observed['messages'][0]['content'][0]['text']
+            prompt = observed['messages'][-1]['content']
             self.assertIn('PENDING', prompt); self.assertIn('Earlier unverified statement', prompt)
             self.assertNotIn('PRIVATE_CONTACT', prompt)
             self.assertEqual(value['provider_request_sha256'], hashlib.sha256(media.canonical(observed)).hexdigest())
@@ -189,7 +194,7 @@ class MultimediaTests(unittest.TestCase):
             self.assertEqual(value['citation_validation'], 'MISSING_SOURCE_REFERENCES')
             for text, expected in (('Claim [R99]', 'UNKNOWN_SOURCE_REFERENCES'),
                                    ('Claim [R1]', 'REFERENCES_EXIST_NOT_SEMANTICALLY_VERIFIED')):
-                response = {'model': Provider.alias, 'choices': [{'message': {'content': text}}]}
+                response = {'model': Provider.text_alias, 'choices': [{'message': {'content': text}}]}
                 with patch.object(media, 'ROOT', root), patch.object(media, 'provider', return_value=response):
                     code, result = self.generate({'prompt': 'Lean physical truth', 'repository': True})
                 self.assertEqual(code, 200); self.assertEqual(result['citation_validation'], expected)
@@ -251,6 +256,75 @@ class MultimediaTests(unittest.TestCase):
         source = (media.ROOT / 'docs/terminal/multimedia/app.js').read_text()
         self.assertNotIn('innerHTML', source)
         self.assertIn("el('answer').textContent=result.text", source)
+
+    def test_text_and_grounded_images_use_text_model_with_separate_visual_provenance(self):
+        code, value = self.generate({'prompt': 'hello'})
+        self.assertEqual(code, 200)
+        self.assertEqual(value['model'], Provider.text_alias)
+        self.assertEqual([c['role'] for c in value['model_calls']], ['text'])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); self.corpus(root, {'docs/claim.md': 'future_channel OPEN'})
+            with patch.object(media, 'ROOT', root):
+                code, value = self.generate({'prompt': 'future_channel', 'repository': True,
+                    'images': [{'data': 'data:image/png;base64,' + base64.b64encode(png()).decode(), 'label': 'control'}]})
+            self.assertEqual(code, 200)
+            self.assertEqual([c['model'] for c in value['model_calls']], [Provider.vision_alias, Provider.text_alias])
+            self.assertEqual([c['role'] for c in value['model_calls']], ['vision', 'text'])
+            self.assertIn('UNVERIFIED_VISUAL_DESCRIPTION', Provider.observations[-1]['messages'][-1]['content'])
+            self.assertNotIn('data:image', json.dumps(Provider.observations[-1]))
+            self.assertEqual(value['unverified_visual_description'], '<script>fixture</script>')
+            self.assertFalse(value['effect_ack_done'])
+
+    def test_text_provider_failure_does_not_fall_back_to_vision_answer(self):
+        original = media.provider
+        def fail_text(path, *args, **kwargs):
+            if kwargs.get('role') == 'text':
+                raise ConnectionRefusedError()
+            return original(path, *args, **kwargs)
+        with patch.object(media, 'provider', side_effect=fail_text):
+            self.assertFalse(json.loads(self.request()[2])['ready'])
+            code, value = self.generate({'prompt': 'hello'})
+            self.assertEqual(code, 422); self.assertNotIn('text', value)
+
+
+class RuntimeLifecycleTests(unittest.TestCase):
+    def test_supervisor_cleans_both_children_on_shutdown_and_child_failure(self):
+        root = Path(__file__).resolve().parents[1]
+        for stop_child in (False, True):
+            with self.subTest(stop_child=stop_child), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory)
+                runner = path / 'fixture-runner'
+                runner.write_text('#!' + sys.executable + '\nimport os,sys,time\nfrom pathlib import Path\n'
+                    'port=sys.argv[sys.argv.index("--port")+1]\n'
+                    'Path(__file__).with_name(port+".pid").write_text(str(os.getpid()))\n'
+                    'while True: time.sleep(.05)\n')
+                runner.chmod(0o755)
+                lock = {'model_id': 'vision-fixture', 'models': [{'name': 'v'}, {'name': 'p'}],
+                        'text_model': {'name': 't', 'model_id': 'text-fixture'}}
+                script = ('from pathlib import Path; import json,sys; '
+                          'from tools.qikvrt_multimedia_runtime import serve; '
+                          'serve(Path(sys.argv[1]),Path(sys.argv[2]),json.loads(sys.argv[3]),18789,18790)')
+                process = subprocess.Popen([sys.executable, '-B', '-c', script, str(runner), str(path), json.dumps(lock)],
+                                           cwd=root, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                try:
+                    deadline = time.monotonic() + 5
+                    while not all((path / (str(port)+'.pid')).exists() for port in (18789, 18790)):
+                        if process.poll() is not None or time.monotonic() > deadline:
+                            self.fail('supervised fixtures did not start')
+                        time.sleep(.02)
+                    pids = [int((path / (str(port)+'.pid')).read_text()) for port in (18789, 18790)]
+                    if stop_child:
+                        os.kill(pids[0], 15)
+                    else:
+                        process.terminate()
+                    process.wait(timeout=8)
+                    self.assertEqual(process.returncode == 0, not stop_child)
+                    for pid in pids:
+                        with self.assertRaises(ProcessLookupError): os.kill(pid, 0)
+                finally:
+                    if process.poll() is None:
+                        process.terminate()
+                        process.wait(timeout=8)
 
 
 if __name__ == '__main__': unittest.main()

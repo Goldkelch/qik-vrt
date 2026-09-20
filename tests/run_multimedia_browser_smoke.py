@@ -5,6 +5,7 @@ import argparse
 from http.server import ThreadingHTTPServer
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -31,10 +32,11 @@ def main():
         threading.Thread(target=server.serve_forever, daemon=True).start()
         report = {'state': 'HOLD', 'scope': 'Chromium UI and actual local model; not Firefox/ISO release acceptance', 'effect_ack_done': False}
         try:
-            deadline = time.monotonic() + 45
+            deadline = time.monotonic() + 60
             while True:
                 try:
-                    if media.provider('/health', timeout=1).get('status') == 'ok': break
+                    if all(media.provider('/health', timeout=1, role=role).get('status') == 'ok'
+                           for role in ('vision', 'text')): break
                 except (OSError, ValueError): pass
                 if process.poll() is not None or time.monotonic() > deadline: raise RuntimeError('MODEL_START_FAILED')
                 time.sleep(.25)
@@ -53,7 +55,7 @@ def main():
             report['answer'] = answer
             source_status = browser('eval', 'document.getElementById("sourceStatus").textContent')
             report['source_status'] = source_status
-            browser('find', 'label', 'Frage oder Arbeitsauftrag', 'fill', 'Does a Lean proof establish physical truth? Explain the repository scientific boundaries.')
+            browser('find', 'label', 'Frage oder Arbeitsauftrag', 'fill', 'Does a Lean proof establish physical truth? Start with Yes or No, then explain the repository scientific boundaries in one sentence with a source reference.')
             browser('find', 'role', 'button', 'click', '--name', 'Lokales Modell befragen')
             deadline = time.monotonic() + 120
             while True:
@@ -67,6 +69,10 @@ def main():
             report['conversation'] = browser('eval', 'document.getElementById("conversation").textContent')
             if 'two plus two' not in report['conversation']: raise RuntimeError('CONVERSATION_NOT_RETAINED')
             report['repository_receipt'] = browser('eval', 'document.getElementById("receipt").textContent')
+            receipt = json.loads(json.loads(report['repository_receipt']))
+            if (not re.match(r'(?i)^[\s*]*no\b', receipt['text']) or
+                    receipt['citation_validation'] != 'REFERENCES_EXIST_NOT_SEMANTICALLY_VERIFIED'):
+                raise RuntimeError('FINITE_BOUNDARY_AND_REFERENCE_CHECK_FAILED')
             # Capture before resetting; no user microphone/camera is accessed by CI.
             report['conversation_screenshot'] = browser('screenshot', str(output / 'conversation.png'), '--full')
             browser('find', 'role', 'button', 'click', '--name', 'Neues Gespräch')

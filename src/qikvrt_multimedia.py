@@ -173,16 +173,19 @@ def canonical(value):
     return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(',', ':'), allow_nan=False).encode()
 
 
-def model_port():
-    port = int(os.environ.get('QIKVRT_MODEL_PORT', '8789'))
+def model_port(role='vision'):
+    if role not in ('vision', 'text'):
+        raise ValueError('INVALID_MODEL_ROLE')
+    port = int(os.environ.get('QIKVRT_TEXT_MODEL_PORT', '8790') if role == 'text' else
+               os.environ.get('QIKVRT_MODEL_PORT', '8789'))
     if not 1024 <= port <= 65535:
         raise ValueError('INVALID_MODEL_PORT')
     return port
 
 
-def provider(path, body=None, timeout=120):
+def provider(path, body=None, timeout=120, role='vision'):
     # Fixed loopback IP, no proxy environment, redirects, arbitrary URL or tools.
-    connection = http.client.HTTPConnection('127.0.0.1', model_port(), timeout=timeout)
+    connection = http.client.HTTPConnection('127.0.0.1', model_port(role), timeout=timeout)
     try:
         connection.request('GET' if body is None else 'POST', path,
                            body=None if body is None else canonical(body),
@@ -221,6 +224,19 @@ def image_dimensions(raw, mime):
     raise ValueError('INVALID_IMAGE_HEADER')
 
 
+def infer(request, role):
+    result = provider('/v1/chat/completions', request, role=role)
+    if result.get('model') != request['model']:
+        raise ValueError('MODEL_ID_MISMATCH')
+    answer = result['choices'][0]['message']['content']
+    if not isinstance(answer, str) or not answer.strip() or len(answer) > 20000:
+        raise ValueError('INVALID_MODEL_TEXT')
+    return answer, result['choices'][0].get('finish_reason'), {
+        'role': role, 'model': request['model'],
+        'request_sha256': hashlib.sha256(canonical(request)).hexdigest(),
+        'output_sha256': hashlib.sha256(answer.encode()).hexdigest()}
+
+
 def generation(body, lock):
     if not isinstance(body, dict) or set(body) - {'prompt', 'images', 'history', 'repository'}:
         raise ValueError('GENERATION_FIELDS')
@@ -255,20 +271,36 @@ def generation(body, lock):
         sources.append({'label': entry['label'], 'sha256': hashlib.sha256(raw).hexdigest(), 'bytes': len(raw), 'width': width, 'height': height})
         content.extend([{'type': 'text', 'text': entry['label']}, {'type': 'image_url', 'image_url': {'url': uri}}])
     context = repository_context(prompt) if use_repository else None
-    if context is not None or history:
-        content[0]['text'] = (REPOSITORY_GUIDANCE + '\n\nCONVERSATION_DATA:\n' + canonical(history).decode() +
-                              '\n\nREPOSITORY_DATA:\n' + canonical(context).decode() + '\n\nQUESTION:\n' + prompt)
-    request = {
-        'model': lock['model_id'], 'messages': [{'role': 'user', 'content': content}],
-        'max_tokens': limits['output_tokens'], 'temperature': 0, 'stream': False}
-    result = provider('/v1/chat/completions', request)
+    model_calls, visual_description = [], None
+    # Repository synthesis always uses the text model. Frames first receive a
+    # separate, explicitly unverified visual description; no tool call is exposed.
+    if images:
+        vision_content = [dict(content[0]), *content[1:]]
+        if use_repository or history:
+            vision_content[0]['text'] = 'Describe only visible contents of these images briefly. Do not infer scientific proof or approval.'
+        vision_request = {'model': lock['model_id'], 'messages': [{'role': 'user', 'content': vision_content}],
+                          'max_tokens': limits['output_tokens'], 'temperature': 0, 'stream': False}
+        answer, finish, call = infer(vision_request, 'vision')
+        model_calls.append(call)
+        visual_description = answer
+    if not images or use_repository or history:
+        # Provenance stays in the receipt. Only relevant excerpt text is sent to
+        # the model, avoiding thousands of irrelevant hash and inventory tokens.
+        source_data = [{'id': item['id'], 'path': item['path'], 'excerpt': item['excerpt']}
+                       for item in context['sources']] if context else []
+        text = ('CONVERSATION_DATA:\n' + canonical(history).decode() +
+                '\n\nREPOSITORY_DATA:\n' + canonical(source_data).decode() +
+                '\n\nUNVERIFIED_VISUAL_DESCRIPTION:\n' + canonical(visual_description).decode() +
+                '\n\nQUESTION:\n' + prompt)
+        request = {'model': lock['text_model']['model_id'],
+                   'messages': [{'role': 'system', 'content': REPOSITORY_GUIDANCE +
+                                 ' Answer concisely in the language of the question. A visual description is unverified model output, not repository evidence.'},
+                                {'role': 'user', 'content': text}],
+                   'max_tokens': limits['output_tokens'], 'temperature': 0, 'stream': False}
+        answer, finish, call = infer(request, 'text')
+        model_calls.append(call)
     if context is not None:
         recheck_context(context)
-    if result.get('model') != lock['model_id']:
-        raise ValueError('MODEL_ID_MISMATCH')
-    answer = result['choices'][0]['message']['content']
-    if not isinstance(answer, str) or not answer.strip() or len(answer) > 20000:
-        raise ValueError('INVALID_MODEL_TEXT')
     cited = sorted(set(re.findall(r'\[R[0-9]+\]', answer)))
     known = {'[' + item['id'] + ']' for item in context['sources']} if context else set()
     unknown = sorted(set(cited) - known)
@@ -277,14 +309,15 @@ def generation(body, lock):
                       'NO_MATCHING_SOURCE' if context and not known else
                       'REFERENCES_EXIST_NOT_SEMANTICALLY_VERIFIED' if known else 'NO_REPOSITORY_CONTEXT')
     return {'schema': 'qikvrt_multimedia_proposal_v1', 'state': 'UNVERIFIED_PROPOSAL',
-            'model': lock['model_id'], 'model_identity': 'LOCAL_PROVIDER_REPORTED_ALIAS',
+            'model': model_calls[-1]['model'], 'model_identity': 'LOCAL_PROVIDER_REPORTED_ALIAS',
             'lock_sha256': hashlib.sha256(LOCK_PATH.read_bytes()).hexdigest(),
             'input_sha256': hashlib.sha256(canonical(body)).hexdigest(),
             'output_sha256': hashlib.sha256(answer.encode()).hexdigest(),
-            'provider_request_sha256': hashlib.sha256(canonical(request)).hexdigest(),
+            'provider_request_sha256': model_calls[-1]['request_sha256'],
+            'model_calls': model_calls, 'unverified_visual_description': visual_description,
             'repository_context': context, 'history_messages': len(history),
             'citation_validation': citation_state, 'cited_source_ids': cited, 'unknown_source_ids': unknown,
-            'images': sources, 'text': answer, 'finish_reason': result['choices'][0].get('finish_reason'),
+            'images': sources, 'text': answer, 'finish_reason': finish,
             'audio_included': False, 'ordinary_release': False, 'effect_ack_done': False, 'tools_executed': []}
 
 
@@ -378,11 +411,13 @@ def handle(handler):
             except (OSError, ValueError, RuntimeError):
                 pass
             try:
-                ready = provider('/health', timeout=2).get('status') == 'ok' and any(
-                    m.get('id') == lock['model_id'] for m in provider('/v1/models', timeout=2).get('data', []))
+                ready = all(provider('/health', timeout=2, role=role).get('status') == 'ok' and any(
+                    m.get('id') == alias for m in provider('/v1/models', timeout=2, role=role).get('data', []))
+                    for role, alias in (('vision', lock['model_id']), ('text', lock['text_model']['model_id'])))
             except (OSError, ValueError, http.client.HTTPException):
                 pass
-            reply(handler, 200, {'model': lock['model_id'], 'ready': ready, 'audio_ready': audio_paths()[2],
+            reply(handler, 200, {'model': lock['text_model']['model_id'], 'vision_model': lock['model_id'],
+                                'ready': ready, 'audio_ready': audio_paths()[2],
                                 'repository_ready': repository_ready,
                                 'csrf': TOKEN, 'limits': lock['limits'], 'effect_ack_done': False})
         elif handler.command == 'POST' and path in ('/api/multimedia/generate', '/api/multimedia/transcribe'):
