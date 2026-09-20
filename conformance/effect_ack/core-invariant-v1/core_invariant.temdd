@@ -146,6 +146,51 @@ relation v16 {
   observation_order = 16;
   freshness = FRESH;
 }
+relation release0 {
+  source = "EFFECT_NACK";
+  predicate = "permits_ordinary_release";
+  target = "false";
+  epistemic = TRUE;
+  source_order = 17;
+  observation_order = 17;
+  freshness = FRESH;
+}
+relation release1 {
+  source = "EFFECT_ACK_CONTINUE";
+  predicate = "permits_ordinary_release";
+  target = "false";
+  epistemic = TRUE;
+  source_order = 18;
+  observation_order = 18;
+  freshness = FRESH;
+}
+relation release2 {
+  source = "EFFECT_ACK_DONE";
+  predicate = "permits_ordinary_release";
+  target = "true";
+  epistemic = TRUE;
+  source_order = 19;
+  observation_order = 19;
+  freshness = FRESH;
+}
+relation release3 {
+  source = "EFFECT_ACK_ISOLATE";
+  predicate = "permits_ordinary_release";
+  target = "false";
+  epistemic = TRUE;
+  source_order = 20;
+  observation_order = 20;
+  freshness = FRESH;
+}
+relation release4 {
+  source = "EFFECT_ACK_BLOCK";
+  predicate = "permits_ordinary_release";
+  target = "false";
+  epistemic = TRUE;
+  source_order = 21;
+  observation_order = 21;
+  freshness = FRESH;
+}
 request prove_invariant { target = CORE_INVARIANT_V1; }
 on event { follow exact; classify causal; }
 until { FRESH_EFFECT_READBACK; }

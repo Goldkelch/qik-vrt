@@ -37,6 +37,8 @@ jobs:
           cc -std=c90 -pedantic -Wall -Wextra -Werror conformance/effect_ack/core-invariant-v1/c90.c -o /tmp/core-c90
           /tmp/core-c90 | tee "$RUNNER_TEMP/core-invariant/c90.out"
           test "$(wc -l < "$RUNNER_TEMP/core-invariant/c90.out")" -eq 16
+      - name: Cross-checker negative controls
+        run: python3 -B -m unittest discover -s conformance/effect_ack/core-invariant-v1 -p test_runner.py -v
       - name: MC68000 exhaustive carrier under QEMU
         run: |
           set -euo pipefail
@@ -78,6 +80,10 @@ jobs:
           set -euo pipefail
           test "$(cat lean-toolchain)" = 'leanprover/lean4:v4.19.0'
           lake env lean ../../conformance/effect_ack/core-invariant-v1/CoreInvariant.lean | tee "$RUNNER_TEMP/core-invariant/lean.log"
+          lake env lean --run ../../conformance/effect_ack/core-invariant-v1/CoreInvariant.lean |
+            tee "$RUNNER_TEMP/core-invariant/lean-execution.log" |
+            grep -E '^[01] [01] [01] [01] [0-4] [01]$' | tee "$RUNNER_TEMP/core-invariant/lean.out"
+          test "$(wc -l < "$RUNNER_TEMP/core-invariant/lean.out")" -eq 16
           printf '%s\n' QIKVRT_CORE_INVARIANT_LEAN_PASS > "$RUNNER_TEMP/core-invariant/lean.marker"
       - name: Ada SPARK exhaustive carrier and GNATprove
         run: |
@@ -103,7 +109,7 @@ jobs:
           set -euo pipefail
           head="$(git rev-parse HEAD)"; tree="$(git rev-parse 'HEAD^{tree}')"
           test "$head" = "$EXPECTED_HEAD"
-          python3 -B conformance/effect_ack/core-invariant-v1/runner.py --contract conformance/effect_ack/core-invariant-v1/vectors.json --temdd-ir "$RUNNER_TEMP/core-invariant/temdd-ir.json" --lean-marker "$RUNNER_TEMP/core-invariant/lean.marker" --spark-marker "$RUNNER_TEMP/core-invariant/spark.marker" --head "$head" --tree "$tree" --output "$RUNNER_TEMP/core-invariant/report.json" "$RUNNER_TEMP/core-invariant/c90.out" "$RUNNER_TEMP/core-invariant/m68000.out" "$RUNNER_TEMP/core-invariant/smalltalk.out" "$RUNNER_TEMP/core-invariant/ada_spark.out"
+          python3 -B conformance/effect_ack/core-invariant-v1/runner.py --contract conformance/effect_ack/core-invariant-v1/vectors.json --temdd-ir "$RUNNER_TEMP/core-invariant/temdd-ir.json" --lean-marker "$RUNNER_TEMP/core-invariant/lean.marker" --spark-marker "$RUNNER_TEMP/core-invariant/spark.marker" --lean-log "$RUNNER_TEMP/core-invariant/lean.log" --spark-log "$RUNNER_TEMP/core-invariant/gnatprove.log" --head "$head" --tree "$tree" --output "$RUNNER_TEMP/core-invariant/report.json" "$RUNNER_TEMP/core-invariant/c90.out" "$RUNNER_TEMP/core-invariant/m68000.out" "$RUNNER_TEMP/core-invariant/smalltalk.out" "$RUNNER_TEMP/core-invariant/ada_spark.out" "$RUNNER_TEMP/core-invariant/lean.out"
           git diff --exit-code
       - name: Preserve exact-subject proof evidence
         if: always()

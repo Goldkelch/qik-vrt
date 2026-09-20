@@ -22,3 +22,14 @@ qikvrt_core_invariant_m68000:
         rts
 .block: moveq #4,%d0
         rts
+
+| C ABI argument: Effect_State; D0 result: ordinary release 0 or 1.
+| The C harness only prints this result; it does not define the release rule.
+        .globl qikvrt_core_ordinary_release_m68000
+qikvrt_core_ordinary_release_m68000:
+        moveq   #0,%d0
+        cmpi.l  #2,4(%sp)
+        bne.s   .release_return
+        moveq   #1,%d0
+.release_return:
+        rts
