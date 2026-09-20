@@ -6,7 +6,7 @@
 
 Publication ID: `qikvrt-schrittweise-erkenntnis-2026-09-20-v1`
 
-Publication Index State: `repository_candidate_exact_zenodo_authorized_execution_pending`
+Publication Index State: `repository_candidate_exact_zenodo_authorized_runtime_blocked`
 
 Die Notiz dokumentiert Ingolf Lohmanns Gedanken zum stufenweisen Erkenntnisprozess. Der Filmbezug ist als Interpretation gekennzeichnet. Revision kann frühere Sicherheit zurücknehmen. Physikalische Raumzeitentstehung, ein Ausschluss des Superdeterminismus oder ein universales Naturgesetz werden daraus nicht abgeleitet.
 
@@ -15,11 +15,14 @@ Die Notiz dokumentiert Ingolf Lohmanns Gedanken zum stufenweisen Erkenntnisproze
 - [Originalimpuls](ORIGINAL_DE.txt), [Änderungsvermerk](CHANGE_NOTICE.md)
 - [Claim-Matrix](CLAIM_MATRIX.json), [Quellenbindungen](SOURCE_EVIDENCE_BINDINGS.json), [Grenzprüfung](BOUNDARY_REVIEW.json)
 - [Endgültige Zenodo-Autorisierung](../../../release/schrittweise-erkenntnis-2026-09-20-v1/OWNER_ZENODO_AUTHORIZATION.json), [Publikationsmanifest](../../../release/schrittweise-erkenntnis-2026-09-20-v1/publish-request.json) und [Prüfprotokoll](../../../release/schrittweise-erkenntnis-2026-09-20-v1/AUTHORIZATION_PREFLIGHT.json)
+- [Ausführungsstatus](../../../release/schrittweise-erkenntnis-2026-09-20-v1/PUBLICATION_EXECUTION_STATUS.json) und [Fortsetzungsanweisung](../../../release/schrittweise-erkenntnis-2026-09-20-v1/EXECUTION_HANDOFF.md)
 - [Historische Rücklieferung mit Freigabevorlage](../../../release/schrittweise-erkenntnis-2026-09-20-v1/RETURN_TO_OWNER_MESSAGE.md)
 
 Ingolf Lohmann hat die kanonische Entscheidung `AUTHORIZE_EXACT_UPLOAD` mit der Autorisierungs-ID `erkenntnis-20260920-v1-05d27257` tatsächlich in der Sitzung erteilt. Die drei Digests binden Rücklieferung, kanonische Metadaten und Prüfarchiv. Die endgültige Autorisierung und das v2-Manifest beziehen sich auf den eingefrorenen Quellcommit `b209af6021f69780a3bed514385ffe90ee578042` und genau 13 unveränderte Upload-Dateien mit insgesamt 104667 Bytes. Die Entscheidung ist im Autorisierungsobjekt wörtlich festgehalten; dessen Zeitangabe bezeichnet die erste Beobachtung durch den Client.
 
 Die bestehenden v2-Validatoren akzeptieren diese Bindungen. Der authentifizierte Publisher muss anschließend die einmalige Verbrauchssperre erwerben, die exakt autorisierten Dateien veröffentlichen, die öffentlichen Bytes erneut herunterladen und den Nachweis persistieren. Es liegen noch keine Zenodo-Record-ID, kein neuer DOI und kein Nachweis einer Veröffentlichung vor. Eine erneute menschliche Freigabe für denselben unveränderten Dateisatz ist nicht erforderlich.
+
+Der Publisher wurde unter dem gespeicherten Commit `6db81f9e6b77efce6addcfe629748b9cff481260` tatsächlich gestartet. Er hielt vor jedem Upload mit `BLOCK: ZENODO_ACCESS_TOKEN is missing or structurally invalid` an. Die lokale Ausführungsumgebung stellt weder `ZENODO_ACCESS_TOKEN` noch `GITHUB_TOKEN` bereit. Die Verbrauchssperre wurde nicht angelegt; die Freigabe bleibt unverbraucht. Die Fortsetzung benötigt den vorhandenen Publisher in einem authentifizierten Ausführungsdienst. Das Protokoll unterscheidet diesen Zugangsblock von einer fehlenden menschlichen Freigabe und von den eigenständigen PR-Prüfungen.
 
 Die Dateien mit dem Suffix `_DRAFT` und die frühere Rücklieferung bleiben als historische Vorbereitung erhalten. Ihr damaliger Status wird durch die jetzt tatsächlich erteilte Entscheidung abgelöst. Maßgeblich für die Ausführung sind `OWNER_ZENODO_AUTHORIZATION.json` und `publish-request.json`; die Regeln stammen aus `policy/zenodo-machine-proof-policy-v2.json` und Abschnitt 5 von `policy/ZENODO_MACHINE_PROOF_BEFORE_PUBLICATION.md`.
 
