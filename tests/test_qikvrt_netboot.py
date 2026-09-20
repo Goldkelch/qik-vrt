@@ -18,6 +18,24 @@ boot = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(boot)
 
 
+class ModelCarrierBoundsTests(unittest.TestCase):
+    def test_model_bundled_rootfs_above_two_gib_is_accepted_with_finite_ceiling(self):
+        manifest = {'schema': 'qikvrt_netboot_v1', 'architecture': 'x86_64',
+                    'source_sha': 'a'*40, 'boot_method': 'linux-live-http',
+                    'files': {kind: {'name': name, 'sha256': 'b'*64, 'bytes': 1}
+                              for kind, name in boot.FILES.items()}}
+        for size in (2*1024**3 + 1, 2116*1024**2, 2560*1024**2):
+            manifest['files']['rootfs']['bytes'] = size
+            boot.validate_manifest(manifest)
+            self.assertGreaterEqual(boot.guest_memory_mib(manifest)*1024**2, 2*size+1024**3)
+        for size in (2560*1024**2+1, 0, True):
+            manifest['files']['rootfs']['bytes'] = size
+            with self.assertRaises(ValueError): boot.validate_manifest(manifest)
+        manifest['files']['rootfs']['bytes'] = 1
+        manifest['files']['kernel']['bytes'] = 2*1024**3+1
+        with self.assertRaises(ValueError): boot.validate_manifest(manifest)
+
+
 class NetbootTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

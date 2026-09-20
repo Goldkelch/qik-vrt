@@ -151,3 +151,10 @@ The first actual grounded smoke at 633a28b exposed repetitive, inaccurate
 explanations and absent citations from the compact model. It established the
 transport path, not adequate scientific answer quality. That quality remains
 OPEN and needs separate model/task evaluation; the original excerpts stay visible.
+
+The model-bundled ISO produced a 2115.20 MiB compressed root filesystem on the
+633a28b build. The receiver's former 2 GiB ceiling rejected it after ISO boot.
+The rootfs ceiling is therefore 2.5 GiB; other file bounds and exact digest checks
+remain in force. At that ceiling, the existing RAM calculation assigns 6 GiB
+to the guest; allow additional host memory. Older clients keep rejecting images
+over their 2 GiB bound and must be updated before receiving this carrier.

@@ -34,6 +34,9 @@ HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 HEADER = struct.Struct("!4sB3xIIIIII")
 CHUNK = 128
 MAX_BOOT = 4 * 1024 * 1024
+# The model-bundled rootfs measured 2115.20 MiB in run 35509301105.
+# Bound that carrier to 2.5 GiB; other files retain their existing 2 GiB ceiling.
+MAX_ROOTFS_BYTES = 2560 * 1024**2
 
 
 def sha256(path: Path) -> str:
@@ -99,7 +102,8 @@ def validate_manifest(manifest: dict) -> None:
         if entry.get("name") != name or not HEX64.fullmatch(entry.get("sha256", "")):
             raise ValueError("unbound file identity")
         size = entry.get("bytes")
-        if type(size) is not int or not 0 < size <= 2 * 1024 ** 3:
+        limit = MAX_ROOTFS_BYTES if kind == "rootfs" else 2 * 1024 ** 3
+        if type(size) is not int or not 0 < size <= limit:
             raise ValueError("file size outside contract")
 
 
