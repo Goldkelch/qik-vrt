@@ -171,6 +171,12 @@ evidence questions (English, German and an image) and existing source references
 Those checks do not establish general scientific answer quality, which remains
 OPEN and needs separate task evaluation; the original excerpts stay visible.
 
+The a2c6bfd browser conversation exposed an inconsistent opening "Yes" followed
+by an explanation denying physical truth. That finite acceptance check failed.
+The shared generation/correction instruction now requires the opening polarity
+to answer the exact current question consistently. This is guidance to a fallible
+model, not an application rewrite of its answer or a semantic correctness proof.
+
 The model-bundled ISO produced a 2115.20 MiB compressed root filesystem on the
 633a28b build. The receiver's former 2 GiB ceiling rejected it after ISO boot.
 The added text weights occupy 1065.56 MiB before filesystem compression. Large
