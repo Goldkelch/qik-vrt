@@ -97,7 +97,8 @@ The full artifact contains six 9,455,616-byte streams, canonical TEMDD IR,
 kernel axiom reports, complete GNATprove output, negative-control logs and an
 exact-HEAD/tree report. A failed comparator overwrites any previous PASS report.
 
-Lean proves the DONE guard equivalence, admission equivalence, positive
+Lean proves total state-selection correctness against a declarative disjoint-cube
+relation, DONE guard equivalence, admission equivalence, positive
 witnesses, insufficiency of transport acknowledgement and the conditional
 composition theorem. It does not claim to have discharged the external table
 comparisons inside its kernel. SPARK proves the snapshot and admission

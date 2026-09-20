@@ -20,6 +20,22 @@ theorem choose_done_iff (v b c i k s r : Bool) :
   cases v <;> cases b <;> cases c <;> cases i <;>
     cases k <;> cases s <;> cases r <;> decide
 
+/-- Declarative disjoint cubes corresponding to the frozen first-match contract. -/
+def selectionContract (v b c i k s r : Bool) (result : Nat) : Prop :=
+  (v = false ∧ result = 5) ∨
+  (v = true ∧ b = true ∧ result = 4) ∨
+  (v = true ∧ b = false ∧ c = false ∧ result = 0) ∨
+  (v = true ∧ b = false ∧ c = true ∧ i = true ∧ result = 4) ∨
+  (v = true ∧ b = false ∧ c = true ∧ i = false ∧ k = true ∧ result = 4) ∨
+  (v = true ∧ b = false ∧ c = true ∧ i = false ∧ k = false ∧ s = true ∧ result = 3) ∨
+  (v = true ∧ b = false ∧ c = true ∧ i = false ∧ k = false ∧ s = false ∧ r = true ∧ result = 2) ∨
+  (v = true ∧ b = false ∧ c = true ∧ i = false ∧ k = false ∧ s = false ∧ r = false ∧ result = 1)
+
+theorem choose_contract_iff (v b c i k s r : Bool) (result : Nat) :
+    selectionContract v b c i k s r result ↔ result = choose v b c i k s r := by
+  cases v <;> cases b <;> cases c <;> cases i <;>
+    cases k <;> cases s <;> cases r <;> simp [selectionContract, choose]
+
 def bit (m n : Nat) : Bool := m.testBit n
 def valid (r d : Nat) : Bool := decide (r < 5 ∧ d < 5)
 def blocked (m : Nat) : Bool := bit m 16 || bit m 12
@@ -34,6 +50,14 @@ def ready (m r d : Nat) : Bool :=
 def core (m r d : Nat) : Nat :=
   choose (valid r d) (blocked m) (checkable m) (bit m 17)
     (d == 4) (d == 3) (ready m r d)
+
+/-- Total correctness for the declarative state-selection relation.
+    The encoding-to-JSON-cube correspondence is also exhaustively cross-checked. -/
+theorem core_correct (m r d : Nat) :
+    selectionContract (valid r d) (blocked m) (checkable m) (bit m 17)
+      (d == 4) (d == 3) (ready m r d) (core m r d) := by
+  apply (choose_contract_iff _ _ _ _ _ _ _ _).2
+  rfl
 
 /-- Exact DONE boundary for every natural-number encoding. -/
 theorem core_done_iff (m r d : Nat) :
@@ -67,6 +91,8 @@ theorem composition_refinement
     compose f g x y = compose fSpec gSpec x y := by
   simp [compose, hf, hg]
 
+#print axioms choose_contract_iff
+#print axioms core_correct
 #print axioms choose_done_iff
 #print axioms core_done_iff
 #print axioms admission_iff

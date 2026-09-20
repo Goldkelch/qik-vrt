@@ -91,7 +91,7 @@ def check_proofs(directory):
         if name == "lean.log":
             if "sorryAx" in text or "declaration uses 'sorry'" in text:
                 raise ValueError("Lean proof hole")
-            for theorem in ("choose_done_iff", "core_done_iff", "admission_iff",
+            for theorem in ("choose_contract_iff", "core_correct", "choose_done_iff", "core_done_iff", "admission_iff",
                             "positive_done", "positive_admission",
                             "transport_alone_insufficient", "composition_refinement"):
                 if "QIKVRT.FullDraft03." + theorem not in text:
