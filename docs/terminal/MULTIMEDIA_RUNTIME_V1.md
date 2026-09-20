@@ -16,6 +16,9 @@ Qwen handles text questions and repository synthesis. SmolVLM handles images; fo
 questions with repository context or history, its description is marked unverified
 and then passed to Qwen alongside the excerpts. Each call gets its own model,
 input and output digest in the receipt. Neither model is a correctness oracle.
+Missing or unknown source references trigger at most one model correction.
+The receipt retains both calls' output digests; application code never inserts
+citations into an answer. The final reference check can still report a defect.
 The official text-model identity is documented by its
 [upstream weight commit](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/commit/dd26da440ef0330c47919d1ecae0966d24022222).
 This locked release was selected for the supported model and Debian-compatible

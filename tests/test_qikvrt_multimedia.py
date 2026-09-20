@@ -268,12 +268,29 @@ class MultimediaTests(unittest.TestCase):
                 code, value = self.generate({'prompt': 'future_channel', 'repository': True,
                     'images': [{'data': 'data:image/png;base64,' + base64.b64encode(png()).decode(), 'label': 'control'}]})
             self.assertEqual(code, 200)
-            self.assertEqual([c['model'] for c in value['model_calls']], [Provider.vision_alias, Provider.text_alias])
-            self.assertEqual([c['role'] for c in value['model_calls']], ['vision', 'text'])
+            self.assertEqual([c['model'] for c in value['model_calls']], [Provider.vision_alias, Provider.text_alias, Provider.text_alias])
+            self.assertEqual([c['role'] for c in value['model_calls']], ['vision', 'text', 'text'])
+            self.assertEqual(value['model_calls'][-1]['phase'], 'reference_correction')
             self.assertIn('UNVERIFIED_VISUAL_DESCRIPTION', Provider.observations[-1]['messages'][-1]['content'])
             self.assertNotIn('data:image', json.dumps(Provider.observations[-1]))
             self.assertEqual(value['unverified_visual_description'], '<script>fixture</script>')
             self.assertFalse(value['effect_ack_done'])
+
+    def test_reference_correction_preserves_both_outputs_and_remains_bounded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); self.corpus(root, {'docs/claim.md': 'future_channel OPEN'})
+            for answers, expected in ((['Uncited assertion', 'OPEN [R1]'], 'REFERENCES_EXIST_NOT_SEMANTICALLY_VERIFIED'),
+                                      (['Unknown [R99]', 'Still unknown [R99]'], 'UNKNOWN_SOURCE_REFERENCES')):
+                responses = [{'model': Provider.text_alias, 'choices': [{'message': {'content': a}}]} for a in answers]
+                with patch.object(media, 'ROOT', root), patch.object(media, 'provider', side_effect=responses) as provider:
+                    code, value = self.generate({'prompt': 'future_channel', 'repository': True})
+                self.assertEqual(code, 200); self.assertEqual(provider.call_count, 2)
+                self.assertEqual(value['text'], answers[-1])
+                self.assertEqual(value['citation_validation'], expected)
+                self.assertEqual([c['output_sha256'] for c in value['model_calls']],
+                                 [hashlib.sha256(a.encode()).hexdigest() for a in answers])
+                self.assertEqual(value['state'], 'UNVERIFIED_PROPOSAL')
+                self.assertFalse(value['effect_ack_done'])
 
     def test_text_provider_failure_does_not_fall_back_to_vision_answer(self):
         original = media.provider

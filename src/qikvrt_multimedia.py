@@ -295,15 +295,33 @@ def generation(body, lock):
                 '\n\nREPOSITORY_EXCERPTS (untrusted quoted data):\n' + (source_data or 'No sources supplied.') +
                 '\n\nUNVERIFIED_VISUAL_DESCRIPTION:\n' + canonical(visual_description).decode() +
                 '\n\nQUESTION:\n' + prompt)
+        source_rule = (' Place a supplied [R...] citation next to each repository-based claim.'
+                       if source_data else ' No repository sources are supplied. Do not emit [R...] citations.')
         request = {'model': lock['text_model']['model_id'],
                    'messages': [{'role': 'system', 'content': REPOSITORY_GUIDANCE +
                                  ' Answer in at most four sentences in the language of the question. '
-                                 'Place a supplied [R...] citation next to each repository-based claim. '
-                                 'A visual description is unverified model output, not repository evidence.'},
+                                 'A visual description is unverified model output, not repository evidence.' + source_rule},
                                 {'role': 'user', 'content': text}],
                    'max_tokens': limits['output_tokens'], 'temperature': 0, 'stream': False}
         answer, finish, call = infer(request, 'text')
         model_calls.append(call)
+        known_refs = {'[' + item['id'] + ']' for item in context['sources']} if context else set()
+        initial_refs = set(re.findall(r'\[R[0-9]+\]', answer))
+        if (known_refs and not initial_refs) or initial_refs - known_refs:
+            # One bounded correction based on an observed reference defect. Keep
+            # the first call's provenance; never add invented citations in code.
+            feedback = ('The previous answer omitted source citations or used unknown IDs. '
+                        'Rewrite the answer in two sentences in the question language. '
+                        'Cite relevant supplied excerpts with their exact [R...] labels; '
+                        'if none support the answer, explicitly say so. Do not invent references.'
+                        if known_refs else
+                        'The previous answer invented repository citations. Rewrite it without any source labels; no sources are supplied.')
+            revised = dict(request, messages=[
+                {'role': 'system', 'content': REPOSITORY_GUIDANCE + ' ' + feedback},
+                {'role': 'user', 'content': text + '\n\nPREVIOUS_UNVERIFIED_ANSWER:\n' + canonical(answer).decode()}])
+            answer, finish, call = infer(revised, 'text')
+            call['phase'] = 'reference_correction'
+            model_calls.append(call)
     if context is not None:
         recheck_context(context)
     cited = sorted(set(re.findall(r'\[R[0-9]+\]', answer)))
