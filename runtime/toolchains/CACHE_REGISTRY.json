@@ -8,6 +8,32 @@
     "runner-image-layer"
   ],
   "components": {
+    "agent-browser": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "runtime/toolchains/multimedia-browser/package.json",
+        "runtime/toolchains/multimedia-browser/package-lock.json",
+        "docs/terminal/MULTIMEDIA_RUNTIME_V1.md"
+      ],
+      "cache_class": "build-cache",
+      "cache_key": "Node24 Linux x86_64 + package-lock SHA256 + browser revision",
+      "cache_locations": [
+        "runtime/toolchains/multimedia-browser/node_modules",
+        "~/.cache/ms-playwright"
+      ],
+      "failure_recovery": "Close isolated test session; no production browser profile access; retain failure screenshot",
+      "profiles": [
+        "multimedia-browser-check"
+      ],
+      "provider": "npm registry agent-browser; pinned package-lock",
+      "trusted_save": false,
+      "verification": [
+        "npm ci integrity checks",
+        "reported CLI version",
+        "browser snapshot, page errors and actual form interaction"
+      ],
+      "version": "0.38.1"
+    },
     "cc": {
       "authority_files": [
         "runtime/toolchains/TOOLCHAIN.lock.tsv",
@@ -150,6 +176,33 @@
         "actual guest network boot and QMP color screenshot"
       ],
       "version": "20250505+deb13u1"
+    },
+    "llama-server": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "runtime/toolchains/multimedia.lock.json",
+        "tools/qikvrt_multimedia_runtime.py",
+        "tools/bootstrap-runtime.sh"
+      ],
+      "cache_class": "repo-managed-archive",
+      "cache_key": "Linux-x86_64 + lock SHA256 + installer SHA256",
+      "cache_locations": [
+        ".qikvrt/toolchains/multimedia"
+      ],
+      "failure_recovery": "Retain known valid cache; remove only incomplete staged download; HOLD on changed existing bytes; no automatic retries",
+      "license": "MIT for llama.cpp; Apache-2.0 for SmolVLM2",
+      "profiles": [
+        "multimedia"
+      ],
+      "provider": "tools/qikvrt_multimedia_runtime.py",
+      "trusted_save": false,
+      "verification": [
+        "locked SHA256 and size before use",
+        "exact extracted archive byte comparison",
+        "llama-server version self-test",
+        "actual local text/image inference recorded separately"
+      ],
+      "version": "b6500"
     },
     "m68k-linux-gnu-gcc": {
       "authority_files": [
@@ -379,6 +432,33 @@
         "offline audio tests"
       ],
       "version": "1.13.4"
+    },
+    "smolvlm2-500m": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "runtime/toolchains/multimedia.lock.json",
+        "tools/qikvrt_multimedia_runtime.py",
+        "tools/bootstrap-runtime.sh"
+      ],
+      "cache_class": "repo-managed-archive",
+      "cache_key": "Linux-x86_64 + lock SHA256 + installer SHA256",
+      "cache_locations": [
+        ".qikvrt/toolchains/multimedia"
+      ],
+      "failure_recovery": "Retain known valid cache; remove only incomplete staged download; HOLD on changed existing bytes; no automatic retries",
+      "license": "MIT for llama.cpp; Apache-2.0 for SmolVLM2",
+      "profiles": [
+        "multimedia"
+      ],
+      "provider": "tools/qikvrt_multimedia_runtime.py",
+      "trusted_save": false,
+      "verification": [
+        "locked SHA256 and size before use",
+        "exact extracted archive byte comparison",
+        "llama-server version self-test",
+        "actual local text/image inference recorded separately"
+      ],
+      "version": "ccd7aae53bcb1997355c2f094959e72b3642ce17"
     },
     "xelatex": {
       "authority_files": [

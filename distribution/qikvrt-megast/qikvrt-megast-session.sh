@@ -64,6 +64,6 @@ EOF
 
 # Start the actual client in the graphical session, then observe its window and
 # the locally executed C90/Smalltalk/MC68000 paths before reporting runtime ready.
-firefox-esr --new-window http://127.0.0.1:8771/.well-known/effect-ack \
+firefox-esr --new-window http://127.0.0.1:8771/multimedia \
   > "$HOME/.config/qikvrt/firefox.log" 2>&1 &
 python3 -B /opt/qikvrt/runtime-witness.py > "$HOME/.config/qikvrt/runtime-witness.log" 2>&1 &

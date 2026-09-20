@@ -96,3 +96,19 @@ and carry all notices required by those exact artifacts. Package metadata is
 available from the Python Package Index at
 `https://pypi.org/project/<package>/<version>/` and from each package's declared
 upstream project links.
+
+## Local multimedia reference
+
+SmolVLM2-500M-Video-Instruct is supplied by Hugging Face and the pinned GGUF
+conversion by ggml-org under Apache-2.0. The language and vision files are
+identified in `multimedia.lock.json`; the full license is
+`LICENSES/Apache-2.0.txt`. Source: https://huggingface.co/HuggingFaceTB/SmolVLM2-500M-Video-Instruct.
+
+llama.cpp b6500 uses the MIT license in `llama-b6500-LICENSE.txt`. The verified
+runner archive retains its own LICENSE and third-party notices for curl, httplib,
+jsonhpp and linenoise. These files are retained when the cache is copied into the
+container or ISO. No QIK-VRT license is applied to these upstream components.
+
+The optional agent-browser 0.38.1 QA CLI is Apache-2.0, as declared by its exact
+npm package. Its package lock is in `multimedia-browser/`. Downloaded Chromium
+retains its separate upstream licensing; the browser check is not an ISO payload.

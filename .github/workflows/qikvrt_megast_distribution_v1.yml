@@ -87,6 +87,14 @@ jobs:
           sudo dpkg -i /tmp/live-build.deb
           lb --version
           qemu-system-x86_64 --version
+      - name: Set up the declared Node 24 audio runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Prepare the pinned offline audio package
+        run: |
+          npm ci --prefix tools/offline-audio-transcription --omit=dev
+          echo "QIKVRT_NODE_BIN=$(command -v node)" >> "$GITHUB_ENV"
       - name: Verify C90 and Smalltalk language implementations
         id: languages
         run: |

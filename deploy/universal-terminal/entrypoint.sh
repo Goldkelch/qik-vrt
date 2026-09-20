@@ -58,6 +58,14 @@ trap cleanup EXIT
 trap 'exit 143' TERM
 trap 'exit 130' INT
 
+# Bounded local inference has no repository execution or public HTTP authority.
+if [ "${QIKVRT_ENABLE_MULTIMEDIA:-0}" = 1 ]; then
+  python3 -B /opt/qikvrt/tools/qikvrt_multimedia_runtime.py serve \
+    --port "${QIKVRT_MODEL_PORT:-8789}" \
+    > /opt/qikvrt/runtime/logs/multimedia-model.log 2>&1 &
+  PIDS="$PIDS $!"
+fi
+
 test -s /usr/share/novnc/vnc.html
 test -s /usr/share/novnc/core/rfb.js
 

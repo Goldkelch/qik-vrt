@@ -22,7 +22,7 @@ cat > "$WORK/config/package-lists/qikvrt-megast.list.chroot" <<'EOF'
 linux-image-amd64 live-boot systemd-sysv sudo ca-certificates curl git jq
 xorg lightdm xfce4 xfce4-terminal dbus-x11
 hatari firefox-esr flatpak podman xterm
-python3 python3-venv nginx openssh-client
+python3 python3-venv nginx openssh-client libcurl4t64 ffmpeg
 fonts-dejavu-core qemu-user x11-utils procps
 EOF
 
@@ -79,12 +79,50 @@ cp "$ROOT/runtime/toolchains/"pharo-*-LICENSE.txt "$GUEST/opt/qikvrt/smalltalk/"
 cp "$ROOT/distribution/qikvrt-megast/boot.py" "$GUEST/opt/qikvrt/boot.py"
 cp "$ROOT/distribution/qikvrt-megast/runtime-witness.py" "$GUEST/opt/qikvrt/runtime-witness.py"
 cp "$ROOT/src/qikvrt_effect_ack_http_terminal.py" "$GUEST/opt/qikvrt/effect-ack-http.py"
+cp "$ROOT/src/qikvrt_multimedia.py" "$GUEST/opt/qikvrt/qikvrt_multimedia.py"
+mkdir -p "$GUEST/opt/qikvrt/docs/terminal" "$GUEST/opt/qikvrt/runtime/toolchains" "$GUEST/opt/qikvrt/tools"
+cp -a "$ROOT/docs/terminal/multimedia" "$GUEST/opt/qikvrt/docs/terminal/"
+cp "$ROOT/runtime/toolchains/multimedia.lock.json" "$GUEST/opt/qikvrt/runtime/toolchains/"
+cp "$ROOT/runtime/toolchains/THIRD_PARTY_NOTICES.md" "$ROOT/runtime/toolchains/llama-b6500-LICENSE.txt" "$GUEST/opt/qikvrt/runtime/toolchains/"
+mkdir -p "$GUEST/opt/qikvrt/LICENSES"
+cp "$ROOT/LICENSES/Apache-2.0.txt" "$GUEST/opt/qikvrt/LICENSES/"
+cp "$ROOT/tools/qikvrt_multimedia_runtime.py" "$GUEST/opt/qikvrt/tools/"
+python3 -B "$ROOT/tools/qikvrt_multimedia_runtime.py" install
+mkdir -p "$GUEST/opt/qikvrt/.qikvrt/toolchains"
+cp -a "$ROOT/.qikvrt/toolchains/multimedia" "$GUEST/opt/qikvrt/.qikvrt/toolchains/"
+# The ISO carries the same reviewed offline ASR as the container. Preparation
+# installs npm packages in the source tool; never fetch a model during boot.
+QIKVRT_NODE_BIN=${QIKVRT_NODE_BIN:-$(command -v node)}
+case "$("$QIKVRT_NODE_BIN" --version)" in v24.*) ;; *) echo 'Node 24 is required for the audio bundle' >&2; exit 1 ;; esac
+test -f "$ROOT/tools/offline-audio-transcription/node_modules/sherpa-onnx-node/package.json"
+cp -L "$QIKVRT_NODE_BIN" "$GUEST/usr/local/bin/node"
+cp -a "$ROOT/tools/offline-audio-transcription" "$GUEST/opt/qikvrt/tools/"
+bash "$ROOT/tools/offline-audio-transcription/scripts/install-model.sh" --model-dir "$GUEST/opt/qikvrt/runtime/audio-model"
+chmod 0755 "$GUEST/opt/qikvrt/runtime/audio-model"
+cat > "$GUEST/etc/systemd/system/qikvrt-multimedia-model.service" <<'EOF'
+[Unit]
+Description=QIK-VRT local multimedia reference model
+After=network.target
+[Service]
+ExecStart=/usr/bin/python3 -B /opt/qikvrt/tools/qikvrt_multimedia_runtime.py serve
+DynamicUser=yes
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target
+EOF
+ln -s ../qikvrt-multimedia-model.service "$GUEST/etc/systemd/system/multi-user.target.wants/qikvrt-multimedia-model.service"
 cat > "$GUEST/etc/systemd/system/qikvrt-effect-ack-http.service" <<'EOF'
 [Unit]
 Description=QIK-VRT loopback Effect-Ack terminal
 After=network.target
 [Service]
 ExecStart=/usr/bin/python3 -B /opt/qikvrt/effect-ack-http.py --host 127.0.0.1 --port 8771
+Environment=QIKVRT_MULTIMEDIA_ROOT=/opt/qikvrt
+Environment=QIKVRT_AUDIO_MODEL_DIR=/opt/qikvrt/runtime/audio-model
 DynamicUser=yes
 NoNewPrivileges=yes
 Restart=on-failure

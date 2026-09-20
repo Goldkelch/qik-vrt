@@ -23,7 +23,7 @@ usage() {
     cat <<'EOF'
 Usage: tools/bootstrap-runtime.sh [--check-only] [--install]
        [--accept-third-party]
-       [--profile core|ietf|formal|audio|publication|smalltalk|all]
+       [--profile core|ietf|formal|audio|publication|smalltalk|multimedia|all]
        [--cache-dir PATH]
 
 Every profile checks GitHub CLI first. Only the verified GitHub CLI and
@@ -91,7 +91,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$PROFILE" in
-    core|ietf|formal|audio|publication|smalltalk|all) ;;
+    core|ietf|formal|audio|publication|smalltalk|multimedia|all) ;;
     *) usage >&2; exit 2 ;;
 esac
 if [ "$MODE" = install ] && [ "$ACCEPT_THIRD_PARTY" -ne 1 ]; then
@@ -421,6 +421,11 @@ case "$PROFILE" in
     audio) check_audio_profile ;;
     publication) check_publication_profile ;;
     smalltalk) check_smalltalk_profile ;;
+    multimedia)
+        multimedia_operation=verify
+        if [ "$MODE" = install ]; then multimedia_operation=install; fi
+        python3 "$ROOT/tools/qikvrt_multimedia_runtime.py" "$multimedia_operation" --cache-dir "$CACHE_DIR/multimedia" || mark_continue "multimedia: pinned local model/runtime unavailable"
+        ;;
     all)
         check_core_profile
         check_ietf_profile
