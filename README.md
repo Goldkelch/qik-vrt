@@ -84,7 +84,7 @@ open checks, controlled isolation, responsible blocking, and a fully bound
 
 ## Statischer Roundtrip-Snapshot
 
-[Version 2: Digitale Schattenseiten](docs/publications/2026-09-20-qikvrt-roundtrip-snapshot-v2/README.md) ergänzt die kritische Perspektive auf Informationsmacht, Prognosemärkte und finanzielle Rückkopplungen. Alle Inhalte bleiben in einer statischen HTML-Datei unter 10 MB.
+[Version 2: Digitale Schattenseiten](https://github.com/Goldkelch/qik-vrt/blob/1835a2d1da64daa9b032606cd57421c1e4a11592/docs/publications/2026-09-20-qikvrt-roundtrip-snapshot-v2/README.md) ergänzt die kritische Perspektive auf Informationsmacht, Prognosemärkte und finanzielle Rückkopplungen. Alle Inhalte bleiben in einer statischen HTML-Datei unter 10 MB.
 
 [QIK-VRT Roundtrip vom 20. September 2026](https://github.com/Goldkelch/qik-vrt/blob/c4bb95e9a1fed939cc1e582300af9b28daa614fa/docs/publications/2026-09-20-qikvrt-roundtrip-snapshot/README.md): eine vollständig eingebettete HTML-Datei mit 28 Originaltexten, 549.828 Byte, ohne nachzuladende Ressourcen.
 

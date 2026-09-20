@@ -13,7 +13,7 @@ Der Abschnitt steht identisch in der [Online-Seite](https://qikvrt-roundtrip.ing
 - Vorgesehener Release-Tag: `qikvrt-roundtrip-2026-09-20-v2`.
 - [Unveränderte Version 1](https://github.com/Goldkelch/qik-vrt/blob/c4bb95e9a1fed939cc1e582300af9b28daa614fa/docs/publications/2026-09-20-qikvrt-roundtrip-snapshot/README.md).
 
-Die Online-Adresse führt auf die laufende Website. Der neue Snapshot wird durch seinen eigenen Git-Commit und die Prüfsumme identifiziert; der vollständige Commit-Link wird im PR und im Release-Handoff festgehalten. Die frühere Version wird nicht überschrieben.
+Die Online-Adresse führt auf die laufende Website. Der neue Snapshot wird durch seinen eigenen Git-Commit und die Prüfsumme identifiziert; der [feste Inhaltsverweis](https://github.com/Goldkelch/qik-vrt/blob/1835a2d1da64daa9b032606cd57421c1e4a11592/docs/publications/2026-09-20-qikvrt-roundtrip-snapshot-v2/QIKVRT_Roundtrip_2026-09-20_v2.html) und der [direkte Download](https://github.com/Goldkelch/qik-vrt/raw/1835a2d1da64daa9b032606cd57421c1e4a11592/docs/publications/2026-09-20-qikvrt-roundtrip-snapshot-v2/QIKVRT_Roundtrip_2026-09-20_v2.html) zeigen auf Commit `1835a2d1da64daa9b032606cd57421c1e4a11592`. Die frühere Version wird nicht überschrieben.
 
 ## Prüfen
 
