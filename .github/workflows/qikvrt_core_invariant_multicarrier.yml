@@ -111,6 +111,8 @@ jobs:
           test "$head" = "$EXPECTED_HEAD"
           python3 -B conformance/effect_ack/core-invariant-v1/runner.py --contract conformance/effect_ack/core-invariant-v1/vectors.json --temdd-ir "$RUNNER_TEMP/core-invariant/temdd-ir.json" --lean-marker "$RUNNER_TEMP/core-invariant/lean.marker" --spark-marker "$RUNNER_TEMP/core-invariant/spark.marker" --lean-log "$RUNNER_TEMP/core-invariant/lean.log" --spark-log "$RUNNER_TEMP/core-invariant/gnatprove.log" --head "$head" --tree "$tree" --output "$RUNNER_TEMP/core-invariant/report.json" "$RUNNER_TEMP/core-invariant/c90.out" "$RUNNER_TEMP/core-invariant/m68000.out" "$RUNNER_TEMP/core-invariant/smalltalk.out" "$RUNNER_TEMP/core-invariant/ada_spark.out" "$RUNNER_TEMP/core-invariant/lean.out"
           git diff --exit-code
+      - name: Full Draft03 finite profile in six carriers
+        run: bash conformance/effect_ack/core-invariant-v1/full/run.sh "$RUNNER_TEMP/core-invariant/full"
       - name: Preserve exact-subject proof evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
