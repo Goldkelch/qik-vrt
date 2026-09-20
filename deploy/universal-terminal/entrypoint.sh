@@ -46,6 +46,19 @@ cleanup() {
   for pid in $PIDS; do kill "$pid" 2>/dev/null || true; done
 }
 diagnostics() {
+  # Keep timeout, Git failure and a changed checkout distinguishable on failure.
+  # This readback never repairs or admits an unobservable subject.
+  python3 -B - <<'PY' >&2
+import json, subprocess
+for args in [('rev-parse', 'HEAD', 'HEAD^{tree}'), ('diff', '--name-status', 'HEAD', '--')]:
+    try:
+        result = subprocess.run(['git', '-C', '/opt/qikvrt', *args],
+                                capture_output=True, text=True, timeout=10)
+        print(json.dumps({'git_observation': args[0], 'returncode': result.returncode,
+                          'stdout': result.stdout[:8192], 'stderr': result.stderr[:2048]}))
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(json.dumps({'git_observation': args[0], 'failure': type(exc).__name__}))
+PY
   printf '\n--- process snapshot ---\n' >&2
   ps -eo pid,ppid,stat,args >&2 || true
   for log in /opt/qikvrt/runtime/logs/*.log; do
@@ -57,14 +70,6 @@ diagnostics() {
 trap cleanup EXIT
 trap 'exit 143' TERM
 trap 'exit 130' INT
-
-# Bounded local inference has no repository execution or public HTTP authority.
-if [ "${QIKVRT_ENABLE_MULTIMEDIA:-0}" = 1 ]; then
-  python3 -B /opt/qikvrt/tools/qikvrt_multimedia_runtime.py serve \
-    --port "${QIKVRT_MODEL_PORT:-8789}" \
-    > /opt/qikvrt/runtime/logs/multimedia-model.log 2>&1 &
-  PIDS="$PIDS $!"
-fi
 
 test -s /usr/share/novnc/vnc.html
 test -s /usr/share/novnc/core/rfb.js
@@ -121,6 +126,16 @@ until curl --max-time 2 -fsS "http://127.0.0.1:${HTTP_PORT}/.well-known/effect-a
   fi
   sleep 1
 done
+
+# Verify the source-bound daemon before loading model weights competes for disk
+# and CPU. Its clean-checkout requirement and bounded Git check stay unchanged.
+# Local inference has no repository execution or public HTTP authority.
+if [ "${QIKVRT_ENABLE_MULTIMEDIA:-0}" = 1 ]; then
+  python3 -B /opt/qikvrt/tools/qikvrt_multimedia_runtime.py serve \
+    --port "${QIKVRT_MODEL_PORT:-8789}" \
+    > /opt/qikvrt/runtime/logs/multimedia-model.log 2>&1 &
+  PIDS="$PIDS $!"
+fi
 
 Xvfb "$DISPLAY_VALUE" -screen 0 1440x900x24 -nolisten tcp \
   > /opt/qikvrt/runtime/logs/xvfb.log 2>&1 &
