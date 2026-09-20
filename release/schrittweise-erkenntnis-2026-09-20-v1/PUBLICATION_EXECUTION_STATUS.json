@@ -1,0 +1,160 @@
+{
+  "_license": {
+    "classification": "publication_execution_observation",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_authorized_publication_execution_status_v1",
+  "publication_id": "qikvrt-schrittweise-erkenntnis-2026-09-20-v1",
+  "authorization_id": "erkenntnis-20260920-v1-05d27257",
+  "observed_at": "2026-09-20T07:32:30.381510+00:00",
+  "state": "AUTHORIZED_NOT_PUBLISHED_RUNTIME_BLOCKED",
+  "authorization_status": "ACTUAL_EXACT_OWNER_AUTHORIZATION_ACCEPTED",
+  "authorization": {
+    "path": "release/schrittweise-erkenntnis-2026-09-20-v1/OWNER_ZENODO_AUTHORIZATION.json",
+    "bytes": 6849,
+    "sha256": "f79b76082ea8b58e4b8632b322268925f70439685917fb61a4283537051d25ab",
+    "git_blob_sha1": "a228ded56b5a10fa9c6450266abdb96db0e9ba3a"
+  },
+  "manifest": {
+    "path": "release/schrittweise-erkenntnis-2026-09-20-v1/publish-request.json",
+    "bytes": 4970,
+    "sha256": "a8f2a21b54287749173c4cf1566a600eafc4d0d472a1e3ae50bbbd5934989d8d",
+    "git_blob_sha1": "0770153ec66a07d926aafba7bd2f907aedff6d8a"
+  },
+  "preflight": {
+    "path": "release/schrittweise-erkenntnis-2026-09-20-v1/AUTHORIZATION_PREFLIGHT.json",
+    "bytes": 2412,
+    "sha256": "4e699a3d14471b6c6bddebe0ed8e775de4210cf591f6965c6979c1382fc63e03",
+    "git_blob_sha1": "32e950653cc4bc55b8cf1f7e137779d380c5abfd"
+  },
+  "execution_attempt": {
+    "schema": "qikvrt_authorized_publisher_execution_observation_v1",
+    "started_at": "2026-09-20T07:29:11.531566+00:00",
+    "completed_at": "2026-09-20T07:29:11.620479+00:00",
+    "repository": "Goldkelch/qik-vrt",
+    "execution_channel": "Local CLI; source bindings set from the actually checked-out commit, not a GitHub Actions attestation.",
+    "execution_head": "6db81f9e6b77efce6addcfe629748b9cff481260",
+    "execution_tree": "55dbed167d50c29f739960693920ededb68c6429",
+    "working_tree_clean": true,
+    "source_head": "b209af6021f69780a3bed514385ffe90ee578042",
+    "manifest": {
+      "path": "release/schrittweise-erkenntnis-2026-09-20-v1/publish-request.json",
+      "bytes": 4970,
+      "sha256": "a8f2a21b54287749173c4cf1566a600eafc4d0d472a1e3ae50bbbd5934989d8d",
+      "git_blob_sha": "0770153ec66a07d926aafba7bd2f907aedff6d8a"
+    },
+    "read_only_gates": {
+      "load_manifest": "PASS",
+      "execution_head_and_committed_controls": "PASS",
+      "authority_origin": "PASS"
+    },
+    "command": [
+      "python3",
+      "-B",
+      "tools/qikvrt_zenodo_publish.py",
+      "--manifest",
+      "release/schrittweise-erkenntnis-2026-09-20-v1/publish-request.json"
+    ],
+    "exit_code": 2,
+    "stdout": "",
+    "stderr": "BLOCK: ZENODO_ACCESS_TOKEN is missing or structurally invalid\n",
+    "local_environment_presence": {
+      "ZENODO_ACCESS_TOKEN": false,
+      "GITHUB_TOKEN": false
+    },
+    "repository_secret_configuration": "NOT_OBSERVED",
+    "evidence_file_created": false
+  },
+  "first_causal_blocker": {
+    "kind": "MISSING_LOCAL_AUTHENTICATED_ZENODO_CAPABILITY",
+    "observed_guard": "tools/qikvrt_zenodo_publish.py:_validated_network_secrets",
+    "message": "BLOCK: ZENODO_ACCESS_TOKEN is missing or structurally invalid",
+    "guard_position": "Before network-client creation, remote consumption-lock acquisition and every Zenodo mutation.",
+    "additional_local_requirement": "GITHUB_TOKEN also absent; required for repository-global single-use consumption.",
+    "repository_secret_configuration": "NOT_OBSERVED"
+  },
+  "remote_consumption_readback": {
+    "observed_at": "2026-09-20T07:29:43.816Z",
+    "url": "https://api.github.com/repos/Goldkelch/qik-vrt/git/matching-refs/tags/qikvrt-zenodo-auth/64beacf91a9fb67dec653dcfff66aea0b5f8e8e660d80040203ace86389a96d0",
+    "refs": []
+  },
+  "authorization_consumption": {
+    "observed_ref_absent": true,
+    "consumed_by_this_attempt": false,
+    "retry_requires_new_owner_decision": false,
+    "retry_requires_new_nonce": false,
+    "scope": "Exact ref readback at its recorded timestamp; no global control over independent privileged actors is inferred."
+  },
+  "available_execution_paths": {
+    "local_generic_publisher": "Preflight passed, actual invocation stopped at the missing local Zenodo capability.",
+    "github_connector": "Repository read/write was used successfully. The exposed connector does not supply CLI credentials or a workflow-dispatch capability.",
+    "production_workflows": "Inspected existing workflows bind different publications and fixed source/execution commits; they were not retargeted or replayed.",
+    "reuse_sources": [
+      {
+        "path": "tools/qikvrt_zenodo_publish.py",
+        "bytes": 91976,
+        "sha256": "1a914cf04d97ef646a19324a86bfb377355fc5a93f4e7eabe1e600ef93b6e707",
+        "git_blob_sha1": "886f614106fe05f3c8f10cd485dd11455845cc54"
+      },
+      {
+        "path": "tools/qikvrt_vrtcore_zenodo_publication_controls.py",
+        "bytes": 13244,
+        "sha256": "0d2412d374afda17a09be5aecb8c43cd6ef8b3edc02a11b81528e2ff95ed70cc",
+        "git_blob_sha1": "1f16846ad83b8d79b548dc8bc20bfb2fdf63cd20"
+      },
+      {
+        "path": ".github/workflows/qikvrt_observer_relative_retrocausality_zenodo_publish.yml",
+        "bytes": 10959,
+        "sha256": "eef2d427d5bcc7b194ad35bde26dbbc69927a8ded79fa12ef7c4ba915e0bfd3a",
+        "git_blob_sha1": "7eb73d96035101810e2f78cabd02cf99dad04773"
+      },
+      {
+        "path": ".github/workflows/qikvrt_round_trip_zenodo_publish.yml",
+        "bytes": 17785,
+        "sha256": "adeeee0612d8f426d1b36e04f50259d15d60ac46cc9156a657a6edd5ad9cf6f2",
+        "git_blob_sha1": "42388fda524f56286cb145c295ba5d5aa48d441a"
+      }
+    ]
+  },
+  "effects_of_this_attempt": {
+    "remote_consumption_lock_created": false,
+    "zenodo_record_created": false,
+    "files_uploaded": false,
+    "doi_reserved": false,
+    "published": false,
+    "public_byte_exact_redownload": false,
+    "publisher_recovery_evidence_created": false
+  },
+  "publication_evidence_path": "release/schrittweise-erkenntnis-2026-09-20-v1/zenodo-publication.json",
+  "publication_evidence_state": "ABSENT; no placeholder receipt was created",
+  "retry_condition": "Existing generic publisher can access valid, distinct, securely supplied ZENODO_ACCESS_TOKEN and GITHUB_TOKEN in a clean checkout whose origin is Goldkelch/qik-vrt and whose exact bound files pass the unchanged publisher guards.",
+  "smallest_next_action": {
+    "manifest": "release/schrittweise-erkenntnis-2026-09-20-v1/publish-request.json",
+    "known_valid_execution_head": "6db81f9e6b77efce6addcfe629748b9cff481260",
+    "command": [
+      "python3",
+      "-B",
+      "tools/qikvrt_zenodo_publish.py",
+      "--manifest",
+      "release/schrittweise-erkenntnis-2026-09-20-v1/publish-request.json"
+    ],
+    "handoff": "release/schrittweise-erkenntnis-2026-09-20-v1/EXECUTION_HANDOFF.md",
+    "preserve_existing_authorization_and_nonce": true
+  },
+  "repository_lane": {
+    "pull_request": "https://github.com/Goldkelch/qik-vrt/pull/1140",
+    "draft": true,
+    "native_review_and_merge": "Separate states; not claimed complete and not substituted for the actual runtime blocker."
+  },
+  "release_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "ZENODO_PUBLISHED": false,
+    "MERGED_TO_MAIN": false,
+    "MIRROR_EQUALITY": false
+  }
+}
