@@ -119,3 +119,12 @@ container or ISO. No QIK-VRT license is applied to these upstream components.
 The optional agent-browser 0.38.1 QA CLI is Apache-2.0, as declared by its exact
 npm package. Its package lock is in `multimedia-browser/`. Downloaded Chromium
 retains its separate upstream licensing; the browser check is not an ISO payload.
+
+## Optional OIDC gateway
+
+oauth2-proxy v7.15.4 is supplied under MIT by its upstream contributors. The
+unchanged license is in `oauth2-proxy-v7.15.4-LICENSE.txt`; source and exact
+archive identity are in `sso.lock.json`. The original archive remains cached
+alongside the byte-verified executable. Its own dependency notices and licenses
+remain applicable and must accompany redistribution. This optional upstream
+component does not alter the QIK-VRT licensing model.

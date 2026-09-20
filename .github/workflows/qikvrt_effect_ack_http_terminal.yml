@@ -18,6 +18,11 @@ on:
       - "docs/terminal/multimedia/**"
       - "runtime/toolchains/multimedia.lock.json"
       - "tools/qikvrt_multimedia_runtime.py"
+      - "tools/qikvrt_sso_gateway.py"
+      - "tests/test_qikvrt_sso_gateway.py"
+      - "runtime/toolchains/sso.lock.json"
+      - "deploy/universal-terminal/sso.example.json"
+      - "docs/terminal/SSO_GATEWAY_V1.md"
       - "tests/test_qikvrt_multimedia.py"
       - "src/qikvrt_effect_ack_http_terminal.py"
       - ".github/workflows/qikvrt_effect_ack_http_terminal.yml"
@@ -39,6 +44,11 @@ on:
       - "docs/terminal/multimedia/**"
       - "runtime/toolchains/multimedia.lock.json"
       - "tools/qikvrt_multimedia_runtime.py"
+      - "tools/qikvrt_sso_gateway.py"
+      - "tests/test_qikvrt_sso_gateway.py"
+      - "runtime/toolchains/sso.lock.json"
+      - "deploy/universal-terminal/sso.example.json"
+      - "docs/terminal/SSO_GATEWAY_V1.md"
       - "tests/test_qikvrt_multimedia.py"
       - "src/qikvrt_effect_ack_http_terminal.py"
       - "tests/test_qikvrt_effect_ack_http_terminal.py"
@@ -49,6 +59,31 @@ permissions:
   contents: read
 
 jobs:
+  personal-terminal-sso-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Verify declared cache and SSO boundaries
+        run: |
+          python3 -B tools/qikvrt_tool_cache.py verify
+          python3 -B -m unittest -v tests.test_qikvrt_sso_gateway
+      - name: Install exact proxy and validate generated options with synthetic inputs
+        env:
+          QIKVRT_SSO_NATIVE_TEST: '1'
+        run: |
+          python3 -B tools/qikvrt_sso_gateway.py install
+          python3 -B -m unittest -v tests.test_qikvrt_sso_gateway
+
   contract-and-e2e:
     runs-on: ubuntu-24.04
     timeout-minutes: 15

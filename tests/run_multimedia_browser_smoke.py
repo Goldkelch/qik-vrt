@@ -46,7 +46,10 @@ def main():
             if 'Frage oder Arbeitsauftrag' not in report['snapshot']: raise RuntimeError('MISSING_INPUT')
             browser('find', 'label', 'Frage oder Arbeitsauftrag', 'fill', 'Answer briefly: what is two plus two?')
             browser('find', 'role', 'button', 'click', '--name', 'Lokales Modell befragen')
-            deadline = time.monotonic() + 45
+            # A text answer can include one bounded reference-correction call;
+            # each provider call has a 120-second deadline. Do not terminate the
+            # provider while its declared request budget is still active.
+            deadline = time.monotonic() + 250
             while True:
                 answer = browser('eval', 'document.getElementById("answer").textContent')
                 if 'four' in answer.lower() or '4' in answer: break
@@ -57,7 +60,7 @@ def main():
             report['source_status'] = source_status
             browser('find', 'label', 'Frage oder Arbeitsauftrag', 'fill', 'Does a Lean proof establish physical truth? Start with Yes or No, then explain the repository scientific boundaries in one sentence with a source reference.')
             browser('find', 'role', 'button', 'click', '--name', 'Lokales Modell befragen')
-            deadline = time.monotonic() + 120
+            deadline = time.monotonic() + 250
             while True:
                 rendered = browser('eval', 'document.getElementById("sources").textContent')
                 if '[R1]' in rendered and browser('eval', 'JSON.parse(document.getElementById("receipt").textContent).history_messages').strip() == '2': break

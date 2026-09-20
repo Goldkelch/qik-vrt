@@ -6,6 +6,10 @@ Inference runs on that Linux host, not on the emulated MC68000. The public nginx
 observer remains read-only; use the Firefox inside the existing operator session.
 Do not publish the loopback service or the model port through a reverse proxy.
 
+An optional [personal-terminal SSO gateway](SSO_GATEWAY_V1.md) authenticates the
+endpoint browser through OIDC before entering the existing noVNC session. It
+does not proxy the multimedia/model ports or make the model an identity verifier.
+
 ## Runtime
 
 `runtime/toolchains/multimedia.lock.json` pins llama.cpp b6500 (MIT), the official

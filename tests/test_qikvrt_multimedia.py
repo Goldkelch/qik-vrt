@@ -108,6 +108,29 @@ class MultimediaTests(unittest.TestCase):
         raw = png(2049, 1)
         code, value = self.generate({'prompt': 'x', 'images': [{'data': 'data:image/png;base64,' + base64.b64encode(raw).decode(), 'label': 'large'}]})
         self.assertEqual(code, 422); self.assertEqual(value['reason'], 'IMAGE_DIMENSIONS')
+
+    def test_completed_inference_does_not_hold_slot_during_response_io(self):
+        entered = threading.Event(); release = threading.Event(); observed = []
+        original = media.reply
+        def slow_reply(handler, code, value, *args):
+            if code == 200 and isinstance(value, dict) and value.get('state') == 'UNVERIFIED_PROPOSAL':
+                entered.set()
+                if not release.wait(3):
+                    raise RuntimeError('TEST_RESPONSE_NOT_RELEASED')
+            return original(handler, code, value, *args)
+        with patch.object(media, 'reply', side_effect=slow_reply):
+            thread = threading.Thread(target=lambda: observed.append(self.generate({'prompt': 'hello'})))
+            thread.start()
+            try:
+                self.assertTrue(entered.wait(3))
+                # Completed inference cannot make a subsequent input appear busy
+                # merely because the first client is still receiving its result.
+                code, value = self.generate({'prompt': ''})
+                self.assertEqual(code, 422)
+                self.assertNotEqual(value.get('reason'), 'MODEL_BUSY')
+            finally:
+                release.set(); thread.join(timeout=3)
+        self.assertEqual(observed[0][0], 200)
     def test_mismatched_model_never_becomes_receipt(self):
         with patch.object(Provider, 'alias', 'another-model'):
             code, value = self.generate({'prompt': 'hello'})

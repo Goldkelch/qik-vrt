@@ -461,10 +461,16 @@ def handle(handler):
             if len(raw) != length:
                 raise ValueError('INCOMPLETE_INPUT')
             body = json.loads(raw)
-            reply(handler, 200, generation(body, lock) if path.endswith('/generate') else transcription(body))
+            result = generation(body, lock) if path.endswith('/generate') else transcription(body)
+            SLOT.release()
+            acquired = False
+            reply(handler, 200, result)
         else:
             reply(handler, 404, {'state': 'HOLD', 'reason': 'UNKNOWN_MEDIA_ROUTE'})
     except (OSError, ValueError, RuntimeError, KeyError, IndexError, TypeError, RecursionError, http.client.HTTPException, subprocess.SubprocessError) as exc:
+        if acquired:
+            SLOT.release()
+            acquired = False
         # Do not echo a provider response, prompt, file name or audio in errors/logs.
         reason = str(exc) if isinstance(exc, ValueError) and str(exc).replace('_', '').isalnum() else 'MEDIA_RUNTIME_UNAVAILABLE_OR_INVALID_INPUT'
         reply(handler, 422, {'state': 'HOLD', 'reason': reason, 'effect_ack_done': False})
