@@ -141,3 +141,13 @@ codecs and available hardware remain prerequisites. These are discrete capture
 interactions, not continuous bidirectional audio/video streaming. Speech output
 selects only a voice marked local by the browser; unavailable local voices are
 reported. No license or external-effect authority changes are introduced.
+
+The current question alone selects source excerpts, so unrelated earlier turns
+do not displace the new topic. Identifier components (including JSON/Lean names
+with underscores) are searchable. The adapter reports missing or unknown [R…]
+references separately. Existing reference IDs never imply that the source
+entails the answer. The UI displays that distinction beside the model text.
+The first actual grounded smoke at 633a28b exposed repetitive, inaccurate
+explanations and absent citations from the compact model. It established the
+transport path, not adequate scientific answer quality. That quality remains
+OPEN and needs separate model/task evaluation; the original excerpts stay visible.

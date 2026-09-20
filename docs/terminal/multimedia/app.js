@@ -88,6 +88,10 @@ function history(){
  let pairs=turns.slice(-3).map(t=>[{role:'user',content:t.prompt.slice(0,1800)},{role:'assistant',content:t.result.text.slice(0,1800)}]);
  while(pairs.flat().reduce((n,m)=>n+m.content.length,0)>4000)pairs.shift();return pairs.flat();
 }
+function citationWarning(value){
+ const messages={MISSING_SOURCE_REFERENCES:'Das Modell nennt keinen Belegverweis. Prüfen Sie die Auszüge; dieser Text ist keine quellengeprüfte Antwort.',UNKNOWN_SOURCE_REFERENCES:'Das Modell nennt nicht gelieferte Quellen. Diese Verweise sind ungültig.',NO_MATCHING_SOURCE:'Keine passende Quelle gefunden. Daraus folgt nicht, dass im Repository keine Belege existieren.',REFERENCES_EXIST_NOT_SEMANTICALLY_VERIFIED:'Die genannten Quellen wurden geliefert. Ob sie die Modellbehauptungen tragen, ist noch nicht geprüft.',NO_REPOSITORY_CONTEXT:'Antwort ohne Repository-Kontext.'};
+ el('answerWarning').textContent=messages[value.citation_validation]||'Quellenzuordnung nicht geprüft.';
+}
 function drawSources(context){
  el('sources').replaceChildren();el('sourceDetails').open=!!context;
  el('sourceStatus').textContent=context?(context.sources.length+' Auszüge aus '+context.scanned_files+' gelesenen Dateien. Begrenzte lokale Suche; kein vollständiger Mesh-Abgleich. Quellen belegen ihre eigenen Aussagen, nicht automatisch die Modellantwort.'):'Repository-Quellensuche war ausgeschaltet.';
@@ -98,7 +102,7 @@ el('generate').onclick=async()=>{
  const prompt=el('prompt').value.trim();if(!prompt){activity('Bitte eine Frage eingeben.');return;}
  const body={prompt,images:images.map(x=>({...x})),history:history(),repository:el('repository').checked};
  busy=true;buttons();activity('Repository-Auszüge und Eingaben werden lokal verarbeitet …');
- try{result=await post('generate',body);el('answer').textContent=result.text;el('receipt').textContent=JSON.stringify(result,null,2);turns.push({prompt,result});turns=turns.slice(-20);drawConversation();drawSources(result.repository_context);el('download').disabled=false;el('speak').disabled=!('speechSynthesis' in window);activity(result.finish_reason==='length'?'Antwort erreicht die Token-Grenze und kann unvollständig sein.':'Antwort ist bereit. Bitte an den Quellen prüfen.');}
+ try{result=await post('generate',body);el('answer').textContent=result.text;citationWarning(result);el('receipt').textContent=JSON.stringify(result,null,2);turns.push({prompt,result});turns=turns.slice(-20);drawConversation();drawSources(result.repository_context);el('download').disabled=false;el('speak').disabled=!('speechSynthesis' in window);activity(result.finish_reason==='length'?'Antwort erreicht die Token-Grenze und kann unvollständig sein.':'Antwort ist bereit. Bitte an den Quellen prüfen.');}
  catch(error){activity('Verarbeitung angehalten: '+error.message);}finally{busy=false;buttons();}
 };
 function fileBase64(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=()=>reject(Error('Datei nicht lesbar'));reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.readAsDataURL(file);});}
@@ -112,6 +116,6 @@ el('useTranscript').onclick=()=>{const value=el('transcript').value.trim();if(!v
 el('speak').onclick=()=>{if(result&&'speechSynthesis'in window){const voice=speechSynthesis.getVoices().find(v=>v.localService&&v.lang.startsWith(el('language').value));if(!voice){activity('Keine passende lokale Stimme verfügbar.');return;}speechSynthesis.cancel();const speech=new SpeechSynthesisUtterance(result.text);speech.voice=voice;speech.lang=voice.lang;speechSynthesis.speak(speech);}};
 el('stopSpeech').onclick=()=>{if('speechSynthesis'in window)speechSynthesis.cancel();};
 el('download').onclick=()=>{if(!result)return;const receipt={schema:'qikvrt_local_conversation_v1',turns,effect_ack_done:false};const url=URL.createObjectURL(new Blob([JSON.stringify(receipt,null,2)],{type:'application/json'})),link=document.createElement('a');link.href=url;link.download='qikvrt-gespraech.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
-el('newChat').onclick=()=>{clear();turns=[];result=null;el('prompt').value='';el('transcript').value='';el('answer').textContent='Noch keine Antwort.';el('receipt').textContent='Noch kein Verarbeitungsbeleg.';el('download').disabled=true;el('speak').disabled=true;drawConversation();drawSources(null);if('speechSynthesis'in window)speechSynthesis.cancel();activity('Neues Gespräch begonnen.');};
+el('newChat').onclick=()=>{clear();turns=[];result=null;el('prompt').value='';el('transcript').value='';el('answer').textContent='Noch keine Antwort.';el('answerWarning').textContent='';el('receipt').textContent='Noch kein Verarbeitungsbeleg.';el('download').disabled=true;el('speak').disabled=true;drawConversation();drawSources(null);if('speechSynthesis'in window)speechSynthesis.cancel();activity('Neues Gespräch begonnen.');};
 el('repository').onchange=buttons;el('clear').onclick=clear;el('refresh').onclick=refresh;
 window.addEventListener('pagehide',()=>{captureEpoch++;stopRecording();stopCamera();if(objectUrl)URL.revokeObjectURL(objectUrl);if('speechSynthesis'in window)speechSynthesis.cancel();});refresh();

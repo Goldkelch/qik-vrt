@@ -76,9 +76,11 @@ def repository_file(entry):
 
 
 def words(text):
-    return set(re.findall(r'[\wäöüß]{3,}', text.casefold())) - {
+    return set(re.findall(r'[^\W_]{3,}', text.casefold())) - {
         'the', 'and', 'what', 'how', 'are', 'with', 'this', 'that', 'for', 'from',
-        'die', 'der', 'das', 'und', 'ist', 'was', 'wie', 'den', 'mit', 'ein', 'eine', 'von'}
+        'does', 'explain', 'answer', 'briefly', 'according', 'repository', 'can',
+        'die', 'der', 'das', 'und', 'ist', 'was', 'wie', 'den', 'mit', 'ein', 'eine', 'von',
+        'bitte', 'erkläre', 'antwort', 'welche', 'welcher', 'welches'}
 
 
 def repository_context(question):
@@ -252,7 +254,7 @@ def generation(body, lock):
             raise ValueError('IMAGE_DIMENSIONS')
         sources.append({'label': entry['label'], 'sha256': hashlib.sha256(raw).hexdigest(), 'bytes': len(raw), 'width': width, 'height': height})
         content.extend([{'type': 'text', 'text': entry['label']}, {'type': 'image_url', 'image_url': {'url': uri}}])
-    context = repository_context(prompt + '\n' + '\n'.join(x['content'] for x in history if x['role'] == 'user')) if use_repository else None
+    context = repository_context(prompt) if use_repository else None
     if context is not None or history:
         content[0]['text'] = (REPOSITORY_GUIDANCE + '\n\nCONVERSATION_DATA:\n' + canonical(history).decode() +
                               '\n\nREPOSITORY_DATA:\n' + canonical(context).decode() + '\n\nQUESTION:\n' + prompt)
@@ -267,6 +269,13 @@ def generation(body, lock):
     answer = result['choices'][0]['message']['content']
     if not isinstance(answer, str) or not answer.strip() or len(answer) > 20000:
         raise ValueError('INVALID_MODEL_TEXT')
+    cited = sorted(set(re.findall(r'\[R[0-9]+\]', answer)))
+    known = {'[' + item['id'] + ']' for item in context['sources']} if context else set()
+    unknown = sorted(set(cited) - known)
+    citation_state = ('UNKNOWN_SOURCE_REFERENCES' if unknown else
+                      'MISSING_SOURCE_REFERENCES' if context and known and not cited else
+                      'NO_MATCHING_SOURCE' if context and not known else
+                      'REFERENCES_EXIST_NOT_SEMANTICALLY_VERIFIED' if known else 'NO_REPOSITORY_CONTEXT')
     return {'schema': 'qikvrt_multimedia_proposal_v1', 'state': 'UNVERIFIED_PROPOSAL',
             'model': lock['model_id'], 'model_identity': 'LOCAL_PROVIDER_REPORTED_ALIAS',
             'lock_sha256': hashlib.sha256(LOCK_PATH.read_bytes()).hexdigest(),
@@ -274,7 +283,7 @@ def generation(body, lock):
             'output_sha256': hashlib.sha256(answer.encode()).hexdigest(),
             'provider_request_sha256': hashlib.sha256(canonical(request)).hexdigest(),
             'repository_context': context, 'history_messages': len(history),
-            'citation_validation': 'NOT_SEMANTICALLY_VERIFIED',
+            'citation_validation': citation_state, 'cited_source_ids': cited, 'unknown_source_ids': unknown,
             'images': sources, 'text': answer, 'finish_reason': result['choices'][0].get('finish_reason'),
             'audio_included': False, 'ordinary_release': False, 'effect_ack_done': False, 'tools_executed': []}
 

@@ -172,8 +172,29 @@ class MultimediaTests(unittest.TestCase):
             self.assertIn('PENDING', prompt); self.assertIn('Earlier unverified statement', prompt)
             self.assertNotIn('PRIVATE_CONTACT', prompt)
             self.assertEqual(value['provider_request_sha256'], hashlib.sha256(media.canonical(observed)).hexdigest())
-            self.assertEqual(value['citation_validation'], 'NOT_SEMANTICALLY_VERIFIED')
+            self.assertEqual(value['citation_validation'], 'MISSING_SOURCE_REFERENCES')
             self.assertEqual(len(terminal.STATE.events), before)
+
+    def test_previous_topic_does_not_displace_current_question_and_unknown_citations_are_flagged(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.corpus(root, {'docs/old.md': 'apples oranges pears fruit harvest orchard',
+                               'docs/current.json': '{"lean_physical_truth": false}'})
+            with patch.object(media, 'ROOT', root):
+                code, value = self.generate({'prompt': 'Lean physical truth', 'repository': True,
+                    'history': [{'role': 'user', 'content': 'apples oranges pears fruit harvest orchard'},
+                                {'role': 'assistant', 'content': 'Earlier fruit topic'}]})
+            self.assertEqual(code, 200)
+            self.assertEqual([s['path'] for s in value['repository_context']['sources']], ['docs/current.json'])
+            self.assertEqual(value['citation_validation'], 'MISSING_SOURCE_REFERENCES')
+            for text, expected in (('Claim [R99]', 'UNKNOWN_SOURCE_REFERENCES'),
+                                   ('Claim [R1]', 'REFERENCES_EXIST_NOT_SEMANTICALLY_VERIFIED')):
+                response = {'model': Provider.alias, 'choices': [{'message': {'content': text}}]}
+                with patch.object(media, 'ROOT', root), patch.object(media, 'provider', return_value=response):
+                    code, result = self.generate({'prompt': 'Lean physical truth', 'repository': True})
+                self.assertEqual(code, 200); self.assertEqual(result['citation_validation'], expected)
+                self.assertEqual(result['state'], 'UNVERIFIED_PROPOSAL')
+                self.assertFalse(result['effect_ack_done'])
 
     def test_changed_source_or_manifest_cannot_reach_provider(self):
         for target in ('docs/claim.md', 'REPOSITORY_FILE_MANIFEST.json'):

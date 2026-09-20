@@ -61,6 +61,7 @@ def main():
                 if '[R1]' in rendered and browser('eval', 'JSON.parse(document.getElementById("receipt").textContent).history_messages').strip() == '2': break
                 if time.monotonic() > deadline: raise RuntimeError('REPOSITORY_SOURCE_NOT_RENDERED')
                 time.sleep(.25)
+            rendered = browser('eval', 'document.getElementById("sources").textContent')
             report['repository_sources'] = rendered
             report['repository_answer'] = browser('eval', 'document.getElementById("answer").textContent')
             report['conversation'] = browser('eval', 'document.getElementById("conversation").textContent')
