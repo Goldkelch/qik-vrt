@@ -12,6 +12,7 @@ from pathlib import Path
 import platform
 import shutil
 import subprocess
+import sys
 import tempfile
 import urllib.request
 import zipfile
@@ -102,13 +103,46 @@ def install(directory, lock):
     print('VERIFIED ' + lock['model_id'], flush=True)
 
 
+def export_context(destination):
+    """Carry the same bounded public source corpus into the existing ISO layout."""
+    sys.path.insert(0, str(ROOT / 'src'))
+    import qikvrt_multimedia as media
+    if destination.is_symlink() or not destination.is_dir():
+        raise ValueError('CONTEXT_DESTINATION_DIRECTORY_REQUIRED')
+    manifest, _ = media.repository_manifest()
+    selected = [entry for entry in manifest['files'] if media.context_entry(entry)]
+    paths = [entry['path'] for entry in selected] + [
+        'REPOSITORY_FILE_MANIFEST.json', 'REPOSITORY_FILE_MANIFEST.json.sha256',
+        'tools/qikvrt_integrity.py', 'tools/qikvrt_subprocess.py']
+    for relative in paths:
+        target = destination / relative
+        if any(part.is_symlink() for part in (target, *target.parents)):
+            raise ValueError('CONTEXT_DESTINATION_SYMLINK')
+        target.parent.mkdir(parents=True, exist_ok=True)
+        raw = media._regular_file_bytes(ROOT, relative, max_bytes=8 * 1024 * 1024)
+        entry = next((item for item in selected if item['path'] == relative), None)
+        if entry is not None and hashlib.sha256(raw).hexdigest() != entry['sha256']:
+            raise ValueError('CONTEXT_SOURCE_CHANGED')
+        target.write_bytes(raw)
+        target.chmod(0o644)
+    print(json.dumps({'state': 'CONTEXT_EXPORTED', 'files': len(paths),
+                      'scope': 'public bounded retrieval corpus, not complete repository',
+                      'effect_ack_done': False}))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=('install', 'verify', 'serve'))
+    parser.add_argument('operation', choices=('install', 'verify', 'serve', 'export-context'))
     parser.add_argument('--cache-dir', default=os.environ.get('QIKVRT_MULTIMEDIA_CACHE', str(ROOT / '.qikvrt/toolchains/multimedia')))
     parser.add_argument('--port', type=int, default=8789)
+    parser.add_argument('--output-dir')
     args = parser.parse_args()
     try:
+        if args.operation == 'export-context':
+            if not args.output_dir:
+                raise ValueError('OUTPUT_DIR_REQUIRED')
+            export_context(Path(args.output_dir))
+            return 0
         if not 1024 <= args.port <= 65535:
             raise ValueError('INVALID_PORT')
         directory = Path(args.cache_dir).absolute()

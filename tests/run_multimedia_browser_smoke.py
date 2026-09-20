@@ -51,6 +51,26 @@ def main():
                 if time.monotonic() > deadline: raise RuntimeError('UI_REPLY_NOT_OBSERVED')
                 time.sleep(.25)
             report['answer'] = answer
+            source_status = browser('eval', 'document.getElementById("sourceStatus").textContent')
+            report['source_status'] = source_status
+            browser('find', 'label', 'Frage oder Arbeitsauftrag', 'fill', 'Does a Lean proof establish physical truth? Explain the repository scientific boundaries.')
+            browser('find', 'role', 'button', 'click', '--name', 'Lokales Modell befragen')
+            deadline = time.monotonic() + 120
+            while True:
+                rendered = browser('eval', 'document.getElementById("sources").textContent')
+                if '[R1]' in rendered and browser('eval', 'JSON.parse(document.getElementById("receipt").textContent).history_messages').strip() == '2': break
+                if time.monotonic() > deadline: raise RuntimeError('REPOSITORY_SOURCE_NOT_RENDERED')
+                time.sleep(.25)
+            report['repository_sources'] = rendered
+            report['repository_answer'] = browser('eval', 'document.getElementById("answer").textContent')
+            report['conversation'] = browser('eval', 'document.getElementById("conversation").textContent')
+            if 'two plus two' not in report['conversation']: raise RuntimeError('CONVERSATION_NOT_RETAINED')
+            report['repository_receipt'] = browser('eval', 'document.getElementById("receipt").textContent')
+            # Capture before resetting; no user microphone/camera is accessed by CI.
+            report['conversation_screenshot'] = browser('screenshot', str(output / 'conversation.png'), '--full')
+            browser('find', 'role', 'button', 'click', '--name', 'Neues Gespräch')
+            empty = browser('eval', 'document.getElementById("conversation").textContent')
+            if empty.strip().strip('"'): raise RuntimeError('CONVERSATION_RESET_FAILED')
             report['browser'] = browser('eval', 'navigator.userAgent')
             report['errors'] = browser('errors')
             if report['errors'].strip() not in ('', '[]', 'No errors'): raise RuntimeError('BROWSER_ERRORS')

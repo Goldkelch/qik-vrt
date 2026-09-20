@@ -87,6 +87,7 @@ cp "$ROOT/runtime/toolchains/THIRD_PARTY_NOTICES.md" "$ROOT/runtime/toolchains/l
 mkdir -p "$GUEST/opt/qikvrt/LICENSES"
 cp "$ROOT/LICENSES/Apache-2.0.txt" "$GUEST/opt/qikvrt/LICENSES/"
 cp "$ROOT/tools/qikvrt_multimedia_runtime.py" "$GUEST/opt/qikvrt/tools/"
+python3 -B "$ROOT/tools/qikvrt_multimedia_runtime.py" export-context --output-dir "$GUEST/opt/qikvrt"
 python3 -B "$ROOT/tools/qikvrt_multimedia_runtime.py" install
 mkdir -p "$GUEST/opt/qikvrt/.qikvrt/toolchains"
 cp -a "$ROOT/.qikvrt/toolchains/multimedia" "$GUEST/opt/qikvrt/.qikvrt/toolchains/"

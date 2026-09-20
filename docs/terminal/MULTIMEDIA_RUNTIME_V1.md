@@ -100,3 +100,44 @@ as a runtime limitation rather than changing the protected boundary.
 
 Full Firefox/container and network-boot ISO acceptance, independent native review,
 protected Main promotion and external effect readback remain separate gates.
+
+## Repository conversation and direct capture
+
+The page now selects repository context by default. The existing integrity
+manifest bounds the local corpus: README/STATUS, the two cognition policies, and
+UTF-8 Markdown/text/JSON/Lean/Python/VHDL below docs, formalization, src and hardware.
+Only immutable regular files of at most 128 KiB are eligible; at most 32 MiB are
+scanned per question. Retrieval ranks literal word overlap deterministically and
+sends at most four 1,200-character excerpts. It is a lexical retrieval baseline,
+not semantic search over all Mesh nodes. Untracked files, private runtime state,
+credentials and arbitrary network URLs are not source inputs. Missing packaged
+files and limited coverage are reported explicitly; no match does not establish
+that the repository lacks evidence.
+
+The adapter checks each read file against its manifest digest, and rechecks the
+selected source bytes and manifest after inference. A mismatch returns HOLD,
+without a successful answer receipt. Sources carry file and excerpt hashes,
+paths and starting lines; the receipt binds the provider request and local
+manifest. A separately observed Git HEAD/TREE is not a claim that all working
+files equal that commit. Exported ISO installations can use manifest-bound
+sources without Git. The ISO recipe reuses `export-context` in the existing
+model runtime to carry these public sources and the integrity reader.
+
+The latest three question/answer pairs, shortened to at most 4,000 characters,
+are sent as untrusted conversation data. The page retains at most twenty full
+turns in memory and can download their receipts. Reloading or starting a new
+conversation discards that in-memory state. Context does not certify citations
+or factual correctness, execute Lean/Lake, run arbitrary repository tools,
+contact another Mesh node, or turn an answer into accepted evidence. Context
+and image tokens can exceed the provider's 8,192-token capacity; the provider
+then returns an explicit error. Reduce the prompt, images or conversation.
+
+Mikrofon starten asks the browser for microphone access and records at most
+115 seconds / 12 MiB. Aufnahme beenden stops the tracks and prepares an audio
+file; the existing explicit transcription/review path follows. Kamera starten
+opens a preview without audio; only deliberately captured frames enter a model
+request. Stop buttons and page exit release tracks. Browser/device permissions,
+codecs and available hardware remain prerequisites. These are discrete capture
+interactions, not continuous bidirectional audio/video streaming. Speech output
+selects only a voice marked local by the browser; unavailable local voices are
+reported. No license or external-effect authority changes are introduced.

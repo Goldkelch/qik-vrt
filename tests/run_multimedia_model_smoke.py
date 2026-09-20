@@ -46,6 +46,7 @@ def main():
             cases = [('text', '/generate', {'prompt': 'Answer briefly: what is two plus two?', 'images': []}),
                      ('image', '/generate', {'prompt': 'What is the dominant color in this image? Answer with one color name.',
                       'images': [{'data': 'data:image/png;base64,' + base64.b64encode(png()).decode(), 'label': 'synthetic red control image'}]})]
+            cases.append(('repository', '/generate', {'prompt': 'Does a Lean proof establish physical truth? Explain the repository scientific boundaries briefly.', 'repository': True}))
             if args.audio:
                 path = Path(temporary) / 'silence.wav'
                 with wave.open(str(path), 'wb') as writer:
@@ -64,6 +65,8 @@ def main():
                     print(json.dumps(results[-1], ensure_ascii=False), flush=True)
                 finally: connection.close()
             passed = all(r['http_status'] == 200 and r['result']['effect_ack_done'] is False for r in results)
+            grounded = next(r['result'] for r in results if r['case'] == 'repository')
+            passed = passed and bool(grounded.get('repository_context', {}).get('sources'))
             receipt = {'schema': 'qikvrt_multimedia_live_smoke_v1', 'state': 'PASS' if passed else 'HOLD',
                        'source_files': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in (
                            ROOT / 'src/qikvrt_multimedia.py', ROOT / 'src/qikvrt_effect_ack_http_terminal.py',

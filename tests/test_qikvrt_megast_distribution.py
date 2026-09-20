@@ -182,6 +182,18 @@ class MegaSTDistributionContract(unittest.TestCase):
         self.assertIn('cd out\n          sha256sum -c qikvrt-megast-amd64.iso.sha256', text)
         self.assertIn('Read back published release metadata', text)
 
+    def test_publish_retry_uses_authoritative_release_tag_readback(self):
+        text = WORKFLOW.read_text()
+        start = text.index('- name: Publish exact-subject release assets')
+        end = text.index('- name: Read back published release metadata', start)
+        publish = text[start:end]
+        self.assertIn(
+            'gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}"',
+            publish,
+        )
+        self.assertIn('["target_commitish"]', publish)
+        self.assertNotIn('gh release view', publish)
+
     def test_pull_request_build_is_literal_head_bound(self):
         text = WORKFLOW.read_text()
         subject = '${{ github.event.pull_request.head.sha || github.sha }}'
@@ -218,6 +230,20 @@ class MegaSTDistributionContract(unittest.TestCase):
         self.assertIn("-initrd out/qikvrt-megast-initrd", workflow)
         self.assertIn("-append \"boot=live components", workflow)
         self.assertIn("-cdrom out/qikvrt-megast-amd64.iso", workflow)
+
+    def test_public_bios_gate_selects_iso_boot_without_host_kernel(self):
+        text = WORKFLOW.read_text()
+        start = text.index('- name: Boot downloaded ISO through BIOS firmware')
+        end = text.index('- name: Preserve fresh public readback and execution evidence', start)
+        gate = text[start:end]
+        self.assertIn('-boot order=d', gate)
+        self.assertIn('-cdrom /tmp/qikvrt-public-readback/qikvrt-megast-amd64.iso', gate)
+        self.assertIn('-qmp "unix:$qmp,server=on,wait=off"', gate)
+        self.assertIn('"human-monitor-command"', gate)
+        self.assertIn('"command-line": "sendkey ret"', gate)
+        self.assertNotIn('-kernel ', gate)
+        self.assertNotIn('-initrd ', gate)
+        self.assertNotIn('-append ', gate)
 
     def test_terminal_definition_requires_download_readback(self):
         text = README.read_text()
