@@ -1,0 +1,68 @@
+{
+  "observed_at": "2026-09-20T08:21:46.794623+00:00",
+  "runs": [
+    {
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_qikvrt_perfect_optimum.py",
+        "-v"
+      ],
+      "cwd": ".",
+      "exit_code": 0,
+      "id": "native",
+      "stderr": "test_failed_invariant_is_hold (test_qikvrt_perfect_optimum.PerfectOptimumTests.test_failed_invariant_is_hold) ... ok\ntest_later_without_improvement_is_hold (test_qikvrt_perfect_optimum.PerfectOptimumTests.test_later_without_improvement_is_hold) ... ok\ntest_missing_metric_is_hold (test_qikvrt_perfect_optimum.PerfectOptimumTests.test_missing_metric_is_hold) ... ok\ntest_only_registered_mutating_improver_is_integrity_trio (test_qikvrt_perfect_optimum.PerfectOptimumTests.test_only_registered_mutating_improver_is_integrity_trio) ... ok\ntest_pareto_progress_is_accepted (test_qikvrt_perfect_optimum.PerfectOptimumTests.test_pareto_progress_is_accepted) ... ok\ntest_policy_self_applies_safely (test_qikvrt_perfect_optimum.PerfectOptimumTests.test_policy_self_applies_safely) ... ok\ntest_recursive_workflow_uses_immediate_predecessor_not_pr_base (test_qikvrt_perfect_optimum.PerfectOptimumTests.test_recursive_workflow_uses_immediate_predecessor_not_pr_base) ... ok\ntest_single_regression_forces_hold (test_qikvrt_perfect_optimum.PerfectOptimumTests.test_single_regression_forces_hold) ... ok\n\n----------------------------------------------------------------------\nRan 8 tests in 0.001s\n\nOK\n",
+      "stdout": ""
+    },
+    {
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-v"
+      ],
+      "cwd": "experiments/cooperation",
+      "exit_code": 0,
+      "id": "adapter",
+      "stderr": "test_bad_numeric_values_are_rejected (test_cycle.CooperationCycleTests.test_bad_numeric_values_are_rejected) ... ok\ntest_baseline_alone_cannot_predict_best_intervention (test_cycle.CooperationCycleTests.test_baseline_alone_cannot_predict_best_intervention) ... ok\ntest_baseline_hash_ignores_json_formatting (test_cycle.CooperationCycleTests.test_baseline_hash_ignores_json_formatting) ... ok\ntest_budget_is_enforced (test_cycle.CooperationCycleTests.test_budget_is_enforced) ... ok\ntest_changed_baseline_requires_new_binding (test_cycle.CooperationCycleTests.test_changed_baseline_requires_new_binding) ... ok\ntest_changed_context_cannot_be_compared (test_cycle.CooperationCycleTests.test_changed_context_cannot_be_compared) ... ok\ntest_cost_effect_tradeoff_preserves_two_choices (test_cycle.CooperationCycleTests.test_cost_effect_tradeoff_preserves_two_choices) ... ok\ntest_dominated_option_is_identified (test_cycle.CooperationCycleTests.test_dominated_option_is_identified) ... ok\ntest_duplicate_keys_and_nonfinite_json_are_rejected (test_cycle.CooperationCycleTests.test_duplicate_keys_and_nonfinite_json_are_rejected) ... ok\ntest_empty_checks_are_not_evidence (test_cycle.CooperationCycleTests.test_empty_checks_are_not_evidence) ... ok\ntest_empty_live_template_requests_baseline (test_cycle.CooperationCycleTests.test_empty_live_template_requests_baseline) ... ok\ntest_equal_outcomes_do_not_count_as_progress (test_cycle.CooperationCycleTests.test_equal_outcomes_do_not_count_as_progress) ... ok\ntest_group_gain_does_not_hide_individual_loss (test_cycle.CooperationCycleTests.test_group_gain_does_not_hide_individual_loss) ... ok\ntest_missing_participant_is_not_silently_dropped (test_cycle.CooperationCycleTests.test_missing_participant_is_not_silently_dropped) ... ok\ntest_mixed_synthetic_and_observed_data_are_rejected (test_cycle.CooperationCycleTests.test_mixed_synthetic_and_observed_data_are_rejected) ... ok\ntest_modified_module_is_not_executed (test_cycle.CooperationCycleTests.test_modified_module_is_not_executed) ... ok\ntest_old_source_and_policy_cannot_inherit_result (test_cycle.CooperationCycleTests.test_old_source_and_policy_cannot_inherit_result) ... ok\ntest_truthy_text_is_not_true (test_cycle.CooperationCycleTests.test_truthy_text_is_not_true) ... ok\ntest_unfinished_task_is_not_a_time_saving (test_cycle.CooperationCycleTests.test_unfinished_task_is_not_a_time_saving) ... ok\n\n----------------------------------------------------------------------\nRan 19 tests in 0.030s\n\nOK\n",
+      "stdout": ""
+    },
+    {
+      "command": [
+        "python3",
+        "-B",
+        "run_cycle.py",
+        "data/synthetic_demo.json"
+      ],
+      "cwd": "experiments/cooperation",
+      "exit_code": 0,
+      "id": "demo",
+      "stderr": "",
+      "stdout": "{\n  \"baseline_sha256\": \"b33a6c42b48e299244fbcff568f684c991c364266a8e4ef023ad865431ae449f\",\n  \"candidates\": [\n    {\n      \"dominated_by\": [],\n      \"findings\": [],\n      \"id\": \"A\",\n      \"native_decision\": \"ACCEPT_CANDIDATE\",\n      \"observed_net_person_minutes_saved\": 40,\n      \"rule_changes\": 1,\n      \"setup_person_minutes\": 20,\n      \"state\": \"FRONTIER\"\n    },\n    {\n      \"dominated_by\": [\n        \"A\"\n      ],\n      \"findings\": [],\n      \"id\": \"B\",\n      \"native_decision\": \"ACCEPT_CANDIDATE\",\n      \"observed_net_person_minutes_saved\": 24,\n      \"rule_changes\": 1,\n      \"setup_person_minutes\": 28,\n      \"state\": \"DOMINATED\"\n    },\n    {\n      \"dominated_by\": [],\n      \"findings\": [],\n      \"id\": \"C\",\n      \"native_decision\": \"ACCEPT_CANDIDATE\",\n      \"observed_net_person_minutes_saved\": 60,\n      \"rule_changes\": 2,\n      \"setup_person_minutes\": 60,\n      \"state\": \"FRONTIER\"\n    },\n    {\n      \"findings\": [\n        \"REGRESSION:P1/total_minutes:70->75\"\n      ],\n      \"id\": \"D\",\n      \"native_decision\": \"HOLD\",\n      \"observed_net_person_minutes_saved\": 55,\n      \"rule_changes\": 1,\n      \"setup_person_minutes\": 40,\n      \"state\": \"HOLD\"\n    }\n  ],\n  \"causal_effect_established\": false,\n  \"claim_scope\": \"Deskriptiver Vergleich der angegebenen Messwerte; keine Prognose.\",\n  \"context\": {\n    \"experiment_id\": \"SYNTHETIC-DEMO-ONLY\",\n    \"participant_ids\": [\n      \"P1\",\n      \"P2\",\n      \"P3\",\n      \"P4\"\n    ],\n    \"task_id\": \"SYNTHETIC-SETUP-TASK-V1\",\n    \"task_repetitions\": 1,\n    \"window_definition\": \"One equally defined task per participant; all setup and coordination included. Synthetic values.\"\n  },\n  \"data_kind\": \"synthetic\",\n  \"evidence_refs_automatically_verified\": false,\n  \"external_effect\": \"NONE\",\n  \"frontier\": [\n    \"A\",\n    \"C\"\n  ],\n  \"input_sha256\": \"2d18960917a8b7ca1b3a9d5b4c82cf5989af02634de017f332f2702cb7de7f1a\",\n  \"next_action\": \"Zielkonflikte gemeinsam abwägen; nächsten Versuch vereinbaren und neu messen.\",\n  \"policy_sha256\": \"088058fce43b6f1d52b90a2e26e5c8565dd1b571be5eca8dd93f5bf851034da7\",\n  \"runner_sha256\": \"e385032550a3a08b79bbeca846d582355fa39d18bc981e942f332f99d2f6ff89\",\n  \"schema\": \"qikvrt-cooperation-report/0.2\",\n  \"selected_intervention\": null,\n  \"source_binding\": {\n    \"commit\": \"a86054139b49c13c5cd344753b248b46b5daf66f\",\n    \"module_path\": \"tools/qikvrt_perfect_optimum.py\",\n    \"module_sha256\": \"fdb08e254a89249f969941a0d652cb22b2226c307cf65c722cd6cd8384a4351b\",\n    \"repository\": \"Goldkelch/qik-vrt\",\n    \"reuse\": \"Unmodified comparison module; application policy and adapter are new local prototype work.\",\n    \"tree\": \"feff1cae2401a3df83febc3b9458de70d79b818e\"\n  },\n  \"state\": \"SYNTHETIC_DEMONSTRATION\"\n}\n"
+    },
+    {
+      "command": [
+        "python3",
+        "-B",
+        "run_cycle.py",
+        "data/live_template.json"
+      ],
+      "cwd": "experiments/cooperation",
+      "exit_code": 0,
+      "id": "live",
+      "stderr": "",
+      "stdout": "{\n  \"causal_effect_established\": false,\n  \"claim_scope\": \"Deskriptiver Vergleich der angegebenen Messwerte; keine Prognose.\",\n  \"data_kind\": \"observed\",\n  \"evidence_refs_automatically_verified\": false,\n  \"external_effect\": \"NONE\",\n  \"input_sha256\": \"a3ff18f944e331a841e4865816ef98ad2eb7817b1bf2211ed55384a66e3fb4f8\",\n  \"next_action\": \"Gruppe, Aufgabe und Messfenster festlegen; Ausgangswerte erheben.\",\n  \"policy_sha256\": \"088058fce43b6f1d52b90a2e26e5c8565dd1b571be5eca8dd93f5bf851034da7\",\n  \"runner_sha256\": \"e385032550a3a08b79bbeca846d582355fa39d18bc981e942f332f99d2f6ff89\",\n  \"schema\": \"qikvrt-cooperation-report/0.2\",\n  \"selected_intervention\": null,\n  \"source_binding\": {\n    \"commit\": \"a86054139b49c13c5cd344753b248b46b5daf66f\",\n    \"module_path\": \"tools/qikvrt_perfect_optimum.py\",\n    \"module_sha256\": \"fdb08e254a89249f969941a0d652cb22b2226c307cf65c722cd6cd8384a4351b\",\n    \"repository\": \"Goldkelch/qik-vrt\",\n    \"reuse\": \"Unmodified comparison module; application policy and adapter are new local prototype work.\",\n    \"tree\": \"feff1cae2401a3df83febc3b9458de70d79b818e\"\n  },\n  \"state\": \"NEED_BASELINE\"\n}\n"
+    }
+  ],
+  "scope": "Current candidate worktree bytes; final containing HEAD/TREE is external to this receipt."
+}
