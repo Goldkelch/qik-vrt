@@ -1,0 +1,71 @@
+{
+  "schema": "qikvrt_publication_local_validation_v1",
+  "publication_id": "qikvrt-schrittweise-erkenntnis-2026-09-20-v1",
+  "source_repository": "Goldkelch/qik-vrt",
+  "source_commit": "a86054139b49c13c5cd344753b248b46b5daf66f",
+  "scope": "Exact candidate and generic v2 publication-contract checks; no scientific proof, native review or production effect.",
+  "bundle": {
+    "path": "release/schrittweise-erkenntnis-2026-09-20-v1/MACHINE_PROOF_BUNDLE.json",
+    "bytes": 9555,
+    "sha256": "d735cd3ed5eaa16691a4d3cf43eaf38ee29fe91e00fd4e369945410f63ed219c",
+    "git_blob_sha1": "b1081cf09c2208a53c40b5ff9005316848022bef"
+  },
+  "validator": {
+    "path": "tools/qikvrt_zenodo_machine_proof.py",
+    "bytes": 98062,
+    "sha256": "c91b46edf68aeaa384c644c0fb2738de48abb943b14615380f8b17d6645aecb8",
+    "git_blob_sha1": "15c13591eb5e881a9b63a3b4596357194e27341b"
+  },
+  "positive": {
+    "proof_bundle_and_exact_fileset": "PASS",
+    "claim_count": 7,
+    "fileset_count": 13,
+    "article_claim_id_coverage": "PASS",
+    "pdf_claim_id_coverage": "PASS",
+    "pdf_visual_review": "ALL_2_PAGES_INSPECTED_NO_CLIPPING",
+    "metadata_contract": "PASS"
+  },
+  "negative": [
+    {
+      "case": "candidate_bytes_changed",
+      "result": "REJECTED_AS_REQUIRED",
+      "reason": "SHA-256 mismatch for docs/publications/2026-09-20-schrittweise-erkenntnis/QIKVRT_Schrittweise_Erkenntnis_2026-09-20.pdf"
+    },
+    {
+      "case": "unresolved_source_fragment",
+      "result": "REJECTED_AS_REQUIRED",
+      "reason": "unresolved exact identifier fragment for source_refs reference for K03: ABSENT_SOURCE"
+    },
+    {
+      "case": "formal_claim_without_kernel",
+      "result": "REJECTED_AS_REQUIRED",
+      "reason": "formal claim K02 lacks a proof reference"
+    },
+    {
+      "case": "extra_upload_file",
+      "result": "REJECTED_AS_REQUIRED",
+      "reason": "Zenodo upload fileset differs from the exact proof-bearing set: extra=EXTRA.txt"
+    },
+    {
+      "case": "claim_missing_from_bundle",
+      "result": "REJECTED_AS_REQUIRED",
+      "reason": "bundle claims differ bidirectionally from the bound CLAIM_MATRIX: missing_from_bundle=K07"
+    },
+    {
+      "case": "unapproved_draft_is_not_executable",
+      "result": "REJECTED_AS_REQUIRED",
+      "reason": "unsupported publication manifest schema"
+    }
+  ],
+  "release_claims": {
+    "ZENODO_PUBLISHED": false,
+    "OWNER_AUTHORIZED": false,
+    "NATIVE_REVIEW_PASSED": false
+  },
+  "runtime_boundaries": {
+    "tool_cache": "14/14 declared tools verified",
+    "publication_runtime": "XeLaTeX and Poppler command contracts available",
+    "all_profiles": "CONTINUE: unrelated gh, Lean, pytest, Zod, sherpa-onnx and locked IETF renderer dependencies absent; no full-profile success claimed",
+    "formal_kernel": "NOT_REQUIRED_NO_FORMAL_PROVED_CLAIMS"
+  }
+}
