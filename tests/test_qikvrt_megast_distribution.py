@@ -219,6 +219,20 @@ class MegaSTDistributionContract(unittest.TestCase):
         self.assertIn("-append \"boot=live components", workflow)
         self.assertIn("-cdrom out/qikvrt-megast-amd64.iso", workflow)
 
+    def test_public_bios_gate_selects_iso_boot_without_host_kernel(self):
+        text = WORKFLOW.read_text()
+        start = text.index('- name: Boot downloaded ISO through BIOS firmware')
+        end = text.index('- name: Preserve fresh public readback and execution evidence', start)
+        gate = text[start:end]
+        self.assertIn('-boot order=d', gate)
+        self.assertIn('-cdrom /tmp/qikvrt-public-readback/qikvrt-megast-amd64.iso', gate)
+        self.assertIn('-qmp "unix:$qmp,server=on,wait=off"', gate)
+        self.assertIn('"human-monitor-command"', gate)
+        self.assertIn('"command-line": "sendkey ret"', gate)
+        self.assertNotIn('-kernel ', gate)
+        self.assertNotIn('-initrd ', gate)
+        self.assertNotIn('-append ', gate)
+
     def test_terminal_definition_requires_download_readback(self):
         text = README.read_text()
         self.assertIn('stable release path', text)

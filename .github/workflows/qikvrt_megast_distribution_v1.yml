@@ -408,11 +408,59 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qemu-system-x86
           log=/tmp/qikvrt-public-readback/qikvrt-public-firmware-serial.log
+          qmp=/tmp/qikvrt-public-readback/qikvrt-public-firmware-qmp.sock
+          rm -f "$log" "$qmp"
+          : > "$log"
           qemu-system-x86_64 -accel tcg -m 2048 -smp 2 -boot order=d \
             -cdrom /tmp/qikvrt-public-readback/qikvrt-megast-amd64.iso \
-            -display none -serial "file:$log" -no-reboot -no-shutdown &
+            -display none -serial "file:$log" \
+            -qmp "unix:$qmp,server=on,wait=off" -no-reboot -no-shutdown &
           pid=$!
           trap 'kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true' EXIT
+          python3 - "$qmp" <<'PY'
+          import json
+          import socket
+          import sys
+          import time
+
+          path = sys.argv[1]
+          deadline = time.monotonic() + 30
+          while True:
+              client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+              try:
+                  client.connect(path)
+                  break
+              except OSError:
+                  client.close()
+                  if time.monotonic() >= deadline:
+                      raise SystemExit("QMP_SOCKET_UNAVAILABLE")
+                  time.sleep(0.25)
+
+          stream = client.makefile("rwb")
+          greeting = json.loads(stream.readline())
+          if "QMP" not in greeting:
+              raise SystemExit("QMP_GREETING_MISSING")
+
+          def command(payload):
+              stream.write(json.dumps(payload).encode() + b"\n")
+              stream.flush()
+              while True:
+                  reply = json.loads(stream.readline())
+                  if "error" in reply:
+                      raise SystemExit("QMP_COMMAND_FAILED: " + json.dumps(reply))
+                  if "return" in reply:
+                      return
+
+          command({"execute": "qmp_capabilities"})
+          # Debian Live's firmware boot menu is interactive. Select its default
+          # through the emulated keyboard; no host-supplied kernel is admitted.
+          for delay in (5, 10, 15):
+              time.sleep(delay)
+              command({"execute": "human-monitor-command",
+                       "arguments": {"command-line": "sendkey ret"}})
+          stream.close()
+          client.close()
+          PY
           ok=0
           for _ in $(seq 1 300); do
             if grep -Fq "QIKVRT_MEGAST_BOOT_OK source_sha=$QIKVRT_EXACT_SHA" "$log"; then ok=1; break; fi
