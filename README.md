@@ -82,6 +82,11 @@ open checks, controlled isolation, responsible blocking, and a fully bound
 | GitHub Release objects | Intentionally absent; the annotated tags are the repository identities |
 | IETF Datatracker | Active individual Internet-Draft revision `-01`; not an RFC or IETF consensus |
 
+## Gemeinsame statische Roundtrip-Publikation
+
+[Erkenntnis, Macht und Verantwortung](docs/publications/2026-09-20-qikvrt-roundtrip-unified/README.md): ein gemeinsamer vollständiger Lesestand mit 65 Originaltexten, 24 neuen Vertiefungskapiteln und 1.297.144 Byte. Online-Ansicht und Download beruhen auf derselben HTML-Datei; konstruktive und kritische Perspektive gehören zusammen. Frühere Snapshots bleiben ausschließlich als historische Fassungen erhalten.
+
+
 ## Scope of the claim
 
 This repository defines, implements, and tests a policy/effect release
