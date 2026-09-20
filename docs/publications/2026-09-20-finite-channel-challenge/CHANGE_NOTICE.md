@@ -15,3 +15,20 @@ Die Publikationsfassung wurde nicht nur sprachlich korrigiert. Sie enthält folg
 Die ursprünglichen Aussagen bleiben in ORIGINAL_STATEMENT_DE.md erhalten. Ingolf Lohmanns Annahme der neuen Formulierungen steht aus. Dieser Vermerk darf nicht als von ihm bereits genehmigter Widerruf seiner persönlichen Überzeugung ausgegeben werden.
 
 Die vollständige korrigierte Fassung, PDF, Claim-Matrix und Quellen werden vor einem Zenodo-Upload mit ihren Byteidentitäten zurückgegeben. AGENTS.md und policy/ZENODO_MACHINE_PROOF_BEFORE_PUBLICATION.md verlangen anschließend die dort definierte kandidatenspezifische Freigabe. Ein ausstehender Upload wird nicht als Veröffentlichung dargestellt.
+
+## Exakte Gründe der maschinenlesbaren Rückgabe
+
+- **FC-001**: Endliche Listen und positive Blockbreiten begrenzen den Segmentierungssatz.
+- **FC-002**: Die Existenz eines Kanals und verlustfreie Zustellung bleiben Voraussetzungen.
+- **FC-003**: Beliebige endliche mathematische Länge ist keine unbeschränkte Hardwareleistung.
+- **FC-004**: Die bewiesene Bidirektionalität betrifft virtuelle Funktionen auf endlichen Nachrichten.
+- **FC-005**: Der Haltepunktbeweis gilt für die ausdrücklich definierte boolesche Regel.
+- **FC-006**: Ein unverändertes Listenpräfix ersetzt keine authentisierte physikalische Chronologie.
+- **FC-007**: Virtuelle Adressordnung und Host-Ereignisordnung werden getrennt.
+- **FC-008**: Das Unterscheidbarkeitslemma ist kein allgemeiner physikalischer Unmöglichkeitsbeweis.
+- **FC-009**: Die dokumentierten Tests sind Softwareprüfungen; physische Experimente wurden nicht durchgeführt.
+- **FC-010**: Dokumentiert wird ein wissenschaftlicher Protokollentwurf ohne Geldwette.
+- **FC-011**: Der physikalische Zukunftskanal bleibt mangels unabhängiger Messungen offen.
+- **FC-012**: Das behauptete Kapazitätsgesetz bleibt mangels registrierter Vergleichsstudie offen.
+- **FC-013**: Rekord und weltweite Priorität bleiben mangels unabhängiger Entscheidung offen.
+- **FC-014**: QIK-VRT und Tested Event Model Driven Development werden quellengebunden benannt.
