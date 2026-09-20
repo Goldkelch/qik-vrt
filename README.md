@@ -82,11 +82,10 @@ open checks, controlled isolation, responsible blocking, and a fully bound
 | GitHub Release objects | Intentionally absent; the annotated tags are the repository identities |
 | IETF Datatracker | Active individual Internet-Draft revision `-01`; not an RFC or IETF consensus |
 
-## Statischer Roundtrip-Snapshot
+## Gemeinsame statische Roundtrip-Publikation
 
-[Version 2: Digitale Schattenseiten](https://github.com/Goldkelch/qik-vrt/blob/1835a2d1da64daa9b032606cd57421c1e4a11592/docs/publications/2026-09-20-qikvrt-roundtrip-snapshot-v2/README.md) ergänzt die kritische Perspektive auf Informationsmacht, Prognosemärkte und finanzielle Rückkopplungen. Alle Inhalte bleiben in einer statischen HTML-Datei unter 10 MB.
+[Erkenntnis, Macht und Verantwortung](docs/publications/2026-09-20-qikvrt-roundtrip-unified/README.md): ein gemeinsamer vollständiger Lesestand mit 65 Originaltexten, 24 neuen Vertiefungskapiteln und 1.297.144 Byte. Online-Ansicht und Download beruhen auf derselben HTML-Datei; konstruktive und kritische Perspektive gehören zusammen. Frühere Snapshots bleiben ausschließlich als historische Fassungen erhalten.
 
-[QIK-VRT Roundtrip vom 20. September 2026](https://github.com/Goldkelch/qik-vrt/blob/c4bb95e9a1fed939cc1e582300af9b28daa614fa/docs/publications/2026-09-20-qikvrt-roundtrip-snapshot/README.md): eine vollständig eingebettete HTML-Datei mit 28 Originaltexten, 549.828 Byte, ohne nachzuladende Ressourcen.
 
 ## Scope of the claim
 
