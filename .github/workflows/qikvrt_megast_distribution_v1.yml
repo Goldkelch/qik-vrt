@@ -317,8 +317,8 @@ jobs:
           print('out/qikvrt-distribution-manifest.json.sha256')
           PY
           )
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json targetCommitish,assets > /tmp/qikvrt-existing-release.json; then
-            test "$(python3 -c 'import json; print(json.load(open("/tmp/qikvrt-existing-release.json"))["targetCommitish"])')" = "$QIKVRT_EXACT_SHA"
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" > /tmp/qikvrt-existing-release.json; then
+            test "$(python3 -c 'import json; print(json.load(open("/tmp/qikvrt-existing-release.json"))["target_commitish"])')" = "$QIKVRT_EXACT_SHA"
             for asset in "${assets[@]}"; do
               if ! python3 - "$asset" <<'PY'
           import json,os,sys
