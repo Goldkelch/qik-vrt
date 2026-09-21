@@ -1,0 +1,83 @@
+{
+  "schema": "qikvrt_work_unit_v1",
+  "work_unit_id": "PR1119_INTEGRITY_REPAIR_20260921_V1",
+  "created_at": "2026-09-21T01:42:46.703Z",
+  "source_repository": "Goldkelch/qik-vrt",
+  "source_ref": "feat/public-multilingual-human-surface-v1",
+  "source_commit": "4d5701cbfa12caeaad5d031fdd40790a54d1b241",
+  "source_tree": "1ec5ceae63240ac9287acea15a6ada4a369435d0",
+  "human_actor": {
+    "name": "Ingolf Lohmann"
+  },
+  "artificial_cognitive_actor": {
+    "provider": "OpenAI",
+    "system_family": "Codex",
+    "model_or_build": "UNAVAILABLE"
+  },
+  "human_contributions": [
+    "Instruction to work through open issues, pull requests and unintegrated branches while retaining TEMDD evidence boundaries."
+  ],
+  "artificial_cognitive_contributions": [
+    "Reobserve PR #1119, native reviews and exact-head CI failure.",
+    "Reproduce missing index.html in canonical integrity manifest.",
+    "Regenerate existing canonical integrity authorities; preserve application bytes."
+  ],
+  "joint_components": [],
+  "unresolved_origin": [],
+  "inputs": [
+    {
+      "path": "index.html",
+      "role": "pre-existing application bytes preserved",
+      "bytes": 6248,
+      "sha256": "7b9c8c6aa989a21ebb3ecda83b661f13e5518d62b24a51ae7dda36661c8c2af0",
+      "unchanged_from_source_commit": true
+    }
+  ],
+  "outputs": [
+    {
+      "path": "REPOSITORY_FILE_MANIFEST.json"
+    },
+    {
+      "path": "REPOSITORY_FILE_MANIFEST.json.sha256"
+    },
+    {
+      "path": "SHA256SUMS.txt"
+    }
+  ],
+  "git_history": {
+    "method": "append-only successor on existing PR branch",
+    "predecessor_evidence_transfer": false
+  },
+  "verification": {
+    "source_ci_run": 35214231295,
+    "source_ci_job": 105178759887,
+    "observed_failure": "make integrity: added=[\"index.html\"]",
+    "local_reproduction": "BLOCK repository manifest differs from deterministic regeneration",
+    "successor_validation": "PENDING_FRESH_EXACT_HEAD",
+    "local_make_test": {
+      "result": "PASS",
+      "scope": "candidate worktree including this repair before commit",
+      "log_sha256": "5eb456cc12e251f543e963c6bb2837f1efb4865c9a4697d24239edbf25f935d5"
+    },
+    "local_integrity": {
+      "result": "PASS",
+      "classified_entries": 4098,
+      "immutable_digests": 4089
+    }
+  },
+  "human_decision": {
+    "task_authorized": true,
+    "native_review": "NOT_INFERRED"
+  },
+  "external_effects": {
+    "scope": "existing repository pull-request branch repair only",
+    "merge": false,
+    "deployment": false,
+    "publication": false
+  },
+  "release_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
