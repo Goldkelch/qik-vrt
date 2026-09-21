@@ -1,0 +1,99 @@
+name: QIKVRT Roundtrip first entrypoint
+
+on:
+  push:
+    branches:
+      - docs/roundtrip-first-entrypoint-20260921
+    paths:
+      - roundtrip.py
+      - ROUNDTRIP.md
+      - tools/qikvrt_roundtrip_entrypoint.py
+      - tests/test_roundtrip_entrypoint.py
+      - state/work_units/ROUNDTRIP_FIRST_ENTRYPOINT_20260921_V1.json
+      - .github/workflows/qikvrt_roundtrip_entrypoint.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-roundtrip-first-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: github.repository == 'Goldkelch/qik-vrt' && github.ref_name == 'docs/roundtrip-first-entrypoint-20260921'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: true
+      - name: Bind source and materialize first entrypoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain)"
+          python3 -B tools/qikvrt_roundtrip_entrypoint.py --apply
+          python3 -B tools/qikvrt_roundtrip_entrypoint.py --check
+          python3 -B tests/test_roundtrip_entrypoint.py
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+      - name: Persist only entrypoints and deterministic integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess
+          allowed = {'README.md', 'AI', 'AGENTS.md', 'next/README.md', 'next/AI',
+                     'REPOSITORY_FILE_MANIFEST.json', 'REPOSITORY_FILE_MANIFEST.json.sha256', 'SHA256SUMS.txt'}
+          changed = set(subprocess.check_output(['git', 'diff', '--name-only'], text=True).splitlines())
+          if not changed <= allowed:
+              raise SystemExit('OUT_OF_SCOPE_MUTATION: ' + repr(sorted(changed - allowed)))
+          PY
+          remote="$(git ls-remote --heads origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR==1 {print $1}')"
+          test "$remote" = "$GITHUB_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md AI AGENTS.md next/README.md next/AI \
+            REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          if ! git diff --cached --quiet; then
+            git commit -m 'docs(roundtrip): put executable proof first and bind canonical integrity' \
+              -m 'Human direction: Ingolf Lohmann. Generated implementation: OpenAI ChatGPT. Mechanical persistence: GitHub Actions. Work unit: state/work_units/ROUNDTRIP_FIRST_ENTRYPOINT_20260921_V1.json. No native review, Main promotion or Roundtrip execution is inferred.'
+          fi
+          python3 -B tools/qikvrt_roundtrip_entrypoint.py --check
+          python3 -B tests/test_roundtrip_entrypoint.py
+          python3 -B tools/qikvrt_integrity.py verify
+          test -z "$(git status --porcelain)"
+          git push origin "HEAD:refs/heads/$GITHUB_REF_NAME"
+          remote="$(git ls-remote --heads origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR==1 {print $1}')"
+          test "$remote" = "$(git rev-parse HEAD)"
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          def git(*args):
+              return subprocess.check_output(['git', *args], text=True).strip()
+          receipt = {'schema': 'qikvrt-roundtrip-entrypoint-materialization-v1',
+                     'repository': os.environ['GITHUB_REPOSITORY'],
+                     'head': git('rev-parse', 'HEAD'), 'tree': git('rev-parse', 'HEAD^{tree}'),
+                     'source_head': os.environ['GITHUB_SHA'],
+                     'entrypoint_checks': 'PASS', 'repository_integrity': 'PASS',
+                     'remote_ref_readback': 'MATCH', 'runner_execution': 'NOT_RUN',
+                     'prime_original_binding': 'MISSING', 'predecessor_evidence_transfer': False,
+                     'native_review': 'NOT_ESTABLISHED', 'main_promotion': False, 'product_done': False}
+          text = json.dumps(receipt, indent=2, sort_keys=True) + '\n'
+          pathlib.Path(os.environ['RUNNER_TEMP'], 'roundtrip-entrypoint-receipt.json').write_text(text)
+          print(text)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
+              out.write('### Exact-subject entrypoint materialization\n\n```json\n' + text + '```\n')
+          PY
+      - name: Retain current materialization receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: roundtrip-entrypoint-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/roundtrip-entrypoint-receipt.json
+          if-no-files-found: error
+          retention-days: 30
