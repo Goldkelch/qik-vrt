@@ -5,6 +5,7 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -98,7 +99,7 @@ def main():
                 assert hashlib.sha256((destination/entry["path"]).read_bytes()).hexdigest()==entry["sha256"]
         # Preserve this exact successor as a new version of the stable identity.
         originals={f.name:f.read_bytes() for f in (store/"events").glob("*.json")}
-        successor=target_catalog(ROOT.parent,"HEAD","Goldkelch/qik-vrt")
+        successor=target_catalog(ROOT.parent,"HEAD",os.environ.get("GITHUB_REPOSITORY","Goldkelch/qik-vrt"))
         successor_receipt=import_catalog(binary,store,ROOT.parent,successor)
         discovered=value("discover",store)
         transputer=next(n for n in discovered["nodes"] if n["node_id"]=="universal-transputer")

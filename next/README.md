@@ -131,6 +131,7 @@ Preserve both the earlier source catalog and this exact successor in a store:
 
 ```sh
 next/target/release/qikvrt-next init ../source-store source-archive
+git fetch --no-tags --depth=1 https://github.com/Goldkelch/qik-vrt.git 26bc470bf553f471abc02e65950acaffb3e5302a
 python3 next/tools/carrier.py import --store ../source-store
 python3 next/tools/carrier.py catalog --head HEAD > ../target-catalog.json
 python3 next/tools/carrier.py import --store ../source-store --catalog ../target-catalog.json
@@ -139,6 +140,8 @@ python3 next/tools/carrier.py restore --store ../source-store --digest <catalog-
 ```
 
 The stable `universal-transputer` registration now has both source versions.
+When generating a catalog from the second repository's branch, pass
+`--repository ingolf-lohmann/qik-vrt` so its distinct commit stays correctly attributed.
 Restoration verifies the original bytes and Git blob identities without the
 source checkout or remote access. The restored target includes the C90 library
 and its original EAP dependency and can be built from those recovered sources.
