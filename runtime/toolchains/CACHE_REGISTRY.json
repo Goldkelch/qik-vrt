@@ -202,6 +202,32 @@
       ],
       "version": "24.x"
     },
+    "openssh": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        ".github/workflows/qikvrt_megast_distribution_v1.yml",
+        "distribution/qikvrt-megast/build.sh",
+        "distribution/qikvrt-megast/boot.py",
+        "tests/test_qikvrt_netboot.py"
+      ],
+      "cache_class": "runner-image-layer",
+      "cache_locations": [
+        "github-hosted-runner-image:ubuntu-24.04",
+        "debian-live-image:trixie"
+      ],
+      "failure_recovery": "Retain public boot/SSH evidence; remove ephemeral private keys; stop this guest on failed authentication or exact-subject mismatch",
+      "profiles": [
+        "distribution"
+      ],
+      "provider": "Ubuntu runner and Debian guest package managers",
+      "trusted_save": false,
+      "verification": [
+        "Ed25519 key format and exact-subject negative tests",
+        "real SSH guest readback with strict console-bound host key",
+        "unrelated client identity explicitly rejected"
+      ],
+      "version": "ed25519-exact-guest-readback-v1"
+    },
     "pharo": {
       "authority_files": [
         "runtime/toolchains/TOOLCHAIN.lock.tsv",

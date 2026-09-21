@@ -22,7 +22,7 @@ cat > "$WORK/config/package-lists/qikvrt-megast.list.chroot" <<'EOF'
 linux-image-amd64 live-boot systemd-sysv sudo ca-certificates curl git jq
 xorg lightdm xfce4 xfce4-terminal dbus-x11
 hatari firefox-esr flatpak podman xterm
-python3 python3-venv nginx openssh-client
+python3 python3-venv nginx openssh-client openssh-server kmod
 fonts-dejavu-core qemu-user x11-utils procps
 EOF
 
@@ -54,6 +54,8 @@ test -s "$WORK/config/includes.chroot/usr/share/qikvrt/emutos/$EMUTOS_ROM"
 test -L "$WORK/config/includes.chroot/usr/share/hatari/tos.img"
 
 # Compile the real C90 corpus and the CPU-family bootstrap program into the guest.
+TREE=$(git -C "$ROOT" rev-parse 'HEAD^{tree}')
+[ "$SHA" = "$(git -C "$ROOT" rev-parse HEAD)" ] || { echo 'BLOCKED: source HEAD mismatch' >&2; exit 70; }
 GUEST="$WORK/config/includes.chroot"
 mkdir -p "$GUEST/opt/qikvrt/runtime" "$GUEST/opt/qikvrt/smalltalk" \
          "$GUEST/etc/lightdm/lightdm.conf.d" \
@@ -77,6 +79,33 @@ cp -a "${QIKVRT_TOOLCHAIN_CACHE:-$ROOT/.qikvrt/toolchains}/pharo/$PHARO_VERSION/
 cp "$ROOT/src/smalltalk/smoke.st" "$GUEST/opt/qikvrt/smalltalk/"
 cp "$ROOT/runtime/toolchains/"pharo-*-LICENSE.txt "$GUEST/opt/qikvrt/smalltalk/"
 cp "$ROOT/distribution/qikvrt-megast/boot.py" "$GUEST/opt/qikvrt/boot.py"
+# Reuse the Universal Terminal SSH policy. The live guest narrows it to qikvrt,
+# with a fresh host key and an explicit owner public key supplied at VM startup.
+mkdir -p "$GUEST/etc/ssh" "$WORK/config/hooks/live"
+cp "$ROOT/deploy/universal-terminal/sshd_config" "$GUEST/etc/ssh/qikvrt_sshd_config"
+for unit in ssh.service ssh.socket sshd.service; do
+  ln -sf /dev/null "$GUEST/etc/systemd/system/$unit"
+done
+cat > "$WORK/config/hooks/live/0999-no-image-ssh-host-keys.hook.chroot" <<'EOF'
+#!/bin/sh
+set -eu
+rm -f /etc/ssh/ssh_host_* /var/lib/qikvrt/ssh/ssh_host_*
+EOF
+chmod 0755 "$WORK/config/hooks/live/0999-no-image-ssh-host-keys.hook.chroot"
+cat > "$GUEST/etc/systemd/system/qikvrt-ssh.service" <<'EOF'
+[Unit]
+Description=QIK-VRT opt-in Universal Terminal SSH
+Wants=live-config.service
+After=live-config.service network.target
+[Service]
+ExecStartPre=-/usr/sbin/modprobe qemu_fw_cfg
+ExecStart=/usr/bin/python3 -B /opt/qikvrt/boot.py ssh-guest
+Restart=on-failure
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
+EOF
+ln -s ../qikvrt-ssh.service "$GUEST/etc/systemd/system/multi-user.target.wants/qikvrt-ssh.service"
 cp "$ROOT/distribution/qikvrt-megast/runtime-witness.py" "$GUEST/opt/qikvrt/runtime-witness.py"
 cp "$ROOT/src/qikvrt_effect_ack_http_terminal.py" "$GUEST/opt/qikvrt/effect-ack-http.py"
 cat > "$GUEST/etc/systemd/system/qikvrt-effect-ack-http.service" <<'EOF'
@@ -186,6 +215,8 @@ cat > "$WORK/config/includes.chroot/etc/qikvrt/distribution.json" <<EOF
 {
   "schema": "qikvrt_megast_distribution_v1",
   "source_sha": "$SHA",
+  "source_tree": "$TREE",
+  "ssh": {"activation": "explicit_owner_public_key", "user": "qikvrt", "port": 2222, "chatgpt_pairing": "NOT_ESTABLISHED"},
   "temdd": ["REQUEST", "EXECUTE", "FOLLOW", "LEARN", "REPEAT_UNTIL_DONE"],
   "principle": "Stay fail closed and keep future open!",
   "effect_ack_done": false,
@@ -232,6 +263,7 @@ cat > "$OUT/qikvrt-megast-build-receipt.json" <<EOF
 {
   "schema": "qikvrt_megast_build_receipt_v1",
   "source_sha": "$SHA",
+  "source_tree": "$TREE",
   "artifact": "qikvrt-megast-amd64.iso",
   "sha256": "$ISO_SHA",
   "bytes": $ISO_BYTES,

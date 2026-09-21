@@ -84,6 +84,56 @@ Build and test sources:
 C90/Smalltalk comparison and the real network boot before its Main-only
 publication step.
 
+## Opt-in SSH connection to the Linux guest
+
+The image reuses `deploy/universal-terminal/sshd_config`. SSH starts only when
+the VM owner supplies one Ed25519 public key. Password and root login remain
+disabled. Stock SSH units are masked, and image-build host keys are removed;
+each new live guest generates its own host key. The guest permits the live user
+`qikvrt`, whose privileges are those of the existing live workstation account.
+
+Start the verified network image with your **public** key:
+
+```sh
+python3 qikvrt-netboot-client.py receive MANIFEST_URL EXPECTED_MANIFEST_SHA256 ./qikvrt-received \
+  --boot --ssh-public-key ~/.ssh/id_ed25519.pub
+```
+
+After the guest runtime has started, connect from another local terminal:
+
+```sh
+ssh -o StrictHostKeyChecking=yes \
+  -o UserKnownHostsFile=./qikvrt-received/qikvrt-netboot-known-hosts \
+  -i ~/.ssh/id_ed25519 -p 2222 qikvrt@127.0.0.1
+```
+
+QEMU carries only the public key through `fw_cfg` and exposes guest port 2222
+at host **127.0.0.1:2222**. Use `--ssh-port` to select another local port. The
+host-key trust file comes from the verified guest's serial console. No unverified
+network key scan or disabled host-key check is used. The HTTP server serves only
+the four fixed boot assets, never receipts or keys.
+
+For automated verification, `--ssh-identity /outside/image/private-key` performs
+a real SSH command and checks the live user, source HEAD and source TREE against
+the manifest. It requires a noninteractive identity; private keys never belong
+in the image directory. `--ssh-reject-identity` additionally requires an unrelated
+key to be explicitly rejected. The distribution workflow generates two temporary
+keys outside its download/upload directories and deletes them after the VM test.
+With `--verify-only` the guest is closed after verification; without that flag
+the session remains available until the VM exits.
+
+`qikvrt-netboot-ssh-receipt.json` records this SSH evidence separately from
+`chatgpt_pairing: NOT_ESTABLISHED`. This implementation does not generate an
+eight-digit ChatGPT pairing PIN. OpenAI's documented SSH setup requires the
+remote Codex CLI to be installed and signed in, followed by connection through
+the supported client UI. `codex login --device-auth` authenticates the CLI; its
+code is not a remote-control pairing code. The ISO does not contain a personal
+Codex login or grant this chat a connection to the VM.
+
+Sources: [OpenAI remote connections](https://learn.chatgpt.com/docs/remote-connections),
+[OpenAI authentication](https://learn.chatgpt.com/docs/auth),
+[QEMU fw_cfg](https://www.qemu.org/docs/master/system/qemu-manpage.html).
+
 ## Principle
 
 **Stay fail closed and keep future open.** Missing runtime or publication evidence leaves the lane open; it never converts transport success into effect. The return path carries the original request, material descendants, artifacts, effects, failures, repairs, successors and still-open obligations back into the evidence chain.

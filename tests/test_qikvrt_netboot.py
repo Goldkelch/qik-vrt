@@ -10,6 +10,8 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib.error
+import urllib.request
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -199,6 +201,108 @@ class NetbootTests(unittest.TestCase):
             self.assertNotEqual(receipt["serial_sha256"], boot.sha256(root / "qikvrt-netboot-serial.log"))
             self.assertIn("QEMU shutdown output", (root / "qikvrt-netboot-serial.log").read_text())
             self.assertFalse(receipt["effect_ack_done"])
+
+
+class SSHBoundaryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.temp = tempfile.TemporaryDirectory()
+        cls.identity = Path(cls.temp.name) / "identity"
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(cls.identity)], check=True)
+        cls.public_key = boot.ed25519_public_key(cls.identity.with_suffix(".pub").read_text())
+        cls.manifest = {"source_sha": "a" * 40, "source_tree": "b" * 40}
+        cls.record = {**cls.manifest, "host_key": cls.public_key, "user": "qikvrt", "port": 2222}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temp.cleanup()
+
+    def serial(self, record=None):
+        return "QIKVRT_SSH_HOST " + json.dumps(record or self.record) + "\n"
+
+    def test_only_a_single_plain_key_can_activate_ssh(self):
+        self.assertEqual(boot.ed25519_public_key(self.public_key + " owner,comment"), self.public_key)
+        for value in ("command=evil " + self.public_key, self.public_key + "\n" + self.public_key,
+                      "ssh-ed25519 AAAA", "ssh-ed25519 %%%", "ssh-rsa AAAA"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                boot.ed25519_public_key(value)
+
+    def test_missing_or_invalid_owner_key_never_launches_sshd(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(boot.os, "execv") as launch:
+            key = Path(tmp) / "key"
+            boot.ssh_guest(key)
+            key.write_text("command=evil " + self.public_key)
+            with self.assertRaises(ValueError):
+                boot.ssh_guest(key)
+            launch.assert_not_called()
+
+    def test_host_trust_requires_complete_unquoted_exact_subject_witness(self):
+        self.assertEqual(boot.ssh_host_record(self.serial(), self.manifest), self.record)
+        for serial in (self.serial().rstrip(), "diagnostic " + self.serial(),
+                       self.serial({**self.record, "source_tree": "c" * 40}),
+                       self.serial({**self.record, "user": "root"})):
+            with self.subTest(serial=serial), self.assertRaises(ValueError):
+                boot.ssh_host_record(serial, self.manifest)
+
+    def test_successful_ssh_with_foreign_subject_never_creates_receipt(self):
+        for change in ({"source_sha": "c" * 40}, {"source_tree": "c" * 40}):
+            payload = {"schema": "qikvrt_megast_distribution_v1", **self.manifest, **change}
+            result = subprocess.CompletedProcess([], 0, "qikvrt\n" + json.dumps(payload), "")
+            with tempfile.TemporaryDirectory() as tmp, patch.object(boot.subprocess, "run", return_value=result):
+                with self.assertRaisesRegex(ValueError, "exact guest subject"):
+                    boot.ssh_readback(Path(tmp), self.manifest, self.serial(), 2222, self.identity)
+                self.assertFalse((Path(tmp) / "qikvrt-netboot-ssh-receipt.json").exists())
+
+    def test_wrong_identity_success_or_transport_failure_cannot_count_as_rejection(self):
+        payload = {"schema": "qikvrt_megast_distribution_v1", **self.manifest}
+        good = subprocess.CompletedProcess([], 0, "qikvrt\n" + json.dumps(payload), "")
+        for denied in (good, subprocess.CompletedProcess([], 255, "", "Connection refused")):
+            with tempfile.TemporaryDirectory() as tmp, patch.object(boot.subprocess, "run", side_effect=[good, denied]):
+                with self.assertRaisesRegex(ValueError, "explicitly rejected"):
+                    boot.ssh_readback(Path(tmp), self.manifest, self.serial(), 2222, self.identity, self.identity)
+                self.assertFalse((Path(tmp) / "qikvrt-netboot-ssh-receipt.json").exists())
+
+    def test_verified_ssh_still_does_not_claim_chatgpt_pairing(self):
+        payload = {"schema": "qikvrt_megast_distribution_v1", **self.manifest}
+        good = subprocess.CompletedProcess([], 0, "qikvrt\n" + json.dumps(payload), "")
+        denied = subprocess.CompletedProcess([], 255, "", "Permission denied (publickey).")
+        with tempfile.TemporaryDirectory() as tmp, patch.object(boot.subprocess, "run", side_effect=[good, denied]) as run:
+            receipt = boot.ssh_readback(Path(tmp), self.manifest, self.serial(), 2222, self.identity, self.identity)
+            self.assertTrue(receipt["authenticated_readback"])
+            self.assertTrue(receipt["unauthorized_key_rejected"])
+            self.assertEqual(receipt["chatgpt_pairing"], "NOT_ESTABLISHED")
+            self.assertFalse(receipt["effect_ack_done"])
+            self.assertIn("StrictHostKeyChecking=yes", run.call_args_list[0].args[0])
+            self.assertIn("IdentityAgent=none", run.call_args_list[0].args[0])
+
+    def test_private_keys_are_rejected_in_the_served_image_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            for name in boot.FILES.values(): (directory / name).write_bytes(b"image")
+            manifest = boot.make_manifest(directory, "a" * 40, "b" * 40)
+            private = directory / "secret"
+            private.write_bytes(self.identity.read_bytes())
+            with self.assertRaisesRegex(ValueError, "outside the HTTP-served"):
+                boot.boot(directory, manifest, ssh_public_key=self.identity.with_suffix(".pub"), ssh_identity=private)
+
+    def test_image_http_server_never_serves_keys_logs_or_traversal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / boot.FILES["kernel"]).write_bytes(b"kernel")
+            (directory / "secret").write_text("private")
+            handler = lambda *a, **kw: boot.ImageHTTPHandler(*a, directory=tmp, **kw)
+            with boot.http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler) as server:
+                thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+                url = f"http://127.0.0.1:{server.server_address[1]}"
+                try:
+                    with urllib.request.urlopen(url + "/" + boot.FILES["kernel"]) as response:
+                        self.assertEqual(response.read(), b"kernel")
+                    for path in ("/secret", "/", "/%2e%2e/secret", "/" + boot.FILES["kernel"] + "/../secret"):
+                        with self.assertRaises(urllib.error.HTTPError) as raised:
+                            urllib.request.urlopen(url + path)
+                        self.assertEqual(raised.exception.code, 404)
+                finally:
+                    server.shutdown(); thread.join()
 
 
 if __name__ == "__main__":
