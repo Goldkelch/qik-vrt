@@ -93,6 +93,26 @@ def main():
         raise RuntimeError("Firefox window was not mapped in the Xfce display")
     run(["pgrep", "-u", str(os.getuid()), "firefox-esr"])
     stage("firefox-window-observed")
+    rom = Path("/usr/share/qikvrt/emutos/etos256de.img")
+    expected_rom_sha256 = "aadd90cf0c99925d3f2943149dd51ee4deb6015aefe22ade4a5e6c04fb6f2e9d"
+    if not rom.is_file() or rom.stat().st_size != 256 * 1024:
+        raise RuntimeError("pinned EmuTOS ROM missing or wrong size")
+    rom_sha256 = hashlib.sha256(rom.read_bytes()).hexdigest()
+    if rom_sha256 != expected_rom_sha256:
+        raise RuntimeError("pinned EmuTOS ROM digest mismatch")
+    hatari_pid = run(["pgrep", "-u", str(os.getuid()), "-x", "hatari"]).splitlines()[0]
+    cmdline = Path("/proc").joinpath(hatari_pid, "cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
+    if "--machine st" not in cmdline or str(rom) not in cmdline:
+        raise RuntimeError("Hatari process is not bound to the pinned ST/EmuTOS subject")
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline:
+        windows = run(["xwininfo", "-root", "-tree"])
+        if "Hatari" in windows:
+            break
+        time.sleep(1)
+    else:
+        raise RuntimeError("Hatari window was not mapped in the Xfce display")
+    stage("hatari-emutos-window-observed")
     with urllib.request.urlopen("http://127.0.0.1:8771/.well-known/effect-ack", timeout=5) as response:
         capabilities = json.loads(response.read())
         if not capabilities:
@@ -132,7 +152,10 @@ def main():
                "graphical_session": "Xfce with mapped Firefox window", "effect_ack_http_readback": True,
                "c90_checks": 7864387, "ip_boot_binary_sha256": hashlib.sha256(image).hexdigest(),
                "received_mc68000_executed": True, "smalltalk_image_restored": True,
-               "physical_atari_boot": False, "effect_ack_done": False}
+               "hatari_process_observed": True, "hatari_machine": "st",
+               "emutos_rom": str(rom), "emutos_rom_sha256": rom_sha256,
+               "hatari_window_observed": True, "physical_atari_boot": False,
+               "effect_ack_done": False}
     Path.home().joinpath(".config/qikvrt/runtime-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     # The root-owned boot-scoped journal reader also covers user device denial.
     marker = "QIKVRT_MEGAST_RUNTIME_OK source_sha=" + source

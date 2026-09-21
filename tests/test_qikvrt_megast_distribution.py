@@ -60,6 +60,12 @@ class MegaSTDistributionContract(unittest.TestCase):
         self.assertIn('"$WORK/config/includes.chroot/usr/share/hatari"', build)
         session = SESSION.read_text()
         self.assertIn('hatari --machine st --tos /usr/share/qikvrt/emutos/etos256de.img', session)
+        self.assertIn('> "$HOME/.config/qikvrt/hatari.log" 2>&1 &', session)
+        witness = (ROOT / 'distribution/qikvrt-megast/runtime-witness.py').read_text()
+        self.assertIn('hatari-emutos-window-observed', witness)
+        self.assertIn('hatari_process_observed', witness)
+        self.assertIn('emutos_rom_sha256', witness)
+        self.assertIn(lock['sha256'], witness)
         self.assertNotIn('provide a legally usable TOS image', session)
 
     def _check_emutos_materialization(self, entries, *, expected_error=None, bad_digest=False):
