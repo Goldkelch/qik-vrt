@@ -14,6 +14,31 @@ from scripts.issue_agent.validate import validate
 
 
 class ValidateIssueAgentBundleTest(unittest.TestCase):
+    def test_materialized_context_is_git_diff_check_clean(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "README.md").write_text("line with whitespace  \n\n", encoding="utf-8")
+            issue = root / "issue.json"
+            issue.write_text(json.dumps({"number": 1}), encoding="utf-8")
+            output = root / "out"
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts/issue_agent/materialize.py"),
+                    "--issue", str(issue),
+                    "--repository", "Goldkelch/qik-vrt",
+                    "--output-dir", str(output),
+                ],
+                cwd=root,
+                check=True,
+            )
+
+            context = (output / "CONTEXT.md").read_text(encoding="utf-8")
+            self.assertTrue(context.endswith("\n"))
+            self.assertFalse(context.endswith("\n\n"))
+            self.assertTrue(all(line == line.rstrip() for line in context.splitlines()))
+
     def make_bundle(self, directory: Path) -> None:
         request = json.dumps({"issue_number": 76}, sort_keys=True) + "\n"
         (directory / "REQUEST.json").write_text(request, encoding="utf-8")

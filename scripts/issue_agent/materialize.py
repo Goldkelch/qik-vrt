@@ -59,8 +59,8 @@ def main() -> None:
         "",
     ]
     for name, text in selected:
-        lines.extend([f"## `{name}`", "", text, ""])
-    (out / "CONTEXT.md").write_text("\n".join(lines), encoding="utf-8")
+        lines.extend([f"## `{name}`", "", *(line.rstrip() for line in text.splitlines()), ""])
+    (out / "CONTEXT.md").write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
