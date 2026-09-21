@@ -14,7 +14,7 @@ witness, nor does formal embedding establish empirical truth.
 
 namespace QIKVRT.V2.TEMDD
 
-universe u v w x y z
+universe u v w x y z u' v' w' x' y' z'
 
 structure Language where
   State : Type u
@@ -53,8 +53,10 @@ structure AdmissibilityData (source : Language) (target : Language) where
   mapAction : source.Action → target.Action
   mapAuthority : source.Authority → target.Authority
   mapSubject : source.Subject → target.Subject
-  mapState_injective : Function.Injective mapState
-  mapSubject_injective : Function.Injective mapSubject
+  mapState_injective :
+    ∀ {left right : source.State}, mapState left = mapState right → left = right
+  mapSubject_injective :
+    ∀ {left right : source.Subject}, mapSubject left = mapSubject right → left = right
   requirement_preserved :
     ∀ state requirement,
       source.satisfies state requirement ↔
@@ -141,11 +143,13 @@ theorem temdd_conservative_universality (source target : Language)
   exact ⟨⟨data⟩, True.intro⟩
 
 def TEMDDConservativeUniversalityStatement : Prop :=
-  ∀ source target, AdmissibleClass source target →
+  ∀ (source : Language.{u, v, w, x, y, z})
+    (target : Language.{u', v', w', x', y', z'}),
+    AdmissibleClass source target →
     ∃ embedding : ConservativeEmbedding source target, True
 
 theorem TEMDDConservativeUniversality_checked :
-    TEMDDConservativeUniversalityStatement := by
+    TEMDDConservativeUniversalityStatement.{u, v, w, x, y, z, u', v', w', x', y', z'} := by
   intro source target hSource
   exact temdd_conservative_universality source target hSource
 
