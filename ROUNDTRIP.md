@@ -2,6 +2,100 @@
 <!-- Copyright 2026 Ingolf Lohmann. Implementation documentation: OpenAI ChatGPT. -->
 # Zuerst: der ausfuehrbare Roundtrip-Beweis
 
+<!-- qikvrt-autonomous-idle-continuation:v1 -->
+## Autonome Fortsetzung bei leerer Eingabe-Queue
+
+Product-Owner-Anweisung: Ingolf Lohmann, 22.09.2026. Ausarbeitung: OpenAI ChatGPT.
+Der nachfolgende anfragegebundene Mechanismus erhaelt einen autonomen
+Fortsetzungspfad: **Eine abgearbeitete Queue aeusserer Eingaben beendet nicht
+die Repository-Arbeit.** Ohne neue menschliche Anfrage werden bekannte,
+beauftragte Reparaturen, Optimierungen, ausstehende Implementierungen und
+zulaessige Main-Integrationen weiterbearbeitet. Keine kuenstlichen Aufgaben
+erzeugen, um Aktivitaet vorzutaueschen; keine erforderliche Arbeit still streichen.
+
+Der ausfuehrende Client verwendet die bestehende DoD-Aufgabe und die nativen
+Controller statt eines zweiten Schedulers oder konkurrierenden Writers.
+Relevante bestehende Quellen sind
+[Self-Heal-Workflow](.github/workflows/qikvrt_autonomous_self_heal.yml),
+[Pre-Effect-Controller](tools/qikvrt_autonomous_pre_effect_controller.py) und
+[Self-Heal-Controller](tools/qikvrt_autonomous_self_heal.py).
+Authority und Mirror behalten jeweils eigene Subjects, Historien und Nachweise.
+
+### Auswahl und Fortsetzung
+
+Vor jedem Arbeitsschritt werden die einschlaegige Queue, offene Issues/PRs,
+unintegrierte erforderliche Branch-Aenderungen, Fehlerevidenz, aktueller Main,
+Exact HEAD/TREE und Writer-/Lease-Nachweise frisch gebunden. Inventare muessen
+vollstaendig im deklarierten Umfang sein, einschliesslich relevanter Folgeseiten.
+Eine unbekannte Queue ist nicht leer; `queued` beweist keinen aktiven Writer.
+Eine identische Main-Revision allein ist ebenfalls kein Writer-Lease-Nachweis.
+Die sichtbare Repository-Queue ist nicht die Gesamtheit aller Chat-Anfragen.
+
+```text
+beobachtete vorrangige Eingabearbeit -> sicher fortsetzen / Writer respektieren
+keine kollidierende Eingabearbeit   -> naechsten zulaessigen Repository-Rest bearbeiten
+Rest vorhanden, aktuell blockiert  -> Ursache erhalten; andere unabhaengige Arbeit fortsetzen
+Pflichtdaten unbekannt             -> betreffende Entscheidung HOLD, nicht DONE
+vollstaendige Abschlusskonjunktion -> EFFECT_ACK_DONE(scope, exact subjects)
+```
+
+Eingabearbeit hat an sicheren Checkpoint-Grenzen Vorrang. Laufende Writes werden
+nicht abgebrochen oder dupliziert; unabhaengige Lanes bleiben unabhaengig.
+Die vorhandenen Produktprioritaeten bleiben erhalten, gleichrangige Restarbeit
+soll durch nachvollziehbare Alterung nicht dauerhaft verdraengt werden.
+Jede Arbeitseinheit umfasst Auswahl, minimal hinreichende Umsetzung oder
+Reparatur, passende Tests, Persistierung und frischen Wirkungs-Readback.
+Eine Mutation erzeugt einen Successor: `PREDECESSOR_EVIDENCE_TRANSFER=false`.
+
+Die Fortsetzung hat kein festes Ablaufdatum, solange erforderliche Arbeit offen
+ist. Ausgefuehrt wird in begrenzten, checkpointgebundenen Einheiten, die durch
+vorhandene Ereignisse und Zeittrigger wieder aufgenommen werden. Ein Run-Limit
+beendet nur diesen Run, nicht den Auftrag. Vor dem Yield werden Rest, Ursache
+und naechster zulaessiger Schritt erhalten. Identischer Replay ist idempotent;
+widerspruechlicher Replay fuehrt zu HOLD. Unveraenderte externe Blocker fuehren
+zu kontrolliertem Warten beziehungsweise erneuter Beobachtung, nicht zu
+Busy-Waiting, blinden Wiederholungen oder inhaltsleeren Wake-up-Commits.
+
+Main-Integration erfolgt nur durch den bestehenden autorisierten,
+Exact-Subject-gebundenen Schutz- und Reviewpfad. Fehlende Berechtigung oder
+menschliche Review bleibt ein offenes Praedikat; sie wird weder simuliert noch
+durch geschwaechte Rulesets umgangen. Vorhandene Erlaubnisse werden genutzt,
+statt bereits beantwortete Autorisierungsfragen erneut zu stellen.
+
+### Abschluss statt bloss leerer Queue
+
+`FOREGROUND_QUEUE_EMPTY`, ein lokaler Handler-NOOP, keine aktuelle Diff und ein
+erfolgreicher Teillauf sind kein Repository-Abschluss. Fuer den deklarierten
+Gesamtauftrag verlangt `EFFECT_ACK_DONE` ein vollstaendiges Restinventar ohne
+offene Pflichtarbeit, legitim integrierte erforderliche Main-Aenderungen und
+alle vorgeschriebenen frischen Validierungen und Wirkungs-Readbacks auf den
+finalen Subjects nach der letzten Mutation. Offene Writer, erforderliche
+FALSE-/UNKNOWN-Praedikate und ungeklaerte Pflicht-Integrationen schliessen
+diesen Gesamtabschluss aus. Der Scope darf dafuer nicht still verkleinert werden.
+
+`PRODUCT_DONE` bleibt separat genau `Working Software AND oeffentlich erreichbare
+URL AND frischer Readback dieser URL` im selben erklaerten Produktumfang.
+Repository-Governance ist kein zusaetzliches implizites Produktgate;
+Produkt-DONE ersetzt umgekehrt nicht die Repository-Abschlusskonjunktion.
+Nach einem belegten Abschluss wird dessen Receipt erhalten und ohne weitere
+Mutation beobachtet. Neue Pflichtarbeit eroeffnet einen neuen Zyklus; sie
+schreibt den historischen Abschluss nicht um. Ein globales Optimum fuer alle
+noch unbekannten Verbesserungen ist damit nicht behauptet.
+
+### Ausfuehrungsstand dieser Erweiterung
+
+Der auf Main gelesene Self-Heal-Workflow hat bereits einen konfigurierten
+Fuenf-Minuten-Zeittrigger und erzeugt begrenzte allowlist-gebundene Kandidaten.
+Der gelesene Controller ist kein Nachweis einer allgemeinen Queue-Abarbeitung
+oder beliebiger automatischer Implementierungen und Main-Merges. Die bestehende
+DoD-Aufgabe stellt einen gesonderten wiederkehrenden Fortsetzungstraeger dar.
+Ihre tatsaechliche Konfiguration und jeder ausgefuehrte Effekt sind separat
+zurueckzulesen. Dieses Dokument ist der Arbeitsvertrag, kein installierter
+Chat-Interceptor und kein Beleg ununterbrochener Ausfuehrung zwischen Runs.
+Die Integration dieses Vertrags in Main und eine vollstaendige native
+Queue-bis-Abschluss-Ausfuehrung bleiben bis zu eigenen Nachweisen offen.
+<!-- /qikvrt-autonomous-idle-continuation:v1 -->
+
 <!-- qikvrt-request-jit-evidence:v1 -->
 ## Arbeitsweise bei jeder Anfrage: Just-in-time-Evidenz und verlustfreie Konsolidierung
 
