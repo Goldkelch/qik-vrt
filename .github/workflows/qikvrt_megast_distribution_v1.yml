@@ -17,7 +17,9 @@ on:
       - 'tools/qikvrt_smalltalk.py'
       - 'runtime/toolchains/**'
   push:
-    branches: [ main ]
+    # Image candidates remain executable while the product base moves. The
+    # publish job below retains its separate exact branch/event admission.
+    branches: [ main, 'work/qikvrt-linux-ssh-*' ]
     paths:
       - 'distribution/qikvrt-megast/**'
       - '.github/workflows/qikvrt_megast_distribution_v1.yml'
@@ -52,6 +54,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+      - name: Verify exact-subject repository integrity before distribution execution
+        run: python3 -B tools/qikvrt_integrity.py verify
       - name: Install nginx for the unprivileged log regression
         run: sudo apt-get update && sudo apt-get install -y nginx
       - name: Verify distribution contract
@@ -72,7 +76,7 @@ jobs:
       - name: Install live-build and boot-test toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y cpio curl debootstrap xorriso squashfs-tools qemu-system-x86 gcc-m68k-linux-gnu libc6-dev-m68k-cross
+          sudo apt-get install -y cpio curl debootstrap xorriso squashfs-tools qemu-system-x86 gcc-m68k-linux-gnu libc6-dev-m68k-cross openssh-client
           curl -fsSLo /tmp/debian-archive-keyring.deb \
             https://deb.debian.org/debian/pool/main/d/debian-archive-keyring/debian-archive-keyring_2025.1_all.deb
           printf '%s  %s\n' \
@@ -200,10 +204,14 @@ jobs:
         run: |
           sudo chown -R "$(id -u):$(id -g)" out
           test ! -e /dev/kvm || sudo chown "$(id -u):$(id -g)" /dev/kvm
-          python3 -B distribution/qikvrt-megast/boot.py manifest out '${{ github.event.pull_request.head.sha || github.sha }}'
+          python3 -B distribution/qikvrt-megast/boot.py manifest out '${{ github.event.pull_request.head.sha || github.sha }}' --source-tree "$(git rev-parse 'HEAD^{tree}')"
+          # Private keys stay outside both HTTP roots and every uploaded artifact.
+          ssh_keys=$(mktemp -d /tmp/qikvrt-ssh.XXXXXX)
+          ssh-keygen -q -t ed25519 -N '' -f "$ssh_keys/owner"
+          ssh-keygen -q -t ed25519 -N '' -f "$ssh_keys/rejected"
           python3 -m http.server 17331 --bind 127.0.0.1 --directory out > /tmp/qikvrt-download.log 2>&1 &
           server=$!
-          trap 'kill "$server" 2>/dev/null || true' EXIT
+          trap 'kill "$server" 2>/dev/null || true; rm -rf "$ssh_keys"' EXIT
           for attempt in $(seq 1 30); do
             curl -fsS http://127.0.0.1:17331/qikvrt-netboot.json > /dev/null && break
             sleep 1
@@ -211,7 +219,9 @@ jobs:
           manifest_sha=$(sha256sum out/qikvrt-netboot.json | cut -d' ' -f1)
           result=0
           python3 -B distribution/qikvrt-megast/boot.py receive \
-            http://127.0.0.1:17331/qikvrt-netboot.json "$manifest_sha" /tmp/qikvrt-received --boot --verify-only || result=$?
+            http://127.0.0.1:17331/qikvrt-netboot.json "$manifest_sha" /tmp/qikvrt-received --boot --verify-only \
+            --ssh-public-key "$ssh_keys/owner.pub" --ssh-identity "$ssh_keys/owner" \
+            --ssh-reject-identity "$ssh_keys/rejected" || result=$?
           for evidence in /tmp/qikvrt-received/qikvrt-netboot*; do
             test ! -f "$evidence" || cp "$evidence" out/
           done

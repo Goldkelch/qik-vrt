@@ -9,6 +9,7 @@ never counts as guest execution. No shell from a downloaded manifest is run.
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import http.server
 import ipaddress
@@ -17,11 +18,13 @@ import os
 from pathlib import Path
 import platform
 import re
+import selectors
 import shutil
 import socket
 import socketserver
 import struct
 import subprocess
+import tarfile
 import tempfile
 import threading
 import time
@@ -34,11 +37,203 @@ HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 HEADER = struct.Struct("!4sB3xIIIIII")
 CHUNK = 128
 MAX_BOOT = 4 * 1024 * 1024
+SSH_KEY_PATH = Path("/sys/firmware/qemu_fw_cfg/by_name/opt/qikvrt/ssh-key/raw")
+
+
+def ed25519_public_key(value: str) -> str:
+    """Accept one plain key, never authorized_keys options or multiple keys."""
+    fields = value.strip().split()
+    if "\n" in value.strip() or len(fields) < 2 or fields[0] != "ssh-ed25519":
+        raise ValueError("supply one plain Ed25519 public key")
+    try:
+        wire = base64.b64decode(fields[1], validate=True)
+    except ValueError as error:
+        raise ValueError("invalid Ed25519 encoding") from error
+    if len(wire) != 51 or wire[:19] != b"\0\0\0\x0bssh-ed25519\0\0\0\x20":
+        raise ValueError("invalid Ed25519 public key")
+    return "ssh-ed25519 " + base64.b64encode(wire).decode("ascii")
+
+
+def ssh_guest(authorized_key: Path = SSH_KEY_PATH) -> None:
+    """Opt-in guest service; the ordinary Live ISO opens no SSH listener."""
+    if not authorized_key.exists():
+        return
+    key = ed25519_public_key(authorized_key.read_text())
+    subject = json.loads(Path("/etc/qikvrt/distribution.json").read_text())
+    state = Path("/var/lib/qikvrt/ssh")
+    state.mkdir(mode=0o755, parents=True, exist_ok=True)
+    Path("/run/sshd").mkdir(mode=0o755, exist_ok=True)
+    keys = state / "authorized_keys"
+    keys.write_text(key + "\n")
+    keys.chmod(0o644)  # public; sshd reads this as the unprivileged live user
+    host = state / "ssh_host_ed25519_key"
+    if not host.exists():
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(host)], check=True)
+    host_key = ed25519_public_key(host.with_suffix(".pub").read_text())
+    command = ["/usr/sbin/sshd", "-D", "-e", "-f", "/etc/ssh/qikvrt_sshd_config",
+               "-o", "PermitRootLogin=no", "-o", "AllowUsers=qikvrt"]
+    subprocess.run(command + ["-t"], check=True)
+    record = {"source_sha": subject["source_sha"], "source_tree": subject["source_tree"],
+              "host_key": host_key, "user": "qikvrt", "port": 2222}
+    # The trusted VM console carries the host public key, not a login secret.
+    with open("/dev/ttyS0", "w") as serial:
+        serial.write("\nQIKVRT_SSH_HOST " + json.dumps(record, sort_keys=True) + "\n")
+        serial.flush()
+    os.execv(command[0], command)
+
+
+def ssh_host_record(serial: str, manifest: dict) -> dict:
+    records = []
+    for line in serial.splitlines(keepends=True):
+        if not line.endswith(("\n", "\r")) or not line.startswith("QIKVRT_SSH_HOST "):
+            continue
+        record = json.loads(line[len("QIKVRT_SSH_HOST "):])
+        if (record.get("source_sha") != manifest["source_sha"] or
+                record.get("source_tree") != manifest.get("source_tree") or
+                record.get("user") != "qikvrt" or record.get("port") != 2222):
+            raise ValueError("SSH host witness does not match exact guest subject")
+        record["host_key"] = ed25519_public_key(record["host_key"])
+        records.append(record)
+    if not records or any(record != records[0] for record in records):
+        raise ValueError("missing or conflicting SSH host witness")
+    return records[0]
+
+
+def ssh_readback(directory: Path, manifest: dict, serial: str, port: int,
+                 identity: Path | None, reject_identity: Path | None = None) -> dict:
+    record = ssh_host_record(serial, manifest)
+    known_hosts = directory / "qikvrt-netboot-known-hosts"
+    known_hosts.write_text(f"[127.0.0.1]:{port} {record['host_key']}\n")
+    receipt = {"schema": "qikvrt_netboot_ssh_receipt_v1", **record,
+               "host_port": port, "host_bind": "127.0.0.1",
+               "authenticated_readback": False, "unauthorized_key_rejected": False,
+               "chatgpt_pairing": "NOT_ESTABLISHED", "effect_ack_done": False}
+    if identity is not None:
+        command = ["ssh", "-F", "/dev/null", "-T", "-p", str(port),
+                   "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=none",
+                   "-o", "StrictHostKeyChecking=yes", "-o", "GlobalKnownHostsFile=/dev/null",
+                   "-o", "UserKnownHostsFile=" + str(known_hosts), "-o", "ConnectTimeout=5"]
+        remote = "id -un; cat /etc/qikvrt/distribution.json"
+        result = None
+        # The console record precedes exec(sshd); allow only bounded startup.
+        for _ in range(10):
+            result = subprocess.run(command + ["-i", str(identity), "qikvrt@127.0.0.1", remote],
+                                    text=True, capture_output=True, timeout=15)
+            if result.returncode == 0 or "Connection refused" not in result.stderr:
+                break
+            time.sleep(1)
+        if result.returncode != 0:
+            raise ValueError("SSH authenticated readback failed: " + result.stderr[-2048:])
+        user, separator, payload = result.stdout.partition("\n")
+        subject = json.loads(payload) if separator else {}
+        if (user != "qikvrt" or subject.get("schema") != "qikvrt_megast_distribution_v1" or
+                subject.get("source_sha") != manifest["source_sha"] or
+                subject.get("source_tree") != manifest["source_tree"]):
+            raise ValueError("SSH readback does not match exact guest subject/user")
+        receipt["authenticated_readback"] = True
+        receipt["readback_sha256"] = hashlib.sha256(result.stdout.encode()).hexdigest()
+        if reject_identity is not None:
+            denied = subprocess.run(command + ["-i", str(reject_identity), "qikvrt@127.0.0.1", remote],
+                                    text=True, capture_output=True, timeout=15)
+            if denied.returncode != 255 or "Permission denied (publickey)" not in denied.stderr:
+                raise ValueError("unauthorized SSH identity was not explicitly rejected")
+            receipt["unauthorized_key_rejected"] = True
+        if "codex" in subject:
+            receipt["codex"] = codex_readback(
+                command + ["-i", str(identity), "qikvrt@127.0.0.1"], subject["codex"]["version"])
+    (directory / "qikvrt-netboot-ssh-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
+    return receipt
+
+
+def codex_readback(ssh_command: list[str], version: str, timeout: float = 60) -> dict:
+    """Read the real app-server through SSH stdio, without login or model use."""
+    observed = subprocess.run(ssh_command + ["/bin/bash -lc 'codex --version'"],
+                              text=True, capture_output=True, timeout=15)
+    if observed.returncode or observed.stdout.strip() != "codex-cli " + version:
+        raise ValueError("guest Codex version does not match the image contract")
+    deadline = time.monotonic() + timeout
+    transcript = hashlib.sha256()
+    pending = b""
+    with tempfile.TemporaryFile() as errors, selectors.DefaultSelector() as selector:
+        process = subprocess.Popen(ssh_command + ["/bin/bash -lc 'exec codex app-server --listen stdio://'"],
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors)
+        selector.register(process.stdout, selectors.EVENT_READ)
+
+        def send(message: dict) -> None:
+            data = (json.dumps(message) + "\n").encode()
+            process.stdin.write(data)
+            process.stdin.flush()
+            transcript.update(data)
+
+        def response(request_id: int) -> dict:
+            nonlocal pending
+            while True:
+                if b"\n" not in pending:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0 or not selector.select(remaining):
+                        raise ValueError("Codex app-server handshake timed out")
+                    data = os.read(process.stdout.fileno(), 65536)
+                    if not data:
+                        raise ValueError("Codex app-server ended before handshake completion")
+                    pending += data
+                    if len(pending) > 1024 * 1024:
+                        raise ValueError("Codex response exceeds bound size")
+                    continue
+                line, pending = pending.split(b"\n", 1)
+                transcript.update(line + b"\n")
+                message = json.loads(line)
+                if not isinstance(message, dict):
+                    raise ValueError("invalid Codex response")
+                if message.get("id") == request_id:
+                    if "error" in message or not isinstance(message.get("result"), dict):
+                        raise ValueError("Codex app-server rejected the handshake request")
+                    return message["result"]
+
+        try:
+            send({"id": 1, "method": "initialize", "params": {
+                "clientInfo": {"name": "qikvrt_distribution_probe", "version": "1.0.0"}}})
+            initialized = response(1)
+            if not isinstance(initialized.get("userAgent"), str) or not initialized["userAgent"]:
+                raise ValueError("Codex initialize response has no server identity")
+            send({"method": "initialized", "params": {}})
+            send({"id": 2, "method": "account/read", "params": {"refreshToken": False}})
+            account = response(2)
+            if "account" not in account or "requiresOpenaiAuth" not in account:
+                raise ValueError("Codex account status is incomplete")
+            # Never export account details or accidentally certify an image
+            # containing a builder's personal login.
+            if account["account"] is not None or account["requiresOpenaiAuth"] is not True:
+                raise ValueError("fresh distribution must require its owner's Codex login")
+            return {"version": version, "stdio_handshake": True,
+                    "owner_login": "REQUIRED", "native_chatgpt_pairing": "NOT_ESTABLISHED",
+                    "model_request_sent": False, "transcript_sha256": transcript.hexdigest()}
+        finally:
+            process.stdin.close()
+            if process.poll() is None:
+                process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill(); process.wait()
+            process.stdout.close()
 
 
 def sha256(path: Path) -> str:
     with path.open("rb") as source:
         return hashlib.file_digest(source, "sha256").hexdigest()
+
+
+def chatgpt_connect() -> None:
+    """Owner-invoked native pairing; codes and login state never enter receipts."""
+    if os.geteuid() == 0:
+        raise ValueError("open ChatGPT verbinden as the ordinary live user, without sudo")
+    print("QIK-VRT: ChatGPT verbinden", flush=True)
+    if subprocess.run(["codex", "login", "status"]).returncode:
+        subprocess.run(["codex", "login", "--device-auth"], check=True)
+    subprocess.run(["codex", "remote-control", "start"], check=True)
+    subprocess.run(["codex", "remote-control", "pair"], check=True)
+    print("Den angezeigten Kopplungscode im ChatGPT-Client eingeben. "
+          "Die VM muss weiterlaufen. Beenden: codex remote-control stop", flush=True)
 
 
 def fnv(data: bytes) -> int:
@@ -92,6 +287,8 @@ def validate_manifest(manifest: dict) -> None:
         raise ValueError("unsupported boot schema/architecture")
     if not re.fullmatch(r"[0-9a-f]{40}", manifest.get("source_sha", "")):
         raise ValueError("missing exact source commit")
+    if "source_tree" in manifest and not re.fullmatch(r"[0-9a-f]{40}", manifest["source_tree"]):
+        raise ValueError("invalid exact source tree")
     if manifest.get("boot_method") != "linux-live-http" or set(manifest.get("files", {})) != set(FILES):
         raise ValueError("unsupported boot method/files")
     for kind, name in FILES.items():
@@ -103,11 +300,13 @@ def validate_manifest(manifest: dict) -> None:
             raise ValueError("file size outside contract")
 
 
-def make_manifest(directory: Path, source_sha: str) -> dict:
+def make_manifest(directory: Path, source_sha: str, source_tree: str | None = None) -> dict:
     manifest = {"schema": "qikvrt_netboot_v1", "source_sha": source_sha,
                 "architecture": "x86_64", "boot_method": "linux-live-http",
                 "guest_m68000": "qemu-m68k-static-contract", "effect_ack_done": False,
                 "files": {k: {"name": n, "bytes": (directory / n).stat().st_size, "sha256": sha256(directory / n)} for k, n in FILES.items()}}
+    if source_tree is not None:
+        manifest["source_tree"] = source_tree
     validate_manifest(manifest)
     path = directory / "qikvrt-netboot.json"
     path.write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n")
@@ -154,6 +353,58 @@ def download(url: str, path: Path, expected: str, size: int) -> None:
         temp.rename(path)
     finally:
         temp.unlink(missing_ok=True)
+
+
+def install_codex(lock_path: Path, destination: Path, cache: Path) -> dict:
+    """Reuse the verified downloader; install a complete, pinned upstream package."""
+    lock = json.loads(lock_path.read_text())
+    cache.mkdir(parents=True, exist_ok=True)
+    archive = cache / (lock["sha256"] + ".tar.gz")
+    download(lock["url"], archive, lock["sha256"], lock["bytes"])
+    if destination.exists():
+        raise ValueError("Codex destination already exists; preserve the prior installation")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".codex-stage-", dir=destination.parent) as temporary:
+        stage = Path(temporary) / "package"
+        stage.mkdir(mode=0o755)
+        with tarfile.open(archive, "r:gz") as package:
+            members = package.getmembers()
+            if len(members) > 10000 or sum(m.size for m in members) > 600 * 1024 * 1024:
+                raise ValueError("Codex package exceeds extraction bounds")
+            names = set()
+            for member in members:
+                path = Path(member.name)
+                if (path.is_absolute() or ".." in path.parts or not path.parts or
+                        member.name in names or not (member.isfile() or member.isdir())):
+                    raise ValueError("unsafe Codex package entry")
+                names.add(member.name)
+                target = stage / path
+                if member.isdir():
+                    target.mkdir(parents=True, exist_ok=True)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with package.extractfile(member) as source, target.open("xb") as output:
+                        shutil.copyfileobj(source, output)
+                    target.chmod(0o755 if member.mode & 0o111 else 0o644)
+        metadata = json.loads((stage / "codex-package.json").read_text())
+        if any(metadata.get(key) != expected for key, expected in {
+                "layoutVersion": 1, "version": lock["version"], "target": lock["target"],
+                "variant": "codex", "entrypoint": "bin/codex"}.items()):
+            raise ValueError("Codex package identity mismatch")
+        for name in ("bin/codex", "bin/codex-code-mode-host", "codex-path/rg", "codex-resources/bwrap"):
+            if not (stage / name).is_file() or not os.access(stage / name, os.X_OK):
+                raise ValueError("Codex package is missing an executable dependency")
+        for name, expected in lock["license_files"].items():
+            source = lock_path.parent / name
+            if sha256(source) != expected:
+                raise ValueError("Codex license/notice identity mismatch")
+            shutil.copyfile(source, stage / name)
+        receipt = {"version": lock["version"], "archive_sha256": lock["sha256"],
+                   "binary_sha256": sha256(stage / "bin/codex"), "source": lock["source"],
+                   "owner_login": "REQUIRED", "native_chatgpt_pairing": "NOT_ESTABLISHED"}
+        (stage / "qikvrt-install-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
+        stage.rename(destination)
+    return receipt
 
 
 def receive(url: str, expected: str, directory: Path) -> dict:
@@ -227,11 +478,38 @@ def snapshot_serial(logfile: Path) -> Path:
     return snapshot
 
 
-def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bool = False) -> dict:
+class ImageHTTPHandler(http.server.SimpleHTTPRequestHandler):
+    """Only serve fixed image assets; logs and private files are never routes."""
+    def send_head(self):
+        if self.path not in {"/" + name for name in FILES.values()}:
+            self.send_error(404)
+            return None
+        return super().send_head()
+
+
+def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bool = False,
+         ssh_public_key: Path | None = None, ssh_identity: Path | None = None,
+         ssh_port: int = 2222, ssh_reject_identity: Path | None = None) -> dict:
     # These fixed paths describe the current attempt, never an earlier boot.
-    for name in ("qikvrt-netboot-receipt.json", "qikvrt-netboot-failure.json"):
+    for name in ("qikvrt-netboot-receipt.json", "qikvrt-netboot-failure.json",
+                 "qikvrt-netboot-ssh-receipt.json", "qikvrt-netboot-known-hosts"):
         (directory / name).unlink(missing_ok=True)
     validate_manifest(manifest)
+    netdev = "user,id=network"
+    firmware = []
+    if ssh_public_key is not None:
+        if "source_tree" not in manifest or not 1024 <= ssh_port <= 65535:
+            raise ValueError("SSH requires an exact source tree and an unprivileged host port")
+        public_key = ed25519_public_key(ssh_public_key.read_text())
+        for private in (ssh_identity, ssh_reject_identity):
+            if private is not None and (not private.is_file() or private.resolve().is_relative_to(directory.resolve())):
+                raise ValueError("SSH private keys must exist outside the HTTP-served image directory")
+        if (verify_only or ssh_reject_identity is not None) and ssh_identity is None:
+            raise ValueError("SSH verification requires --ssh-identity")
+        netdev += f",hostfwd=tcp:127.0.0.1:{ssh_port}-:2222"
+        firmware = ["-fw_cfg", "name=opt/qikvrt/ssh-key,string=" + public_key]
+    elif ssh_identity is not None or ssh_reject_identity is not None:
+        raise ValueError("SSH identity requires --ssh-public-key")
     if platform.machine() not in ("x86_64", "AMD64"):
         raise ValueError("client CPU must match the amd64 host image")
     for entry in manifest["files"].values():
@@ -241,17 +519,17 @@ def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bo
     qemu = shutil.which("qemu-system-x86_64")
     if not qemu:
         raise ValueError("qemu-system-x86_64 is required to execute the image")
-    handler = lambda *args, **kwargs: http.server.SimpleHTTPRequestHandler(*args, directory=str(directory), **kwargs)
+    handler = lambda *args, **kwargs: ImageHTTPHandler(*args, directory=str(directory), **kwargs)
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     port = server.server_address[1]
     logfile = directory / "qikvrt-netboot-serial.log"
     command = [qemu, "-accel", qemu_acceleration(), "-m", str(guest_memory_mib(manifest)), "-smp", "2", "-display", "none" if verify_only or not os.environ.get("DISPLAY") else "gtk", "-serial", "stdio",
                "-qmp", "unix:" + str(directory / "qikvrt-qmp.sock") + ",server=on,wait=off",
-               "-netdev", "user,id=network", "-device", "e1000,netdev=network",
+               "-netdev", netdev, "-device", "e1000,netdev=network",
                "-kernel", str(directory / FILES["kernel"]), "-initrd", str(directory / FILES["initrd"]),
                "-append", f"boot=live components username=qikvrt hostname=qikvrt-megast ip=dhcp fetch=http://10.0.2.2:{port}/{FILES['rootfs']} console=tty0 console=ttyS0,115200n8",
-               "-no-reboot"]
+               "-no-reboot"] + firmware
     try:
         with logfile.open("wb") as output:
             process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT)
@@ -283,6 +561,10 @@ def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bo
                 colors = {pixels[3][i:i+3] for i in range(0, len(pixels[3]), 3)}
                 if len(colors) < 16:
                     raise ValueError("graphical display lacks color UI evidence")
+                ssh_receipt = None
+                if ssh_public_key is not None:
+                    ssh_receipt = ssh_readback(directory, manifest, logfile.read_text(errors="replace"),
+                                               ssh_port, ssh_identity, ssh_reject_identity)
                 witness = snapshot_serial(logfile)
                 if runtime_result(witness.read_text(errors="replace"), manifest["source_sha"]) != "success":
                     raise ValueError("runtime evidence changed before receipt binding")
@@ -292,6 +574,9 @@ def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bo
                            "screenshot_sha256": sha256(screenshot), "observed_colors": len(colors),
                            "boot_method": "linux-live-http", "guest_memory_mib": guest_memory_mib(manifest), "cdrom_attached": False, "guest_runtime_reobserved": True,
                            "physical_atari_boot": False, "effect_ack_done": False}
+                if ssh_receipt is not None:
+                    receipt["ssh_receipt_sha256"] = sha256(directory / "qikvrt-netboot-ssh-receipt.json")
+                    receipt["ssh_authenticated_readback"] = ssh_receipt["authenticated_readback"]
                 (directory / "qikvrt-netboot-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
                 print("QIKVRT_NETWORK_BOOT_REOBSERVED source_sha=" + manifest["source_sha"], flush=True)
                 if not verify_only:
@@ -312,21 +597,41 @@ def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bo
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    make = sub.add_parser("manifest"); make.add_argument("directory", type=Path); make.add_argument("source_sha")
+    sub.add_parser("chatgpt-connect")
+    make = sub.add_parser("manifest"); make.add_argument("directory", type=Path); make.add_argument("source_sha"); make.add_argument("--source-tree")
     client = sub.add_parser("receive"); client.add_argument("url"); client.add_argument("sha256"); client.add_argument("directory", type=Path); client.add_argument("--boot", action="store_true"); client.add_argument("--verify-only", action="store_true")
     execute = sub.add_parser("boot"); execute.add_argument("directory", type=Path); execute.add_argument("--verify-only", action="store_true")
+    for command in (client, execute):
+        command.add_argument("--ssh-public-key", type=Path)
+        command.add_argument("--ssh-identity", type=Path)
+        command.add_argument("--ssh-reject-identity", type=Path)
+        command.add_argument("--ssh-port", type=int, default=2222)
+    guest = sub.add_parser("ssh-guest"); guest.add_argument("--authorized-key", type=Path, default=SSH_KEY_PATH)
+    install = sub.add_parser("codex-install")
+    install.add_argument("lock", type=Path); install.add_argument("destination", type=Path)
+    install.add_argument("cache", type=Path)
     serve = sub.add_parser("serve"); serve.add_argument("directory", type=Path); serve.add_argument("--host", default="127.0.0.1"); serve.add_argument("--port", type=int, default=7331)
     args = parser.parse_args()
     try:
+        if args.command == "chatgpt-connect":
+            chatgpt_connect()
+            return 0
+        if args.command == "codex-install":
+            print(json.dumps(install_codex(args.lock, args.destination, args.cache), sort_keys=True))
+            return 0
+        if args.command == "ssh-guest":
+            ssh_guest(args.authorized_key)
+            return 0
         directory = args.directory.resolve()
+        ssh_options = {key: getattr(args, key) for key in ("ssh_public_key", "ssh_identity", "ssh_reject_identity", "ssh_port")} if args.command in ("receive", "boot") else {}
         if args.command == "manifest":
-            make_manifest(directory, args.source_sha)
+            make_manifest(directory, args.source_sha, args.source_tree)
         elif args.command == "receive":
             manifest = receive(args.url, args.sha256, directory)
             if args.boot:
-                boot(directory, manifest, verify_only=args.verify_only)
+                boot(directory, manifest, verify_only=args.verify_only, **ssh_options)
         elif args.command == "boot":
-            boot(directory, json.loads((directory / "qikvrt-netboot.json").read_text()), verify_only=args.verify_only)
+            boot(directory, json.loads((directory / "qikvrt-netboot.json").read_text()), verify_only=args.verify_only, **ssh_options)
         else:
             with BootDatagramServer((args.host, args.port), (directory / "QIKVRT_BOOT.BIN").read_bytes()) as server:
                 server.serve_forever()

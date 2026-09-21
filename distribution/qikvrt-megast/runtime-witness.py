@@ -41,6 +41,39 @@ def run(command):
     return subprocess.run(command, capture_output=True, text=True, check=True, timeout=90).stdout
 
 
+def wait_for_window(name, timeout=90):
+    """Require a complete window-tree observation within the startup deadline."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            windows = run(["xwininfo", "-root", "-tree"])
+        except subprocess.CalledProcessError as error:
+            # Xfce, Firefox and Hatari create/destroy windows concurrently with
+            # xwininfo's traversal. A vanished drawable invalidates this entire
+            # sample; only a later successful query can witness the window.
+            errors = [line for line in (error.stderr or "").splitlines()
+                      if line.startswith("X Error: ")]
+            transient = ("X Error: 9: Bad Drawable", "X Error: 3: Bad Window")
+            if error.returncode != 1 or not errors or any(
+                    not line.startswith(transient) for line in errors):
+                raise
+        else:
+            if name in windows:
+                return
+        time.sleep(1)
+    raise RuntimeError(name + " window was not mapped in the Xfce display")
+
+
+def verify_emutos_rom(rom, expected_sha256):
+    """Bind the installed ROM bytes independently of their transport archive."""
+    if not rom.is_file() or rom.stat().st_size != 256 * 1024:
+        raise RuntimeError("pinned EmuTOS ROM missing or wrong size")
+    rom_sha256 = hashlib.sha256(rom.read_bytes()).hexdigest()
+    if rom_sha256 != expected_sha256:
+        raise RuntimeError("pinned EmuTOS ROM digest mismatch")
+    return rom_sha256
+
+
 def diagnostics():
     """Observe startup even when no user session exists to run the witness."""
     source = json.loads(Path("/etc/qikvrt/distribution.json").read_text())["source_sha"]
@@ -52,7 +85,7 @@ def diagnostics():
     }
     files = ("/var/log/lightdm/lightdm.log", "/var/log/lightdm/x-0.log", "/var/log/Xorg.0.log",
              "/home/qikvrt/.xsession-errors", "/home/qikvrt/.config/qikvrt/runtime-witness.log",
-             "/home/qikvrt/.config/qikvrt/firefox.log")
+             "/home/qikvrt/.config/qikvrt/firefox.log", "/home/qikvrt/.config/qikvrt/hatari.log")
     for attempt in range(1, 5):
         time.sleep(45)
         observation = {"source_sha": source, "attempt": attempt, "effect_ack_done": False}
@@ -83,16 +116,17 @@ def main():
     # The graphical session invokes this witness; an early systemd marker cannot satisfy it.
     run(["pgrep", "-u", str(os.getuid()), "xfce4-session"])
     stage("xfce-session-observed")
-    deadline = time.monotonic() + 90
-    while time.monotonic() < deadline:
-        windows = run(["xwininfo", "-root", "-tree"])
-        if "Firefox" in windows:
-            break
-        time.sleep(1)
-    else:
-        raise RuntimeError("Firefox window was not mapped in the Xfce display")
+    wait_for_window("Firefox")
     run(["pgrep", "-u", str(os.getuid()), "firefox-esr"])
     stage("firefox-window-observed")
+    rom = Path("/usr/share/qikvrt/emutos/etos256de.img")
+    rom_sha256 = verify_emutos_rom(rom, config["emutos_rom_sha256"])
+    hatari_pid = run(["pgrep", "-u", str(os.getuid()), "-x", "hatari"]).splitlines()[0]
+    cmdline = Path("/proc").joinpath(hatari_pid, "cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
+    if "--machine st" not in cmdline or str(rom) not in cmdline:
+        raise RuntimeError("Hatari process is not bound to the pinned ST/EmuTOS subject")
+    wait_for_window("Hatari")
+    stage("hatari-emutos-window-observed")
     with urllib.request.urlopen("http://127.0.0.1:8771/.well-known/effect-ack", timeout=5) as response:
         capabilities = json.loads(response.read())
         if not capabilities:
@@ -132,8 +166,12 @@ def main():
                "graphical_session": "Xfce with mapped Firefox window", "effect_ack_http_readback": True,
                "c90_checks": 7864387, "ip_boot_binary_sha256": hashlib.sha256(image).hexdigest(),
                "received_mc68000_executed": True, "smalltalk_image_restored": True,
-               "physical_atari_boot": False, "effect_ack_done": False}
+               "hatari_process_observed": True, "hatari_machine": "st",
+               "emutos_rom": str(rom), "emutos_rom_sha256": rom_sha256,
+               "hatari_window_observed": True, "physical_atari_boot": False,
+               "effect_ack_done": False}
     Path.home().joinpath(".config/qikvrt/runtime-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
+    emit_serial("QIKVRT_RUNTIME_RECEIPT " + json.dumps(receipt, sort_keys=True))
     # The root-owned boot-scoped journal reader also covers user device denial.
     marker = "QIKVRT_MEGAST_RUNTIME_OK source_sha=" + source
     emit_serial(marker)

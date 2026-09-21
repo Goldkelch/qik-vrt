@@ -56,6 +56,30 @@
       ],
       "version": "ansi-c90"
     },
+    "codex": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "runtime/toolchains/codex-0.155.1.lock.json",
+        "distribution/qikvrt-megast/boot.py",
+        "distribution/qikvrt-megast/build.sh"
+      ],
+      "cache_class": "repo-managed-archive",
+      "cache_locations": [
+        ".qikvrt/toolchains/codex/0.155.1"
+      ],
+      "profiles": [
+        "distribution",
+        "all"
+      ],
+      "provider": "OpenAI versioned Codex release; existing network-image downloader verifies size and SHA256",
+      "trusted_save": true,
+      "verification": [
+        "exact archive bytes before extraction",
+        "package layout and version",
+        "SSH app-server initialize and unauthenticated account/read in fresh guest"
+      ],
+      "version": "0.155.1"
+    },
     "dpkg-deb": {
       "authority_files": [
         "runtime/toolchains/TOOLCHAIN.lock.tsv",
@@ -325,6 +349,32 @@
         "test execution"
       ],
       "version": "24.x"
+    },
+    "openssh": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        ".github/workflows/qikvrt_megast_distribution_v1.yml",
+        "distribution/qikvrt-megast/build.sh",
+        "distribution/qikvrt-megast/boot.py",
+        "tests/test_qikvrt_netboot.py"
+      ],
+      "cache_class": "runner-image-layer",
+      "cache_locations": [
+        "github-hosted-runner-image:ubuntu-24.04",
+        "debian-live-image:trixie"
+      ],
+      "failure_recovery": "Retain public boot/SSH evidence; remove ephemeral private keys; stop this guest on failed authentication or exact-subject mismatch",
+      "profiles": [
+        "distribution"
+      ],
+      "provider": "Ubuntu runner and Debian guest package managers",
+      "trusted_save": false,
+      "verification": [
+        "Ed25519 key format and exact-subject negative tests",
+        "real SSH guest readback with strict console-bound host key",
+        "unrelated client identity explicitly rejected"
+      ],
+      "version": "ed25519-exact-guest-readback-v1"
     },
     "pharo": {
       "authority_files": [

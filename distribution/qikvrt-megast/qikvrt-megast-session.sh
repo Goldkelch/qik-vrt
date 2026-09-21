@@ -66,4 +66,6 @@ EOF
 # the locally executed C90/Smalltalk/MC68000 paths before reporting runtime ready.
 firefox-esr --new-window http://127.0.0.1:8771/.well-known/effect-ack \
   > "$HOME/.config/qikvrt/firefox.log" 2>&1 &
+hatari --machine st --tos /usr/share/qikvrt/emutos/etos256de.img \
+  > "$HOME/.config/qikvrt/hatari.log" 2>&1 &
 python3 -B /opt/qikvrt/runtime-witness.py > "$HOME/.config/qikvrt/runtime-witness.log" 2>&1 &
