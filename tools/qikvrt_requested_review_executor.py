@@ -72,6 +72,9 @@ REOBSERVATION_PROGRESS_FIELDS = frozenset({
     "mesh_disposition",
     "first_blocker",
     "detail",
+    # Trusted-main tip is observation progress, not immutable candidate identity.
+    "current_main_sha",
+    "current_main_tree_sha",
     "evidence_fingerprint",
     "ledger_path",
     "ledger_diff_path",
