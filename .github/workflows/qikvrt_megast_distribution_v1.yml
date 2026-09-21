@@ -52,6 +52,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+      - name: Verify exact-subject repository integrity before distribution execution
+        run: python3 -B tools/qikvrt_integrity.py verify
       - name: Install nginx for the unprivileged log regression
         run: sudo apt-get update && sudo apt-get install -y nginx
       - name: Verify distribution contract
