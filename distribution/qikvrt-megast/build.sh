@@ -33,12 +33,13 @@ EMUTOS_LOCK="$ROOT/runtime/toolchains/emutos-1.4.lock.json"
 EMUTOS_URL=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source"])' "$EMUTOS_LOCK")
 EMUTOS_SHA=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["sha256"])' "$EMUTOS_LOCK")
 EMUTOS_ROM=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["rom"])' "$EMUTOS_LOCK")
+EMUTOS_ROM_SHA=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["rom_sha256"])' "$EMUTOS_LOCK")
 EMUTOS_ARCHIVE="$WORK/emutos.zip"
 curl -fL --proto '=https' --proto-redir '=https' --max-redirs 5 --connect-timeout 20 --max-time 180 \
   -o "$EMUTOS_ARCHIVE" "$EMUTOS_URL"
 printf '%s  %s\n' "$EMUTOS_SHA" "$EMUTOS_ARCHIVE" | sha256sum -c -
-python3 - "$EMUTOS_ARCHIVE" "$EMUTOS_ROM" "$WORK/config/includes.chroot/usr/share/qikvrt/emutos" <<'PY'
-import pathlib,sys,zipfile
+python3 - "$EMUTOS_ARCHIVE" "$EMUTOS_ROM" "$WORK/config/includes.chroot/usr/share/qikvrt/emutos" "$EMUTOS_ROM_SHA" <<'PY'
+import hashlib,pathlib,sys,zipfile
 archive=pathlib.Path(sys.argv[1]); wanted=sys.argv[2]; out=pathlib.Path(sys.argv[3])
 with zipfile.ZipFile(archive) as z:
     matches=[n for n in z.namelist() if pathlib.PurePosixPath(n).name == wanted]
@@ -47,6 +48,8 @@ with zipfile.ZipFile(archive) as z:
     data=z.read(matches[0])
     if len(data) != 256 * 1024:
         raise SystemExit("BLOCKED: EmuTOS ROM size mismatch")
+    if hashlib.sha256(data).hexdigest() != sys.argv[4]:
+        raise SystemExit("BLOCKED: EmuTOS ROM digest mismatch")
     (out / wanted).write_bytes(data)
 PY
 ln -s "../qikvrt/emutos/$EMUTOS_ROM" "$WORK/config/includes.chroot/usr/share/hatari/tos.img"
@@ -186,6 +189,7 @@ cat > "$WORK/config/includes.chroot/etc/qikvrt/distribution.json" <<EOF
 {
   "schema": "qikvrt_megast_distribution_v1",
   "source_sha": "$SHA",
+  "emutos_rom_sha256": "$EMUTOS_ROM_SHA",
   "temdd": ["REQUEST", "EXECUTE", "FOLLOW", "LEARN", "REPEAT_UNTIL_DONE"],
   "principle": "Stay fail closed and keep future open!",
   "effect_ack_done": false,

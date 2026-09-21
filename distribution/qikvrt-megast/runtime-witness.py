@@ -64,6 +64,16 @@ def wait_for_window(name, timeout=90):
     raise RuntimeError(name + " window was not mapped in the Xfce display")
 
 
+def verify_emutos_rom(rom, expected_sha256):
+    """Bind the installed ROM bytes independently of their transport archive."""
+    if not rom.is_file() or rom.stat().st_size != 256 * 1024:
+        raise RuntimeError("pinned EmuTOS ROM missing or wrong size")
+    rom_sha256 = hashlib.sha256(rom.read_bytes()).hexdigest()
+    if rom_sha256 != expected_sha256:
+        raise RuntimeError("pinned EmuTOS ROM digest mismatch")
+    return rom_sha256
+
+
 def diagnostics():
     """Observe startup even when no user session exists to run the witness."""
     source = json.loads(Path("/etc/qikvrt/distribution.json").read_text())["source_sha"]
@@ -110,12 +120,7 @@ def main():
     run(["pgrep", "-u", str(os.getuid()), "firefox-esr"])
     stage("firefox-window-observed")
     rom = Path("/usr/share/qikvrt/emutos/etos256de.img")
-    expected_rom_sha256 = "aadd90cf0c99925d3f2943149dd51ee4deb6015aefe22ade4a5e6c04fb6f2e9d"
-    if not rom.is_file() or rom.stat().st_size != 256 * 1024:
-        raise RuntimeError("pinned EmuTOS ROM missing or wrong size")
-    rom_sha256 = hashlib.sha256(rom.read_bytes()).hexdigest()
-    if rom_sha256 != expected_rom_sha256:
-        raise RuntimeError("pinned EmuTOS ROM digest mismatch")
+    rom_sha256 = verify_emutos_rom(rom, config["emutos_rom_sha256"])
     hatari_pid = run(["pgrep", "-u", str(os.getuid()), "-x", "hatari"]).splitlines()[0]
     cmdline = Path("/proc").joinpath(hatari_pid, "cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
     if "--machine st" not in cmdline or str(rom) not in cmdline:
