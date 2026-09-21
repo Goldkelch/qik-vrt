@@ -116,5 +116,18 @@
   "release_claims": {
     "FINAL_PASS": false,
     "EFFECT_ACK_DONE": false
-  }
+  },
+  "causal_repairs": [
+    {
+      "source_head": "b1971ca5003f5ac63fb8baf0bc663195f7ebcb78",
+      "source_tree": "f1640191ec25495c90e997b38e77490995808b1c",
+      "failed_run": "https://github.com/Goldkelch/qik-vrt/actions/runs/35581789824",
+      "job_id": 106276103722,
+      "first_failure": "continuity: ConnectionResetError during cross-origin rejection response",
+      "cause": "Origin was rejected before reading the bounded request body; closing with unread incoming bytes can reset TCP and truncate the HTTP rejection.",
+      "repair": "Validate supported framing, read the bounded body, then enforce Origin before any command parsing, compilation or store mutation.",
+      "regression": "Split header/body transmission at 400 and 60000 bytes; full HTTP 400/HOLD readback, unchanged checkpoint and original event bytes, followed by a valid request in the same process.",
+      "predecessor_evidence_transfer": false
+    }
+  ]
 }

@@ -90,13 +90,6 @@ fn handle(stream: &mut TcpStream, store: &mut Store, port: u16) -> Result<()> {
     if *host != format!("127.0.0.1:{port}") && *host != format!("localhost:{port}") {
         return Err("LOOPBACK_HOST_REQUIRED".into());
     }
-    if headers
-        .get("origin")
-        .map(|o| *o != format!("http://{host}"))
-        .unwrap_or(false)
-    {
-        return Err("SAME_ORIGIN_REQUIRED".into());
-    }
     if headers.contains_key("transfer-encoding") {
         return Err("TRANSFER_ENCODING_UNSUPPORTED".into());
     }
@@ -111,6 +104,16 @@ fn handle(stream: &mut TcpStream, store: &mut Store, port: u16) -> Result<()> {
     }
     let mut body = vec![0; length];
     reader.read_exact(&mut body).map_err(|e| e.to_string())?;
+    // Consume the bounded, supported request before replying. Closing with an
+    // unread body can reset TCP and truncate the rejection itself. Authorization
+    // still precedes every parse, compilation and store mutation below.
+    if headers
+        .get("origin")
+        .map(|o| *o != format!("http://{host}"))
+        .unwrap_or(false)
+    {
+        return Err("SAME_ORIGIN_REQUIRED".into());
+    }
     let result = match (parts[0], parts[1]) {
         ("GET", "/") | ("GET", "/AI") => {
             return respond(

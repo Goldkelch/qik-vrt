@@ -4,10 +4,13 @@
 """Process-boundary acceptance: SIGKILL, relocation, replay and offline restore."""
 import argparse
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
 import shutil
+import select
+import socket
 import subprocess
 import sys
 import tempfile
@@ -77,13 +80,37 @@ def main():
                 # No active-writer bypass in another process.
                 assert call("discover",store,good=False).returncode!=0
                 with urllib.request.urlopen(url+"/AI",timeout=5) as r:assert "TEMDD" in r.read().decode()
-                wrong=urllib.request.Request(url+"/api/execute",data=json.dumps(event).encode(),headers={"Content-Type":"application/json","Origin":"https://untrusted.example"})
+                rejected=command("denied-origin-"+str(restart),event["operation"])
+                wrong=urllib.request.Request(url+"/api/execute",data=json.dumps(rejected).encode(),headers={"Content-Type":"application/json","Origin":"https://untrusted.example"})
                 try:urllib.request.urlopen(wrong,timeout=5);raise AssertionError("cross-origin request accepted")
-                except urllib.error.HTTPError as e:assert e.code==400
+                except urllib.error.HTTPError as e:
+                    assert e.code==400 and json.loads(e.read())=={"state":"HOLD","reason":"SAME_ORIGIN_REQUIRED","done":False}
+                if restart==0:
+                    checkpoint=get("/api/checkpoint")
+                    records={f.name:f.read_bytes() for f in (store/"events").glob("*.json")}
+                    host,port=ready["address"].rsplit(":",1)
+                    for size in (400,60000):
+                        body=json.dumps(command("denied-split-"+str(size),event["operation"])).encode()
+                        body+=b" "*max(0,size-len(body))
+                        with socket.create_connection((host,int(port)),timeout=5) as client:
+                            header=("POST /api/execute HTTP/1.1\r\nHost: "+ready["address"]+
+                                "\r\nOrigin: https://untrusted.example\r\nContent-Type: application/json\r\nContent-Length: "+str(len(body))+"\r\n\r\n").encode()
+                            client.sendall(header)
+                            assert not select.select([client],[],[],0.05)[0],"rejection sent before bounded body was consumed"
+                            client.sendall(body)
+                            response=http.client.HTTPResponse(client);response.begin()
+                            assert response.status==400
+                            assert json.loads(response.read())=={"state":"HOLD","reason":"SAME_ORIGIN_REQUIRED","done":False}
+                        assert get("/api/checkpoint")==checkpoint
+                        assert {f.name:f.read_bytes() for f in (store/"events").glob("*.json")}==records
+                    valid=command("after-origin-rejection",event["operation"])
+                    req=urllib.request.Request(url+"/api/execute",data=json.dumps(valid).encode(),headers={"Content-Type":"application/json"})
+                    with urllib.request.urlopen(req,timeout=5) as r:ack=json.loads(r.read())
+                    assert ack["state"]=="PERSISTED" and ack["record"]["result"]["value"]==4
             finally:
                 owner.kill();owner.wait(timeout=5)
             after=value("verify",store)["checkpoint"]
-            assert after["sequence"]==13+restart,after
+            assert after["sequence"]==14+restart,after
             assert after["digest"]==ack["digest"]
         # Three successive relocations retain every committed byte and node.
         for generation in range(3):
@@ -126,7 +153,10 @@ def main():
         "missing_history_reinitialized":False,"catalog_sha256":digest,"physical_hardware_tested":False,
         "successor_source":successor["source"],"successor_catalog_sha256":successor_receipt["catalog_sha256"],
         "successor_files_restored":len(successor["files"]),"transputer_versions_preserved":2,
-        "restored_successor_c90_and_assembler_executed":True}
+        "restored_successor_c90_and_assembler_executed":True,
+        "split_body_origin_rejections":2,"complete_rejection_readback":True,
+        "rejected_requests_preserve_checkpoint_and_event_bytes":True,
+        "same_process_valid_request_after_rejection":True}
     if args.output:args.output.write_text(json.dumps(result,indent=2)+"\n")
     print(json.dumps(result,sort_keys=True))
 
