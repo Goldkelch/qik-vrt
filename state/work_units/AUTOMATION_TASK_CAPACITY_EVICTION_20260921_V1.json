@@ -1,0 +1,85 @@
+{
+  "schema": "qikvrt_work_unit_v1",
+  "work_unit_id": "AUTOMATION_TASK_CAPACITY_EVICTION_20260921_V1",
+  "created_at": "2026-09-21T14:58:00Z",
+  "source_repository": "Goldkelch/qik-vrt",
+  "source_ref": "main",
+  "source_commit": "a86054139b49c13c5cd344753b248b46b5daf66f",
+  "source_tree": "feff1cae2401a3df83febc3b9458de70d79b818e",
+  "human_actor": "Ingolf Lohmann",
+  "artificial_cognitive_actor": "OpenAI GPT-5.6 Sol",
+  "human_contributions": [
+    "Algorithm: eliminate active tasks that have never run; if capacity is still insufficient, eliminate the least-run active tasks.",
+    "Instruction to persist the algorithm in the Mesh repository and use it as a standing assistant rule."
+  ],
+  "artificial_cognitive_contributions": [
+    "Normalized the algorithm into deterministic machine-readable policy semantics.",
+    "Added fail-closed handling when authoritative run counts are unavailable.",
+    "Disabled active never-run tasks before considering any least-run eviction."
+  ],
+  "joint_components": [],
+  "unresolved_origin": [],
+  "inputs": [
+    {
+      "kind": "human_instruction",
+      "retention": "METADATA_ONLY"
+    }
+  ],
+  "outputs": [
+    "policy/AUTOMATION_TASK_CAPACITY_EVICTION_V1.json",
+    "state/work_units/AUTOMATION_TASK_CAPACITY_EVICTION_20260921_V1.json",
+    "AI"
+  ],
+  "git_history": {
+    "branch": "policy/automation-capacity-eviction-20260921-v1",
+    "commits": [
+      "db55a726a9e57a8284f6dd89139eb6c1534de142"
+    ],
+    "parents": [
+      "a86054139b49c13c5cd344753b248b46b5daf66f"
+    ],
+    "changed_paths": [
+      "policy/AUTOMATION_TASK_CAPACITY_EVICTION_V1.json",
+      "state/work_units/AUTOMATION_TASK_CAPACITY_EVICTION_20260921_V1.json",
+      "AI"
+    ]
+  },
+  "verification": {
+    "status": "PENDING_FRESH_SUCCESSOR_VALIDATION",
+    "notes": [
+      "Repository mutation creates a new subject; predecessor validation is not transferred."
+    ]
+  },
+  "human_decision": "ACCEPTED",
+  "external_effects": [
+    {
+      "effect": "AUTOMATION_DISABLED",
+      "task_id": "6ab0a3a1ca4481918f2cb715f26c520d",
+      "title": "PR 1139/1143 TEMDD Watch",
+      "reason": "NEVER_RUN"
+    },
+    {
+      "effect": "AUTOMATION_DISABLED",
+      "task_id": "6ab0d185279c8191811379f76ba0d5a8",
+      "title": "QIK-VRT Friday PR Briefing",
+      "reason": "NEVER_RUN"
+    },
+    {
+      "effect": "AUTOMATION_DISABLED",
+      "task_id": "6ab028a6192c8191b9c16e25ead04b62",
+      "title": "PR 1142 HEAD-Wechsel",
+      "reason": "NEVER_RUN"
+    },
+    {
+      "effect": "AUTOMATION_DISABLED",
+      "task_id": "6aaf02f1c61481919b844cb120a0bf67",
+      "title": "PR 1128 Review und HEAD",
+      "reason": "NEVER_RUN"
+    }
+  ],
+  "release_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
