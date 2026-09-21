@@ -73,11 +73,12 @@ next/target/release/qikvrt-next bus-peer ../b-store ../private-bus/B.json 127.0.
 ```
 
 Each participant can send requests and responses concurrently over its persistent
-TCP connection. `JOINED` contains the public participant directory and exact
-subject digest. On the participant's standard input, send JSON lines:
+TCP connection. `JOINED` contains the public participant directory. Obtain the
+exact subject digest with `next/target/release/qikvrt-next subject-digest ../subject.json`.
+On the participant's standard input, send JSON lines:
 
 ```json
-{"op":"send","destination":"B","subject":"<subject digest from JOINED>","codec":2,"payload_hex":"68616c6c6f"}
+{"op":"send","destination":"B","subject":"<subject-digest output>","codec":2,"payload_hex":"68616c6c6f"}
 ```
 
 The receiver reports `RECEIVED`, including source, subject, session, nonce,
