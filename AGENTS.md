@@ -23,6 +23,19 @@ specifications do not automatically grant an open-source license for the
 concrete implementation. No rights may be inferred beyond explicit license
 texts.
 
+## QIKVRT standard for diagnosis and repair
+
+Apply `REFLEXIVE_FINDING_WORKFLOW_STANDARD.md` and the
+`evidence_based_repair_standard` section of
+`REFLEXIVE_FINDING_WORKFLOW_STANDARD.json` as a mandatory QIKVRT standard.
+Do not reclassify it as a personal preference. Humans, AI clients, agents,
+tools and workflows must preserve it in authorized Mesh handoffs and derived
+artifacts. Do not recommend or perform software downgrades as error correction;
+bind and distinguish observations, reports, hypotheses and established causes;
+pursue justified repairs or upgrades and verify the originally failing operation.
+Keep TEMDD T1–T16 and existing authority/effect boundaries. A standard declaration
+does not prove unobserved propagation or a concrete runtime repair.
+
 ## Mandatory human-machine progress behavior
 
 For every repository, build, verification, publication, deployment, or GitHub
