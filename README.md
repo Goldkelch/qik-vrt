@@ -1,5 +1,11 @@
 # QIK-VRT
 
+The **C90 universal Transputer and durable full-duplex IP bus** are available in
+this branch under [next/AI](next/AI), with [build, connection and recovery instructions](next/README.md).
+Its exact-source checks and source restoration retain the original component
+registrations and historical results. This is a separate target candidate;
+the Main release and its historical evidence keep their own scope.
+
 [![QIKVRT CI](https://github.com/Goldkelch/qik-vrt/actions/workflows/qikvrt_ci.yml/badge.svg?branch=main)](https://github.com/Goldkelch/qik-vrt/actions/workflows/qikvrt_ci.yml)
 [![Release](https://img.shields.io/badge/release-v2026.07.22--effect--ack--universality--1.0.0-1f6feb)](https://github.com/Goldkelch/qik-vrt/tree/v2026.07.22-effect-ack-universality-1.0.0)
 [![License: source--available](https://img.shields.io/badge/code-PolyForm%20Noncommercial-orange)](LICENSE)

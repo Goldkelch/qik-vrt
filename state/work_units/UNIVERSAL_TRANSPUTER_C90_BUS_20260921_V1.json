@@ -1,0 +1,120 @@
+{
+  "_license": {
+    "classification": "machine_readable_work_unit",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_ai_personal_working_memory_origin_and_attribution_work_unit_v1",
+  "work_unit_id": "UNIVERSAL_TRANSPUTER_C90_BUS_20260921_V1",
+  "created_on": "2026-09-21",
+  "source_repository": "Goldkelch/qik-vrt",
+  "source_ref": "integration/qikvrt-product-temdd-cloud-v1",
+  "source_commit": "26bc470bf553f471abc02e65950acaffb3e5302a",
+  "source_tree": "cdee22caae3a03b1929451a299f844ee738007b9",
+  "human_actor": {
+    "actor_class": "HUMAN",
+    "attribution_id": "Ingolf Lohmann",
+    "role": "Product Owner and architecture direction"
+  },
+  "artificial_cognitive_actor": {
+    "actor_class": "ARTIFICIAL_COGNITIVE_SYSTEM",
+    "provider": "OpenAI",
+    "system_family": "Codex",
+    "model_or_build": "UNAVAILABLE",
+    "session_or_run_id": "UNAVAILABLE"
+  },
+  "human_contributions": [
+    {
+      "type": "PURPOSE_AND_REQUIREMENT",
+      "description": "Implement the universal Transputer as a C90 bus for IP participants, EAP participation, TCP transport and simultaneous addressed request/reply exchange; preserve connectivity and original history across restarts."
+    },
+    {
+      "type": "AUTHORIZATION",
+      "description": "Create an isolated new branch or repository and implement, test and apply the target architecture."
+    }
+  ],
+  "artificial_cognitive_contributions": [
+    {
+      "type": "IMPLEMENTATION_AND_VERIFICATION",
+      "description": "Existing-source inventory, C90 portability and routing, Rust adapter/FFI, durable store, TEMDD native execution, source recovery, tests, target documentation and CI integration."
+    }
+  ],
+  "joint_components": [
+    {
+      "component": "universal-transputer target",
+      "human_part": "purpose, architectural requirements and completion instruction",
+      "artificial_cognitive_part": "concrete implementation, test design, execution and documentation",
+      "separable": true
+    }
+  ],
+  "unresolved_origin": [],
+  "inputs": {
+    "retention_mode": "METADATA_ONLY",
+    "raw_transcript_persisted": false,
+    "transport_input_digest": "UNAVAILABLE",
+    "preserved_source_catalog": "next/component-catalog.json",
+    "six_language_source_binding": "next/reference/full-core-draft03/SOURCE.json"
+  },
+  "reuse": {
+    "canonical_eap": [
+      "src/effect_ack_core.c",
+      "include/qikvrt/effect_ack.h"
+    ],
+    "legacy_wire": "QVRT v1, unchanged outer bytes",
+    "full_core_reference_head": "74e716e21a7607abb61b7263d6bbe5bbbf9525f2",
+    "full_core_reference_tree": "938d7907061f076b0d31e97b635effedca02a25c",
+    "reference_eap_bytes_equal_to_base": true,
+    "predecessor_proof_transfer": false,
+    "new_target_reason": "Existing branch did not provide the requested allocation-free C90 full-duplex addressed bus with durable source and result recovery. Existing EAP, wire format, HDL semantics, parser fixtures and workflow are reused."
+  },
+  "outputs": {
+    "paths": [
+      "next/",
+      "AI",
+      "AI_CONTEXT.json",
+      "README.md",
+      "runtime/toolchains/",
+      "tools/bootstrap-runtime.sh",
+      ".github/workflows/qikvrt_temdd.yml"
+    ],
+    "self_binding_rule": "The containing Git commit and tree bind these bytes. Exact execution receipts are external artifacts bound to that commit, never self-hashes."
+  },
+  "verification": {
+    "command": "python3 next/tools/run_checks.py --output-dir <new-external-directory>",
+    "receipt": "receipt.json in the chosen evidence directory / exact-head CI artifact",
+    "checks": [
+      "strict C90 and native assembler",
+      "Rust unit and persistence tests",
+      "full-duplex IPv4/IPv6 three-peer bus and crash recovery",
+      "legacy wire golden comparison and TCP source/store transfer",
+      "SIGKILL, relocations and successor-source restoration/build",
+      "C90/RTL independent oracle, stalls/reset and synthesis smoke",
+      "C90 finite EAP contract: 9437184 core and 18432 consumer cases"
+    ],
+    "six_language_reexecution": false,
+    "physical_hardware_execution": false
+  },
+  "boundaries": {
+    "peer_slots": 16,
+    "unfinished_calls": 32,
+    "message_bytes": 62784,
+    "distributed_router_consensus": false,
+    "unbounded_scaling_proven": false,
+    "ordinary_release": false,
+    "native_review": "REQUIRES_NATIVE_PLATFORM_EVIDENCE",
+    "main_promotion": "NOT_PART_OF_THIS_IMPLEMENTATION_COMMIT",
+    "release": "NOT_ESTABLISHED"
+  },
+  "git_history": {
+    "branch": "architecture/universal-transputer-c90-v1",
+    "force_push": false,
+    "history_rewrite": false
+  },
+  "next_executable_step": "Run exact-commit checks, retain receipt and resolve native review/integration through the existing protected PR path. Recover the target through next/AI and stable source catalogs.",
+  "candidate_state": "IMPLEMENTED_TARGET_REQUIRES_EXACT_COMMIT_EXECUTION_RECEIPT_AND_NATIVE_REVIEW",
+  "release_claims": {
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}

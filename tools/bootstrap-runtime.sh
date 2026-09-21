@@ -23,7 +23,7 @@ usage() {
     cat <<'EOF'
 Usage: tools/bootstrap-runtime.sh [--check-only] [--install]
        [--accept-third-party]
-       [--profile core|ietf|formal|audio|publication|smalltalk|all]
+       [--profile core|ietf|formal|audio|publication|smalltalk|target|all]
        [--cache-dir PATH]
 
 Every profile checks GitHub CLI first. Only the verified GitHub CLI and
@@ -91,7 +91,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$PROFILE" in
-    core|ietf|formal|audio|publication|smalltalk|all) ;;
+    core|ietf|formal|audio|publication|smalltalk|target|all) ;;
     *) usage >&2; exit 2 ;;
 esac
 if [ "$MODE" = install ] && [ "$ACCEPT_THIRD_PARTY" -ne 1 ]; then
@@ -397,6 +397,14 @@ check_smalltalk_profile() {
     fi
 }
 
+check_target_profile() {
+    if [ "$MODE" = install ]; then
+        python3 "$ROOT/next/tools/bootstrap.py" --prefix "$CACHE_DIR/target" --install || fail "Target toolchain provisioning failed"
+    elif ! python3 "$ROOT/next/tools/bootstrap.py" --prefix "$CACHE_DIR/target"; then
+        mark_continue "Run --install --accept-third-party --profile target for the locked C90/Rust/RTL runtime"
+    fi
+}
+
 check_publication_profile() {
     missing=
     for tool in xelatex pdftotext pdftoppm; do
@@ -421,6 +429,7 @@ case "$PROFILE" in
     audio) check_audio_profile ;;
     publication) check_publication_profile ;;
     smalltalk) check_smalltalk_profile ;;
+    target) check_target_profile ;;
     all)
         check_core_profile
         check_ietf_profile

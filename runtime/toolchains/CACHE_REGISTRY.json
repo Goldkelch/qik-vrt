@@ -8,11 +8,36 @@
     "runner-image-layer"
   ],
   "components": {
+    "ar": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "next/tools/bootstrap.py",
+        "next/tools/run_checks.py",
+        ".github/workflows/qikvrt_temdd.yml"
+      ],
+      "cache_class": "runner-image-layer",
+      "cache_locations": [
+        "github-hosted-runner-image:ubuntu-24.04",
+        "task-host:reported-tool-contract"
+      ],
+      "failure_recovery": "Retain current source and evidence; provision a matching host without modifying stored history.",
+      "profiles": [
+        "target"
+      ],
+      "provider": "host toolchain; Ubuntu runner image",
+      "trusted_save": false,
+      "verification": [
+        "reported version",
+        "actual C90 build or package/source restoration execution"
+      ],
+      "version": "reported-version"
+    },
     "cc": {
       "authority_files": [
         "runtime/toolchains/TOOLCHAIN.lock.tsv",
         "Makefile",
-        "tests/test_effect_ack_core.sh"
+        "tests/test_effect_ack_core.sh",
+        "next/tools/run_checks.py"
       ],
       "cache_class": "runner-image-layer",
       "cache_locations": [
@@ -20,7 +45,8 @@
       ],
       "profiles": [
         "core",
-        "all"
+        "all",
+        "target"
       ],
       "provider": "pinned GitHub-hosted runner image",
       "trusted_save": false,
@@ -29,6 +55,30 @@
         "core execution tests"
       ],
       "version": "ansi-c90"
+    },
+    "dpkg-deb": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "next/tools/bootstrap.py",
+        "next/tools/run_checks.py",
+        ".github/workflows/qikvrt_temdd.yml"
+      ],
+      "cache_class": "runner-image-layer",
+      "cache_locations": [
+        "github-hosted-runner-image:ubuntu-24.04",
+        "task-host:reported-tool-contract"
+      ],
+      "failure_recovery": "Retain current source and evidence; provision a matching host without modifying stored history.",
+      "profiles": [
+        "target"
+      ],
+      "provider": "host toolchain; Ubuntu runner image",
+      "trusted_save": false,
+      "verification": [
+        "reported version",
+        "actual C90 build or package/source restoration execution"
+      ],
+      "version": "reported-version"
     },
     "ffmpeg": {
       "authority_files": [
@@ -100,6 +150,56 @@
         "execution self-test"
       ],
       "version": "2.96.0"
+    },
+    "ghdl": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "next/toolchains.lock.json",
+        "next/tools/bootstrap.py",
+        "next/tools/run_checks.py",
+        ".github/workflows/qikvrt_temdd.yml",
+        "tools/bootstrap-runtime.sh"
+      ],
+      "cache_class": "build-cache",
+      "cache_locations": [
+        "task-prefix:ghdl"
+      ],
+      "failure_recovery": "Retain logs and verified cache; no system replacement or destructive recovery.",
+      "profiles": [
+        "target-architecture",
+        "target"
+      ],
+      "provider": "Debian SHA256-verified package extraction",
+      "trusted_save": true,
+      "verification": [
+        "version and SHA256 receipt",
+        "next target conformance suite"
+      ],
+      "version": "2.0.0+dfsg-6.2+b2"
+    },
+    "git": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "next/tools/bootstrap.py",
+        "next/tools/run_checks.py",
+        ".github/workflows/qikvrt_temdd.yml"
+      ],
+      "cache_class": "runner-image-layer",
+      "cache_locations": [
+        "github-hosted-runner-image:ubuntu-24.04",
+        "task-host:reported-tool-contract"
+      ],
+      "failure_recovery": "Retain current source and evidence; provision a matching host without modifying stored history.",
+      "profiles": [
+        "target"
+      ],
+      "provider": "host toolchain; Ubuntu runner image",
+      "trusted_save": false,
+      "verification": [
+        "reported version",
+        "actual C90 build or package/source restoration execution"
+      ],
+      "version": "reported-version"
     },
     "lean": {
       "authority_files": [
@@ -174,6 +274,30 @@
         "actual guest network boot and QMP color screenshot"
       ],
       "version": "m68000-static-c90"
+    },
+    "make": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "next/tools/bootstrap.py",
+        "next/tools/run_checks.py",
+        ".github/workflows/qikvrt_temdd.yml"
+      ],
+      "cache_class": "runner-image-layer",
+      "cache_locations": [
+        "github-hosted-runner-image:ubuntu-24.04",
+        "task-host:reported-tool-contract"
+      ],
+      "failure_recovery": "Retain current source and evidence; provision a matching host without modifying stored history.",
+      "profiles": [
+        "target"
+      ],
+      "provider": "host toolchain; Ubuntu runner image",
+      "trusted_save": false,
+      "verification": [
+        "reported version",
+        "actual C90 build or package/source restoration execution"
+      ],
+      "version": "reported-version"
     },
     "node": {
       "authority_files": [
@@ -311,7 +435,8 @@
         "runtime/toolchains/TOOLCHAIN.lock.tsv",
         "tools/bootstrap-runtime.sh",
         ".github/workflows/qikvrt_adaptive_runtime.yml",
-        ".github/workflows/qikvrt_formalization_and_audio.yml"
+        ".github/workflows/qikvrt_formalization_and_audio.yml",
+        "next/tools/run_checks.py"
       ],
       "cache_class": "hosted-toolcache",
       "cache_locations": [
@@ -322,7 +447,8 @@
         "ietf",
         "formal",
         "publication",
-        "all"
+        "all",
+        "target"
       ],
       "provider": "actions/setup-python",
       "trusted_save": false,
@@ -356,6 +482,32 @@
         "actual guest network boot and QMP color screenshot"
       ],
       "version": "qmp-screendump-linux-live-v1"
+    },
+    "rust": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "next/toolchains.lock.json",
+        "next/tools/bootstrap.py",
+        "next/tools/run_checks.py",
+        ".github/workflows/qikvrt_temdd.yml",
+        "tools/bootstrap-runtime.sh"
+      ],
+      "cache_class": "build-cache",
+      "cache_locations": [
+        "task-prefix:rustup+cargo"
+      ],
+      "failure_recovery": "Retain logs and verified cache; no system replacement or destructive recovery.",
+      "profiles": [
+        "target-architecture",
+        "target"
+      ],
+      "provider": "rustup verified component installation",
+      "trusted_save": true,
+      "verification": [
+        "version and SHA256 receipt",
+        "next target conformance suite"
+      ],
+      "version": "1.85.0"
     },
     "sherpa-onnx-node": {
       "authority_files": [
