@@ -1,3 +1,17 @@
+<!-- qikvrt-roundtrip-first:v1 -->
+## Zuerst: ausfuehrbarer Roundtrip-Beweis / Start here
+
+Read [ROUNDTRIP.md](ROUNDTRIP.md) first. The executable entrypoint is [roundtrip.py](roundtrip.py).
+From the repository root, with the locked target toolchain available:
+
+```sh
+python3 -B roundtrip.py --repository Goldkelch/qik-vrt --output-dir ../roundtrip-evidence
+```
+
+Use this checkout's actual owner/repository for a Mirror or fork. Choose a new output directory for every execution. The runner calls the existing exact-HEAD/TREE suite: C90, bus, store, restart, byte-preserving source recovery and rebuild. Runner presence is not execution evidence. The prime-search experiment has a separate, currently missing original-artifact binding; it is not replaced by this suite. Existing instructions follow unchanged.
+
+<!-- /qikvrt-roundtrip-first:v1 -->
+
 <!--
 SPDX-License-Identifier: CC-BY-NC-ND-4.0
 Copyright (c) 2026 Ingolf Lohmann.
