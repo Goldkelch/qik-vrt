@@ -22,11 +22,18 @@ import socket
 import socketserver
 import struct
 import subprocess
+import sys
 import tempfile
 import threading
 import time
 import urllib.parse
 import urllib.request
+
+# Source checkout and exported standalone client share the exact same helper.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools'))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from qikvrt_transfer_parts import (DEFAULT_PART_BYTES, MAX_MANIFEST_BYTES, MIB,
+                                  describe, part_size, receive_file, validate_file)
 
 FILES = {"kernel": "qikvrt-megast-vmlinuz", "initrd": "qikvrt-megast-initrd",
          "rootfs": "qikvrt-megast-filesystem.squashfs", "m68000": "QIKVRT_BOOT.BIN"}
@@ -87,28 +94,33 @@ class BootDatagramHandler(socketserver.BaseRequestHandler):
         connection.sendto(reply, self.client_address)
 
 
-def validate_manifest(manifest: dict) -> None:
-    if manifest.get("schema") != "qikvrt_netboot_v1" or manifest.get("architecture") != "x86_64":
+def validate_manifest(manifest: dict, max_part_bytes: int = DEFAULT_PART_BYTES) -> None:
+    if manifest.get("schema") not in ("qikvrt_netboot_v1", "qikvrt_netboot_v2") or manifest.get("architecture") != "x86_64":
         raise ValueError("unsupported boot schema/architecture")
     if not re.fullmatch(r"[0-9a-f]{40}", manifest.get("source_sha", "")):
         raise ValueError("missing exact source commit")
     if manifest.get("boot_method") != "linux-live-http" or set(manifest.get("files", {})) != set(FILES):
         raise ValueError("unsupported boot method/files")
+    part_size(max_part_bytes)
+    limit = part_size(manifest.get('part_bytes')) if manifest['schema'] == 'qikvrt_netboot_v2' else DEFAULT_PART_BYTES
+    if limit > max_part_bytes:
+        raise ValueError('sender part size exceeds receiver limit')
     for kind, name in FILES.items():
         entry = manifest["files"][kind]
         if entry.get("name") != name or not HEX64.fullmatch(entry.get("sha256", "")):
             raise ValueError("unbound file identity")
-        size = entry.get("bytes")
-        if type(size) is not int or not 0 < size <= 2 * 1024 ** 3:
-            raise ValueError("file size outside contract")
+        if manifest['schema'] == 'qikvrt_netboot_v1' and 'parts' in entry:
+            raise ValueError('legacy manifest cannot describe parts')
+        validate_file(name, entry, limit)
 
 
-def make_manifest(directory: Path, source_sha: str) -> dict:
-    manifest = {"schema": "qikvrt_netboot_v1", "source_sha": source_sha,
+def make_manifest(directory: Path, source_sha: str, part_bytes: int = DEFAULT_PART_BYTES) -> dict:
+    part_size(part_bytes)
+    manifest = {"schema": "qikvrt_netboot_v2", "source_sha": source_sha, "part_bytes": part_bytes,
                 "architecture": "x86_64", "boot_method": "linux-live-http",
                 "guest_m68000": "qemu-m68k-static-contract", "effect_ack_done": False,
-                "files": {k: {"name": n, "bytes": (directory / n).stat().st_size, "sha256": sha256(directory / n)} for k, n in FILES.items()}}
-    validate_manifest(manifest)
+                "files": {k: dict(name=n, **describe(directory / n, part_bytes)) for k, n in FILES.items()}}
+    validate_manifest(manifest, part_bytes)
     path = directory / "qikvrt-netboot.json"
     path.write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n")
     (directory / "qikvrt-netboot.json.sha256").write_text(sha256(path) + "  " + path.name + "\n")
@@ -134,6 +146,8 @@ def safe_url(url: str) -> None:
 
 def download(url: str, path: Path, expected: str, size: int) -> None:
     safe_url(url)
+    if path.is_symlink():
+        raise ValueError('download destination must not be a symlink')
     if path.exists():
         if path.stat().st_size == size and sha256(path) == expected:
             return
@@ -156,19 +170,20 @@ def download(url: str, path: Path, expected: str, size: int) -> None:
         temp.unlink(missing_ok=True)
 
 
-def receive(url: str, expected: str, directory: Path) -> dict:
+def receive(url: str, expected: str, directory: Path, max_part_bytes: int = DEFAULT_PART_BYTES) -> dict:
     if not HEX64.fullmatch(expected):
         raise ValueError("supply the expected manifest SHA256")
     safe_url(url)
     directory.mkdir(parents=True, exist_ok=True)
     with urllib.request.urlopen(url, timeout=30) as response:
-        raw = response.read(65537)
-    if len(raw) > 65536 or hashlib.sha256(raw).hexdigest() != expected:
+        raw = response.read(MAX_MANIFEST_BYTES + 1)
+    if len(raw) > MAX_MANIFEST_BYTES or hashlib.sha256(raw).hexdigest() != expected:
         raise ValueError("manifest digest/size mismatch")
     manifest = json.loads(raw)
-    validate_manifest(manifest)
+    validate_manifest(manifest, max_part_bytes)
     for entry in manifest["files"].values():
-        download(urllib.parse.urljoin(url, entry["name"]), directory / entry["name"], entry["sha256"], entry["bytes"])
+        receive_file(url.rsplit('/', 1)[0], entry['name'], entry, directory, download,
+                     manifest.get('part_bytes', DEFAULT_PART_BYTES))
     (directory / "qikvrt-netboot.json").write_bytes(raw)
     return manifest
 
@@ -227,11 +242,12 @@ def snapshot_serial(logfile: Path) -> Path:
     return snapshot
 
 
-def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bool = False) -> dict:
+def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bool = False,
+         max_part_bytes: int = DEFAULT_PART_BYTES) -> dict:
     # These fixed paths describe the current attempt, never an earlier boot.
     for name in ("qikvrt-netboot-receipt.json", "qikvrt-netboot-failure.json"):
         (directory / name).unlink(missing_ok=True)
-    validate_manifest(manifest)
+    validate_manifest(manifest, max_part_bytes)
     if platform.machine() not in ("x86_64", "AMD64"):
         raise ValueError("client CPU must match the amd64 host image")
     for entry in manifest["files"].values():
@@ -313,20 +329,24 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     make = sub.add_parser("manifest"); make.add_argument("directory", type=Path); make.add_argument("source_sha")
+    make.add_argument('--part-mib', type=int, default=2048, help='application transfer part size; default 2048 MiB')
     client = sub.add_parser("receive"); client.add_argument("url"); client.add_argument("sha256"); client.add_argument("directory", type=Path); client.add_argument("--boot", action="store_true"); client.add_argument("--verify-only", action="store_true")
     execute = sub.add_parser("boot"); execute.add_argument("directory", type=Path); execute.add_argument("--verify-only", action="store_true")
+    for command in (client, execute):
+        command.add_argument('--max-part-mib', type=int, default=2048, help='maximum accepted sender part size')
     serve = sub.add_parser("serve"); serve.add_argument("directory", type=Path); serve.add_argument("--host", default="127.0.0.1"); serve.add_argument("--port", type=int, default=7331)
     args = parser.parse_args()
     try:
         directory = args.directory.resolve()
         if args.command == "manifest":
-            make_manifest(directory, args.source_sha)
+            make_manifest(directory, args.source_sha, args.part_mib * MIB)
         elif args.command == "receive":
-            manifest = receive(args.url, args.sha256, directory)
+            manifest = receive(args.url, args.sha256, directory, args.max_part_mib * MIB)
             if args.boot:
-                boot(directory, manifest, verify_only=args.verify_only)
+                boot(directory, manifest, verify_only=args.verify_only, max_part_bytes=args.max_part_mib * MIB)
         elif args.command == "boot":
-            boot(directory, json.loads((directory / "qikvrt-netboot.json").read_text()), verify_only=args.verify_only)
+            boot(directory, json.loads((directory / "qikvrt-netboot.json").read_text()), verify_only=args.verify_only,
+                 max_part_bytes=args.max_part_mib * MIB)
         else:
             with BootDatagramServer((args.host, args.port), (directory / "QIKVRT_BOOT.BIN").read_bytes()) as server:
                 server.serve_forever()

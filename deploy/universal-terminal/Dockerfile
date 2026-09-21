@@ -17,15 +17,23 @@ RUN set -eux; \
     sha256sum /out/qikvrt-m68k-selftest | awk '{print $1 "  /usr/local/bin/qikvrt-m68k-selftest"}' > /out/m68k/qikvrt-m68k-selftest.sha256; \
     (cd /out/m68k && sha256sum qikvrt_ip_bootstrap.o > qikvrt_ip_bootstrap.sha256)
 
+FROM node:24-bookworm-slim AS qikvrt-audio-builder
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl bzip2 \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /audio
+COPY tools/offline-audio-transcription/ /audio/
+RUN npm ci --omit=dev && ./scripts/install-model.sh --model-dir /audio-model && chmod 0755 /audio-model
+
 FROM debian:bookworm-slim
 ENV DEBIAN_FRONTEND=noninteractive DISPLAY=:99 \
     QIKVRT_HTTP_HOST=127.0.0.1 QIKVRT_HTTP_PORT=8771 QIKVRT_NOVNC_PORT=6080 \
     QIKVRT_START_URL=about:blank \
     QIKVRT_PROFILE_DIR=/var/lib/qikvrt/profile QIKVRT_STATE_DIR=/var/lib/qikvrt/state \
     QIKVRT_RUNTIME_ID=qikvrt-firefox-terminal QIKVRT_SERVICE_MODE=terminal \
-    QIKVRT_MC68000_CC=m68k-linux-gnu-gcc QIKVRT_MC68000_RUNNER=qemu-m68k
+    QIKVRT_MC68000_CC=m68k-linux-gnu-gcc QIKVRT_MC68000_RUNNER=qemu-m68k \
+    QIKVRT_ENABLE_MULTIMEDIA=1 QIKVRT_AUDIO_MODEL_DIR=/opt/qikvrt/runtime/audio-model
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      bind9 binutils-m68k-linux-gnu ca-certificates curl dbus-x11 dnsutils firefox-esr git \
+      bind9 binutils-m68k-linux-gnu ca-certificates curl dbus-x11 dnsutils firefox-esr ffmpeg git \
       gcc-m68k-linux-gnu libc6-dev-m68k-cross make nginx-light novnc openssh-server \
       postgresql postgresql-client procps python3 python3-minimal qemu-user snmp snmpd \
       util-linux websockify x11-utils x11vnc xvfb zip \
@@ -34,6 +42,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /opt/qikvrt
 COPY . /opt/qikvrt
+COPY --from=qikvrt-audio-builder /usr/local/bin/node /usr/local/bin/node
+COPY --from=qikvrt-audio-builder /audio/node_modules /opt/qikvrt/tools/offline-audio-transcription/node_modules
+COPY --from=qikvrt-audio-builder /audio-model /opt/qikvrt/runtime/audio-model
+RUN python3 -B tools/qikvrt_multimedia_runtime.py install
 COPY --from=qikvrt-m68k-builder /out/qikvrt-ip-bootstrap /usr/local/bin/qikvrt-ip-bootstrap
 COPY --from=qikvrt-m68k-builder /out/qikvrt-m68k-selftest /usr/local/bin/qikvrt-m68k-selftest
 COPY --from=qikvrt-m68k-builder /out/m68k /opt/qikvrt/runtime/m68k

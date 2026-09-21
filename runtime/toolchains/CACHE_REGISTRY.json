@@ -8,6 +8,32 @@
     "runner-image-layer"
   ],
   "components": {
+    "agent-browser": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "runtime/toolchains/multimedia-browser/package.json",
+        "runtime/toolchains/multimedia-browser/package-lock.json",
+        "docs/terminal/MULTIMEDIA_RUNTIME_V1.md"
+      ],
+      "cache_class": "build-cache",
+      "cache_key": "Node24 Linux x86_64 + package-lock SHA256 + browser revision",
+      "cache_locations": [
+        "runtime/toolchains/multimedia-browser/node_modules",
+        "~/.cache/ms-playwright"
+      ],
+      "failure_recovery": "Close isolated test session; no production browser profile access; retain failure screenshot",
+      "profiles": [
+        "multimedia-browser-check"
+      ],
+      "provider": "npm registry agent-browser; pinned package-lock",
+      "trusted_save": false,
+      "verification": [
+        "npm ci integrity checks",
+        "reported CLI version",
+        "browser snapshot, page errors and actual form interaction"
+      ],
+      "version": "0.38.1"
+    },
     "cc": {
       "authority_files": [
         "runtime/toolchains/TOOLCHAIN.lock.tsv",
@@ -151,6 +177,33 @@
       ],
       "version": "20250505+deb13u1"
     },
+    "llama-server": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "runtime/toolchains/multimedia.lock.json",
+        "tools/qikvrt_multimedia_runtime.py",
+        "tools/bootstrap-runtime.sh"
+      ],
+      "cache_class": "repo-managed-archive",
+      "cache_key": "Linux-x86_64 + lock SHA256 + installer SHA256",
+      "cache_locations": [
+        ".qikvrt/toolchains/multimedia"
+      ],
+      "failure_recovery": "Retain known valid cache; remove only incomplete staged download; HOLD on changed existing bytes; no automatic retries",
+      "license": "MIT for llama.cpp; Apache-2.0 for SmolVLM2",
+      "profiles": [
+        "multimedia"
+      ],
+      "provider": "tools/qikvrt_multimedia_runtime.py",
+      "trusted_save": false,
+      "verification": [
+        "locked SHA256 and size before use",
+        "exact extracted archive byte comparison",
+        "llama-server version self-test",
+        "actual local text/image inference recorded separately"
+      ],
+      "version": "b6500"
+    },
     "m68k-linux-gnu-gcc": {
       "authority_files": [
         "runtime/toolchains/TOOLCHAIN.lock.tsv",
@@ -201,6 +254,33 @@
         "test execution"
       ],
       "version": "24.x"
+    },
+    "oauth2-proxy": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "runtime/toolchains/sso.lock.json",
+        "tools/qikvrt_sso_gateway.py",
+        "tools/bootstrap-runtime.sh",
+        "docs/terminal/SSO_GATEWAY_V1.md"
+      ],
+      "cache_class": "repo-managed-archive",
+      "cache_locations": [
+        ".qikvrt/toolchains/sso"
+      ],
+      "failure_recovery": "HOLD on changed existing bytes; remove own incomplete staging file; explicit quarantine before reinstall; terminate own proxy child; no unauthenticated public fallback",
+      "license": "MIT; upstream dependency notices remain applicable",
+      "profiles": [
+        "sso"
+      ],
+      "provider": "tools/qikvrt_sso_gateway.py",
+      "trusted_save": false,
+      "verification": [
+        "archive SHA-256 and size",
+        "executable byte equality against locked archive",
+        "exact version self-test",
+        "native configuration validation; live identity-provider acceptance separate"
+      ],
+      "version": "7.15.4"
     },
     "pharo": {
       "authority_files": [
@@ -357,6 +437,31 @@
       ],
       "version": "qmp-screendump-linux-live-v1"
     },
+    "qwen2.5-1.5b": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "runtime/toolchains/multimedia.lock.json",
+        "tools/qikvrt_multimedia_runtime.py",
+        "tools/bootstrap-runtime.sh"
+      ],
+      "cache_class": "repo-managed-archive",
+      "cache_key": "Linux-x86_64 + lock SHA256 + installer SHA256",
+      "cache_locations": [
+        ".qikvrt/toolchains/multimedia"
+      ],
+      "failure_recovery": "Retain known valid cache; remove only incomplete staged download; HOLD on changed existing bytes; no automatic retries",
+      "license": "Apache-2.0 for Qwen2.5-1.5B-Instruct",
+      "profiles": [
+        "multimedia"
+      ],
+      "provider": "tools/qikvrt_multimedia_runtime.py",
+      "trusted_save": false,
+      "verification": [
+        "locked SHA256 and size before use",
+        "actual text inference and repository citation/boundary smoke recorded separately"
+      ],
+      "version": "dd26da440ef0330c47919d1ecae0966d24022222"
+    },
     "sherpa-onnx-node": {
       "authority_files": [
         "runtime/toolchains/TOOLCHAIN.lock.tsv",
@@ -379,6 +484,33 @@
         "offline audio tests"
       ],
       "version": "1.13.4"
+    },
+    "smolvlm2-500m": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "runtime/toolchains/multimedia.lock.json",
+        "tools/qikvrt_multimedia_runtime.py",
+        "tools/bootstrap-runtime.sh"
+      ],
+      "cache_class": "repo-managed-archive",
+      "cache_key": "Linux-x86_64 + lock SHA256 + installer SHA256",
+      "cache_locations": [
+        ".qikvrt/toolchains/multimedia"
+      ],
+      "failure_recovery": "Retain known valid cache; remove only incomplete staged download; HOLD on changed existing bytes; no automatic retries",
+      "license": "MIT for llama.cpp; Apache-2.0 for SmolVLM2",
+      "profiles": [
+        "multimedia"
+      ],
+      "provider": "tools/qikvrt_multimedia_runtime.py",
+      "trusted_save": false,
+      "verification": [
+        "locked SHA256 and size before use",
+        "exact extracted archive byte comparison",
+        "llama-server version self-test",
+        "actual local text/image inference recorded separately"
+      ],
+      "version": "ccd7aae53bcb1997355c2f094959e72b3642ce17"
     },
     "xelatex": {
       "authority_files": [

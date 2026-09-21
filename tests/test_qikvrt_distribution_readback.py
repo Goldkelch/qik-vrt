@@ -93,5 +93,39 @@ class DistributionReadbackTests(unittest.TestCase):
             self.assertFalse(result['full_product_done'])
             self.assertFalse(result['linux_distribution_done'])
 
+    def test_split_release_readback_requests_parts_then_verifies_original_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            source, target = Path(d)/'src', Path(d)/'dst'; source.mkdir()
+            self.fixture(source)
+            manifest = M['create'](source, HEAD, TREE, part_bytes=17)
+            M['verify_local'](source, manifest, HEAD, TREE)
+            seen = []
+            def fetch(url, path, expected_hash, expected_bytes=None):
+                name = url.rsplit('/', 1)[-1]; data = (source/name).read_bytes(); seen.append(name)
+                self.assertEqual(hashlib.sha256(data).hexdigest(), expected_hash)
+                if expected_bytes is not None: self.assertEqual(len(data), expected_bytes)
+                path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(data)
+                return {'url': url, 'http_status': 200, 'bytes': len(data), 'sha256': expected_hash}
+            with patch.dict(M['readback'].__globals__, download=fetch):
+                result = M['readback']('https://example.invalid/release', target, M['digest'](source/M['MANIFEST']), HEAD, TREE)
+            self.assertEqual(set(seen)-{M['MANIFEST']}, set(M['transport_names'](manifest['assets'])))
+            for name in M['REQUIRED']:
+                self.assertEqual((target/name).read_bytes(), (source/name).read_bytes())
+                self.assertNotIn(name, seen)
+            self.assertTrue(result['artifact_bytes_verified']); self.assertFalse(result['full_product_done'])
+            # A valid original file cannot mask a damaged part before publication.
+            part = next(iter(manifest['assets'].values()))['parts'][0]
+            (source/part['name']).write_bytes(b'bad')
+            with self.assertRaisesRegex(ValueError, 'part integrity mismatch'):
+                M['verify_local'](source, manifest, HEAD, TREE)
+
+    def test_sender_cannot_raise_receiver_default_without_explicit_configuration(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); self.fixture(root)
+            manifest = M['create'](root, HEAD, TREE, part_bytes=4096*1024**2)
+            with self.assertRaisesRegex(ValueError, 'receiver limit'):
+                M['validate'](manifest, HEAD, TREE)
+            M['validate'](manifest, HEAD, TREE, max_part_bytes=4096*1024**2)
+
 if __name__ == '__main__':
     unittest.main()
