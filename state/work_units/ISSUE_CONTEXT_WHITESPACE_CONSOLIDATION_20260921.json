@@ -1,0 +1,123 @@
+{
+  "schema": "qikvrt_work_unit_v1",
+  "work_unit_id": "ISSUE_CONTEXT_WHITESPACE_CONSOLIDATION_20260921",
+  "created_at": "2026-09-21T15:17:02.039885+00:00",
+  "source_repository": "Goldkelch/qik-vrt",
+  "source_ref": "copilot/update-theoretical-framework",
+  "source_commit": "801a0a1ab9b7cf3434282737fd49a1f8ef205e1c",
+  "source_tree": "f3e328f2c34d203ee43179b0e5b06cf714f26548",
+  "human_actor": "Ingolf Lohmann",
+  "artificial_cognitive_actor": {
+    "provider": "OpenAI",
+    "system_family": "Codex",
+    "model_or_build": "UNAVAILABLE",
+    "session_or_run_id": "e3650e75a9d8",
+    "tools_and_adapters": [
+      "GitHub connector",
+      "git",
+      "python3"
+    ],
+    "identity_and_observation_limits": "Platform account does not authenticate a natural person or model."
+  },
+  "human_contributions": [
+    "AbNan Mesh field-test task and request to apply the Universal Transputer, Universal Terminal, scaling and consolidation together."
+  ],
+  "artificial_cognitive_contributions": [
+    "Locate existing PR #1003 instead of creating a duplicate repair.",
+    "Merge current Authority main into the existing review branch without rewriting history.",
+    "Resolve generated integrity conflicts by canonical regeneration.",
+    "Execute existing issue-agent tests and an actual staged Git whitespace-check reproduction using public issue #1146."
+  ],
+  "joint_components": [
+    "Human task scope; separable AI technical integration and verification."
+  ],
+  "unresolved_origin": [],
+  "inputs": [
+    {
+      "kind": "issue",
+      "url": "https://github.com/Goldkelch/qik-vrt/issues/1146",
+      "task_id": "ABNAN-MESH-FIELD-PILOT-20260921-01"
+    },
+    {
+      "kind": "application_acceptance",
+      "url": "https://github.com/Goldkelch/qik-vrt/issues/1146#issuecomment-5762827331"
+    },
+    {
+      "kind": "failing_execution",
+      "run_id": 35616596675,
+      "job_id": 106388767510,
+      "head": "a86054139b49c13c5cd344753b248b46b5daf66f",
+      "tree": "feff1cae2401a3df83febc3b9458de70d79b818e",
+      "failure": "git diff --cached --check rejects generated CONTEXT.md before commit/push"
+    },
+    {
+      "kind": "reused_candidate",
+      "pr": 1003,
+      "head": "801a0a1ab9b7cf3434282737fd49a1f8ef205e1c",
+      "tree": "f3e328f2c34d203ee43179b0e5b06cf714f26548"
+    }
+  ],
+  "outputs": [
+    {
+      "path": "scripts/issue_agent/materialize.py",
+      "bytes": 2373,
+      "sha256": "0d86c4709f24294d1aa2ecde8b4ae822f8d186d9d2477195adad1edc32170541",
+      "git_blob": "04a9fbaee90024491d167c80937182650c126b8d"
+    },
+    {
+      "path": "tests/issue_agent/test_validate.py",
+      "bytes": 15375,
+      "sha256": "ea4ec590c9ec741b7b69124080bca5fec58f8b26f6d06ac4f8359161e2817830",
+      "git_blob": "077805816bdfe009d4a30ec271fe64bd52288faa"
+    }
+  ],
+  "git_history": {
+    "method": "history_preserving_merge",
+    "parents": [
+      "801a0a1ab9b7cf3434282737fd49a1f8ef205e1c",
+      "a86054139b49c13c5cd344753b248b46b5daf66f"
+    ],
+    "force_push": false,
+    "history_rewrite": false,
+    "semantic_patch_reused_unchanged": true
+  },
+  "verification": {
+    "scope": "Candidate worktree before final commit; final exact-commit results must be read from the PR execution ledger.",
+    "issue_agent_tests": {
+      "command": "python3 -m unittest discover -s tests/issue_agent -p 'test_*.py'",
+      "tests": 14,
+      "exit_code": 0
+    },
+    "controlled_materialization_experiment": {
+      "main": {
+        "context_sha256": "16439be1a5f730f3fb68a95a0bdfde014d05bc0af2122d561c8f6f01cca6c56e",
+        "git_diff_cached_check_exit": 2,
+        "diagnostic_count": 21
+      },
+      "candidate": {
+        "context_sha256": "86ae84abd1953b8626301141cff8b480e5c2bd728e8a820bcb7a8235605305d1",
+        "git_diff_cached_check_exit": 0,
+        "diagnostic_count": 0
+      }
+    },
+    "experiment_scope": "Both materializers consume the same current-main context files and public issue #1146 request. The actual git diff --cached --check gate is executed in isolated temporary repositories.",
+    "full_repository_gate": "REQUIRED_ON_FINAL_CANDIDATE",
+    "predecessor_evidence_transfer": false
+  },
+  "human_decision": "PENDING_NATIVE_REVIEW",
+  "external_effects": {
+    "scope": "Existing repair candidate update only. Issue #1146 comment persisted and read back.",
+    "authority_main_changed": false,
+    "mirror_changed": false,
+    "release": false,
+    "deployment": false,
+    "issue_rerun": false
+  },
+  "next_action": "Validate the exact candidate and follow the existing legitimate review/promotion path. After repaired code is available to the issue executor, process the same issue #1146 and verify its persisted answer and technical result.",
+  "release_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "PRODUCT_DONE": false
+  }
+}
