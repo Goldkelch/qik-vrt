@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 import hashlib
 import importlib.util
+import io
 import json
 from pathlib import Path
 import shutil
 import socket
 import subprocess
+import sys
+import tarfile
 import tempfile
 import threading
 import time
@@ -201,6 +204,92 @@ class NetbootTests(unittest.TestCase):
             self.assertNotEqual(receipt["serial_sha256"], boot.sha256(root / "qikvrt-netboot-serial.log"))
             self.assertIn("QEMU shutdown output", (root / "qikvrt-netboot-serial.log").read_text())
             self.assertFalse(receipt["effect_ack_done"])
+
+
+class CodexBoundaryTests(unittest.TestCase):
+    def package(self, root, *, version="0.155.1", unsafe=None):
+        entries = {name: b"#!/bin/sh\nexit 0\n" for name in (
+            "bin/codex", "bin/codex-code-mode-host", "codex-path/rg", "codex-resources/bwrap")}
+        entries["codex-package.json"] = json.dumps({"layoutVersion": 1, "version": version,
+            "target": "x86_64-unknown-linux-musl", "variant": "codex", "entrypoint": "bin/codex"}).encode()
+        if unsafe:
+            entries[unsafe] = b"escape"
+        archive = root / "package.tar.gz"
+        with tarfile.open(archive, "w:gz") as package:
+            for name, data in entries.items():
+                info = tarfile.TarInfo(name); info.size = len(data); info.mode = 0o755
+                package.addfile(info, io.BytesIO(data))
+        digest = boot.sha256(archive)
+        archive.rename(root / (digest + ".tar.gz"))
+        lock = root / "lock.json"
+        lock.write_text(json.dumps({"version": "0.155.1", "target": "x86_64-unknown-linux-musl",
+            "sha256": digest, "bytes": (root / (digest + ".tar.gz")).stat().st_size,
+            "url": "https://example.invalid/unused-cached-package", "license_files": {}, "source": "test"}))
+        return lock
+
+    def test_verified_package_preserves_helpers_and_prior_installation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); lock = self.package(root); destination = root / "installed"
+            receipt = boot.install_codex(lock, destination, root)
+            self.assertEqual(receipt["binary_sha256"], boot.sha256(destination / "bin/codex"))
+            self.assertEqual(receipt["owner_login"], "REQUIRED")
+            self.assertTrue((destination / "bin/codex-code-mode-host").is_file())
+            with self.assertRaisesRegex(ValueError, "prior installation"):
+                boot.install_codex(lock, destination, root)
+
+    def test_foreign_version_and_traversal_never_install(self):
+        for options in ({"version": "0.0.0"}, {"unsafe": "../escape"}, {"unsafe": "/absolute"}):
+            with self.subTest(options=options), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp); lock = self.package(root, **options)
+                with self.assertRaises(ValueError):
+                    boot.install_codex(lock, root / "installed", root)
+                self.assertFalse((root / "installed").exists())
+                self.assertFalse((root / "escape").exists())
+
+    def test_corrupt_cache_never_installs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); lock = self.package(root)
+            next(root.glob("*.tar.gz")).write_bytes(b"corrupt")
+            with self.assertRaisesRegex(ValueError, "does not match"):
+                boot.install_codex(lock, root / "installed", root)
+            self.assertFalse((root / "installed").exists())
+
+    def probe(self, root, mode="normal", timeout=2):
+        peer = root / "peer.py"
+        peer.write_text('''import json,sys,time
+mode=sys.argv[1]
+if '--version' in sys.argv[-1]:
+ print('codex-cli 0.155.1'); sys.exit(0)
+for line in sys.stdin:
+ request=json.loads(line)
+ if mode=='silent':
+  time.sleep(10); continue
+ if request['method']=='initialize':
+  response={'userAgent':'codex/0.155.1'}
+ elif request['method']=='account/read':
+  response={'account':None,'requiresOpenaiAuth':True}
+  if mode=='signed-in': response['account']={'email':'never-export@example.invalid'}
+ else: continue
+ print(json.dumps({'id':request['id'], 'result':response}),flush=True)
+''')
+        return boot.codex_readback([sys.executable, str(peer), mode], "0.155.1", timeout)
+
+    def test_handshake_requires_matching_responses_and_owner_login(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.probe(Path(tmp))
+            self.assertTrue(result["stdio_handshake"])
+            self.assertEqual(result["native_chatgpt_pairing"], "NOT_ESTABLISHED")
+            self.assertFalse(result["model_request_sent"])
+            with self.assertRaisesRegex(ValueError, "owner's Codex login") as failure:
+                self.probe(Path(tmp), "signed-in")
+            self.assertNotIn("never-export", str(failure.exception))
+
+    def test_silent_server_is_bounded_and_reaped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            start = time.monotonic()
+            with self.assertRaisesRegex(ValueError, "timed out"):
+                self.probe(Path(tmp), "silent", timeout=0.1)
+            self.assertLess(time.monotonic() - start, 3)
 
 
 class SSHBoundaryTests(unittest.TestCase):

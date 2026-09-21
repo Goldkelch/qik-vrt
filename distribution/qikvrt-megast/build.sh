@@ -79,6 +79,14 @@ cp -a "${QIKVRT_TOOLCHAIN_CACHE:-$ROOT/.qikvrt/toolchains}/pharo/$PHARO_VERSION/
 cp "$ROOT/src/smalltalk/smoke.st" "$GUEST/opt/qikvrt/smalltalk/"
 cp "$ROOT/runtime/toolchains/"pharo-*-LICENSE.txt "$GUEST/opt/qikvrt/smalltalk/"
 cp "$ROOT/distribution/qikvrt-megast/boot.py" "$GUEST/opt/qikvrt/boot.py"
+CODEX_LOCK="$ROOT/runtime/toolchains/codex-0.155.1.lock.json"
+CODEX_VERSION=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$CODEX_LOCK")
+python3 -B "$ROOT/distribution/qikvrt-megast/boot.py" codex-install \
+  "$CODEX_LOCK" "$GUEST/opt/qikvrt/codex" \
+  "${QIKVRT_TOOLCHAIN_CACHE:-$ROOT/.qikvrt/toolchains}/codex/$CODEX_VERSION"
+ln -s /opt/qikvrt/codex/bin/codex "$GUEST/usr/local/bin/codex"
+# Package-relative resource discovery preserves the upstream helper binaries.
+test "$("$GUEST/opt/qikvrt/codex/bin/codex" --version)" = "codex-cli $CODEX_VERSION"
 # Reuse the Universal Terminal SSH policy. The live guest narrows it to qikvrt,
 # with a fresh host key and an explicit owner public key supplied at VM startup.
 mkdir -p "$GUEST/etc/ssh" "$WORK/config/hooks/live"
@@ -216,6 +224,7 @@ cat > "$WORK/config/includes.chroot/etc/qikvrt/distribution.json" <<EOF
   "schema": "qikvrt_megast_distribution_v1",
   "source_sha": "$SHA",
   "source_tree": "$TREE",
+  "codex": $(cat "$GUEST/opt/qikvrt/codex/qikvrt-install-receipt.json"),
   "ssh": {"activation": "explicit_owner_public_key", "user": "qikvrt", "port": 2222, "chatgpt_pairing": "NOT_ESTABLISHED"},
   "temdd": ["REQUEST", "EXECUTE", "FOLLOW", "LEARN", "REPEAT_UNTIL_DONE"],
   "principle": "Stay fail closed and keep future open!",

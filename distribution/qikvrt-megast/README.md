@@ -130,8 +130,41 @@ the supported client UI. `codex login --device-auth` authenticates the CLI; its
 code is not a remote-control pairing code. The ISO does not contain a personal
 Codex login or grant this chat a connection to the VM.
 
+The image includes the complete official Codex CLI **0.155.1** Linux package,
+including its Code Mode host and sandbox helpers. The versioned archive is bound
+by size and SHA-256 in `runtime/toolchains/codex-0.155.1.lock.json`; the existing
+image downloader verifies cached and fresh bytes before extraction. The package
+retains bundled license notices and source references. A mismatch aborts the
+build without replacing an existing installation.
+
+The automated SSH readback also starts `codex app-server --listen stdio://`
+through the guest's login shell, performs `initialize` / `initialized`, and reads
+`account/read` without refreshing a token or requesting a model response. Its
+receipt requires the fresh image to have no signed-in account. It proves protocol
+availability through SSH; owner login and native client pairing remain separate.
+
+To connect your own running VM, sign in **inside that VM** with `codex login`
+(or `codex login --device-auth` for a headless login). Then add its SSH host in
+the supported desktop client's Settings → Connections. For a VM running on that
+same desktop, an SSH configuration can reuse the verified host key file:
+
+```sshconfig
+Host qikvrt-vm
+    HostName 127.0.0.1
+    Port 2222
+    User qikvrt
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+    StrictHostKeyChecking yes
+    UserKnownHostsFile /absolute/path/qikvrt-received/qikvrt-netboot-known-hosts
+```
+
+Keep the VM boot process running without `--verify-only` while using it. A GitHub
+Actions verification VM ends with its job and is not a persistent connection host.
+
 Sources: [OpenAI remote connections](https://learn.chatgpt.com/docs/remote-connections),
 [OpenAI authentication](https://learn.chatgpt.com/docs/auth),
+[OpenAI app-server protocol](https://learn.chatgpt.com/docs/app-server),
 [QEMU fw_cfg](https://www.qemu.org/docs/master/system/qemu-manpage.html).
 
 ## Principle

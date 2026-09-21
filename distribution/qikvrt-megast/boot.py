@@ -18,11 +18,13 @@ import os
 from pathlib import Path
 import platform
 import re
+import selectors
 import shutil
 import socket
 import socketserver
 import struct
 import subprocess
+import tarfile
 import tempfile
 import threading
 import time
@@ -136,8 +138,84 @@ def ssh_readback(directory: Path, manifest: dict, serial: str, port: int,
             if denied.returncode != 255 or "Permission denied (publickey)" not in denied.stderr:
                 raise ValueError("unauthorized SSH identity was not explicitly rejected")
             receipt["unauthorized_key_rejected"] = True
+        if "codex" in subject:
+            receipt["codex"] = codex_readback(
+                command + ["-i", str(identity), "qikvrt@127.0.0.1"], subject["codex"]["version"])
     (directory / "qikvrt-netboot-ssh-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     return receipt
+
+
+def codex_readback(ssh_command: list[str], version: str, timeout: float = 60) -> dict:
+    """Read the real app-server through SSH stdio, without login or model use."""
+    observed = subprocess.run(ssh_command + ["/bin/bash -lc 'codex --version'"],
+                              text=True, capture_output=True, timeout=15)
+    if observed.returncode or observed.stdout.strip() != "codex-cli " + version:
+        raise ValueError("guest Codex version does not match the image contract")
+    deadline = time.monotonic() + timeout
+    transcript = hashlib.sha256()
+    pending = b""
+    with tempfile.TemporaryFile() as errors, selectors.DefaultSelector() as selector:
+        process = subprocess.Popen(ssh_command + ["/bin/bash -lc 'exec codex app-server --listen stdio://'"],
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors)
+        selector.register(process.stdout, selectors.EVENT_READ)
+
+        def send(message: dict) -> None:
+            data = (json.dumps(message) + "\n").encode()
+            process.stdin.write(data)
+            process.stdin.flush()
+            transcript.update(data)
+
+        def response(request_id: int) -> dict:
+            nonlocal pending
+            while True:
+                if b"\n" not in pending:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0 or not selector.select(remaining):
+                        raise ValueError("Codex app-server handshake timed out")
+                    data = os.read(process.stdout.fileno(), 65536)
+                    if not data:
+                        raise ValueError("Codex app-server ended before handshake completion")
+                    pending += data
+                    if len(pending) > 1024 * 1024:
+                        raise ValueError("Codex response exceeds bound size")
+                    continue
+                line, pending = pending.split(b"\n", 1)
+                transcript.update(line + b"\n")
+                message = json.loads(line)
+                if not isinstance(message, dict):
+                    raise ValueError("invalid Codex response")
+                if message.get("id") == request_id:
+                    if "error" in message or not isinstance(message.get("result"), dict):
+                        raise ValueError("Codex app-server rejected the handshake request")
+                    return message["result"]
+
+        try:
+            send({"id": 1, "method": "initialize", "params": {
+                "clientInfo": {"name": "qikvrt_distribution_probe", "version": "1.0.0"}}})
+            initialized = response(1)
+            if not isinstance(initialized.get("userAgent"), str) or not initialized["userAgent"]:
+                raise ValueError("Codex initialize response has no server identity")
+            send({"method": "initialized", "params": {}})
+            send({"id": 2, "method": "account/read", "params": {"refreshToken": False}})
+            account = response(2)
+            if "account" not in account or "requiresOpenaiAuth" not in account:
+                raise ValueError("Codex account status is incomplete")
+            # Never export account details or accidentally certify an image
+            # containing a builder's personal login.
+            if account["account"] is not None or account["requiresOpenaiAuth"] is not True:
+                raise ValueError("fresh distribution must require its owner's Codex login")
+            return {"version": version, "stdio_handshake": True,
+                    "owner_login": "REQUIRED", "native_chatgpt_pairing": "NOT_ESTABLISHED",
+                    "model_request_sent": False, "transcript_sha256": transcript.hexdigest()}
+        finally:
+            process.stdin.close()
+            if process.poll() is None:
+                process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill(); process.wait()
+            process.stdout.close()
 
 
 def sha256(path: Path) -> str:
@@ -262,6 +340,58 @@ def download(url: str, path: Path, expected: str, size: int) -> None:
         temp.rename(path)
     finally:
         temp.unlink(missing_ok=True)
+
+
+def install_codex(lock_path: Path, destination: Path, cache: Path) -> dict:
+    """Reuse the verified downloader; install a complete, pinned upstream package."""
+    lock = json.loads(lock_path.read_text())
+    cache.mkdir(parents=True, exist_ok=True)
+    archive = cache / (lock["sha256"] + ".tar.gz")
+    download(lock["url"], archive, lock["sha256"], lock["bytes"])
+    if destination.exists():
+        raise ValueError("Codex destination already exists; preserve the prior installation")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".codex-stage-", dir=destination.parent) as temporary:
+        stage = Path(temporary) / "package"
+        stage.mkdir(mode=0o755)
+        with tarfile.open(archive, "r:gz") as package:
+            members = package.getmembers()
+            if len(members) > 10000 or sum(m.size for m in members) > 600 * 1024 * 1024:
+                raise ValueError("Codex package exceeds extraction bounds")
+            names = set()
+            for member in members:
+                path = Path(member.name)
+                if (path.is_absolute() or ".." in path.parts or not path.parts or
+                        member.name in names or not (member.isfile() or member.isdir())):
+                    raise ValueError("unsafe Codex package entry")
+                names.add(member.name)
+                target = stage / path
+                if member.isdir():
+                    target.mkdir(parents=True, exist_ok=True)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with package.extractfile(member) as source, target.open("xb") as output:
+                        shutil.copyfileobj(source, output)
+                    target.chmod(0o755 if member.mode & 0o111 else 0o644)
+        metadata = json.loads((stage / "codex-package.json").read_text())
+        if any(metadata.get(key) != expected for key, expected in {
+                "layoutVersion": 1, "version": lock["version"], "target": lock["target"],
+                "variant": "codex", "entrypoint": "bin/codex"}.items()):
+            raise ValueError("Codex package identity mismatch")
+        for name in ("bin/codex", "bin/codex-code-mode-host", "codex-path/rg", "codex-resources/bwrap"):
+            if not (stage / name).is_file() or not os.access(stage / name, os.X_OK):
+                raise ValueError("Codex package is missing an executable dependency")
+        for name, expected in lock["license_files"].items():
+            source = lock_path.parent / name
+            if sha256(source) != expected:
+                raise ValueError("Codex license/notice identity mismatch")
+            shutil.copyfile(source, stage / name)
+        receipt = {"version": lock["version"], "archive_sha256": lock["sha256"],
+                   "binary_sha256": sha256(stage / "bin/codex"), "source": lock["source"],
+                   "owner_login": "REQUIRED", "native_chatgpt_pairing": "NOT_ESTABLISHED"}
+        (stage / "qikvrt-install-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
+        stage.rename(destination)
+    return receipt
 
 
 def receive(url: str, expected: str, directory: Path) -> dict:
@@ -463,9 +593,15 @@ def main() -> int:
         command.add_argument("--ssh-reject-identity", type=Path)
         command.add_argument("--ssh-port", type=int, default=2222)
     guest = sub.add_parser("ssh-guest"); guest.add_argument("--authorized-key", type=Path, default=SSH_KEY_PATH)
+    install = sub.add_parser("codex-install")
+    install.add_argument("lock", type=Path); install.add_argument("destination", type=Path)
+    install.add_argument("cache", type=Path)
     serve = sub.add_parser("serve"); serve.add_argument("directory", type=Path); serve.add_argument("--host", default="127.0.0.1"); serve.add_argument("--port", type=int, default=7331)
     args = parser.parse_args()
     try:
+        if args.command == "codex-install":
+            print(json.dumps(install_codex(args.lock, args.destination, args.cache), sort_keys=True))
+            return 0
         if args.command == "ssh-guest":
             ssh_guest(args.authorized_key)
             return 0
