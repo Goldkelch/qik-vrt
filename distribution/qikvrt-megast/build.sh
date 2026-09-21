@@ -87,6 +87,17 @@ python3 -B "$ROOT/distribution/qikvrt-megast/boot.py" codex-install \
 ln -s /opt/qikvrt/codex/bin/codex "$GUEST/usr/local/bin/codex"
 # Package-relative resource discovery preserves the upstream helper binaries.
 test "$("$GUEST/opt/qikvrt/codex/bin/codex" --version)" = "codex-cli $CODEX_VERSION"
+mkdir -p "$GUEST/usr/share/applications"
+cat > "$GUEST/usr/share/applications/qikvrt-chatgpt-connect.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=ChatGPT verbinden
+Comment=Anmelden und einen echten kurzlebigen Kopplungscode anzeigen
+Exec=xfce4-terminal --hold --command="/usr/bin/python3 -B /opt/qikvrt/boot.py chatgpt-connect"
+Icon=utilities-terminal
+Terminal=false
+Categories=Network;
+EOF
 # Reuse the Universal Terminal SSH policy. The live guest narrows it to qikvrt,
 # with a fresh host key and an explicit owner public key supplied at VM startup.
 mkdir -p "$GUEST/etc/ssh" "$WORK/config/hooks/live"

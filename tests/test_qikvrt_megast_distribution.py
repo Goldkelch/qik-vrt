@@ -19,6 +19,45 @@ WORKFLOW = ROOT / ".github/workflows/qikvrt_megast_distribution_v1.yml"
 
 
 class MegaSTDistributionContract(unittest.TestCase):
+    def _window_witness(self):
+        return runpy.run_path(str(ROOT / 'distribution/qikvrt-megast/runtime-witness.py'))['wait_for_window']
+
+    def test_window_witness_recovers_only_after_a_complete_x11_query(self):
+        witness = self._window_witness()
+        vanished = subprocess.CalledProcessError(
+            1, ['xwininfo'], output='Firefox',
+            stderr='X Error: 9: Bad Drawable: 0x123\nX Error: 3: Bad Window: 0x123\n')
+        with mock.patch('subprocess.run', side_effect=[
+                vanished, subprocess.CompletedProcess(['xwininfo'], 0, 'Firefox', '')]) as query, \
+                mock.patch('time.sleep'):
+            witness('Firefox')
+        self.assertEqual(query.call_count, 2)
+
+    def test_window_witness_rejects_persistent_race_even_with_partial_match(self):
+        witness = self._window_witness()
+        vanished = subprocess.CalledProcessError(
+            1, ['xwininfo'], output='Hatari', stderr='X Error: 3: Bad Window: 0x123\n')
+        with mock.patch('subprocess.run', side_effect=vanished), \
+                mock.patch('time.monotonic', side_effect=[0, 0, 1, 2]), \
+                mock.patch('time.sleep'):
+            with self.assertRaisesRegex(RuntimeError, 'Hatari window was not mapped'):
+                witness('Hatari', timeout=2)
+
+    def test_window_witness_does_not_retry_display_or_other_x11_errors(self):
+        for diagnostic in ('xwininfo: error: unable to open display',
+                           'Authorization required, but no authorization protocol specified',
+                           'X Error: 2: Bad Value',
+                           'X Error: 3: Bad Window\nX Error: 2: Bad Value'):
+            with self.subTest(diagnostic=diagnostic):
+                witness = self._window_witness()
+                failure = subprocess.CalledProcessError(1, ['xwininfo'], stderr=diagnostic)
+                with mock.patch('subprocess.run', side_effect=failure) as query, \
+                        mock.patch('time.sleep') as sleep:
+                    with self.assertRaises(subprocess.CalledProcessError):
+                        witness('Firefox')
+                self.assertEqual(query.call_count, 1)
+                sleep.assert_not_called()
+
     def test_docker_context_excludes_generated_distribution_without_product_sources(self):
         # Run 35390074944 failed while Docker traversed the root-owned live-build
         # cache. Check the effective ignore file without rejecting additional
@@ -60,6 +99,12 @@ class MegaSTDistributionContract(unittest.TestCase):
         self.assertIn('"$WORK/config/includes.chroot/usr/share/hatari"', build)
         session = SESSION.read_text()
         self.assertIn('hatari --machine st --tos /usr/share/qikvrt/emutos/etos256de.img', session)
+        self.assertIn('> "$HOME/.config/qikvrt/hatari.log" 2>&1 &', session)
+        witness = (ROOT / 'distribution/qikvrt-megast/runtime-witness.py').read_text()
+        self.assertIn('hatari-emutos-window-observed', witness)
+        self.assertIn('hatari_process_observed', witness)
+        self.assertIn('emutos_rom_sha256', witness)
+        self.assertIn(lock['sha256'], witness)
         self.assertNotIn('provide a legally usable TOS image', session)
 
     def _check_emutos_materialization(self, entries, *, expected_error=None, bad_digest=False):

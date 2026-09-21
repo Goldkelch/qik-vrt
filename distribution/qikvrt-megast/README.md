@@ -123,12 +123,10 @@ With `--verify-only` the guest is closed after verification; without that flag
 the session remains available until the VM exits.
 
 `qikvrt-netboot-ssh-receipt.json` records this SSH evidence separately from
-`chatgpt_pairing: NOT_ESTABLISHED`. This implementation does not generate an
-eight-digit ChatGPT pairing PIN. OpenAI's documented SSH setup requires the
-remote Codex CLI to be installed and signed in, followed by connection through
-the supported client UI. `codex login --device-auth` authenticates the CLI; its
-code is not a remote-control pairing code. The ISO does not contain a personal
-Codex login or grant this chat a connection to the VM.
+`chatgpt_pairing: NOT_ESTABLISHED`. The ISO contains no personal Codex login or
+pre-established client connection. The included upstream CLI does provide native
+manual pairing: `codex remote-control pair`. This is distinct from the login
+code issued by `codex login --device-auth`.
 
 The image includes the complete official Codex CLI **0.155.1** Linux package,
 including its Code Mode host and sandbox helpers. The versioned archive is bound
@@ -143,10 +141,25 @@ through the guest's login shell, performs `initialize` / `initialized`, and read
 receipt requires the fresh image to have no signed-in account. It proves protocol
 availability through SSH; owner login and native client pairing remain separate.
 
-To connect your own running VM, sign in **inside that VM** with `codex login`
-(or `codex login --device-auth` for a headless login). Then add its SSH host in
-the supported desktop client's Settings → Connections. For a VM running on that
-same desktop, an SSH configuration can reuse the verified host key file:
+In the running Linux desktop, open **ChatGPT verbinden** from the application
+menu. The terminal stays open to display the result. This owner-invoked entry
+point checks login status, requests device login if needed, then runs:
+
+```sh
+codex remote-control start
+codex remote-control pair
+```
+
+Enter the actual short-lived code printed by the CLI into the client's pairing
+dialog. No invented code, login secret, or pairing code is stored in build logs
+or receipts. The CLI commands are experimental; successful pairing still requires
+a reachable OpenAI service and acceptance in the user's supported client. Stop
+the remote-control daemon with `codex remote-control stop`. This native relay
+connection and SSH access have separate lifecycles.
+
+For the desktop client's SSH connection method, sign in **inside the VM** and
+add its SSH host in Settings → Connections. For a VM running on that same desktop,
+an SSH configuration can reuse the verified host key file:
 
 ```sshconfig
 Host qikvrt-vm
@@ -165,6 +178,7 @@ Actions verification VM ends with its job and is not a persistent connection hos
 Sources: [OpenAI remote connections](https://learn.chatgpt.com/docs/remote-connections),
 [OpenAI authentication](https://learn.chatgpt.com/docs/auth),
 [OpenAI app-server protocol](https://learn.chatgpt.com/docs/app-server),
+[Pinned upstream native pairing implementation](https://github.com/openai/codex/blob/rust-v0.155.1/codex-rs/cli/src/remote_control_cmd.rs),
 [QEMU fw_cfg](https://www.qemu.org/docs/master/system/qemu-manpage.html).
 
 ## Principle

@@ -223,6 +223,19 @@ def sha256(path: Path) -> str:
         return hashlib.file_digest(source, "sha256").hexdigest()
 
 
+def chatgpt_connect() -> None:
+    """Owner-invoked native pairing; codes and login state never enter receipts."""
+    if os.geteuid() == 0:
+        raise ValueError("open ChatGPT verbinden as the ordinary live user, without sudo")
+    print("QIK-VRT: ChatGPT verbinden", flush=True)
+    if subprocess.run(["codex", "login", "status"]).returncode:
+        subprocess.run(["codex", "login", "--device-auth"], check=True)
+    subprocess.run(["codex", "remote-control", "start"], check=True)
+    subprocess.run(["codex", "remote-control", "pair"], check=True)
+    print("Den angezeigten Kopplungscode im ChatGPT-Client eingeben. "
+          "Die VM muss weiterlaufen. Beenden: codex remote-control stop", flush=True)
+
+
 def fnv(data: bytes) -> int:
     result = 2166136261
     for byte in data:
@@ -584,6 +597,7 @@ def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bo
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("chatgpt-connect")
     make = sub.add_parser("manifest"); make.add_argument("directory", type=Path); make.add_argument("source_sha"); make.add_argument("--source-tree")
     client = sub.add_parser("receive"); client.add_argument("url"); client.add_argument("sha256"); client.add_argument("directory", type=Path); client.add_argument("--boot", action="store_true"); client.add_argument("--verify-only", action="store_true")
     execute = sub.add_parser("boot"); execute.add_argument("directory", type=Path); execute.add_argument("--verify-only", action="store_true")
@@ -599,6 +613,9 @@ def main() -> int:
     serve = sub.add_parser("serve"); serve.add_argument("directory", type=Path); serve.add_argument("--host", default="127.0.0.1"); serve.add_argument("--port", type=int, default=7331)
     args = parser.parse_args()
     try:
+        if args.command == "chatgpt-connect":
+            chatgpt_connect()
+            return 0
         if args.command == "codex-install":
             print(json.dumps(install_codex(args.lock, args.destination, args.cache), sort_keys=True))
             return 0
