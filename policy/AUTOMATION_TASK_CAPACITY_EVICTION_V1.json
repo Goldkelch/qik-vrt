@@ -1,0 +1,48 @@
+{
+  "schema": "qikvrt_automation_task_capacity_eviction_v1",
+  "policy_id": "AUTOMATION-TASK-CAPACITY-EVICTION-V1",
+  "version": "1.0",
+  "effective_date": "2026-09-21",
+  "owner": {
+    "name": "Ingolf Lohmann",
+    "role": "Product Owner",
+    "type": "NATURAL_PERSON"
+  },
+  "purpose": "Deterministically free automation capacity while preserving the most-used active tasks.",
+  "algorithm": [
+    {
+      "order": 1,
+      "rule": "DISABLE_NEVER_RUN_FIRST",
+      "predicate": "is_enabled == true AND last_run_time == null",
+      "ordering": "stable task identifier order when multiple candidates exist"
+    },
+    {
+      "order": 2,
+      "rule": "STOP_WHEN_REQUIRED_CAPACITY_EXISTS",
+      "predicate": "free_slots >= required_slots"
+    },
+    {
+      "order": 3,
+      "rule": "DISABLE_LEAST_RUN",
+      "predicate": "capacity still insufficient",
+      "ordering": [
+        "ascending observed run_count",
+        "ascending last_run_time (oldest first) as tie-breaker",
+        "stable task identifier as final tie-breaker"
+      ]
+    }
+  ],
+  "evidence_rules": [
+    "Use authoritative automation metadata available at decision time.",
+    "Do not infer run_count when the platform does not expose it.",
+    "If run_count is unavailable and never-run elimination is insufficient, HOLD rather than fabricate a least-run ordering; obtain an authoritative count or equivalent execution history first.",
+    "Disabling a task is a capacity-management effect, not evidence that the task's underlying work is complete.",
+    "Preserve task history and do not reinterpret disabled work as DONE."
+  ],
+  "scope": "ChatGPT automation/task capacity management for QIK-VRT work and analogous capacity-constrained task sets.",
+  "release_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
