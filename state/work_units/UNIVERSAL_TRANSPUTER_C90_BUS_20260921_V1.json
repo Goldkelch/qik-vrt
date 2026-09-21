@@ -128,6 +128,17 @@
       "repair": "Validate supported framing, read the bounded body, then enforce Origin before any command parsing, compilation or store mutation.",
       "regression": "Split header/body transmission at 400 and 60000 bytes; full HTTP 400/HOLD readback, unchanged checkpoint and original event bytes, followed by a valid request in the same process.",
       "predecessor_evidence_transfer": false
+    },
+    {
+      "source_repository": "ingolf-lohmann/qik-vrt",
+      "source_head": "cddb6376a5f7865c056a269767b3397ae81e6bc1",
+      "source_tree": "ea0ad3c33a06f492d85432f49b8d91f14164662b",
+      "failed_run": "https://github.com/ingolf-lohmann/qik-vrt/actions/runs/35587316961",
+      "job_id": 106293532084,
+      "first_failure": "conformance: BACKEND_RECEIPT_REPOSITORY_MISMATCH",
+      "cause": "The existing workflow passed a fixed Authority repository name while its fresh backend receipt correctly identified the executing Mirror repository.",
+      "repair": "Pass GITHUB_REPOSITORY to the conformance runner. Preserve exact repository, HEAD and TREE equality requirements.",
+      "predecessor_evidence_transfer": false
     }
   ]
 }

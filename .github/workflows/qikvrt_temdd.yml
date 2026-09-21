@@ -149,7 +149,7 @@ jobs:
       set -euo pipefail
       test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
       mkdir -p "$RUNNER_TEMP/temdd-backends"
-      python3 -B conformance/temdd/runner.py --repository Goldkelch/qik-vrt \
+      python3 -B conformance/temdd/runner.py --repository "$GITHUB_REPOSITORY" \
         --backend-receipt "$RUNNER_TEMP/temdd-backends/backend-receipt.json" \
         --output "$RUNNER_TEMP/temdd-backends/temdd-conformance-v1.json"
       python3 - "$RUNNER_TEMP/temdd-backends/temdd-conformance-v1.json" <<'PY'
