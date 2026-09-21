@@ -90,12 +90,14 @@ class MegaSTDistributionContract(unittest.TestCase):
         self.assertEqual(lock['rom'], 'etos256de.img')
         self.assertEqual(lock['license'], 'GPL-2.0-or-later')
         self.assertEqual(lock['sha256'], 'aadd90cf0c99925d3f2943149dd51ee4deb6015aefe22ade4a5e6c04fb6f2e9d')
+        self.assertEqual(lock['rom_sha256'], '93d4ba5a322afb059b622d07bb5f3c572ab79f2127a5a53a62fe9cc4a045f3e8')
         build = BUILD.read_text()
         self.assertIn('EMUTOS_LOCK="$ROOT/runtime/toolchains/emutos-1.4.lock.json"', build)
         self.assertIn("sha256sum -c -", build)
         self.assertIn('len(data) != 256 * 1024', build)
         self.assertIn('/usr/share/hatari/tos.img', build)
         self.assertIn('"$WORK/config/includes.chroot/usr/share/qikvrt/emutos"', build)
+        self.assertIn('"emutos_rom_sha256": "$EMUTOS_ROM_SHA"', build)
         self.assertIn('"$WORK/config/includes.chroot/usr/share/hatari"', build)
         session = SESSION.read_text()
         self.assertIn('hatari --machine st --tos /usr/share/qikvrt/emutos/etos256de.img', session)
@@ -104,10 +106,11 @@ class MegaSTDistributionContract(unittest.TestCase):
         self.assertIn('hatari-emutos-window-observed', witness)
         self.assertIn('hatari_process_observed', witness)
         self.assertIn('emutos_rom_sha256', witness)
-        self.assertIn(lock['sha256'], witness)
+        self.assertNotIn(lock['sha256'], witness)
         self.assertNotIn('provide a legally usable TOS image', session)
 
-    def _check_emutos_materialization(self, entries, *, expected_error=None, bad_digest=False):
+    def _check_emutos_materialization(self, entries, *, expected_error=None,
+                                      bad_digest=False, bad_rom_digest=False):
         # Execute the real build prefix, not a second implementation of mkdir,
         # extraction or linking. Only network transport uses a local fixture.
         # Synthetic ROM bytes are never executed and do not witness a guest boot.
@@ -128,6 +131,8 @@ class MegaSTDistributionContract(unittest.TestCase):
                     archive.writestr(name, payload)
             lock['sha256'] = ('0' * 64 if bad_digest else
                               hashlib.sha256(archive_path.read_bytes()).hexdigest())
+            lock['rom_sha256'] = (lock['sha256'] if bad_rom_digest else
+                                  hashlib.sha256(entries[0][1]).hexdigest())
             staged_lock = root / 'runtime/toolchains/emutos-1.4.lock.json'
             staged_lock.parent.mkdir(parents=True)
             staged_lock.write_text(json.dumps(lock))
@@ -179,6 +184,33 @@ class MegaSTDistributionContract(unittest.TestCase):
         self._check_emutos_materialization([
             ('emutos-1.4/etos256de.img', b'Q' * (256 * 1024)),
         ])
+
+    def test_emutos_build_rejects_archive_digest_used_as_rom_digest(self):
+        self._check_emutos_materialization(
+            [('emutos/etos256de.img', b'Q' * (256 * 1024))],
+            bad_rom_digest=True, expected_error='BLOCKED: EmuTOS ROM digest mismatch')
+
+    def test_emutos_runtime_verifies_installed_rom_bytes(self):
+        verify = runpy.run_path(str(ROOT / 'distribution/qikvrt-megast/runtime-witness.py'))['verify_emutos_rom']
+        payload = b'Q' * (256 * 1024)
+        expected = hashlib.sha256(payload).hexdigest()
+        with tempfile.TemporaryDirectory() as temp:
+            rom = pathlib.Path(temp) / 'etos256de.img'
+            with self.assertRaisesRegex(RuntimeError, 'missing or wrong size'):
+                verify(rom, expected)
+            rom.write_bytes(payload)
+            self.assertEqual(verify(rom, expected), expected)
+            archive = io.BytesIO()
+            with zipfile.ZipFile(archive, 'w') as zipped:
+                zipped.writestr(rom.name, payload)
+            with self.assertRaisesRegex(RuntimeError, 'ROM digest mismatch'):
+                verify(rom, hashlib.sha256(archive.getvalue()).hexdigest())
+            rom.write_bytes(b'R' + payload[1:])
+            with self.assertRaisesRegex(RuntimeError, 'ROM digest mismatch'):
+                verify(rom, expected)
+            rom.write_bytes(b'too short')
+            with self.assertRaisesRegex(RuntimeError, 'missing or wrong size'):
+                verify(rom, expected)
 
     def test_emutos_materialization_rejects_invalid_archives(self):
         payload = b'Q' * (256 * 1024)
