@@ -13,7 +13,7 @@ import tempfile
 import time
 import urllib.request
 import urllib.error
-from carrier import target_catalog, import_catalog, restore
+from carrier import target_catalog, import_catalog, restore as restore_catalog
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -105,7 +105,7 @@ def main():
         assert len(transputer["registered_versions"])==2
         for name,data in originals.items():assert (store/"events"/name).read_bytes()==data
         recovered=tmp/"recovered-current-target"
-        restore(binary,store,successor_receipt["catalog_sha256"],recovered)
+        restore_catalog(binary,store,successor_receipt["catalog_sha256"],recovered)
         # Build using only recovered sources; neither Git nor the original source
         # directory participates in this C90/assembler build.
         built=subprocess.run(["make","-C",str(recovered/"next/core"),"test","assembly"],capture_output=True,timeout=120)
