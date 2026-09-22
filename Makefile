@@ -136,3 +136,9 @@ test: cloud-carrier-live-sse-test
 test: temdd-event-ledger-test
 temdd-event-ledger-test:
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tests/test_temdd_event_ledger.py
+
+# Offline mail parsing is a mandatory scoped regression, not a delivery receipt.
+.PHONY: ndr-dsn-offline-test
+test: ndr-dsn-offline-test
+ndr-dsn-offline-test:
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tests/test_qikvrt_ndr_dsn_offline.py -v
