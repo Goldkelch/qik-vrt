@@ -1,122 +1,103 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
-
 name: QIKVRT universal roundtrip controller
 
 on:
   workflow_run:
-    workflows:
-      - "*"
+    workflows: ["*"]
     types: [completed]
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review, review_requested]
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, review_requested, closed]
+  push:
+    branches: [main, agent/repository-wide-roundtrip-invariant-v1]
+    paths:
+      - .github/workflows/qikvrt_universal_roundtrip_controller.yml
+      - tools/qikvrt_universal_roundtrip_controller.py
+      - tests/test_qikvrt_universal_roundtrip_controller.py
+      - policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json
   issues:
-    types: [opened, reopened, edited, labeled, unlabeled]
+    types: [opened, reopened, edited, labeled, unlabeled, closed]
   create:
   delete:
   schedule:
-    - cron: "17 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
-  actions: read
-  issues: read
-  pull-requests: read
 
 concurrency:
-  group: qikvrt-universal-roundtrip-controller
+  group: qikvrt-universal-roundtrip-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 jobs:
-  enforce-roundtrip:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.name != 'QIKVRT universal roundtrip controller' }}
-    runs-on: ubuntu-latest
+  validate-controller:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - name: Check out exact repository subject
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Test execution, admission and provenance boundaries
+        run: python3 -B -m unittest discover -s tests -p test_qikvrt_universal_roundtrip_controller.py -v
 
-      - name: Verify repository-wide round-trip policy
-        shell: bash
+  execute-native-continuation:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request' &&
+      (github.event_name != 'workflow_run' ||
+       github.event.workflow_run.name != 'QIKVRT universal roundtrip controller')
+    permissions:
+      contents: read
+      actions: write
+      pull-requests: read
+      issues: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      QIKVRT_CONTROLLER_HEAD: ${{ github.sha }}
+      QIKVRT_ROUNDTRIP_RECEIPT: ${{ runner.temp }}/qikvrt-universal-roundtrip/receipt.json
+    steps:
+      - name: Check out trusted controller code, never PR code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Verify cached runtime contract
+        run: python3 -B tools/qikvrt_tool_cache.py verify
+      - name: Verify normative roundtrip policy
         run: |
-          set -euo pipefail
-          python3 - <<'PY'
+          python3 -B - <<'PY'
           import json
           from pathlib import Path
-          p=Path("policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json")
-          d=json.loads(p.read_text(encoding="utf-8"))
-          assert d["scope"] == "repository-wide"
-          assert d["required_roundtrip"] == [
-              "INSPECT","SOLVE","OBSERVE_EFFECT","VERIFY_READBACK","CONTINUE_OR_DONE"
-          ]
-          assert d["invariants"]["predecessor_evidence_transfer"] is False
-          assert d["invariants"]["unknown_fails_closed"] is True
-          assert d["done_state"] == "EFFECT_ACK_DONE"
-          print("ROUNDTRIP_POLICY=PASS")
+          policy = json.loads(Path('policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json').read_text())
+          assert policy['scope'] == 'repository-wide'
+          assert policy['required_roundtrip'] == ['INSPECT', 'SOLVE', 'OBSERVE_EFFECT', 'VERIFY_READBACK', 'CONTINUE_OR_DONE']
+          assert policy['invariants']['predecessor_evidence_transfer'] is False
+          assert policy['invariants']['unknown_fails_closed'] is True
+          assert policy['done_state'] == 'EFFECT_ACK_DONE'
           PY
-
-      - name: Verify every workflow is governed by the universal controller
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          workflows = sorted(Path('.github/workflows').glob('*.yml')) + sorted(Path('.github/workflows').glob('*.yaml'))
-          controller = Path('.github/workflows/qikvrt_universal_roundtrip_controller.yml')
-          if controller not in workflows:
-              raise SystemExit('BLOCK: universal roundtrip controller is absent')
-          policy = Path('policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json')
-          if not policy.is_file():
-              raise SystemExit('BLOCK: repository-wide roundtrip policy is absent')
-          print(f'WORKFLOW_INVENTORY={len(workflows)}')
-          print('GOVERNANCE_MODEL=ALL_WORKFLOW_COMPLETIONS_FEED_UNIVERSAL_CONTROLLER')
-          print('SELF_RECURSION_GUARD=ENABLED')
-          PY
-
-      - name: Inspect exact state and derive continuation
+      - name: Validate the trusted execution bridge before dispatch
+        run: python3 -B -m unittest discover -s tests -p test_qikvrt_universal_roundtrip_controller.py -v
+      - name: Execute existing native carriers and reobserve their exact runs
         env:
           GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          head="$(git rev-parse HEAD)"
-          tree="$(git rev-parse HEAD^{tree})"
-          printf 'EXACT_HEAD=%s\nEXACT_TREE=%s\n' "$head" "$tree"
-          printf 'SOURCE_EVENT=%s\n' "${{ github.event_name }}"
-          if [ "${{ github.event_name }}" = workflow_run ]; then
-            printf 'UPSTREAM_NAME=%s\nUPSTREAM_RUN_ID=%s\nUPSTREAM_CONCLUSION=%s\n'               "${{ github.event.workflow_run.name }}"               "${{ github.event.workflow_run.id }}"               "${{ github.event.workflow_run.conclusion }}"
-          fi
-          prs="$(gh api --paginate "repos/$REPOSITORY/pulls?state=open&per_page=100" --jq 'length' | awk '{s+=$1} END{print s+0}')"
-          issues="$(gh api --paginate "repos/$REPOSITORY/issues?state=open&per_page=100" --jq '[.[]|select(.pull_request|not)]|length' | awk '{s+=$1} END{print s+0}')"
-          branches="$(gh api --paginate "repos/$REPOSITORY/branches?per_page=100" --jq 'length' | awk '{s+=$1} END{print s+0}')"
-          non_main=$(( branches > 0 ? branches - 1 : 0 ))
-          printf 'OPEN_PULL_REQUESTS=%s\nOPEN_ISSUES=%s\nNON_MAIN_BRANCHES=%s\n' "$prs" "$issues" "$non_main"
-          if [ "$prs" -eq 0 ] && [ "$issues" -eq 0 ] && [ "$non_main" -eq 0 ]; then
-            echo "CONTINUATION=VERIFY_EFFECT_ACK_DONE"
-          else
-            echo "CONTINUATION=INSPECT_SOLVE_REPEAT"
-          fi
-
-      - name: Fail closed on unfinished repository work
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          prs="$(gh api --paginate "repos/$REPOSITORY/pulls?state=open&per_page=100" --jq 'length' | awk '{s+=$1} END{print s+0}')"
-          issues="$(gh api --paginate "repos/$REPOSITORY/issues?state=open&per_page=100" --jq '[.[]|select(.pull_request|not)]|length' | awk '{s+=$1} END{print s+0}')"
-          branches="$(gh api --paginate "repos/$REPOSITORY/branches?per_page=100" --jq 'length' | awk '{s+=$1} END{print s+0}')"
-          non_main=$(( branches > 0 ? branches - 1 : 0 ))
-          if [ "$prs" -gt 0 ] || [ "$issues" -gt 0 ] || [ "$non_main" -gt 0 ]; then
-            echo "WORK_REMAINING=true"
-            echo "EFFECT_ACK_DONE=false"
-            exit 1
-          fi
-          echo "WORK_REMAINING=false"
-          echo "EFFECT_ACK_DONE=UNVERIFIED"
-          exit 1
+        run: python3 -B tools/qikvrt_universal_roundtrip_controller.py
+      - name: Preserve nonterminal execution and causal-blocker receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-universal-roundtrip-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.QIKVRT_ROUNDTRIP_RECEIPT }}
+          if-no-files-found: error
+          retention-days: 30
