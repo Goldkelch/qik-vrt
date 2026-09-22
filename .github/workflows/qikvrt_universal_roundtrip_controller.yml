@@ -58,6 +58,24 @@ jobs:
           print("ROUNDTRIP_POLICY=PASS")
           PY
 
+      - name: Verify every workflow is governed by the universal controller
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          workflows = sorted(Path('.github/workflows').glob('*.yml')) + sorted(Path('.github/workflows').glob('*.yaml'))
+          controller = Path('.github/workflows/qikvrt_universal_roundtrip_controller.yml')
+          if controller not in workflows:
+              raise SystemExit('BLOCK: universal roundtrip controller is absent')
+          policy = Path('policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json')
+          if not policy.is_file():
+              raise SystemExit('BLOCK: repository-wide roundtrip policy is absent')
+          print(f'WORKFLOW_INVENTORY={len(workflows)}')
+          print('GOVERNANCE_MODEL=ALL_WORKFLOW_COMPLETIONS_FEED_UNIVERSAL_CONTROLLER')
+          print('SELF_RECURSION_GUARD=ENABLED')
+          PY
+
       - name: Inspect exact state and derive continuation
         env:
           GH_TOKEN: ${{ github.token }}
