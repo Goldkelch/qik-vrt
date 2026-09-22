@@ -9,7 +9,10 @@ on:
       - ROUNDTRIP.md
       - tools/qikvrt_roundtrip_entrypoint.py
       - tests/test_roundtrip_entrypoint.py
+      - tests/test_roundtrip_self_declaration.py
+      - docs/WENN_BEOBACHTUNG_ALS_HANDELN_AUSGEGEBEN_WIRD.md
       - state/work_units/ROUNDTRIP_FIRST_ENTRYPOINT_20260921_V1.json
+      - state/work_units/SELF_DECLARATION_ENTRYPOINT_20260922_V1.json
       - .github/workflows/qikvrt_roundtrip_entrypoint.yml
 
 permissions:
@@ -41,6 +44,7 @@ jobs:
           python3 -B tools/qikvrt_roundtrip_entrypoint.py --apply
           python3 -B tools/qikvrt_roundtrip_entrypoint.py --check
           python3 -B tests/test_roundtrip_entrypoint.py
+          python3 -B tests/test_roundtrip_self_declaration.py
           python3 -B tools/qikvrt_integrity.py generate
           python3 -B tools/qikvrt_integrity.py verify
       - name: Persist only entrypoints and deterministic integrity
@@ -49,7 +53,7 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           import subprocess
-          allowed = {'README.md', 'AI', 'AGENTS.md', 'next/README.md', 'next/AI',
+          allowed = {'README.md', 'AI', 'AGENTS.md', 'next/README.md', 'next/AI', 'docs/index.html',
                      'REPOSITORY_FILE_MANIFEST.json', 'REPOSITORY_FILE_MANIFEST.json.sha256', 'SHA256SUMS.txt'}
           changed = set(subprocess.check_output(['git', 'diff', '--name-only'], text=True).splitlines())
           if not changed <= allowed:
@@ -59,14 +63,15 @@ jobs:
           test "$remote" = "$GITHUB_SHA"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add README.md AI AGENTS.md next/README.md next/AI \
+          git add README.md AI AGENTS.md next/README.md next/AI docs/index.html \
             REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
           if ! git diff --cached --quiet; then
-            git commit -m 'docs(roundtrip): put executable proof first and bind canonical integrity' \
-              -m 'Human direction: Ingolf Lohmann. Generated implementation: OpenAI ChatGPT. Mechanical persistence: GitHub Actions. Work unit: state/work_units/ROUNDTRIP_FIRST_ENTRYPOINT_20260921_V1.json. No native review, Main promotion or Roundtrip execution is inferred.'
+            git commit -m 'docs(entrypoint): materialize complete owner self-declaration and integrity' \
+              -m 'Human direction and supplied text: Ingolf Lohmann. Generated projection and tests: OpenAI ChatGPT. Mechanical persistence: GitHub Actions. Work unit: state/work_units/SELF_DECLARATION_ENTRYPOINT_20260922_V1.json. No native review, Main promotion, public site delivery or Roundtrip execution is inferred.'
           fi
           python3 -B tools/qikvrt_roundtrip_entrypoint.py --check
           python3 -B tests/test_roundtrip_entrypoint.py
+          python3 -B tests/test_roundtrip_self_declaration.py
           python3 -B tools/qikvrt_integrity.py verify
           test -z "$(git status --porcelain)"
           git push origin "HEAD:refs/heads/$GITHUB_REF_NAME"
@@ -81,9 +86,12 @@ jobs:
                      'head': git('rev-parse', 'HEAD'), 'tree': git('rev-parse', 'HEAD^{tree}'),
                      'source_head': os.environ['GITHUB_SHA'],
                      'entrypoint_checks': 'PASS', 'repository_integrity': 'PASS',
+                     'self_declaration_source_blob': git('hash-object', 'docs/WENN_BEOBACHTUNG_ALS_HANDELN_AUSGEGEBEN_WIRD.md'),
+                     'self_declaration_projection_checks': 'PASS',
                      'remote_ref_readback': 'MATCH', 'runner_execution': 'NOT_RUN',
                      'prime_original_binding': 'MISSING', 'predecessor_evidence_transfer': False,
-                     'native_review': 'NOT_ESTABLISHED', 'main_promotion': False, 'product_done': False}
+                     'native_review': 'NOT_ESTABLISHED', 'main_promotion': False,
+                     'public_site_delivery': False, 'product_done': False}
           text = json.dumps(receipt, indent=2, sort_keys=True) + '\n'
           pathlib.Path(os.environ['RUNNER_TEMP'], 'roundtrip-entrypoint-receipt.json').write_text(text)
           print(text)
