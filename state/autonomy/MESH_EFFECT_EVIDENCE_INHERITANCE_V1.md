@@ -58,3 +58,8 @@ This contract is recursive: future Mesh creation MUST install and validate the s
 ## QIK-VRT MVP inheritance
 
 Every conforming node MUST also inherit and enforce state/autonomy/QIKVRT_MVP_EXACT_SUBJECT_RECOVERY_V1.md (or an Authority-bound byte-identical canonical reference). MVP conformance is fail-closed when this recovery contract is absent or unresolved.
+
+
+## Unified architecture principle
+
+Every conforming node MUST inherit and expose state/autonomy/QIKVRT_UNIFIED_ARCHITECTURE_PRINCIPLE_V1.md or an Authority-bound byte-identical canonical reference. This binds Haltepunktdefinition, TEMDD, Effect Acknowledgment, Metatransistor and artificial cognition to the same evidence-bounded transition semantics; it does not transfer implementation or effect evidence between those domains.
