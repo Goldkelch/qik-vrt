@@ -1,0 +1,55 @@
+diff --git a/integrations/instagram-mcp/README.md b/integrations/instagram-mcp/README.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..8a5f5eebdab784b5c460e145325e3da29be5dad3
+--- /dev/null
++++ b/integrations/instagram-mcp/README.md
+@@ -0,0 +1,49 @@
++# Instagram Direct MCP v1
++
++## Purpose
++
++Repository-native carrier for a direct Instagram connector for ChatGPT/QIK-VRT.
++
++## Required architecture
++
++ChatGPT <-> MCP server <-> official Instagram API
++
++No Windsor dependency. No synthetic Facebook account or Facebook Page is to be created merely as an authentication bridge.
++
++## Invariants
++
++1. OAuth/identity consent remains user-controlled.
++2. Credentials and access tokens MUST NOT be committed to this repository.
++3. Bind the exact Instagram account identity before any mutation.
++4. Read operations and mutation operations are separate capabilities.
++5. Every mutation requires explicit authorization at the action boundary.
++6. TRANSPORT_ACK != EFFECT_ACK.
++7. A successful API response is not completion: perform a fresh Instagram readback and compare the intended observable state.
++8. Unsupported Instagram API operations remain UNSUPPORTED/UNKNOWN; do not emulate them by password-based browser automation.
++9. Fail closed on account mismatch, missing scopes, expired tokens, ambiguous media identity, or absent readback.
++10. Implementation/deployment blockers recurse to the next repository-native solution; they are not completion states.
++
++## Initial tool surface
++
++- get_account
++- list_media
++- get_media
++- publish_media (only when officially supported for the bound account)
++- manage_media (only operations explicitly exposed by the official API)
++- verify_effect
++
++## Acceptance
++
++DONE iff:
++
++    implementation_materialized
++    AND deployable_service
++    AND OAuth callback reachable
++    AND exact_account_bound
++    AND requested operation supported
++    AND execution acknowledged
++    AND fresh readback matches intended observable state
++
++Until all applicable terms hold:
++
++    EFFECT_ACK_DONE = FALSE
