@@ -1,0 +1,3 @@
+# TEMDD glossary
+
+**Subject** — immutable identity to which evidence is bound. **Evidence** — immutable observed fact with provenance and freshness. **Model** — representation used for inference, not evidence by itself. **Authority** — explicit scope-bound permission for an effect. **Effect** — externally observable mutation. **Readback** — fresh observation after commit. **Successor** — new exact subject created by mutation or learning. **HOLD_UNVERIFIED** — fail-closed nonterminal state. **CONTINUE** — productive obligation remains and awaits/uses the next admissible event. **NOOP** — permitted only when no productive obligation exists. **DONE** — proof object for the full declared Definition of Done.

@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+[workspace]
+members = ["crates/metatransistor", "crates/qikvrt"]
+resolver = "2"
+
+[profile.release]
+# C90 is separately compiled. Keep the default ABI build independent of
+# cross-crate LTO; optimized target-specific variants must pass this baseline.
+lto = false
+codegen-units = 1
+overflow-checks = true
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "PolyForm-Noncommercial-1.0.0"
+authors = ["Ingolf Lohmann; implementation assisted by OpenAI Codex"]

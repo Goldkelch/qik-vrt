@@ -962,8 +962,12 @@ jobs:
               expected_path,expected_intent=review_queue_intent(
                   receipt,intent.get('predecessor_fingerprint'),
               )
+              legacy_path=(
+                  f"{REVIEW_QUEUE_ROOT}/pr-{intent['pr_number']}/"
+                  f"{intent['head_sha']}/{intent['successor_fingerprint']}.json"
+              )
               if (
-                  queue_path != expected_path
+                  queue_path not in {expected_path,legacy_path}
                   or intent != expected_intent
                   or receipt_bytes != _pretty_json_bytes(receipt)
                   or claimed != _canonical_sha256(sealed)

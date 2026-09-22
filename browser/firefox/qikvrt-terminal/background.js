@@ -1,8 +1,9 @@
 const AUTHORITY = "Goldkelch/qik-vrt";
 const DEFAULT_BACKEND = "http://127.0.0.1:8771";
 const ALLOWED_BACKENDS = new Set(["http://127.0.0.1:8771", "http://localhost:8771"]);
-const WATCHDOG_ALARM = "qikvrt-repository-watchdog";
-const WATCHDOG_PERIOD_MINUTES = 5;
+const DEFAULT_EVENT_STREAM = "http://127.0.0.1:8787/events";
+const ALLOWED_EVENT_STREAMS = new Set(["http://127.0.0.1:8787/events", "http://localhost:8787/events"]);
+const LAST_EVENT_ID_HEADER = "Last-Event-ID";
 const STATE_MAP = new Map([
   ["nack", "EFFECT_NACK"],
   ["continue", "EFFECT_ACK_CONTINUE"],
@@ -10,6 +11,7 @@ const STATE_MAP = new Map([
   ["isolate", "EFFECT_ACK_ISOLATE"],
   ["block", "EFFECT_ACK_BLOCK"]
 ]);
+let qikvrtLiveEvent = null;
 
 function fail(reason) {
   return {ok: false, state: "HOLD", ordinary_release: false, reason};
@@ -85,10 +87,99 @@ async function persistWatchdogFrame() {
   return frame;
 }
 
-async function ensureWatchdog() {
-  const current = await browser.alarms.get(WATCHDOG_ALARM);
-  if (!current) await browser.alarms.create(WATCHDOG_ALARM, {periodInMinutes: WATCHDOG_PERIOD_MINUTES});
-  return persistWatchdogFrame();
+async function eventStreamUrl() {
+  const stored = await browser.storage.local.get(["qikvrtEventStream", "qikvrtLastEventId"]);
+  const value = stored.qikvrtEventStream || DEFAULT_EVENT_STREAM;
+  if (!ALLOWED_EVENT_STREAMS.has(value)) throw new Error("event stream outside allowlist");
+  const url = new URL(value);
+  const lastEventId = stored.qikvrtLastEventId;
+  if (typeof lastEventId === "string" && lastEventId) url.searchParams.set("since", lastEventId);
+  return url.toString();
+}
+
+// Transport callbacks are serialized; cursor and receipt commit together.
+let qikvrtLiveConnecting = null;
+let qikvrtLiveQueue = Promise.resolve();
+
+function canonicalEvent(value) {
+  if (Array.isArray(value)) return value.map(canonicalEvent);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonicalEvent(value[key])]));
+  }
+  return value;
+}
+
+async function acceptLiveEvent(event) {
+  if (typeof event.data !== "string" || new TextEncoder().encode(event.data).length > 65536) throw new Error("event exceeds stream bound");
+  const receipt = JSON.parse(event.data);
+  const required = ["observed_at", "phase", "verb", "causal_state", "effect_ack"];
+  if (!receipt || receipt.schema !== "qikvrt_live_event_v1" || receipt.repository !== AUTHORITY ||
+      typeof receipt.event_id !== "string" || !receipt.event_id || receipt.event_id.length > 512 ||
+      /[\r\n\0]/.test(receipt.event_id) || receipt.event_id !== event.lastEventId ||
+      !receipt.subject || !/^[0-9a-f]{40}$/.test(receipt.subject.head_sha || "") ||
+      !receipt.source || typeof receipt.source !== "object" || Array.isArray(receipt.source) ||
+      !receipt.payload || typeof receipt.payload !== "object" || Array.isArray(receipt.payload) ||
+      typeof receipt.productive_effect !== "boolean" || required.some(key => typeof receipt[key] !== "string")) {
+    throw new Error("unbound or invalid monitor receipt");
+  }
+  const stored = await browser.storage.local.get(["qikvrtLiveEvents", "qikvrtLastEventId"]);
+  const history = stored.qikvrtLiveEvents || [];
+  if (!Array.isArray(history)) throw new Error("invalid local monitor journal");
+  const previous = history.find(item => item.event_id === receipt.event_id);
+  if (previous) {
+    if (JSON.stringify(canonicalEvent(previous)) !== JSON.stringify(canonicalEvent(receipt))) throw new Error("event identity collision");
+    return;
+  }
+  // Explicit bounded window; durable history remains in the source journal.
+  const next = history.concat([receipt]).slice(-256);
+  await browser.storage.local.set({
+    qikvrtLiveEvents: next,
+    qikvrtLastEventId: receipt.event_id,
+    qikvrtLiveEventState: "EVENT",
+    qikvrtLiveEventError: null,
+    qikvrtLiveEventResumeHeader: LAST_EVENT_ID_HEADER
+  });
+}
+
+async function liveHold(error) {
+  const reason = error && error.message ? error.message : "monitor unavailable";
+  await browser.storage.local.set({qikvrtLiveEventState: "HOLD", qikvrtLiveEventError: reason});
+}
+
+async function connectLiveEventStream() {
+  if (qikvrtLiveEvent) return qikvrtLiveEvent;
+  if (qikvrtLiveConnecting) return qikvrtLiveConnecting;
+  qikvrtLiveConnecting = eventStreamUrl().then(url => {
+    const source = new EventSource(url, {withCredentials: false});
+    qikvrtLiveEvent = source;
+    let stopped = false;
+    const enqueue = action => {
+      qikvrtLiveQueue = qikvrtLiveQueue.then(() => stopped ? undefined : action()).catch(async error => {
+        // Never advance beyond a receipt that failed validation or persistence.
+        // A new native startup/rebind resumes from the last committed cursor.
+        stopped = true;
+        source.close();
+        if (qikvrtLiveEvent === source) qikvrtLiveEvent = null;
+        try { await liveHold(error); }
+        catch (_) { console.error("QIKVRT monitor stopped: local receipt storage unavailable"); }
+      });
+    };
+    source.addEventListener("open", () => {
+      enqueue(() => browser.storage.local.set({qikvrtLiveEventState: "CONNECTED", qikvrtLiveEventError: null}));
+    });
+    source.addEventListener("qikvrt", event => {
+      enqueue(() => acceptLiveEvent(event));
+    });
+    source.addEventListener("qikvrt_stream_error", () => {
+      enqueue(() => { throw new Error("source journal invalidated; exact rebind required"); });
+    });
+    source.onerror = () => {
+      enqueue(() => browser.storage.local.set({qikvrtLiveEventState: "RECONNECTING", qikvrtLiveEventError: "transport interrupted; last receipt is stale"}));
+    };
+    return source;
+  });
+  try { return await qikvrtLiveConnecting; }
+  finally { qikvrtLiveConnecting = null; }
 }
 
 function decodeSfBytes(value) {
@@ -218,10 +309,16 @@ async function commitEffect(payload) {
   return {...result, ordinary_release: Boolean(done && result.body && result.body.ordinary_release === true)};
 }
 
-browser.runtime.onInstalled.addListener(() => { ensureWatchdog().catch(() => undefined); });
-browser.runtime.onStartup.addListener(() => { ensureWatchdog().catch(() => undefined); });
-browser.alarms.onAlarm.addListener(alarm => { if (alarm.name === WATCHDOG_ALARM) persistWatchdogFrame().catch(() => undefined); });
-ensureWatchdog().catch(() => undefined);
+browser.runtime.onInstalled.addListener(() => {
+  connectLiveEventStream().catch(() => undefined);
+  persistWatchdogFrame().catch(() => undefined);
+});
+browser.runtime.onStartup.addListener(() => {
+  connectLiveEventStream().catch(() => undefined);
+  persistWatchdogFrame().catch(() => undefined);
+});
+connectLiveEventStream().catch(() => undefined);
+persistWatchdogFrame().catch(() => undefined);
 
 browser.runtime.onMessage.addListener(message => {
   if (!message || typeof message.kind !== "string") return Promise.resolve(fail("invalid message"));
