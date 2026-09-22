@@ -1,3 +1,20 @@
+<!-- qikvrt-multilingual-self-declaration-frontdoor:v1 -->
+# QIK-VRT — Selbsterklärung · Self-declaration · Auto-déclaration · Самодекларация
+
+**DE:** QIK-VRT trennt Auftrag, Ausführung, beobachtete Wirkung, überprüfbare Provenienz und Abschluss. Ein Fehler ist kein Endzustand: Die erste verbleibende kausale Abweichung wird zur nächsten überprüfbaren Arbeitseinheit, bis die verlangte Wirkung selbst nachgewiesen ist.
+
+**EN:** QIK-VRT separates intent, execution, observed effect, verifiable provenance, and completion. A failure is not a terminal state: the first remaining causal deviation becomes the next verifiable work unit until the requested effect itself has been demonstrated.
+
+**FR:** QIK-VRT distingue l’objectif, l’exécution, l’effet observé, la provenance vérifiable et l’achèvement. Un échec n’est pas un état terminal : le premier écart causal restant devient l’unité de travail vérifiable suivante, jusqu’à ce que l’effet demandé lui-même soit démontré.
+
+**RU:** QIK-VRT разделяет цель, выполнение, наблюдаемый эффект, проверяемое происхождение данных и завершение. Ошибка не является конечным состоянием: первое оставшееся причинное отклонение становится следующей проверяемой единицей работы, пока не будет подтверждён сам требуемый эффект.
+
+**Kanonischer vollständiger Text / canonical full text:** [Wenn Beobachtung als Handeln ausgegeben wird](docs/WENN_BEOBACHTUNG_ALS_HANDELN_AUSGEGEBEN_WIRD.md) — Ingolf Lohmann · September 2026.
+
+> `TRANSPORT_ACK ≠ EFFECT_ACK` · `REPEAT until EFFECT_ACK_DONE == TRUE`
+
+<!-- /qikvrt-multilingual-self-declaration-frontdoor:v1 -->
+
 <!-- qikvrt-roundtrip-first:v1 -->
 ## Zuerst: ausfuehrbarer Roundtrip-Beweis / Start here
 
