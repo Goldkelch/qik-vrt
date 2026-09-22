@@ -171,6 +171,21 @@ class Boundaries(unittest.TestCase):
         self.assertEqual(sum(body is not None for _, body in calls), 1)
         self.assertEqual(result['child_executions'][0]['run_id'], 42)
 
+    def test_job_environment_uses_only_admissible_expression_contexts(self):
+        import re
+        text = (ROOT / '.github/workflows/qikvrt_universal_roundtrip_controller.yml').read_text()
+        job_env = False
+        allowed = {'github', 'needs', 'strategy', 'matrix', 'vars', 'secrets', 'inputs'}
+        for line in text.splitlines():
+            if line == '    env:':
+                job_env = True
+                continue
+            if job_env and line.strip() and not line.startswith('      '):
+                job_env = False
+            if job_env:
+                for context in re.findall(r'\$\{\{\s*([A-Za-z_]+)\.', line):
+                    self.assertIn(context, allowed, line)
+
     def test_workflow_privilege_separation(self):
         text = (ROOT / '.github/workflows/qikvrt_universal_roundtrip_controller.yml').read_text()
         self.assertIn('persist-credentials: false', text)
