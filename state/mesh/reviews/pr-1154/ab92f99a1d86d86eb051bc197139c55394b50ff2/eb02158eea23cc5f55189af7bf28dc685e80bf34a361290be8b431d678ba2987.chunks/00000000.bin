@@ -1,0 +1,1082 @@
+diff --git a/.github/workflows/qikvrt_autonomous_pr_head_continuation.yml b/.github/workflows/qikvrt_autonomous_pr_head_continuation.yml
+index 27ff44cdee7097205034f3f50ac69282959200c2..e7c54e09466de880cf9fc0aaa473c763225169a4 100644
+--- a/.github/workflows/qikvrt_autonomous_pr_head_continuation.yml
++++ b/.github/workflows/qikvrt_autonomous_pr_head_continuation.yml
+@@ -281,7 +281,8 @@ jobs:
+             --arg pr "$selected_pr" \
+             --arg ref "$selected_ref" \
+             --arg head "$selected_head" \
+-            '{d0:2,state:"REOBSERVE",event:$event,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,productive_effect:false,effect_ack:"NOT_REQUIRED",reason:"ZERO_JOB_ACTION_REQUIRED"}' \
++            --arg reason "$(jq -r '.reason' "$root/decision-${selected_pr}.json")" \
++            '{d0:2,state:"REOBSERVE",event:$event,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,productive_effect:false,effect_ack:"NOT_REQUIRED",reason:$reason}' \
+             > "$root/decision-receipt.json"
+ 
+       - name: Dispatch exact-head REOBSERVE continuation
+diff --git a/.github/workflows/qikvrt_batch04_integrity.yml b/.github/workflows/qikvrt_batch04_integrity.yml
+index 9e1dd5f05697b3b974351f4e73622c9658ca108f..47c1b2d916c7a590444c25a4ff338a45826991f0 100644
+--- a/.github/workflows/qikvrt_batch04_integrity.yml
++++ b/.github/workflows/qikvrt_batch04_integrity.yml
+@@ -292,7 +292,6 @@ jobs:
+           make test
+           python3 tools/qikvrt_integrity.py verify
+       - name: Commit materialized repository evidence
+-        if: github.event_name != 'pull_request'
+         shell: bash
+         run: |
+           set -euo pipefail
+diff --git a/.github/workflows/qikvrt_universal_roundtrip_controller.yml b/.github/workflows/qikvrt_universal_roundtrip_controller.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2caa72f95d1bd4dfeb20a1bf39e11599ec6023a
+--- /dev/null
++++ b/.github/workflows/qikvrt_universal_roundtrip_controller.yml
+@@ -0,0 +1,103 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++name: QIKVRT universal roundtrip controller
++
++on:
++  workflow_run:
++    workflows: ["*"]
++    types: [completed]
++  pull_request:
++    types: [opened, reopened, synchronize, ready_for_review, review_requested]
++  pull_request_target:
++    types: [opened, reopened, synchronize, ready_for_review, review_requested, closed]
++  push:
++    branches: [main, agent/repository-wide-roundtrip-invariant-v1]
++    paths:
++      - .github/workflows/qikvrt_universal_roundtrip_controller.yml
++      - tools/qikvrt_universal_roundtrip_controller.py
++      - tests/test_qikvrt_universal_roundtrip_controller.py
++      - policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json
++  issues:
++    types: [opened, reopened, edited, labeled, unlabeled, closed]
++  create:
++  delete:
++  schedule:
++    - cron: "*/5 * * * *"
++  workflow_dispatch:
++
++permissions:
++  contents: read
++
++concurrency:
++  group: qikvrt-universal-roundtrip-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
++  cancel-in-progress: false
++
++jobs:
++  validate-controller:
++    if: github.event_name == 'pull_request' || github.event_name == 'push'
++    runs-on: ubuntu-24.04
++    timeout-minutes: 10
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
++        with:
++          ref: ${{ github.event.pull_request.head.sha || github.sha }}
++          persist-credentials: false
++      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
++        with:
++          python-version: "3.12"
++      - name: Test execution, admission and provenance boundaries
++        run: python3 -B -m unittest discover -s tests -p test_qikvrt_universal_roundtrip_controller.py -v
++
++  execute-native-continuation:
++    if: >-
++      github.ref == 'refs/heads/main' &&
++      github.event_name != 'pull_request' &&
++      (github.event_name != 'workflow_run' ||
++       github.event.workflow_run.name != 'QIKVRT universal roundtrip controller')
++    permissions:
++      contents: read
++      actions: write
++      pull-requests: read
++      issues: read
++    runs-on: ubuntu-24.04
++    timeout-minutes: 12
++    env:
++      QIKVRT_CONTROLLER_HEAD: ${{ github.sha }}
++      QIKVRT_ROUNDTRIP_RECEIPT: /tmp/qikvrt-universal-roundtrip/receipt.json
++    steps:
++      - name: Check out trusted controller code, never PR code
++        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
++        with:
++          ref: ${{ github.sha }}
++          persist-credentials: false
++      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
++        with:
++          python-version: "3.12"
++      - name: Verify cached runtime contract
++        run: python3 -B tools/qikvrt_tool_cache.py verify
++      - name: Verify normative roundtrip policy
++        run: |
++          python3 -B - <<'PY'
++          import json
++          from pathlib import Path
++          policy = json.loads(Path('policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json').read_text())
++          assert policy['scope'] == 'repository-wide'
++          assert policy['required_roundtrip'] == ['INSPECT', 'SOLVE', 'OBSERVE_EFFECT', 'VERIFY_READBACK', 'CONTINUE_OR_DONE']
++          assert policy['invariants']['predecessor_evidence_transfer'] is False
++          assert policy['invariants']['unknown_fails_closed'] is True
++          assert policy['done_state'] == 'EFFECT_ACK_DONE'
++          PY
++      - name: Validate the trusted execution bridge before dispatch
++        run: python3 -B -m unittest discover -s tests -p test_qikvrt_universal_roundtrip_controller.py -v
++      - name: Execute existing native carriers and reobserve their exact runs
++        env:
++          GH_TOKEN: ${{ github.token }}
++        run: python3 -B tools/qikvrt_universal_roundtrip_controller.py
++      - name: Preserve nonterminal execution and causal-blocker receipt
++        if: always()
++        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
++        with:
++          name: qikvrt-universal-roundtrip-${{ github.run_id }}-${{ github.run_attempt }}
++          path: ${{ env.QIKVRT_ROUNDTRIP_RECEIPT }}
++          if-no-files-found: error
++          retention-days: 30
+diff --git a/AGENTS.md b/AGENTS.md
+index 52c2a15624a68047b7b1f745c08affa799f2b6a1..1d0aae155e0a94cf2744fbc11c0db449347f76c5 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -31,6 +31,34 @@ Copyright (c) 2026 Ingolf Lohmann.
+ These rules apply repository-wide to humans, agents, workflows, and tools that
+ collect or use adaptive evidence.
+ 
++## Repository-wide round-trip invariant
++
++The machine-readable policy `policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json` is
++mandatory for **every repository action** by a human, agent, workflow, or tool.
++
++Every action MUST execute the same causal round trip:
++
++`INSPECT -> SOLVE -> OBSERVE_EFFECT -> VERIFY_READBACK -> CONTINUE_OR_DONE`.
++
++Before mutation, bind the exact repository subject (including HEAD/TREE where
++applicable), authority, prerequisites, and intended postcondition. After any
++mutation, predecessor evidence is stale for the successor: rebind the new exact
++subject and rerun every applicable gate. A request, event, dispatch, queue,
++transport acknowledgement, local execution, observer/comment, or successful
++intermediate workflow is not an effect acknowledgement.
++
++A failed or missing postcondition becomes the next causal work unit and MUST be
++solved recursively with an existing repository-native pattern first.
++Independent eligible lanes continue independently. Unknown authority, evidence,
++or executable capability fails closed. Temporal proximity alone never
++establishes causality. NOOP, blind retry, wake-up commits, duplicate carriers,
++fabricated review/authority, protection weakening, or unverified claims of
++effect MUST NOT be counted as progress.
++
++`EFFECT_ACK_DONE` is permitted only when the declared exact scope has reached
++its required postcondition and a fresh effect readback verifies it. Until then,
++the state remains explicitly nonterminal.
++
+ ## Session reconstruction
+ 
+ Every new AI, agent, IDE-assistant, or automation session MUST begin with the
+diff --git a/AI b/AI
+index 1780c4fc262933779f24c718cadd0bc32f5ed390..26861cc64f5910ee48a6150749ca64908c4c396a 100644
+--- a/AI
++++ b/AI
+@@ -23,6 +23,68 @@ Vollständiger Text einschließlich der Ergänzung „Die gefährlichste Form de
+ 
+ QIK-VRT AI RUNTIME ENTRYPOINT
+ 
++UNIVERSAL QIK-VRT ROUND-TRIP — READ THIS FIRST
++
++PURPOSE
++QIK-VRT carries an intended result to a verified effect. Request, dispatch,
++queue, transport, local execution, workflow success, observer output and status
++reporting are intermediate states, not completion.
++
++MANDATORY EXECUTION SEMANTICS
++
++```text
++REPEAT until EFFECT_ACK_DONE == TRUE
++(
++  INSPECT exact subject, provenance, authority, gates and causal state
++  SOLVE the first concrete defect with an existing QIK-VRT pattern first
++  EXECUTE the smallest authorized deterministic transition
++  OBSERVE the actual effect
++  VERIFY a fresh readback on the resulting exact subject
++  CONTINUE with every remaining or newly exposed work unit
++)
++```
++
++A failed or missing postcondition becomes the next causal work unit. Do not
++return merely because an admitted writer is still running: reobserve it within
++the available execution window and continue immediately when its terminal
++result exposes the successor. Continue independent eligible lanes when another
++lane is blocked.
++
++EVIDENCE SEMANTICS
++
++```text
++REQUEST
++!= DISPATCH
++!= QUEUE
++!= TRANSPORT_ACK
++!= ADMITTED_EXECUTION
++!= LOCAL_RESULT
++!= OBSERVED_EFFECT
++!= VERIFIED_EFFECT_READBACK
++```
++
++Bind evidence to exact HEAD/TREE where applicable. After mutation,
++PREDECESSOR_EVIDENCE_TRANSFER=false. Timing alone is not causality.
++Observer/bot/comment evidence is not native human authority. Unknown state
++fails closed. NOOP, blind retry, wake-up commits, duplicate carriers,
++protection weakening, fabricated authority, or unverified success claims are
++not progress.
++
++TERMINAL SEMANTICS
++EFFECT_ACK_DONE is valid only for the explicitly declared exact scope after all
++of its release conditions are satisfied and the required effect has a fresh
++readback. Otherwise continue the round trip.
++
++NORMATIVE MACHINE AUTHORITY
++policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json
++
++HUMAN PROJECTION
++README.md
++
++AGENT/TOOL PROJECTION
++AGENTS.md
++
++
+ UNIVERSAL TRANSPUTER C90 TARGET: next/AI
+ Branch: architecture/universal-transputer-c90-v1. Resolve its actual HEAD/TREE.
+ Read next/README.md and next/TARGET_ENTRYPOINTS.json for the C90 core, addressed
+diff --git a/README.md b/README.md
+index 247e7ca9a05be23c8d28e2acddee37afa0a360ed..c538c4a80afb57cacbbedea53957ff3c74dbecad 100644
+--- a/README.md
++++ b/README.md
+@@ -764,6 +764,130 @@ Ingolf Lohmann
+ 
+ # QIK-VRT
+ 
++## QIK-VRT — from intent to verified effect
++
++**QIK-VRT is built around one requirement: an action is not finished because it
++was requested, dispatched, executed locally, or reported as successful. It is
++finished only when the intended effect exists and that effect has been read
++back and verified.**
++
++That distinction is the shortest description of the system:
++
++```text
++INTENT
++  ↓
++INSPECT the exact current state
++  ↓
++SOLVE the first causal defect
++  ↓
++EXECUTE through an actually available, authorized carrier
++  ↓
++OBSERVE the resulting effect
++  ↓
++VERIFY a fresh readback
++  ↓
++POSTCONDITION SATISFIED?
++  ├─ no  → the discrepancy becomes the next work unit → repeat
++  └─ yes → EFFECT_ACK_DONE for the explicitly declared scope
++```
++
++### The executable rule
++
++```text
++USING QIK-VRT and every actually available authorized carrier
++
++REPEAT until EFFECT_ACK_DONE == TRUE
++(
++  while PullRequest, Issue, Branch, WorkUnit, Gate, or EffectObligation EXISTS
++  DO
++  (
++    INSPECT exact current subject, provenance, authority, gates and causal state
++    SOLVE the first concrete defect using an existing QIK-VRT pattern first
++    EXECUTE the smallest authorized deterministic transition
++    OBSERVE the actual effect
++    VERIFY a fresh readback on the resulting exact subject
++    CONTINUE with every remaining or newly exposed work unit
++  )
++)
++```
++
++### Why this exists
++
++Conventional automation can stop at the wrong boundary. A request can be
++accepted without being executed. A workflow can be green while its intended
++external effect never happened. A local commit can exist without reaching the
++protected branch. A transport acknowledgement can prove delivery while proving
++nothing about the downstream result.
++
++QIK-VRT therefore separates these states deliberately:
++
++```text
++REQUEST
++!= DISPATCH
++!= QUEUE
++!= TRANSPORT_ACK
++!= ADMITTED_EXECUTION
++!= LOCAL_RESULT
++!= OBSERVED_EFFECT
++!= VERIFIED_EFFECT_READBACK
++```
++
++Only the final, scope-bound verified state may become `EFFECT_ACK_DONE`.
++
++### The recursive consequence
++
++A failure, missing postcondition, rejected write, stale proof, absent carrier,
++failed gate, or mismatching readback is **not the end of the algorithm**. It is
++the next causal work unit. The system inspects that defect, solves it through an
++existing repository-native pattern where possible, executes the repair, reads
++the result back, and repeats.
++
++Independent work does not stop merely because another lane is blocked.
++Conversely, activity is not progress: blind retries, wake-up commits, duplicate
++carriers, status-only loops, fabricated reviews, weakened protection, or
++unverified success claims do not satisfy the contract.
++
++### Evidence rules
++
++Every claim is bound to its exact subject. After a mutation there is a new
++subject, so predecessor evidence does not silently transfer. Temporal proximity
++alone does not establish causality. Observer output does not become native human
++authority. Unknown evidence or authority fails closed.
++
++The repository-wide invariant is therefore:
++
++`INSPECT → SOLVE → EXECUTE → OBSERVE_EFFECT → VERIFY_READBACK → CONTINUE_OR_DONE`
++
++and the release boundary remains:
++
++`TRANSPORT_ACK != EFFECT_ACK`
++
++### One contract for humans and machines
++
++This README is the human entrypoint. The root `/AI` file is the artificial-
++cognition entrypoint. `AGENTS.md` binds repository agents and tools. All three
++are projections of the same machine-readable normative authority:
++
++`policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json`
++
++The repository must not claim that these words themselves prove completion.
++The proof is the chain of exact repository identity, admitted execution,
++observed effect and fresh readback for the declared scope.
++
++### What “done” means
++
++`EFFECT_ACK_DONE` is deliberately narrow. It means that **all release
++conditions declared for one exact scope are satisfied and its required effect
++has been freshly verified**. It does not turn unrelated open work, empirical
++claims, future tasks, or external systems into completed facts.
++
++Until that condition is established, the correct state is nonterminal:
++
++```text
++inspect → solve → execute → observe → verify → continue
++```
++
++
+ The **C90 universal Transputer and durable full-duplex IP bus** are available in
+ this branch under [next/AI](next/AI), with [build, connection and recovery instructions](next/README.md).
+ Its exact-source checks and source restoration retain the original component
+diff --git a/policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json b/policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..de236cee07788229d7aede9cbfd7deb3173044a6
+--- /dev/null
++++ b/policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json
+@@ -0,0 +1,56 @@
++{
++  "schema": "qikvrt-repository-roundtrip-invariant/1.0",
++  "id": "qikvrt-repository-wide-roundtrip-invariant-v1",
++  "scope": "repository-wide",
++  "applies_to": [
++    "human",
++    "agent",
++    "workflow",
++    "tool",
++    "issue",
++    "pull_request",
++    "branch",
++    "commit",
++    "review",
++    "merge",
++    "release",
++    "deployment",
++    "external_effect"
++  ],
++  "required_roundtrip": [
++    "INSPECT",
++    "SOLVE",
++    "OBSERVE_EFFECT",
++    "VERIFY_READBACK",
++    "CONTINUE_OR_DONE"
++  ],
++  "invariants": {
++    "exact_subject_binding_required": true,
++    "predecessor_evidence_transfer": false,
++    "temporal_proximity_implies_causality": false,
++    "transport_ack_equals_effect_ack": false,
++    "observer_equals_native_authority": false,
++    "unknown_fails_closed": true,
++    "mutation_requires_fresh_validation": true,
++    "noop_retry_wakeup_counts_as_progress": false,
++    "independent_lanes_remain_independent_without_evidenced_edge": true,
++    "effect_ack_done_requires_fresh_effect_readback": true
++  },
++  "terminal_rule": "No repository action may be treated as complete merely because it was requested, dispatched, queued, transported, locally executed, commented on, or observed. Completion requires the declared postcondition and its fresh readback on the exact current subject.",
++  "failure_rule": "Any failed or missing postcondition becomes the next causal work unit. Continue independent eligible work; fail closed where authority, evidence, or executable capability is missing.",
++  "authority_boundary": "This invariant never fabricates human review or authority, weakens branch protection, exposes credentials, or authorizes an external effect that lacks its own authorization.",
++  "done_state": "EFFECT_ACK_DONE",
++  "governance": {
++    "classification": "repository-wide foundational rule",
++    "admissibility_rule": "Every repository action, workflow, pull request, issue, branch, work unit, gate and effect obligation must conform to this invariant.",
++    "nonconformance_disposition": [
++      "INSPECT the exact nonconforming subject and evidence",
++      "SOLVE by repairing or migrating it to the invariant when productive intent remains valid",
++      "SUPERSEDE or CLOSE only when exact evidence establishes redundancy, invalidity, or replacement",
++      "DELETE a branch only after its productive work has an evidenced terminal disposition and repository policy permits deletion",
++      "NEVER discard unresolved productive work merely to reduce counters"
++    ],
++    "enforcement": "fail-closed",
++    "scope_terminal_condition": "EFFECT_ACK_DONE"
++  }
++}
+diff --git a/tests/test_aphorism_corpus_v2.py b/tests/test_aphorism_corpus_v2.py
+index 0f47bf8e13c6625721c52bebab087293fd430aaa..178a34ade799b5b1fcf515d2cdad17fd43afcc28 100644
+--- a/tests/test_aphorism_corpus_v2.py
++++ b/tests/test_aphorism_corpus_v2.py
+@@ -108,9 +108,25 @@ class AphorismCorpusV2Tests(unittest.TestCase):
+             "qikvrt-repository-evidence-${{ github.event_name }}-",
+             workflow,
+         )
++        # The same-repository admission guard is on the materialize job in
++        # this carrier. Bind its complete expression rather than demanding
++        # the obsolete blanket PR exclusion on the persistence step. This
++        # must still fail if repository equality or the actor guard is lost.
++        job = workflow.split("  materialize:\n", 1)[1]
++        admission, separator, _ = job.split("if: >-", 1)[1].partition("runs-on:")
++        self.assertTrue(separator, "materialize job must declare its runner")
++        self.assertEqual(
++            " ".join(admission.split()),
++            "(github.event_name == 'pull_request' && "
++            "github.event.pull_request.head.repo.full_name == github.repository && "
++            "github.actor != 'dependabot[bot]') || "
++            "github.event_name == 'workflow_dispatch' || "
++            "(github.event_name == 'push' && "
++            "github.actor != 'github-actions[bot]')",
++        )
+         commit_step = workflow.index("- name: Commit materialized repository evidence")
+         block = workflow[commit_step:]
+-        self.assertIn("if: github.event_name != 'pull_request'", block)
++        self.assertNotIn("if: github.event_name != 'pull_request'", block)
+         for token in (
+             'source_head="$(git rev-parse --verify HEAD^{commit})"',
+             'git ls-remote --heads origin "refs/heads/$TARGET_REF"',
+@@ -121,8 +137,8 @@ class AphorismCorpusV2Tests(unittest.TestCase):
+         ):
+             self.assertIn(token, block)
+         self.assertLess(
+-            block.index("if: github.event_name != 'pull_request'"),
+-            block.index("git commit -m \"ci: materialize repository evidence\""),
++            workflow.index("github.event.pull_request.head.repo.full_name == github.repository"),
++            commit_step,
+         )
+         self.assertLess(
+             block.index("BLOCK: target ref advanced before repository evidence persistence"),
+diff --git a/tests/test_qikvrt_pr_head_recovery.py b/tests/test_qikvrt_pr_head_recovery.py
+index bc2151ffa9b30e0879365982a83a09fd727a2e57..c1c30d1e1b7d5bbadbbf0b3d9189669237477241 100644
+--- a/tests/test_qikvrt_pr_head_recovery.py
++++ b/tests/test_qikvrt_pr_head_recovery.py
+@@ -199,10 +199,38 @@ class PrHeadRecoveryClassifierTests(unittest.TestCase):
+         self.assertEqual(decision.d0, 1)
+         self.assertEqual(decision.reason, "TRUSTED_EXACT_HEAD_VERIFICATION_FAILED")
+ 
+-    def test_empty_observation_set_is_noop(self) -> None:
+-        decision = classify_observations([])
++    def test_missing_exact_head_runs_reobserve_without_fabricating_execution(self) -> None:
++        for status in (None, "missing"):
++            with self.subTest(status=status):
++                decision = classify_observations([], exact_head_status=status)
++                self.assertEqual(
++                    decision,
++                    RecoveryDecision(
++                        d0=2,
++                        state="REOBSERVE",
++                        reason="MISSING_EXACT_HEAD_RUNS",
++                        active_workflows=0,
++                        executed_failures=0,
++                        zero_job_action_required=0,
++                    ),
++                )
++                self.assertIs(decision.to_mapping()["productive_effect"], False)
++                self.assertEqual(decision.to_mapping()["effect_ack"], "NOT_REQUIRED")
++
++    def test_empty_iterator_uses_the_same_reobservation_edge(self) -> None:
++        decision = classify_observations(iter(()))
++        self.assertEqual(decision.d0, 2)
++        self.assertEqual(decision.reason, "MISSING_EXACT_HEAD_RUNS")
++
++    def test_trusted_success_without_native_runs_is_not_dispatched_again(self) -> None:
++        decision = classify_observations([], exact_head_status="success")
+         self.assertEqual(decision.d0, 0)
+-        self.assertEqual(decision.reason, "CONSISTENT_OR_ALREADY_TERMINAL")
++        self.assertEqual(decision.reason, "TRUSTED_EXACT_HEAD_VERIFIED")
++
++    def test_dispatch_error_without_native_runs_requires_repair(self) -> None:
++        decision = classify_observations([], exact_head_status="error")
++        self.assertEqual(decision.d0, 1)
++        self.assertEqual(decision.reason, "TRUSTED_EXACT_HEAD_VERIFICATION_FAILED")
+ 
+     def test_invalid_job_count_fails_closed(self) -> None:
+         with self.assertRaisesRegex(ValueError, "jobs_total"):
+diff --git a/tests/test_qikvrt_universal_roundtrip_controller.py b/tests/test_qikvrt_universal_roundtrip_controller.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..831f4bef86d904aa9e3745f30c603a7ecb86e8ba
+--- /dev/null
++++ b/tests/test_qikvrt_universal_roundtrip_controller.py
+@@ -0,0 +1,201 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++import importlib.util
++import json
++from pathlib import Path
++import tempfile
++import unittest
++from unittest.mock import patch
++
++ROOT = Path(__file__).resolve().parents[1]
++SPEC = importlib.util.spec_from_file_location(
++    'roundtrip_controller_under_test', ROOT / 'tools/qikvrt_universal_roundtrip_controller.py')
++M = importlib.util.module_from_spec(SPEC)
++SPEC.loader.exec_module(M)
++REPO = 'Goldkelch/qik-vrt'
++HEAD, TREE = 'a' * 40, 'b' * 40
++SUBJECT = M.bind_subject(REPO, HEAD, TREE)
++
++
++def run(workflow=M.CARRIERS[0], status='completed', conclusion='success', **changes):
++    result = {'id': 42, 'path': M.carrier_path(workflow), 'head_sha': HEAD,
++              'head_branch': 'main', 'status': status, 'conclusion': conclusion}
++    result.update(changes)
++    return result
++
++
++class Boundaries(unittest.TestCase):
++    def test_unknown_carrier_is_rejected(self):
++        with self.assertRaises(M.BoundaryError):
++            M.carrier_path('../../untrusted.yml')
++
++    def test_bad_repository_is_rejected(self):
++        with self.assertRaises(M.BoundaryError):
++            M.bind_subject('repo/../../other', HEAD, TREE)
++
++    def test_unknown_tree_is_rejected(self):
++        with self.assertRaises(M.BoundaryError):
++            M.bind_subject(REPO, HEAD, '')
++
++    def test_previous_head_cannot_supply_evidence(self):
++        with self.assertRaisesRegex(M.BoundaryError, 'MISMATCH'):
++            M.classify_run(run(head_sha='c' * 40), [], M.CARRIERS[0], SUBJECT)
++
++    def test_wrong_workflow_cannot_supply_evidence(self):
++        with self.assertRaises(M.BoundaryError):
++            M.classify_run(run(path='.github/workflows/other.yml'), [], M.CARRIERS[0], SUBJECT)
++
++    def test_zero_job_success_is_not_execution(self):
++        self.assertEqual(M.classify_run(run(), [], M.CARRIERS[0], SUBJECT),
++                         'TERMINAL_WITHOUT_ADMITTED_JOBS')
++
++    def test_action_required_is_not_success(self):
++        self.assertEqual(M.classify_run(run(conclusion='action_required'), [],
++                                       M.CARRIERS[0], SUBJECT),
++                         'TERMINAL_WITHOUT_ADMITTED_JOBS')
++
++    def test_all_skipped_is_not_success(self):
++        self.assertEqual(M.classify_run(run(), [{'conclusion': 'skipped'}],
++                                       M.CARRIERS[0], SUBJECT), 'NO_SUCCESSFUL_JOB')
++
++    def test_green_execution_is_not_effect_ack(self):
++        self.assertEqual(M.classify_run(run(), [{'conclusion': 'success'}],
++                                       M.CARRIERS[0], SUBJECT),
++                         'NATIVE_CARRIER_COMPLETED_NOT_EFFECT_ACK')
++
++    def test_queued_without_jobs_is_not_admitted(self):
++        self.assertEqual(M.classify_run(run(status='queued', conclusion=None), [],
++                                       M.CARRIERS[0], SUBJECT), 'ADMISSION_NOT_OBSERVED')
++
++    def test_unknown_status_fails_closed(self):
++        with self.assertRaises(M.BoundaryError):
++            M.classify_run(run(status='mystery'), [], M.CARRIERS[0], SUBJECT)
++
++    def test_terminal_failure_is_not_blindly_retried(self):
++        self.assertIsNone(M.choose_carrier([M.CARRIERS[0]],
++                                           [run(conclusion='failure')], HEAD, [])[0])
++
++    def test_active_execution_is_reobserved_not_duplicated(self):
++        active = run(status='in_progress', conclusion=None)
++        self.assertEqual(M.choose_carrier([M.CARRIERS[0]], [active], HEAD, [active])[2],
++                         'OBSERVE_EXISTING')
++
++    def test_active_writer_does_not_block_read_only_watchdog(self):
++        writer = run(M.CARRIERS[1], status='in_progress')
++        self.assertEqual(M.choose_carrier([M.CARRIERS[0]], [], HEAD, [writer])[2], 'DISPATCH')
++
++    def test_active_writer_prevents_second_writer(self):
++        writer = run(M.CARRIERS[3], status='in_progress', head_sha='d' * 40)
++        self.assertIsNone(M.choose_carrier([M.CARRIERS[1]], [], HEAD, [writer])[0])
++
++    def test_ci_execution_does_not_become_a_global_writer_lock(self):
++        ci = run(path='.github/workflows/qikvrt_ci.yml', name='QIKVRT CI', status='in_progress')
++        self.assertEqual(M.choose_carrier([M.CARRIERS[1]], [], HEAD, [ci])[2], 'DISPATCH')
++
++    def test_materializer_is_an_actual_writer(self):
++        writer = run(path='.github/workflows/qikvrt_batch04_integrity.yml',
++                     name='QIKVRT repository evidence materialization', status='in_progress')
++        self.assertIsNone(M.choose_carrier([M.CARRIERS[1]], [], HEAD, [writer])[0])
++
++    def test_missing_token_is_not_execution_authority(self):
++        with self.assertRaises(M.BoundaryError):
++            M.GitHubAPI(REPO, '')
++
++    def test_api_write_surface_is_only_allowlisted_dispatch(self):
++        api = M.GitHubAPI(REPO, 'test-token-never-transmitted')
++        with patch.object(M.urllib.request, 'urlopen') as transport:
++            for path, body in (
++                ('repos/' + REPO + '/git/refs/heads/main', {'sha': HEAD}),
++                ('repos/' + REPO + '/actions/workflows/other.yml/dispatches', {'ref': 'main'}),
++                ('repos/' + REPO + '/actions/workflows/' + M.CARRIERS[0] + '/dispatches',
++                 {'ref': 'untrusted-pr', 'return_run_details': True}),
++                ('repos/' + REPO + '/../other/actions/runs', None),
++            ):
++                with self.subTest(path=path), self.assertRaises(M.BoundaryError):
++                    api(path, body)
++            transport.assert_not_called()
++
++    def test_active_watchdog_does_not_starve_independent_repair(self):
++        watchdog = run(status='in_progress', conclusion=None)
++        workflow, _, action = M.choose_carrier(list(M.CARRIERS[:2]), [watchdog], HEAD, [watchdog])
++        self.assertEqual(workflow, M.CARRIERS[1])
++        self.assertEqual(action, 'DISPATCH')
++
++    def test_forks_do_not_enable_pr_writer(self):
++        pr = {'draft': True, 'body': M.OPT_IN,
++              'head': {'repo': {'full_name': 'other/fork'}}}
++        self.assertEqual(M.eligible_carriers([pr], REPO), list(M.CARRIERS[:2]))
++
++    def test_draft_writer_requires_explicit_opt_in(self):
++        pr = {'draft': True, 'body': '', 'head': {'repo': {'full_name': REPO}}}
++        self.assertNotIn(M.CARRIERS[3], M.eligible_carriers([pr], REPO))
++        pr['body'] = M.OPT_IN
++        self.assertIn(M.CARRIERS[3], M.eligible_carriers([pr], REPO))
++
++    def test_truncated_api_collection_fails_closed(self):
++        with self.assertRaises(M.BoundaryError):
++            M.pages(lambda path: {'jobs': [], 'total_count': 1}, 'jobs', 'jobs')
++
++    def test_child_success_is_reobserved_and_never_becomes_done(self):
++        calls = []
++        completed = []
++        def api(path, body=None):
++            calls.append((path, body))
++            if '/git/ref/' in path:
++                return {'object': {'sha': HEAD}}
++            if '/git/commits/' in path:
++                return {'tree': {'sha': TREE}}
++            if 'actions/workflows?' in path:
++                return {'workflows': [{'path': M.carrier_path(M.CARRIERS[0]), 'state': 'active'}],
++                        'total_count': 1}
++            if path.endswith('/dispatches'):
++                self.assertEqual(body['ref'], 'main')
++                self.assertTrue(body['return_run_details'])
++                completed.append(run())
++                return {'workflow_run_id': 42}
++            if path.endswith('/actions/runs/42'):
++                return run()
++            if '/actions/runs/42/jobs?' in path:
++                return {'jobs': [{'conclusion': 'success'}], 'total_count': 1}
++            if '/actions/runs?' in path:
++                runs = completed if 'head_sha=' in path else []
++                return {'workflow_runs': runs, 'total_count': len(runs)}
++            return []
++        with tempfile.TemporaryDirectory() as directory:
++            result = M.execute(api, REPO, Path(directory) / 'receipt.json')
++            saved = json.loads((Path(directory) / 'receipt.json').read_text())
++        self.assertFalse(result['effect_ack_done'])
++        self.assertFalse(saved['effect_ack_done'])
++        self.assertEqual(len(result['observations']), 2)
++        self.assertEqual(len(result['child_executions']), 1)
++        self.assertEqual(sum(body is not None for _, body in calls), 1)
++        self.assertEqual(result['child_executions'][0]['run_id'], 42)
++
++    def test_job_environment_uses_only_admissible_expression_contexts(self):
++        import re
++        text = (ROOT / '.github/workflows/qikvrt_universal_roundtrip_controller.yml').read_text()
++        job_env = False
++        allowed = {'github', 'needs', 'strategy', 'matrix', 'vars', 'secrets', 'inputs'}
++        for line in text.splitlines():
++            if line == '    env:':
++                job_env = True
++                continue
++            if job_env and line.strip() and not line.startswith('      '):
++                job_env = False
++            if job_env:
++                for context in re.findall(r'\$\{\{\s*([A-Za-z_]+)\.', line):
++                    self.assertIn(context, allowed, line)
++
++    def test_workflow_privilege_separation(self):
++        text = (ROOT / '.github/workflows/qikvrt_universal_roundtrip_controller.yml').read_text()
++        self.assertIn('persist-credentials: false', text)
++        self.assertIn("github.event_name != 'pull_request'", text)
++        self.assertNotIn('contents: write', text)
++        self.assertNotIn('cancel-in-progress: true', text)
++        self.assertIn('if: always()', text)
++        self.assertNotIn('Fail closed on unfinished repository work', text)
++        self.assertIn('python3 -B tools/qikvrt_universal_roundtrip_controller.py', text)
++
++
++if __name__ == '__main__':
++    unittest.main()
+diff --git a/tools/qikvrt_pr_head_recovery.py b/tools/qikvrt_pr_head_recovery.py
+index a0ba102353681cc5782ff53e35f6054b00334dbe..5b7a456aadc120c652e876a7ca6257d3e1f5d2b5 100644
+--- a/tools/qikvrt_pr_head_recovery.py
++++ b/tools/qikvrt_pr_head_recovery.py
+@@ -129,8 +129,9 @@ def classify_observations(
+     """Classify one exact head without fabricating productive authority.
+ 
+     Precedence is fail-closed: active work and executed failures HOLD; a trusted
+-    exact-head status makes dispatch idempotent; only the characteristic latest
+-    zero-job ``action_required`` state selects REOBSERVE.
++    exact-head status makes dispatch idempotent. Missing exact-head runs and the
++    characteristic latest zero-job ``action_required`` state select REOBSERVE.
++    Neither case is admitted execution or a productive effect.
+     """
+ 
+     normalized_status = "missing" if exact_head_status is None else exact_head_status
+@@ -174,6 +175,11 @@ def classify_observations(
+         return decision(0, "NOOP", "TRUSTED_EXACT_HEAD_VERIFIED")
+     if executed_failures:
+         return decision(1, "HOLD", "EXECUTED_FAILURE_PRESENT")
++    # The caller already bound an open internal PR to its current live head.
++    # No runs on that subject is missing validation, not a terminal success.
++    # Keep trusted pending/error/success precedence above to avoid duplicates.
++    if not latest:
++        return decision(2, "REOBSERVE", "MISSING_EXACT_HEAD_RUNS")
+     if zero_job_action_required:
+         return decision(2, "REOBSERVE", "ZERO_JOB_ACTION_REQUIRED")
+     return decision(0, "NOOP", "CONSISTENT_OR_ALREADY_TERMINAL")
+diff --git a/tools/qikvrt_universal_roundtrip_controller.py b/tools/qikvrt_universal_roundtrip_controller.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..508993a5e286a70d2642ebf6ba0db61961ca46dd
+--- /dev/null
++++ b/tools/qikvrt_universal_roundtrip_controller.py
+@@ -0,0 +1,309 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++"""Bounded execution bridge to existing trusted-main QIK-VRT carriers.
++
++A completed bridge iteration is not repository or product completion. Native
++carriers retain their own allowlists, approval requirements and writer locks.
++This module never checks out PR code, mutates refs, cancels runs or retries a
++terminal exact-head carrier. It does not implement a new general-purpose solver.
++"""
++from __future__ import annotations
++
++import datetime as dt
++import json
++import hashlib
++import os
++from pathlib import Path
++import re
++import time
++import urllib.error
++import urllib.parse
++import urllib.request
++
++CARRIERS = (
++    "qikvrt_reflexive_repository_watchdog.yml",
++    "qikvrt_autonomous_self_heal.yml",
++    "qikvrt_autonomous_pr_head_continuation.yml",
++    "qikvrt_autonomous_pr_continuation.yml",
++)
++READ_ONLY = frozenset({CARRIERS[0]})
++# Reused from the native executor/mesh contract, augmented by the existing
++# requested-review executor's materializer writer classification.
++WRITERS = frozenset({
++    "QIK-VRT autonomous bounded self-heal",
++    "QIK-VRT autonomous draft-PR continuation",
++    "QIK-VRT expected-head promotion executor",
++    "QIKVRT requested review executor",
++    "QIKVRT repository evidence materialization",
++    "QIKVRT Cloud Transputer integrity objects v1",
++})
++WRITER_PATHS = frozenset({
++    ".github/workflows/qikvrt_autonomous_self_heal.yml",
++    ".github/workflows/qikvrt_autonomous_pr_continuation.yml",
++    ".github/workflows/qikvrt_expected_head_promotion.yml",
++    ".github/workflows/qikvrt_requested_review_executor.yml",
++    ".github/workflows/qikvrt_batch04_integrity.yml",
++    ".github/workflows/qikvrt_cloud_transputer_integrity_objects_v1.yml",
++})
++ACTIVE = frozenset({"queued", "in_progress", "waiting", "pending", "requested"})
++OPT_IN = "<!-- qikvrt-autonomous-self-heal:enabled -->"
++SHA = re.compile(r"^[0-9a-f]{40}$")
++
++
++class BoundaryError(RuntimeError):
++    """Execution or provenance is not established; never coerce this to DONE."""
++
++
++def timestamp():
++    return dt.datetime.now(dt.timezone.utc).isoformat()
++
++
++def carrier_path(name):
++    if name not in CARRIERS:
++        raise BoundaryError("NON_ALLOWLISTED_CARRIER")
++    return ".github/workflows/" + name
++
++
++def bind_subject(repository, head, tree):
++    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
++        raise BoundaryError("INVALID_REPOSITORY")
++    if not SHA.fullmatch(head or "") or not SHA.fullmatch(tree or ""):
++        raise BoundaryError("INVALID_EXACT_SUBJECT")
++    return {"repository": repository, "head": head, "tree": tree}
++
++
++def classify_run(run, jobs, workflow, subject):
++    if (run.get("head_sha") != subject["head"]
++            or run.get("head_branch") != "main"
++            or run.get("path", "").split("@", 1)[0] != carrier_path(workflow)):
++        raise BoundaryError("CHILD_SUBJECT_OR_WORKFLOW_MISMATCH")
++    if run.get("status") in ACTIVE:
++        return "ADMITTED_EXECUTION" if jobs else "ADMISSION_NOT_OBSERVED"
++    if run.get("status") != "completed":
++        raise BoundaryError("UNKNOWN_RUN_STATUS")
++    if not jobs:
++        return "TERMINAL_WITHOUT_ADMITTED_JOBS"
++    if run.get("conclusion") != "success":
++        return "NATIVE_CARRIER_FAILURE"
++    if not any(j.get("conclusion") == "success" for j in jobs):
++        return "NO_SUCCESSFUL_JOB"
++    return "NATIVE_CARRIER_COMPLETED_NOT_EFFECT_ACK"
++
++
++def eligible_carriers(prs, repository):
++    same_repo = [pr for pr in prs
++                 if ((pr.get("head") or {}).get("repo") or {}).get("full_name") == repository]
++    selected = [CARRIERS[0], CARRIERS[1]]
++    if same_repo:
++        selected.append(CARRIERS[2])
++    if any(pr.get("draft") is True and OPT_IN in (pr.get("body") or "")
++           for pr in same_repo):
++        selected.append(CARRIERS[3])
++    return selected
++
++
++def choose_carrier(eligible, runs, head, active_runs):
++    """Reuse active/terminal executions; no wake-up retry of the same subject."""
++    writer_active = any(
++        run.get("status") in ACTIVE
++        and (run.get("name") in WRITERS
++             or run.get("path", "").split("@", 1)[0] in WRITER_PATHS)
++        for run in active_runs
++    )
++    existing = []
++    for workflow in eligible:
++        matching = [run for run in runs if run.get("head_sha") == head
++                    and run.get("head_branch") == "main"
++                    and run.get("path", "").split("@", 1)[0] == carrier_path(workflow)]
++        active = [run for run in matching if run.get("status") in ACTIVE]
++        if active:
++            existing.append((workflow, max(active, key=lambda run: run["id"])))
++            continue
++        if matching:  # A terminal failure is a new cause, not rerun permission.
++            continue
++        if workflow in READ_ONLY or not writer_active:
++            return workflow, None, "DISPATCH"
++    if existing:
++        workflow, run = existing[0]
++        return workflow, run, "OBSERVE_EXISTING"
++    return None, None, "NO_NEW_AUTHORIZED_CARRIER"
++
++
++class GitHubAPI:
++    def __init__(self, repository, token):
++        bind_subject(repository, "0" * 40, "0" * 40)
++        if not token:
++            raise BoundaryError("AUTHENTICATED_EXECUTION_TOKEN_MISSING")
++        self.repository = repository
++        self.token = token
++
++    def __call__(self, path, body=None):
++        if (not path.startswith(f"repos/{self.repository}/")
++                or ".." in path or "%" in path or "#" in path):
++            raise BoundaryError("OUT_OF_SCOPE_API_PATH")
++        if body is not None:
++            allowed = {f"repos/{self.repository}/actions/workflows/{name}/dispatches"
++                       for name in CARRIERS}
++            if path not in allowed or body != {"ref": "main", "return_run_details": True}:
++                raise BoundaryError("NON_ALLOWLISTED_DISPATCH")
++        request = urllib.request.Request(
++            "https://api.github.com/" + path,
++            data=None if body is None else json.dumps(body).encode(),
++            method="GET" if body is None else "POST",
++            headers={"Authorization": "Bearer " + self.token,
++                     "Accept": "application/vnd.github+json",
++                     "Content-Type": "application/json",
++                     "User-Agent": "qikvrt-universal-roundtrip-controller",
++                     "X-GitHub-Api-Version": "2026-03-10"},
++        )
++        try:
++            with urllib.request.urlopen(request, timeout=45) as response:
++                raw = response.read()
++                return json.loads(raw) if raw else None
++        except urllib.error.HTTPError as error:
++            # Do not echo authentication material or an untrusted response body.
++            raise BoundaryError(f"API_HTTP_{error.code}: {path}") from None
++
++
++def pages(api, prefix, key=None):
++    result = []
++    for page in range(1, 101):
++        separator = "&" if "?" in prefix else "?"
++        value = api(f"{prefix}{separator}per_page=100&page={page}")
++        items = value.get(key) if key and isinstance(value, dict) else value
++        if not isinstance(items, list):
++            raise BoundaryError("INCOMPLETE_API_COLLECTION")
++        result.extend(items)
++        if len(items) < 100:
++            if key and value.get("total_count", len(result)) > len(result):
++                raise BoundaryError("TRUNCATED_API_COLLECTION")
++            return result
++    raise BoundaryError("PAGINATION_BOUND_EXCEEDED")
++
++
++def execute(api, repository, receipt_path, budget_seconds=480,
++            sleep=time.sleep, clock=time.monotonic):
++    prefix = f"repos/{repository}/"
++    deadline = clock() + budget_seconds
++    receipt = {"schema": "qikvrt_universal_roundtrip_execution_v1",
++               "started_at": timestamp(), "repository": repository,
++               "state": "EFFECT_ACK_CONTINUE", "effect_ack_done": False,
++               "predecessor_evidence_transfer": False,
++               "controller_source_head": os.environ.get("QIKVRT_CONTROLLER_HEAD"),
++               "controller_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
++               "observations": [], "child_executions": [], "blockers": []}
++
++    def persist():
++        receipt["observed_at"] = timestamp()
++        receipt_path.parent.mkdir(parents=True, exist_ok=True)
++        temporary = receipt_path.with_suffix(".tmp")
++        temporary.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
++        temporary.replace(receipt_path)
++
++    try:
++        while clock() < deadline:
++            head = api(prefix + "git/ref/heads/main")["object"]["sha"]
++            tree = api(prefix + "git/commits/" + head)["tree"]["sha"]
++            subject = bind_subject(repository, head, tree)
++            prs = pages(api, prefix + "pulls?state=open")
++            issues = [item for item in pages(api, prefix + "issues?state=open")
++                      if "pull_request" not in item]
++            branches = pages(api, prefix + "branches")
++            workflows = pages(api, prefix + "actions/workflows", "workflows")
++            runs = pages(api, prefix + "actions/runs?head_sha=" + head, "workflow_runs")
++            active_runs = []
++            for state in sorted(ACTIVE):
++                active_runs.extend(pages(api, prefix + "actions/runs?status=" + state,
++                                         "workflow_runs"))
++            receipt["subject"] = subject
++            receipt["workflow_inventory"] = [
++                {key: workflow.get(key) for key in ("id", "name", "path", "state")}
++                for workflow in workflows]
++            receipt["observations"].append({
++                "at": timestamp(), "subject": subject,
++                "pull_requests": [{"number": pr["number"],
++                                   "head": pr["head"]["sha"]} for pr in prs],
++                "issues": [item["number"] for item in issues],
++                "branches": [{"name": branch["name"],
++                              "head": branch["commit"]["sha"]} for branch in branches],
++            })
++            eligible = eligible_carriers(prs, repository)
++            known_paths = {workflow.get("path") for workflow in workflows
++                           if workflow.get("state") == "active"}
++            for workflow in eligible:
++                if carrier_path(workflow) not in known_paths:
++                    blocker = {"cause": "NATIVE_CARRIER_NOT_ACTIVE", "workflow": workflow}
++                    if blocker not in receipt["blockers"]:
++                        receipt["blockers"].append(blocker)
++            eligible = [w for w in eligible if carrier_path(w) in known_paths]
++            workflow, run, action = choose_carrier(eligible, runs, head, active_runs)
++            if workflow is None:
++                receipt["continuation"] = action
++                # An empty object inventory never substitutes for an effect verifier.
++                receipt["blockers"].append({"cause": "SCOPED_EFFECT_READBACK_NOT_ESTABLISHED"})
++                persist()
++                return receipt
++            if api(prefix + "git/ref/heads/main")["object"]["sha"] != head:
++                persist()
++                continue
++            if action == "DISPATCH":
++                persist()  # Preserve the precondition before the effectful request.
++                response = api(prefix + "actions/workflows/" + workflow + "/dispatches",
++                               {"ref": "main", "return_run_details": True})
++                if not isinstance(response, dict) or type(response.get("workflow_run_id")) is not int:
++                    raise BoundaryError("DISPATCH_RUN_ID_NOT_RETURNED_NO_TIME_BASED_INFERENCE")
++                run_id = response["workflow_run_id"]
++            else:
++                run_id = run["id"]
++            execution = next((item for item in receipt["child_executions"]
++                              if item["run_id"] == run_id), None)
++            if execution is None:
++                execution = {"workflow": workflow, "run_id": run_id, "subject": subject,
++                             "action": action, "effect_ack_done": False}
++                receipt["child_executions"].append(execution)
++            persist()
++            run = api(prefix + f"actions/runs/{run_id}")
++            jobs = pages(api, prefix + f"actions/runs/{run_id}/jobs", "jobs")
++            execution["classification"] = classify_run(run, jobs, workflow, subject)
++            execution["conclusion"] = run.get("conclusion")
++            execution["admitted_jobs"] = len(jobs)
++            execution["readback_at"] = timestamp()
++            persist()
++            if run.get("status") == "completed":
++                if execution["classification"] != "NATIVE_CARRIER_COMPLETED_NOT_EFFECT_ACK":
++                    receipt["blockers"].append({"cause": execution["classification"],
++                                                "run_id": run_id})
++            else:
++                sleep(min(15, max(0, deadline - clock())))
++            # Reconcile after one readback: an active watchdog must not starve an
++            # independently eligible repair, nor a writer starve observation.
++        receipt["continuation"] = "RESUME_BOUND_EXECUTIONS_ON_EVENT_OR_SCHEDULE"
++        persist()
++        return receipt
++    except Exception as error:
++        receipt["state"] = "EFFECT_ACK_BLOCK"
++        receipt["blockers"].append({"cause": str(error)[:500]})
++        persist()
++        raise
++
++
++def main():
++    repository = os.environ["GITHUB_REPOSITORY"]
++    if os.environ.get("GITHUB_REF") != "refs/heads/main":
++        raise BoundaryError("TRUSTED_MAIN_ONLY")
++    if os.environ.get("GITHUB_EVENT_NAME") == "pull_request":
++        raise BoundaryError("PULL_REQUEST_IS_VALIDATION_ONLY")
++    contract = json.loads(Path("state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json").read_text())
++    declared = set(contract["dispatch_policy"]["writer_workflow_names"])
++    if not declared <= WRITERS:
++        raise BoundaryError("NATIVE_WRITER_CONTRACT_CHANGED")
++    output = Path(os.environ["QIKVRT_ROUNDTRIP_RECEIPT"])
++    result = execute(GitHubAPI(repository, os.environ.get("GH_TOKEN", "")),
++                     repository, output)
++    print(json.dumps({key: result.get(key) for key in
++                      ("state", "effect_ack_done", "subject", "continuation", "blockers")},
++                     sort_keys=True))
++
++
++if __name__ == "__main__":
++    main()
