@@ -84,7 +84,9 @@
     "NO_ACTUAL_END_STATE_NO_OWNER_QUESTION",
     "MACHINE_OWNED_WORK_REMAINING_CONTINUE_AUTONOMOUSLY",
     "NO_FALSE_PASS",
-    "NO_REPOSITORY_FIXED_POINT_NO_PERFORMANCE_OPTIMIZATION_PHASE"
+    "NO_REPOSITORY_FIXED_POINT_NO_PERFORMANCE_OPTIMIZATION_PHASE",
+    "TARGET_STATE_DEVIATION_WITH_MACHINE_OWNED_REPAIR_MUST_REENTER_RECURSION",
+    "SELF_OBSERVATION_CYCLE_TERMINATION_MUST_NOT_DISABLE_RECURRENT_OBSERVATION"
   ],
   "external_effect": "NONE",
   "pass": false,
@@ -148,5 +150,55 @@
       ],
       "release_does_not_stop_recursion": true
     }
+  },
+  "repository_target_state": {
+    "schema": "QIKVRT_REPOSITORY_TARGET_STATE_V1",
+    "objective": "Converge from repository work closure through verified milestone release into continuous measurement-driven optimization while preserving all safety, provenance, authority, and evidence invariants.",
+    "operating_states": [
+      "CLOSURE",
+      "VERIFIED_MILESTONE_RELEASE",
+      "PERFORMANCE_OPTIMIZATION"
+    ],
+    "convergence_rule": "Each accepted iteration MUST reduce a causally bound deficit or produce fresh evidence that changes the next admissible action; activity-only fan-out is not progress.",
+    "deviation_rule": "A freshly observed deviation from the target state is a work item and MUST enter the same recursive execution-observation-verification-persistence loop unless an explicit authority or scope boundary forbids autonomous correction.",
+    "anti_noise_rule": "Controller-generated activity MUST NOT be treated as productive work unless it changes a bound repository state, evidence state, or admissible next action.",
+    "self_observation": {
+      "required": true,
+      "subjects": [
+        "OPEN_ISSUES",
+        "OPEN_PULL_REQUESTS",
+        "UNMERGED_WORK_BRANCHES",
+        "MAIN_HEAD_TREE",
+        "REQUIRED_GATES",
+        "RELEASE_EFFECTS",
+        "CONTROLLER_LIVENESS",
+        "MATERIALIZATION_PERSISTENCE",
+        "WORKFLOW_FAILURE_CLASSES",
+        "PERFORMANCE_BASELINES"
+      ],
+      "cycle": [
+        "OBSERVE",
+        "COMPARE_TO_TARGET",
+        "CLASSIFY_DEVIATION",
+        "SELECT_REPOSITORY_NATIVE_REPAIR",
+        "EXECUTE",
+        "READBACK",
+        "VERIFY",
+        "PERSIST",
+        "REOBSERVE"
+      ],
+      "terminal_semantics": "A cycle may terminate; repository self-observation MUST remain recurrent. QUIESCENCE means no current corrective mutation, not controller shutdown."
+    },
+    "correction_priority": [
+      "LOSS_OF_CONTROLLER_LIVENESS",
+      "LOSS_OF_EVIDENCE_OR_PERSISTENCE",
+      "BROKEN_REQUIRED_GATE",
+      "CURRENT_CAUSAL_BLOCKER",
+      "OPEN_PULL_REQUESTS",
+      "OPEN_ISSUES",
+      "UNMERGED_WORK_BRANCHES",
+      "PERFORMANCE_DEVIATION"
+    ],
+    "post_fixed_point_goal": "Continuously improve measured performance without weakening correctness or governance."
   }
 }
