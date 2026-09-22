@@ -107,5 +107,32 @@ class PullRequestHeadMutationBoundaryTests(unittest.TestCase):
         self.assertNotIn('EFFECT_ACK_DONE=true', after_push)
 
 
+    def test_materializer_queues_pending_runs_without_changing_writer_lease(self) -> None:
+        text = (WORKFLOWS / "qikvrt_batch04_integrity.yml").read_text(encoding="utf-8")
+        concurrency = text.split("concurrency:\n", 1)[1].split("\njobs:", 1)[0]
+        self.assertIn("group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}\n", concurrency)
+        self.assertIn("cancel-in-progress: false\n", concurrency)
+        self.assertIn("queue: max\n", concurrency)
+        self.assertNotIn("cancel-in-progress: true", concurrency)
+
+    def test_boundary_tests_execute_before_any_persistence(self) -> None:
+        text = (WORKFLOWS / "qikvrt_batch04_integrity.yml").read_text(encoding="utf-8")
+        before, _ = text.split("- name: Commit materialized repository evidence", 1)
+        self.assertIn("python3 -B -m unittest -v tests.test_pr_head_mutation_boundary", before)
+
+    def test_successor_reuses_exact_head_verifier_with_fresh_envelope(self) -> None:
+        text = (WORKFLOWS / "qikvrt_batch04_integrity.yml").read_text(encoding="utf-8")
+        continuation = text.split("- name: Continue persisted roundtrip head through native verification", 1)[1]
+        self.assertIn("if: github.event_name == 'push' && github.ref_name == 'agent/repository-wide-roundtrip-invariant-v1'", continuation)
+        self.assertIn('test "$local_head" = "$remote_head"', continuation)
+        self.assertIn('test "$current" = "$local_head"', continuation)
+        self.assertIn('test "$common" = "$main_head"', continuation)
+        self.assertIn('qikvrt_autonomous_exact_head_verify', continuation)
+        self.assertIn('source_materializer_run_id:$source_run', continuation)
+        self.assertIn('gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input "$payload"', continuation)
+        self.assertNotIn('state=success', continuation)
+        self.assertNotIn('EFFECT_ACK_DONE=true', continuation)
+
+
 if __name__ == "__main__":
     unittest.main()

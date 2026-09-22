@@ -21,10 +21,12 @@ on:
 
 permissions:
   contents: write
+  pull-requests: read
 
 concurrency:
   group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   materialize:
@@ -290,6 +292,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 -B -m unittest -v tests.test_pr_head_mutation_boundary
           make test
           python3 tools/qikvrt_integrity.py verify
       - name: Commit materialized repository evidence
@@ -373,3 +376,32 @@ jobs:
           printf 'PERSISTED_HEAD=%s\n' "$persisted_head"
           git rev-parse --verify HEAD^{tree}
           echo 'EFFECT_ACK_CONTINUE: fresh successor validation and native review are still required'
+      - name: Continue persisted roundtrip head through native verification
+        if: github.event_name == 'push' && github.ref_name == 'agent/repository-wide-roundtrip-invariant-v1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          local_head="$(git rev-parse --verify HEAD^{commit})"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')"
+          test "$local_head" = "$remote_head"
+          pages="$RUNNER_TEMP/qikvrt-materialized-pr-pages.json"
+          gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" > "$pages"
+          pr_number="$(jq -er --arg repo "$GITHUB_REPOSITORY" --arg ref "$TARGET_REF" \
+            '[.[][] | select(.head.repo.full_name == $repo and .head.ref == $ref and .base.ref == "main")] |
+             if length == 1 then .[0].number else error("unique candidate PR not established") end' "$pages")"
+          current="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" --jq '.head.sha')"
+          test "$current" = "$local_head"
+          main_head="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 {print $1}')"
+          common="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${main_head}...${local_head}" --jq '.merge_base_commit.sha')"
+          test "$common" = "$main_head"
+          payload="$RUNNER_TEMP/qikvrt-materialized-head-verification.json"
+          jq -n --arg repo "$GITHUB_REPOSITORY" --argjson pr "$pr_number" \
+            --arg ref "$TARGET_REF" --arg head "$local_head" --arg base "$main_head" \
+            --arg source_run "$GITHUB_RUN_ID" \
+            '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repo,pull_request:$pr,head_ref:$ref,head_sha:$head,base_sha:$base,source_materializer_run_id:$source_run}}' > "$payload"
+          test "$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')" = "$local_head"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input "$payload"
+          printf 'VERIFICATION_ADMISSION_REQUESTED_HEAD=%s\n' "$local_head"
+          echo 'Dispatch acknowledgment is not verification, native approval or EFFECT_ACK_DONE.'
