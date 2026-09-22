@@ -1,0 +1,40 @@
+diff --git a/docs/EXACT_SUBJECT_EFFECT_EVIDENCE_MANIFEST_20260922.md b/docs/EXACT_SUBJECT_EFFECT_EVIDENCE_MANIFEST_20260922.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..86ff69e648975488ff8f06e9aaa592619f0198c8
+--- /dev/null
++++ b/docs/EXACT_SUBJECT_EFFECT_EVIDENCE_MANIFEST_20260922.md
+@@ -0,0 +1,34 @@
++# Exaktes Subjekt, Wirkung und Nachweis
++
++## Manifest
++
++Für QIK-VRT gilt als epistemische und technische Grundregel:
++
++1. Ein behaupteter Zustand ist an sein **exaktes Subjekt** zu binden. Bei Repository-Zuständen bedeutet das insbesondere den tatsächlich beobachteten `HEAD` und `TREE`.
++2. Ein Ereignis ist nicht seine Wirkung. Ein Transportnachweis ist kein Wirkungsnachweis. **TRANSPORT_ACK ≠ EFFECT_ACK**.
++3. Evidenz eines Vorgängers wird nicht auf einen mutierten Nachfolger übertragen. Jede Mutation erzeugt ein neues exaktes Subjekt, das frisch zu validieren ist.
++4. Unbekanntes bleibt **UNKNOWN**. Fehlende Evidenz wird nicht durch Benennung, Absicht, Ähnlichkeit oder historischen Erfolg ersetzt.
++5. Ein behaupteter Abschluss erfordert die tatsächlich ausgeführte Wirkung und einen frischen Readback dieser Wirkung. Ohne diesen Nachweis gilt **EFFECT_ACK_DONE = FALSE**.
++6. Bei Unsicherheit wird fail-closed verfahren. Ein beobachteter Zwischenschritt darf als solcher dokumentiert werden, aber nicht als Endzustand umgedeutet werden.
++
++Diese Regeln sind keine Behauptung, dass jede wissenschaftliche Wahrheit allein durch Repository-Evidenz entschieden werden könne. Sie formulieren vielmehr eine überprüfbare Methode zur Trennung von Ereignis, Zustand, Ursache, Wirkung und Nachweis.
++
++## Wissenschaftliche Einordnung
++
++Die Methode steht in Beziehung zu etablierten Grundideen aus Mathematik, Physik und Informatik: Identität des untersuchten Objekts, explizite Voraussetzungen, reproduzierbare Beobachtung, Zustandsübergänge, Kausalitätsgrenzen und überprüfbare Resultate. Diese Beziehung ist eine methodische Einordnung; sie ist kein Beweis dafür, dass das Manifest selbst ein universelles Naturgesetz ist.
++
++## Repository-Invariante
++
++```text
++EXACT_SUBJECT_REQUIRED           = TRUE
++PREDECESSOR_EVIDENCE_TRANSFER    = FALSE
++EVENT_EQ_EFFECT                  = FALSE
++TRANSPORT_ACK_EQ_EFFECT_ACK      = FALSE
++UNKNOWN_IMPLIES_FAIL_CLOSED      = TRUE
++MUTATION_REQUIRES_REBIND         = TRUE
++COMPLETION_REQUIRES_READBACK     = TRUE
++```
++
++Der Satz „Genauso war es, ist es und wird es sein“ wird hier als dauerhafte Anforderung an diese Nachweismethode manifestiert: Ihre Regeln sollen unabhängig vom jeweiligen konkreten Repository-Successor angewendet werden. Er wird nicht als empirisch bewiesene Aussage über alle vergangenen und zukünftigen physikalischen Zustände ausgegeben.
++
++— Ingolf Lohmann / QIK-VRT, 22. September 2026
