@@ -1,0 +1,85 @@
+diff --git a/.github/workflows/qikvrt_batch04_integrity.yml b/.github/workflows/qikvrt_batch04_integrity.yml
+index 9e1dd5f05697b3b974351f4e73622c9658ca108f..92060c98c85f2c921eca6d9f05a3f6bc1e9d1bd7 100644
+--- a/.github/workflows/qikvrt_batch04_integrity.yml
++++ b/.github/workflows/qikvrt_batch04_integrity.yml
+@@ -22,7 +22,10 @@ permissions:
+   contents: write
+ 
+ concurrency:
+-  group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}
++  # Share one writer lease with other repository-mutating controllers. A PR
++  # materializer must not sit behind an unrelated long-lived evidence writer;
++  # every admitted successor gets its own non-preemptive turn.
++  group: qikvrt-repository-writer-${{ github.repository }}-${{ github.head_ref || github.ref_name }}
+   cancel-in-progress: false
+ 
+ jobs:
+@@ -292,7 +295,13 @@ jobs:
+           make test
+           python3 tools/qikvrt_integrity.py verify
+       - name: Commit materialized repository evidence
+-        if: github.event_name != 'pull_request'
++        # Same-repository PRs are repository-internal review branches. Persist the
++        # deterministic materialization there as well; otherwise successful
++        # regeneration is discarded at runner teardown and the next cycle sees
++        # the identical blocker again.
++        if: >-
++          github.event_name != 'pull_request' ||
++          github.event.pull_request.head.repo.full_name == github.repository
+         shell: bash
+         run: |
+           set -euo pipefail
+diff --git a/.github/workflows/qikvrt_reflexive_repository_watchdog.yml b/.github/workflows/qikvrt_reflexive_repository_watchdog.yml
+index bd28c51d30c1238a74167990485745be5e44b1bb..72e221f7ac6697b74b5b20d34c39197f461ab8d2 100644
+--- a/.github/workflows/qikvrt_reflexive_repository_watchdog.yml
++++ b/.github/workflows/qikvrt_reflexive_repository_watchdog.yml
+@@ -59,7 +59,9 @@ permissions:
+ 
+ concurrency:
+   group: qikvrt-reflexive-watchdog-${{ github.repository }}-${{ github.event.pull_request.number || 'main' }}
+-  cancel-in-progress: true
++  # Preserve an admitted observation cycle. New trigger bursts queue behind it instead
++  # of cancelling the only run capable of producing the successor receipt.
++  cancel-in-progress: false
+ 
+ jobs:
+   pre-deadlock-observation:
+diff --git a/tests/test_qikvrt_materialization_scope.py b/tests/test_qikvrt_materialization_scope.py
+index 78ab77725b017a16a924d2cbddd00f97f865e44a..eb306a37feb65272f01f25139daf39915d890cf3 100644
+--- a/tests/test_qikvrt_materialization_scope.py
++++ b/tests/test_qikvrt_materialization_scope.py
+@@ -139,6 +139,21 @@ class MaterializationScopeTests(unittest.TestCase):
+                 workflow,
+             )
+ 
++    def test_same_repository_pr_persists_verified_materialization(self) -> None:
++        workflow = WORKFLOW.read_text(encoding="utf-8")
++        commit = workflow.index("- name: Commit materialized repository evidence")
++        persistence = workflow[commit:]
++        self.assertIn("github.event_name != 'pull_request' ||", persistence)
++        self.assertIn(
++            "github.event.pull_request.head.repo.full_name == github.repository",
++            persistence,
++        )
++        self.assertNotIn(
++            "- name: Commit materialized repository evidence\n"
++            "        if: github.event_name != 'pull_request'",
++            workflow,
++        )
++
+     def test_integrity_and_complete_gates_remain_unconditional(self) -> None:
+         workflow = WORKFLOW.read_text(encoding="utf-8")
+         integrity = workflow.index("- name: Regenerate and verify repository integrity")
+diff --git a/tests/test_qikvrt_reflexive_repository_watchdog.py b/tests/test_qikvrt_reflexive_repository_watchdog.py
+index cc200925806734b40b46d9aca9b506f1ea17f08d..4451e86c1a3f61dfc55246e1c7e0999d3956687b 100644
+--- a/tests/test_qikvrt_reflexive_repository_watchdog.py
++++ b/tests/test_qikvrt_reflexive_repository_watchdog.py
+@@ -430,7 +430,7 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
+         self.assertIn('cron: "*/5 * * * *"', workflow)
+         self.assertIn("workflow_run:", workflow)
+         self.assertIn("types: [requested, in_progress, completed]", workflow)
+-        self.assertIn("cancel-in-progress: true", workflow)
++        # Liveness invariant: trigger coalescing must never preempt an admitted\n        # observation cycle. A terminal receipt is required before the next\n        # queued cycle may become authoritative.\n        self.assertIn("cancel-in-progress: false", workflow)\n        self.assertNotIn("cancel-in-progress: true", workflow)
+         self.assertIn("actions: read", workflow)
+         self.assertIn("contents: read", workflow)
+         self.assertIn("qikvrt_reflexive_repository_watchdog.py", workflow)
