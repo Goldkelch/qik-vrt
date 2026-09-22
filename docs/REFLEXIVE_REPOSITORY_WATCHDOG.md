@@ -74,3 +74,36 @@ Conventional relational database systems already provide transaction deadlock ha
 ## Nonclaims
 
 A successful watchdog run is observation evidence, not gate success. The mechanism does not prove global deadlock freedom, repository completion, Authority–Mirror equality, empirical confirmation, scientific consensus, `PASS`, `FINAL_PASS`, or `EFFECT_ACK_DONE`.
+
+
+## Forbidden deadlock elimination
+
+Detection is not a terminal disposition. Any watchdog state that identifies a
+forbidden deadlock, stale wait, exhausted observer API path, zero-job admission
+gap, or indefinitely pending review MUST derive a productive edge immediately.
+
+The control rule is:
+
+`DETECT -> CLASSIFY -> SELECT_NONCONFLICTING_CARRIER -> EXECUTE -> READBACK -> REPEAT`
+
+A read-only watchdog may remain read-only, but its receipt must name the exact
+next executable carrier. The repository controller consuming that receipt must
+execute that carrier when authorized. Merely emitting `HOLD`, `PENDING`,
+`RATE_LIMITED`, or `WAIT` without such a productive edge is itself a
+forbidden deadlock.
+
+API-rate exhaustion on one observer credential is local resource exhaustion,
+not global repository idleness. The controller must continue through an
+independent already-authorized carrier, cached exact-subject evidence when the
+contract permits it, or a later exact event. It must not busy-loop the exhausted
+credential.
+
+Human/code-owner authority is never fabricated. While that authority is
+pending, every independent repository work unit remains eligible for progress.
+A human-authority wait therefore serializes only the authority-dependent edge;
+it MUST NOT freeze unrelated publication preparation, deterministic validation,
+deadlock repair, or other nonconflicting work.
+
+The only terminal success remains a freshly read-back postcondition. A
+deadlock detector that reports a deadlock and stops has failed its operational
+purpose.
