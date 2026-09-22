@@ -43,7 +43,10 @@
     "ACTUAL_END_STATE_DELIVERY"
   ],
   "completion_rule": {
-    "open_work_must_be": ["ACTIVE_PATH", "PRECISE_EXTERNAL_HOLD"],
+    "open_work_must_be": [
+      "ACTIVE_PATH",
+      "PRECISE_EXTERNAL_HOLD"
+    ],
     "passive_orphan_allowed": false,
     "activity_is_progress": false,
     "retry_without_new_causal_evidence_is_progress": false,
@@ -80,10 +83,47 @@
     "NO_AUTHORITY_NO_AUTHORITY_EFFECT",
     "NO_ACTUAL_END_STATE_NO_OWNER_QUESTION",
     "MACHINE_OWNED_WORK_REMAINING_CONTINUE_AUTONOMOUSLY",
-    "NO_FALSE_PASS"
+    "NO_FALSE_PASS",
+    "NO_REPOSITORY_FIXED_POINT_NO_PERFORMANCE_OPTIMIZATION_PHASE"
   ],
   "external_effect": "NONE",
   "pass": false,
   "final_pass": false,
-  "effect_ack_done": false
+  "effect_ack_done": false,
+  "repository_recursive_closure": {
+    "scope": [
+      "OPEN_ISSUES",
+      "OPEN_PULL_REQUESTS",
+      "UNMERGED_WORK_BRANCHES"
+    ],
+    "rule": "After every bounded work-ring closure, re-inventory repository work and recursively continue while any machine-owned item remains.",
+    "ordering": [
+      "CURRENT_CAUSAL_BLOCKER",
+      "OPEN_PULL_REQUESTS",
+      "OPEN_ISSUES",
+      "UNMERGED_WORK_BRANCHES",
+      "FRESH_REINVENTORY"
+    ],
+    "fixed_point": "OPEN_ISSUES=0 AND OPEN_PULL_REQUESTS=0 AND UNMERGED_WORK_BRANCHES=0",
+    "main_branch_excluded_from_unmerged_work_branches": true,
+    "protected_or_required_branches_may_remain_only_with_explicit_repository_invariant": true,
+    "post_fixed_point": "ENTER_CONTINUOUS_PERFORMANCE_OPTIMIZATION",
+    "optimization_loop": [
+      "MEASURE",
+      "IDENTIFY_BOTTLENECK",
+      "OPTIMIZE",
+      "EXECUTE",
+      "OBSERVE",
+      "VERIFY",
+      "PERSIST",
+      "REMEASURE"
+    ],
+    "optimization_must_preserve": [
+      "CORRECTNESS",
+      "PROVENANCE",
+      "FAIL_CLOSED_GATES",
+      "AUTHORITY_BOUNDARIES",
+      "EVIDENCE_FRESHNESS"
+    ]
+  }
 }
