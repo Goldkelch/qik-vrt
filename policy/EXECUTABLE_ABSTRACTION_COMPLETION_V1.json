@@ -124,6 +124,29 @@
       "FAIL_CLOSED_GATES",
       "AUTHORITY_BOUNDARIES",
       "EVIDENCE_FRESHNESS"
-    ]
+    ],
+    "release_policy": {
+      "rule": "At suitable verified milestones, use an existing repository-native release/tag/publication carrier that is causally equivalent to the milestone; do not invent a weaker release path.",
+      "suitable_milestones": [
+        "REPOSITORY_WORK_FIXED_POINT",
+        "MATERIAL_VERSIONED_PRODUCT_OR_FORMALIZATION_MILESTONE",
+        "PERFORMANCE_OPTIMIZATION_MILESTONE_WITH_FRESH_REGRESSION_EVIDENCE"
+      ],
+      "preconditions": [
+        "EXACT_MAIN_HEAD_TREE_BOUND",
+        "FRESH_REQUIRED_GATES_PASS",
+        "RELEASE_CARRIER_CONTRACT_SATISFIED",
+        "AUTHORITY_REQUIREMENTS_SATISFIED",
+        "NO_STALE_EVIDENCE_TRANSFER"
+      ],
+      "sequence": [
+        "SELECT_EXISTING_RELEASE_CARRIER",
+        "VALIDATE_EXACT_SOURCE",
+        "CREATE_OR_VERIFY_VERSIONED_RELEASE_EFFECT",
+        "READBACK_RELEASE_EFFECT",
+        "CONTINUE_RECURSIVE_WORK"
+      ],
+      "release_does_not_stop_recursion": true
+    }
   }
 }
