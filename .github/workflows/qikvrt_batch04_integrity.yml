@@ -386,15 +386,71 @@ jobs:
           local_head="$(git rev-parse --verify HEAD^{commit})"
           remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')"
           test "$local_head" = "$remote_head"
-          pages="$RUNNER_TEMP/qikvrt-materialized-pr-pages.json"
-          gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" > "$pages"
-          pr_number="$(jq -er --arg repo "$GITHUB_REPOSITORY" --arg ref "$TARGET_REF" \
-            '[.[][] | select(.head.repo.full_name == $repo and .head.ref == $ref and .base.ref == "main")] |
-             if length == 1 then .[0].number else error("unique candidate PR not established") end' "$pages")"
-          current="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" --jq '.head.sha')"
-          test "$current" = "$local_head"
           main_head="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 {print $1}')"
-          common="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${main_head}...${local_head}" --jq '.merge_base_commit.sha')"
+          test -n "$main_head"
+          # Reuse this carrier and credential. Only explicit rate-limit refusals
+          # are retryable; permission/transport failures never cause blind POSTs.
+          retry_deadline=$((SECONDS + 600))
+          gh_json() {
+            local attempt rc status retryable delay
+            local raw="$RUNNER_TEMP/qikvrt-handoff-http.txt"
+            local body="$RUNNER_TEMP/qikvrt-handoff-body.json"
+            local meta="$RUNNER_TEMP/qikvrt-handoff-meta.txt"
+            for attempt in 0 1 2 3; do
+              test "$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')" = "$local_head" || return 2
+              test "$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 {print $1}')" = "$main_head" || return 2
+              rc=0
+              timeout 65s gh api --hostname github.com --include "$@" > "$raw" 2> "$RUNNER_TEMP/qikvrt-handoff-stderr.txt" || rc=$?
+              python3 -B -S - "$raw" "$body" "$attempt" > "$meta" <<'PYHTTP'
+          import email.utils, json, math, pathlib, re, sys, time
+          raw = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").replace("\r\n", "\n")
+          header, separator, body = raw.partition("\n\n")
+          match = re.match(r"HTTP/\S+ (\d{3})(?: |$)", header)
+          if not separator or not match:
+              raise SystemExit("BLOCK: no definitive HTTP response; do not retry an ambiguous request")
+          status = int(match[1])
+          headers = dict(line.lower().split(":", 1) for line in header.splitlines()[1:] if ":" in line)
+          headers = {key.strip(): value.strip() for key, value in headers.items()}
+          primary = status == 403 and headers.get("x-ratelimit-remaining") == "0"
+          retryable = primary or status == 429 or (status == 403 and "secondary rate limit" in body.lower())
+          delays = []
+          if headers.get("x-ratelimit-remaining") == "0" and "x-ratelimit-reset" in headers:
+              delays.append(max(1, math.ceil(float(headers["x-ratelimit-reset"]) - time.time()) + 1))
+          if "retry-after" in headers:
+              value = headers["retry-after"]
+              delays.append(max(1, int(value)) if value.isdigit() else max(1, math.ceil(email.utils.parsedate_to_datetime(value).timestamp() - time.time()) + 1))
+          delay = max(delays) if delays else 60 * (2 ** int(sys.argv[3]))
+          pathlib.Path(sys.argv[2]).write_text(body, encoding="utf-8")
+          print(status, int(retryable), delay)
+          PYHTTP
+              test "$?" -eq 0 || return 2
+              read -r status retryable delay < "$meta"
+              if [ "$rc" -eq 0 ] && { [ "$status" = 200 ] || [ "$status" = 204 ]; }; then
+                cat "$body"
+                return 0
+              fi
+              if [ "$retryable" != 1 ]; then
+                echo "BLOCK: non-retryable handoff HTTP $status (CLI exit $rc)" >&2
+                return 2
+              fi
+              printf 'HANDOFF_RATE_LIMIT http=%s attempt=%s retry_after_seconds=%s\n' "$status" "$attempt" "$delay" >&2
+              if [ "$attempt" -eq 3 ] || [ "$((SECONDS + delay))" -gt "$retry_deadline" ]; then
+                printf 'HANDOFF_PENDING: exact HEAD %s requires fresh admission after provider reset; not EFFECT_ACK_DONE\n' "$local_head" >&2
+                return 75
+              fi
+              sleep "$delay"
+            done
+            return 75
+          }
+          pages="$RUNNER_TEMP/qikvrt-materialized-pr-pages.json"
+          head_filter="$(jq -nr --arg head "${GITHUB_REPOSITORY%%/*}:$TARGET_REF" '$head|@uri')"
+          gh_json "repos/${GITHUB_REPOSITORY}/pulls?state=open&base=main&head=${head_filter}&per_page=100" > "$pages"
+          pr_number="$(jq -er --arg repo "$GITHUB_REPOSITORY" --arg ref "$TARGET_REF" \
+            '[.[] | select(.head.repo.full_name == $repo and .head.ref == $ref and .base.ref == "main")] |
+             if length == 1 then .[0].number else error("unique candidate PR not established") end' "$pages")"
+          current="$(gh_json "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" | jq -er 'select(.state == "open" and .base.ref == "main") | .head.sha')"
+          test "$current" = "$local_head"
+          common="$(gh_json "repos/${GITHUB_REPOSITORY}/compare/${main_head}...${local_head}" | jq -er '.merge_base_commit.sha')"
           test "$common" = "$main_head"
           payload="$RUNNER_TEMP/qikvrt-materialized-head-verification.json"
           jq -n --arg repo "$GITHUB_REPOSITORY" --argjson pr "$pr_number" \
@@ -402,6 +458,6 @@ jobs:
             --arg source_run "$GITHUB_RUN_ID" \
             '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repo,pull_request:$pr,head_ref:$ref,head_sha:$head,base_sha:$base,source_materializer_run_id:$source_run}}' > "$payload"
           test "$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')" = "$local_head"
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input "$payload"
+          gh_json --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input "$payload"
           printf 'VERIFICATION_ADMISSION_REQUESTED_HEAD=%s\n' "$local_head"
           echo 'Dispatch acknowledgment is not verification, native approval or EFFECT_ACK_DONE.'

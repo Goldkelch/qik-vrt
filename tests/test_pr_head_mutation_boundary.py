@@ -129,9 +129,151 @@ class PullRequestHeadMutationBoundaryTests(unittest.TestCase):
         self.assertIn('test "$common" = "$main_head"', continuation)
         self.assertIn('qikvrt_autonomous_exact_head_verify', continuation)
         self.assertIn('source_materializer_run_id:$source_run', continuation)
-        self.assertIn('gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input "$payload"', continuation)
+        self.assertIn('gh_json --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input "$payload"', continuation)
         self.assertNotIn('state=success', continuation)
         self.assertNotIn('EFFECT_ACK_DONE=true', continuation)
+
+class MaterializerRateLimitTests(unittest.TestCase):
+    """Execute the inline adapter with isolated HTTP/ref/clock fixtures."""
+
+    def exercise(self, responses, *, drift=""):
+        import json
+        import os
+        import subprocess
+        import sys
+        import tempfile
+        import textwrap
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            binaries = root / "bin"
+            binaries.mkdir()
+            (root / "responses.json").write_text(json.dumps(responses))
+            scripts = {
+                "gh": '''#!/usr/bin/env python3
+import json, os, pathlib, sys
+r=pathlib.Path(os.environ["FIXTURE_ROOT"])
+p=r/"calls.json"
+a=json.loads(p.read_text()) if p.exists() else []
+x=json.loads((r/"responses.json").read_text())[len(a)]
+a.append(sys.argv[1:]); p.write_text(json.dumps(a))
+sys.stdout.write(x.get("raw", "")); sys.exit(x.get("rc", 0))
+''',
+                "git": '''#!/usr/bin/env python3
+import os, pathlib, sys
+r=pathlib.Path(os.environ["FIXTURE_ROOT"])
+main="refs/heads/main" in sys.argv
+v=("b" if main else "a")*40
+if (r/"slept").exists() and os.environ.get("REF_DRIFT")==("main" if main else "head"):
+    v="c"*40
+print(v+"\\t"+("refs/heads/main" if main else "refs/heads/agent/repository-wide-roundtrip-invariant-v1") if "ls-remote" in sys.argv else v)
+''',
+                "sleep": '''#!/usr/bin/env python3
+import os, pathlib, sys
+r=pathlib.Path(os.environ["FIXTURE_ROOT"])
+with (r/"sleeps.txt").open("a") as f: f.write(sys.argv[1]+"\\n")
+(r/"slept").touch()
+''',
+            }
+            for name, value in scripts.items():
+                path = binaries / name
+                path.write_text(value.replace("#!/usr/bin/env python3", "#!" + sys.executable + " -S", 1))
+                path.chmod(0o755)
+            text = (WORKFLOWS / "qikvrt_batch04_integrity.yml").read_text()
+            step = text.split("- name: Continue persisted roundtrip head through native verification", 1)[1]
+            script = textwrap.dedent(step.split("        run: |\n", 1)[1])
+            prefix = script.split('pages="$RUNNER_TEMP/qikvrt-materialized-pr-pages.json"', 1)[0]
+            payload = root / "payload.json"
+            payload.write_text('{"event_type":"qikvrt_autonomous_exact_head_verify"}')
+            environment = dict(os.environ, FIXTURE_ROOT=str(root), RUNNER_TEMP=str(root),
+                               PATH=str(binaries)+os.pathsep+os.environ["PATH"],
+                               TARGET_REF="agent/repository-wide-roundtrip-invariant-v1",
+                               GITHUB_REPOSITORY="Goldkelch/qik-vrt", REF_DRIFT=drift)
+            result = subprocess.run(["bash", "-c", prefix +
+                '\ngh_json --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input "'+str(payload)+'"\n'],
+                env=environment, text=True, capture_output=True, timeout=45)
+            calls = json.loads((root / "calls.json").read_text()) if (root / "calls.json").exists() else []
+            sleeps = [int(value) for value in (root / "sleeps.txt").read_text().splitlines()] if (root / "sleeps.txt").exists() else []
+            return result, calls, sleeps
+
+    @staticmethod
+    def response(status, headers=None, body="", rc=None):
+        fields = headers or {}
+        raw = "HTTP/2.0 " + str(status) + " Fixture\r\n"
+        raw += "".join(str(key) + ": " + str(value) + "\r\n" for key, value in fields.items())
+        return {"raw": raw + "\r\n" + body, "rc": (0 if status < 300 else 1) if rc is None else rc}
+
+    def test_primary_limit_obeys_reset_before_reusing_the_same_dispatch(self):
+        import time
+        limited = self.response(403, {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": int(time.time())+30})
+        result, calls, sleeps = self.exercise([limited, self.response(204)])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0], calls[1])
+        self.assertEqual(len(sleeps), 1)
+        self.assertGreaterEqual(sleeps[0], 29)
+        self.assertLessEqual(sleeps[0], 32)
+        self.assertIn("--include", calls[0])
+        self.assertIn("github.com", calls[0])
+
+    def test_retry_after_is_honored(self):
+        result, calls, sleeps = self.exercise([self.response(429, {"Retry-After": "2"}), self.response(204)])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(sleeps, [2])
+
+    def test_secondary_limit_without_headers_waits_at_least_a_minute(self):
+        result, calls, sleeps = self.exercise([
+            self.response(403, body='{"message":"secondary rate limit exceeded"}'), self.response(204)])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(sleeps, [60])
+
+    def test_permission_failure_is_not_retried(self):
+        result, calls, sleeps = self.exercise([self.response(403, body='{"message":"Resource not accessible by integration"}')])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(sleeps, [])
+
+    def test_ambiguous_transport_and_server_failures_do_not_replay_post(self):
+        for response in ({"raw": "", "rc": 1}, self.response(503)):
+            with self.subTest(response=response):
+                result, calls, sleeps = self.exercise([response])
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(len(calls), 1)
+                self.assertEqual(sleeps, [])
+
+    def test_provider_delay_is_not_shortened_to_fit_the_carrier_budget(self):
+        import time
+        limited = self.response(403, {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": int(time.time())+3600})
+        result, calls, sleeps = self.exercise([limited])
+        self.assertEqual(result.returncode, 75, result.stderr)
+        self.assertIn("HANDOFF_PENDING", result.stderr)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(sleeps, [])
+
+    def test_candidate_or_main_drift_prevents_a_repeated_dispatch(self):
+        for drift in ("head", "main"):
+            with self.subTest(drift=drift):
+                result, calls, sleeps = self.exercise([self.response(429, {"Retry-After": "1"})], drift=drift)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(len(calls), 1)
+                self.assertEqual(sleeps, [1])
+
+    def test_retries_are_bounded_even_when_server_keeps_refusing(self):
+        result, calls, sleeps = self.exercise([self.response(429, {"Retry-After": "1"})] * 4)
+        self.assertEqual(result.returncode, 75, result.stderr)
+        self.assertEqual(len(calls), 4)
+        self.assertEqual(sleeps, [1, 1, 1])
+
+    def test_repository_envelope_is_filtered_without_polling_the_entire_queue(self):
+        text = (WORKFLOWS / "qikvrt_batch04_integrity.yml").read_text()
+        step = text.split("- name: Continue persisted roundtrip head through native verification", 1)[1]
+        self.assertNotIn("--paginate", step)
+        self.assertIn("state=open&base=main&head=${head_filter}&per_page=100", step)
+        self.assertIn('test "$common" = "$main_head"', step)
+        self.assertIn('select(.state == "open" and .base.ref == "main")', step)
+        self.assertIn("retry_deadline=$((SECONDS + 600))", step)
 
 
 if __name__ == "__main__":
