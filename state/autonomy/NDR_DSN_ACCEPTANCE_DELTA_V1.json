@@ -1,0 +1,27 @@
+{
+  "schema_version": "qikvrt.ndr-dsn.acceptance-delta.v1",
+  "status": "IMPLEMENTATION_CANDIDATE",
+  "source_library_artifact": "libfile_5670729bc21c81919e0986e9b5d0d938",
+  "scope": "offline structured DSN parsing and fail-closed classification only",
+  "invariants": [
+    "SENT != DELIVERED",
+    "DELIVERED != HUMAN_READ",
+    "NDR_GENERATED != RECOVERY_SUCCESS",
+    "ACTION_AND_STATUS_MUST_BE_EVALUATED_TOGETHER",
+    "NO_APPLICATION_RESEND_WITHOUT_SEPARATE_AUTHORIZATION",
+    "PARSER_SUCCESS != AUTHENTICITY",
+    "PARSER_SUCCESS != CORRELATION"
+  ],
+  "implemented_tests": ["T-25", "T-26", "T-27", "T-28", "T-32", "T-33", "T-36"],
+  "not_claimed": [
+    "Outlook or Microsoft Graph integration",
+    "repository issue creation",
+    "email resend",
+    "recipient disablement",
+    "DNS or policy mutation",
+    "NDR authenticity",
+    "original-message correlation",
+    "end-to-end acceptance",
+    "EFFECT_ACK_DONE"
+  ]
+}
