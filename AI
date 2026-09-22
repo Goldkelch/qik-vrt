@@ -2,51 +2,64 @@ QIK-VRT AI RUNTIME ENTRYPOINT
 
 UNIVERSAL QIK-VRT ROUND-TRIP — READ THIS FIRST
 
-QIK-VRT exists to carry an intended result all the way to its **verified
-effect**, rather than confusing an instruction, dispatch, successful
-intermediate computation, workflow completion, transport acknowledgement, or
-observation with completion.
+PURPOSE
+QIK-VRT carries an intended result to a verified effect. Request, dispatch,
+queue, transport, local execution, workflow success, observer output and status
+reporting are intermediate states, not completion.
 
-Its repository-wide operating principle is recursive:
+MANDATORY EXECUTION SEMANTICS
 
 ```text
-USING QIK-VRT and every actually available authorized carrier
-
 REPEAT until EFFECT_ACK_DONE == TRUE
 (
-  while PullRequest, Issue, Branch, WorkUnit, Gate, or EffectObligation EXISTS
-  DO
-    INSPECT exact current subject and causal state
-    SOLVE the first concrete defect with an existing QIK-VRT pattern first
-    OBSERVE the actual effect
-    VERIFY a fresh readback on the resulting exact subject
-    CONTINUE with every remaining or newly exposed work unit
+  INSPECT exact subject, provenance, authority, gates and causal state
+  SOLVE the first concrete defect with an existing QIK-VRT pattern first
+  EXECUTE the smallest authorized deterministic transition
+  OBSERVE the actual effect
+  VERIFY a fresh readback on the resulting exact subject
+  CONTINUE with every remaining or newly exposed work unit
 )
 ```
 
-In compact form:
+A failed or missing postcondition becomes the next causal work unit. Do not
+return merely because an admitted writer is still running: reobserve it within
+the available execution window and continue immediately when its terminal
+result exposes the successor. Continue independent eligible lanes when another
+lane is blocked.
 
-`INSPECT -> SOLVE -> OBSERVE_EFFECT -> VERIFY_READBACK -> CONTINUE_OR_DONE`.
+EVIDENCE SEMANTICS
 
-This rule applies from the first repository interaction to humans, artificial
-cognitive clients, agents, workflows, and tools. Every mutation creates a new
-subject: predecessor evidence does not transfer to that successor. Temporal
-proximity alone is not causality. A request, event, dispatch, queue entry,
-transport ACK, local execution, comment, observer result, or green intermediate
-workflow is not an `EFFECT_ACK`. Unknown evidence or authority fails closed.
+```text
+REQUEST
+!= DISPATCH
+!= QUEUE
+!= TRANSPORT_ACK
+!= ADMITTED_EXECUTION
+!= LOCAL_RESULT
+!= OBSERVED_EFFECT
+!= VERIFIED_EFFECT_READBACK
+```
 
-A failure or missing postcondition is therefore not a reason to stop at a
-status report: it becomes the next causal work unit. Independent eligible work
-continues independently. QIK-VRT does not manufacture human authority, weaken
-repository protection, expose credentials, or claim an unavailable execution
-carrier merely to reach a nominally green state.
+Bind evidence to exact HEAD/TREE where applicable. After mutation,
+PREDECESSOR_EVIDENCE_TRANSFER=false. Timing alone is not causality.
+Observer/bot/comment evidence is not native human authority. Unknown state
+fails closed. NOOP, blind retry, wake-up commits, duplicate carriers,
+protection weakening, fabricated authority, or unverified success claims are
+not progress.
 
-`EFFECT_ACK_DONE` is the terminal state only for the explicitly declared
-scope and only after its required effect exists and a fresh readback verifies
-that effect. Until then the state is nonterminal and the round trip continues.
+TERMINAL SEMANTICS
+EFFECT_ACK_DONE is valid only for the explicitly declared exact scope after all
+of its release conditions are satisfied and the required effect has a fresh
+readback. Otherwise continue the round trip.
 
-Machine-readable normative authority:
-`policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json`.
+NORMATIVE MACHINE AUTHORITY
+policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json
+
+HUMAN PROJECTION
+README.md
+
+AGENT/TOOL PROJECTION
+AGENTS.md
 
 
 Repository evidence is canonical. Chat and model memory are non-authoritative transport context.
