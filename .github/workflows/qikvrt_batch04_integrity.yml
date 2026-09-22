@@ -22,7 +22,10 @@ permissions:
   contents: write
 
 concurrency:
-  group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}
+  # Share one writer lease with other repository-mutating controllers. A PR
+  # materializer must not sit behind an unrelated long-lived evidence writer;
+  # every admitted successor gets its own non-preemptive turn.
+  group: qikvrt-repository-writer-${{ github.repository }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
