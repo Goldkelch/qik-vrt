@@ -1,0 +1,37 @@
+name: QIKVRT repository self-governance invariant
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: qikvrt-self-governance-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  enforce:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Enforce repository target-state contract
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QIKVRT_REPOSITORY: ${{ github.repository }}
+          QIKVRT_EVENT: ${{ github.event_name }}
+        run: python3 -B tools/qikvrt_self_governance.py
