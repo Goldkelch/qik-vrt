@@ -2,6 +2,93 @@
 
 This document describes the Firefox reference client for the repository-side EFFECT_ACK terminal. It is an implementation profile, not a claim of IETF consensus or standards status.
 
+## Primary delivery requirement
+
+The Product Owner's current priority is a personalized intelligent Firefox behind
+the canonical `https://github.com/Goldkelch/qik-vrt/blob/main/AI` entrypoint for
+everyone who opens it. Full EFFECT_ACK and the universal terminal contract remain
+the acceptance requirements. Extending publications to 47 human languages is
+secondary to this usable browser delivery.
+
+Reuse the canonical /AI bridge in PR #893 and the universal-terminal deployment
+path in PR #1079. These are integration carriers, not approval or current-head
+evidence. The GitHub source page itself cannot launch or install a native browser.
+An installed conforming Firefox adapter or a deployed browser session service must
+complete the route. For a remote session, each visitor needs a separate profile,
+session authorization and storage boundary; a shared owner desktop is insufficient.
+
+The active obligation `AI_PERSONAL_FIREFOX_V1` stays pending until the public route,
+the exact deployed Firefox and adapter build, two distinct visitor sessions with
+isolation, profile persistence for the same returning visitor, the existing
+EFFECT_ACK conformance checks, and authoritative readback are demonstrated. The
+deployment must use an appropriately signed or supported managed extension path.
+Disabling signature verification in a reference CI profile is not production
+delivery. Do not replace missing evidence with a successful HTTP response.
+
+Capability evolution follows `policy/QIKVRT_UNIVERSAL_TERMINAL_DOD_V1.json` and the
+existing Mesh adapter contracts. Each newly exposed capability needs its own
+exact-subject binding and applicable authority checks. A future capability is not
+implicitly implemented or authorized by the interface declaration.
+
+## G20 interface baseline
+
+The initial product interpretation provides at least one suitable interface
+language for each of the 19 individual G20 member countries. The EU and African
+Union are organizational members; this baseline does not claim coverage of every
+official or regional language within them. Country membership source:
+[Australian Department of Foreign Affairs and Trade, G20](https://www.dfat.gov.au/trade/organisations/g20).
+
+| Country | Initial interface language(s) |
+| --- | --- |
+| Argentina | Spanish |
+| Australia | English |
+| Brazil | Brazilian Portuguese |
+| Canada | English, French |
+| China | Simplified Chinese |
+| France | French |
+| Germany | German |
+| India | Hindi, English |
+| Indonesia | Indonesian |
+| Italy | Italian |
+| Japan | Japanese |
+| Republic of Korea | Korean |
+| Mexico | Spanish |
+| Russia | Russian |
+| Saudi Arabia | Arabic |
+| South Africa | English |
+| Türkiye | Turkish |
+| United Kingdom | English |
+| United States | English |
+
+The terminal panel and preference page implement 14 native WebExtension catalogs:
+`ar`, `de`, `en`, `es`, `fr`, `hi`, `id`, `it`, `ja`, `ko`, `pt_BR`, `ru`, `tr`,
+`zh_CN`. Firefox chooses the catalog using its interface locale and falls back to
+English. Arabic uses right-to-left layout; user input has automatic direction.
+Catalog content is inserted as text. Protocol states, schema identifiers, request
+payloads, tokens and receipt hashes remain canonical. Personal appearance settings
+remain in the current Firefox profile and grant no effect authority.
+
+These are machine-generated translation drafts. Catalog coverage and behavioral
+tests do not establish independent linguistic review. Firefox's own menus require
+the corresponding Mozilla language packs in the delivered browser; translating
+the extension does not install those packs. Third-party pages, protocol diagnostics
+and other adapter surfaces are outside this initial panel/preferences change.
+Localization uses [Mozilla's native WebExtension internationalization](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Internationalization).
+
+## Four-state reference and terminal completion
+
+The persisted D0 decision alphabet is `NOOP`, `HOLD`, `REOBSERVE`,
+`REQUEST_AUTHORITY`; its four distinct values require at least two bits. See
+`state/work_units/FIXPOINT_D3_8BIT_INFINITY_V1.json` and the linked Lean artifacts.
+The D3 fixed projection and the D0 decision value are different objects. The D4
+EFFECT_ACK alphabet has five states: `NACK`, `CONTINUE`, `ISOLATE`, `BLOCK`, `DONE`.
+The four interaction stages below are a separate UI sequence.
+
+Universal-terminal completion remains bounded by the declared model and exact
+subject. New input or a changed subject requires new observation. Neither this
+interface implementation nor this citation is a new Lean kernel run or a proof of
+completed public browser delivery.
+
 ## Boundary
 
 The browser terminal separates four states that must remain visually and mechanically distinct:

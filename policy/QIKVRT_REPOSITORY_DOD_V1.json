@@ -1,0 +1,65 @@
+{
+  "schema": "qikvrt_repository_dod_v1",
+  "version": "1.1.0",
+  "repository": "Goldkelch/qik-vrt",
+  "composes": [
+    "policy/GLOBAL_SYSTEM_CLOSURE_V1.json",
+    "policy/QIKVRT_EXECUTION_PRECEDENCE_V1.json",
+    "policy/ZERO_BUG_CONTINUOUS_V1.json",
+    "policy/GITHUB_MAIN_RULESET_V1.json",
+    "src/qikvrt_effect_ack.py"
+  ],
+  "exact_conjunction": true,
+  "done_iff_all": [
+    "ZERO_BUGS",
+    "ALL_PULL_REQUESTS_REGARDED",
+    "ALL_BRANCHES_REGARDED",
+    "ALL_PRODUCTIVE_BRANCHES_MERGED",
+    "FRESH_EXACT_MAIN_VALIDATION_PASS",
+    "FRESH_EXACT_MAIN_EFFECT_READBACK"
+  ],
+  "pull_request_dispositions": [
+    "MERGE",
+    "SUPERSEDE",
+    "CLOSE_AS_REDUNDANT",
+    "REJECT_WITH_EVIDENCE"
+  ],
+  "branch_dispositions": [
+    "MERGED",
+    "SUPERSEDED",
+    "REDUNDANT",
+    "HISTORICAL/RETAINED_BY_POLICY",
+    "PRODUCTIVE_CURRENT_CANDIDATE",
+    "PRODUCTIVE_UNMERGED"
+  ],
+  "evidence": {
+    "finite_inventory_required": true,
+    "exact_subject_head_and_tree_required": true,
+    "predecessor_evidence_transfer": false,
+    "unknown_or_incomplete_inventory": "HOLD_UNVERIFIED",
+    "transport_ack_is_effect_ack": false,
+    "green_local_gates_imply_repository_done": false
+  },
+  "separation": {
+    "queue_state_is_dod_conjunct": false,
+    "open_issue_count_is_dod_conjunct": false,
+    "ruleset_current_is_dod_conjunct": false,
+    "ruleset_current_remains_promotion_gate": true,
+    "noop_policy_may_be_stricter_than_dod": true,
+    "main_validation_does_not_imply_effect": true,
+    "effect_does_not_compensate_repository_red": true
+  },
+  "execution": {
+    "event_driven": true,
+    "polling_allowed": false,
+    "scheduler_in_core_allowed": false,
+    "native_event_invalidates_projection": true,
+    "freshness_timer_may_only_mark_stale": true,
+    "first_unsatisfied_causal_node_required": true
+  },
+  "terminal": {
+    "done": "DONE",
+    "otherwise": "CONTINUE_OR_HOLD",
+    "effect_ack_done_required": true
+  }
+}

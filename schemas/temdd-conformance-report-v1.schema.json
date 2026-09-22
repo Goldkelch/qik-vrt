@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://goldkelch.github.io/qik-vrt/schemas/temdd-conformance-report-v1.schema.json",
+  "title": "TEMDD conformance report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "temdd_conformance",
+    "implementation",
+    "suite",
+    "execution_receipt_digest",
+    "language",
+    "ir",
+    "event_semantics",
+    "ledger",
+    "ide",
+    "evidence_binding",
+    "causality",
+    "effect_ack",
+    "execution",
+    "formal_invariants",
+    "tests",
+    "negative_vectors",
+    "overall"
+  ],
+  "properties": {
+    "schema": {
+      "const": "temdd_conformance_report_v1"
+    },
+    "temdd_conformance": {
+      "const": "1"
+    },
+    "implementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "head",
+        "tree",
+        "digest"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "head": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "tree": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "suite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "version": {
+          "const": "1"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "execution_receipt_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "language": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "HOLD_UNVERIFIED"
+      ]
+    },
+    "ir": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "HOLD_UNVERIFIED"
+      ]
+    },
+    "event_semantics": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "HOLD_UNVERIFIED"
+      ]
+    },
+    "ledger": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "HOLD_UNVERIFIED"
+      ]
+    },
+    "ide": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "HOLD_UNVERIFIED"
+      ]
+    },
+    "evidence_binding": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "HOLD_UNVERIFIED"
+      ]
+    },
+    "causality": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "HOLD_UNVERIFIED"
+      ]
+    },
+    "effect_ack": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "HOLD_UNVERIFIED"
+      ]
+    },
+    "execution": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "HOLD_UNVERIFIED"
+      ]
+    },
+    "formal_invariants": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "HOLD_UNVERIFIED"
+      ]
+    },
+    "tests": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "HOLD_UNVERIFIED"
+      ]
+    },
+    "negative_vectors": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "HOLD_UNVERIFIED"
+      ]
+    },
+    "overall": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "HOLD_UNVERIFIED"
+      ]
+    }
+  }
+}

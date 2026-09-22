@@ -43,6 +43,7 @@ TRUSTED_EVALUATOR_PATH = "tools/qikvrt_requested_review_executor.py"
 TRUSTED_WORKFLOW_PATH = ".github/workflows/qikvrt_requested_review_executor.yml"
 REVIEW_MARKER = "qikvrt-mesh-review:v1"
 LIVE_STATUS_MARKER = "qikvrt-live-status-watch"
+HUMAN_AUTHORITY_REVIEW_MARKER = "qikvrt-human-exact-scope-review-confirmation-v1"
 TRUSTED_AUTOMATION_DISCUSSION_PREFIXES = (
     f"<!-- {REVIEW_MARKER} ",
     f"<!-- {LIVE_STATUS_MARKER} -->",
@@ -176,10 +177,10 @@ def review_queue_intent(
         raise ReviewSnapshotError("queue pull request number is invalid")
     if not isinstance(receipt_path, str) or not isinstance(diff_path, str):
         raise ReviewSnapshotError("queue evidence paths are invalid")
-    path = f"{REVIEW_QUEUE_ROOT}/pr-{pr_number}/{head}/{fingerprint}.json"
+    path = f"{REVIEW_QUEUE_ROOT}/pr-{pr_number}/{head}/{predecessor}/{fingerprint}.json"
     return path, {
         "schema": "qikvrt_mesh_review_queue_intent_v1",
-        "work_unit_id": f"pr-{pr_number}/{head}/{fingerprint}",
+        "work_unit_id": f"pr-{pr_number}/{head}/{predecessor}/{fingerprint}",
         "repository": repository,
         "pr_number": pr_number,
         "head_sha": head,
@@ -1200,18 +1201,24 @@ def _discussion_items(snapshot: Mapping[str, Any]) -> list[dict[str, Any]]:
         if key in seen:
             raise ReviewSnapshotError(f"duplicate discussion item: {kind}/{identifier}")
         seen.add(key)
-        result.append(
-            {
-                "kind": kind,
-                "id": identifier,
-                "author": item.get("author"),
-                "author_association": item.get("author_association"),
-                "state": item.get("state"),
-                "commit_id": item.get("commit_id"),
-                "updated_at": updated_at,
-                "body_sha256": body_sha256,
-            }
-        )
+        entry = {
+            "kind": kind,
+            "id": identifier,
+            "author": item.get("author"),
+            "author_association": item.get("author_association"),
+            "state": item.get("state"),
+            "commit_id": item.get("commit_id"),
+            "updated_at": updated_at,
+            "body_sha256": body_sha256,
+        }
+        if "authority_scope_paths" in item:
+            authority_scope_paths = item.get("authority_scope_paths")
+            if not isinstance(authority_scope_paths, list) or not all(
+                isinstance(path, str) for path in authority_scope_paths
+            ):
+                raise ReviewSnapshotError("discussion authority_scope_paths must be a string list")
+            entry["authority_scope_paths"] = sorted(set(authority_scope_paths))
+        result.append(entry)
     result.sort(key=lambda item: (item["kind"], item["id"]))
     return result
 
@@ -1843,18 +1850,48 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
             findings=findings,
             **common,
         )
-    authority = next(
-        (finding for finding in findings if finding["severity"] == "AUTHORITY_REQUIRED"),
+    authority_findings = [
+        finding for finding in findings if finding["severity"] == "AUTHORITY_REQUIRED"
+    ]
+    authority_paths: set[str] = set()
+    for item in discussion:
+        if (
+            item.get("kind") == "PULL_REQUEST_REVIEW"
+            and item.get("state") == "COMMENTED"
+            and item.get("commit_id") == head
+            and item.get("author") != "github-actions[bot]"
+            and item.get("author_association") in {"OWNER", "MEMBER", "COLLABORATOR"}
+        ):
+            raw_paths = item.get("authority_scope_paths", [])
+            if isinstance(raw_paths, list) and all(isinstance(path, str) for path in raw_paths):
+                authority_paths.update(raw_paths)
+    unsatisfied_authority = next(
+        (
+            finding for finding in authority_findings
+            if not isinstance(finding.get("path"), str)
+            or finding.get("path") not in authority_paths
+        ),
         None,
     )
-    if authority is not None:
+    if unsatisfied_authority is not None:
         return _result(
             snapshot,
             "COMMENT_WITH_BLOCKER",
-            str(authority["finding_id"]),
-            str(authority["detail"]),
+            str(unsatisfied_authority["finding_id"]),
+            str(unsatisfied_authority["detail"]),
             findings=findings,
             **common,
+        )
+    for authority in authority_findings:
+        findings.append(
+            _finding(
+                "MESH_AUTHORITY_SATISFIED_BY_OWNER_DECLARATION",
+                "INFO",
+                "exact-head native human review satisfies this workflow permission finding",
+                path=str(authority["path"]),
+                line=authority.get("line"),
+                evidence_sha256=authority.get("evidence_sha256"),
+            )
         )
 
     if writers:
@@ -2693,6 +2730,23 @@ def _discussion_observation(repository: str, number: int) -> list[dict[str, Any]
             )
             if not isinstance(updated, str) or not updated:
                 raise ReviewObservationError(f"{kind} lacks an observation timestamp")
+            authority_scope_paths: list[str] = []
+            if (
+                kind == "PULL_REQUEST_REVIEW"
+                and author != "github-actions[bot]"
+                and item.get("state") == "COMMENTED"
+                and item.get("author_association") in {"OWNER", "MEMBER", "COLLABORATOR"}
+            ):
+                marker = re.match(
+                    rf"^<!-- {re.escape(HUMAN_AUTHORITY_REVIEW_MARKER)}:{number}:([0-9a-f]{{40}}) -->",
+                    body,
+                )
+                if marker is not None and item.get("commit_id") == marker.group(1):
+                    authority_scope_paths = sorted(set(re.findall(
+                        r"^- \`(\.github/workflows/[^\`]+)\`: Git-Blob \`[0-9a-f]{40}\`; Workflow-Deklaration \`permissions\.contents: write\`\.$",
+                        body,
+                        flags=re.MULTILINE,
+                    )))
             result.append(
                 {
                     "kind": kind,
@@ -2703,6 +2757,7 @@ def _discussion_observation(repository: str, number: int) -> list[dict[str, Any]
                     "commit_id": item.get("commit_id"),
                     "updated_at": updated,
                     "body_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
+                    "authority_scope_paths": authority_scope_paths,
                 }
             )
     result.sort(key=lambda item: (item["kind"], item["id"]))
