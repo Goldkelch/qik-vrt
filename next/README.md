@@ -12,6 +12,15 @@ Use this checkout's actual owner/repository for a Mirror or fork. Choose a new o
 
 <!-- /qikvrt-roundtrip-first:v1 -->
 
+<!-- qikvrt-self-declaration:v1 -->
+## Selbsterklärung für natürliche und künstliche kognitive Systeme
+
+[Wenn Beobachtung als Handeln ausgegeben wird](../docs/WENN_BEOBACHTUNG_ALS_HANDELN_AUSGEGEBEN_WIRD.md) — Ingolf Lohmann · September 2026.
+
+Vollständiger Text einschließlich der Ergänzung „Die gefährlichste Form des Scheiterns“.
+
+<!-- /qikvrt-self-declaration:v1 -->
+
 <!-- SPDX-License-Identifier: CC-BY-NC-ND-4.0 -->
 <!-- Copyright 2026 Ingolf Lohmann. Implementation documentation: OpenAI Codex. -->
 
