@@ -108,9 +108,25 @@ class AphorismCorpusV2Tests(unittest.TestCase):
             "qikvrt-repository-evidence-${{ github.event_name }}-",
             workflow,
         )
+        # The same-repository admission guard is on the materialize job in
+        # this carrier. Bind its complete expression rather than demanding
+        # the obsolete blanket PR exclusion on the persistence step. This
+        # must still fail if repository equality or the actor guard is lost.
+        job = workflow.split("  materialize:\n", 1)[1]
+        admission, separator, _ = job.split("if: >-", 1)[1].partition("runs-on:")
+        self.assertTrue(separator, "materialize job must declare its runner")
+        self.assertEqual(
+            " ".join(admission.split()),
+            "(github.event_name == 'pull_request' && "
+            "github.event.pull_request.head.repo.full_name == github.repository && "
+            "github.actor != 'dependabot[bot]') || "
+            "github.event_name == 'workflow_dispatch' || "
+            "(github.event_name == 'push' && "
+            "github.actor != 'github-actions[bot]')",
+        )
         commit_step = workflow.index("- name: Commit materialized repository evidence")
         block = workflow[commit_step:]
-        self.assertIn("if: github.event_name != 'pull_request'", block)
+        self.assertNotIn("if: github.event_name != 'pull_request'", block)
         for token in (
             'source_head="$(git rev-parse --verify HEAD^{commit})"',
             'git ls-remote --heads origin "refs/heads/$TARGET_REF"',
@@ -121,8 +137,8 @@ class AphorismCorpusV2Tests(unittest.TestCase):
         ):
             self.assertIn(token, block)
         self.assertLess(
-            block.index("if: github.event_name != 'pull_request'"),
-            block.index("git commit -m \"ci: materialize repository evidence\""),
+            workflow.index("github.event.pull_request.head.repo.full_name == github.repository"),
+            commit_step,
         )
         self.assertLess(
             block.index("BLOCK: target ref advanced before repository evidence persistence"),
