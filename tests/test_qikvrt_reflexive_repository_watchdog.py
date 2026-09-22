@@ -430,7 +430,7 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
         self.assertIn('cron: "*/5 * * * *"', workflow)
         self.assertIn("workflow_run:", workflow)
         self.assertIn("types: [requested, in_progress, completed]", workflow)
-        self.assertIn("cancel-in-progress: true", workflow)
+        # Liveness invariant: trigger coalescing must never preempt an admitted\n        # observation cycle. A terminal receipt is required before the next\n        # queued cycle may become authoritative.\n        self.assertIn("cancel-in-progress: false", workflow)\n        self.assertNotIn("cancel-in-progress: true", workflow)
         self.assertIn("actions: read", workflow)
         self.assertIn("contents: read", workflow)
         self.assertIn("qikvrt_reflexive_repository_watchdog.py", workflow)
