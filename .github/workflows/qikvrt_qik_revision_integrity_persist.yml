@@ -1,0 +1,86 @@
+name: QIK revision integrity successor persistence
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: qik-revision-integrity-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  persist:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'publication/qik-scientific-revision-20260923' &&
+      github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      TARGET_REF: ${{ github.event.pull_request.head.ref }}
+      HELPER_PATH: .github/workflows/qikvrt_qik_revision_integrity_persist.yml
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_HEAD }}
+          fetch-depth: 2
+
+      - name: Produce one clean deterministic integrity successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 { print $1 }')"
+          test "$remote_head" = "$EXPECTED_HEAD"
+
+          rm -- "$HELPER_PATH"
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+
+          python3 -B - <<'PY'
+          import subprocess
+          expected = {
+              ".github/workflows/qikvrt_qik_revision_integrity_persist.yml",
+              "REPOSITORY_FILE_MANIFEST.json",
+              "REPOSITORY_FILE_MANIFEST.json.sha256",
+              "SHA256SUMS.txt",
+          }
+          raw = subprocess.check_output(
+              ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]
+          )
+          observed = set()
+          for item in raw.split(b"\0"):
+              if item:
+                  observed.add(item[3:].decode("utf-8"))
+          if observed != expected:
+              raise SystemExit(
+                  "BLOCK: deterministic successor delta differs: "
+                  + ",".join(sorted(observed))
+              )
+          PY
+
+      - name: Persist exact successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 { print $1 }')"
+          test "$remote_head" = "$EXPECTED_HEAD"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --             "$HELPER_PATH"             REPOSITORY_FILE_MANIFEST.json             REPOSITORY_FILE_MANIFEST.json.sha256             SHA256SUMS.txt
+          git diff --cached --check
+          git commit -m "ci: persist QIK revision integrity successor"
+          git push origin "HEAD:$TARGET_REF"
