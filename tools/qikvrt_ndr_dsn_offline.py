@@ -1,156 +1,209 @@
 #!/usr/bin/env python3
-"""Offline, fail-closed DSN/NDR classifier.
+"""Bounded offline DSN classifier. Output is INTERNAL, not a public issue payload.
 
-No network access and no external side effects.  The parser prefers structured
-delivery-status MIME parts over subject/body heuristics and keeps one result per
-recipient.  It deliberately does not claim that an NDR is authentic merely
-because it parses successfully.
+Parsing authenticates neither the reporter nor the original send attempt.
+No network, resend, address deactivation or other external action is performed.
+Internationalized DSNs are recognized but routed to review, not silently lost.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
-from dataclasses import asdict, dataclass
 from email import policy
+from email.message import EmailMessage
 from email.parser import BytesParser
-from typing import Iterable
 
-STATUS_RE = re.compile(r"^[245]\.\d{1,3}\.\d{1,3}$")
-ACTION_VALUES = {"delivered", "delayed", "failed", "relayed", "expanded"}
+STATUS_RE = re.compile(r"[245]\.[0-9]{1,3}\.[0-9]{1,3}")
+TYPED_RE = re.compile(r"([A-Za-z0-9-]+);[ \t]*(\S[^\r\n]*)")
+ACTION_CLASSES = {
+    "failed": "45", "delayed": "4", "delivered": "2",
+    "relayed": "2", "expanded": "2",
+}
+DISPOSITIONS = {
+    "failed": "ATTEMPT_FAILED", "delayed": "MTA_RETRY_IN_PROGRESS",
+    "delivered": "DELIVERY_REPORTED", "relayed": "INTERMEDIATE_SUCCESS",
+    "expanded": "INTERMEDIATE_SUCCESS",
+}
+STATUS_SUBJECTS = {
+    "0": "UNDEFINED", "1": "ADDRESS", "2": "MAILBOX", "3": "MAIL_SYSTEM",
+    "4": "NETWORK_ROUTING", "5": "PROTOCOL", "6": "CONTENT_MEDIA",
+    "7": "SECURITY_POLICY",
+}
 MAX_BYTES = 2 * 1024 * 1024
-MAX_PARTS = 128
-MAX_RECIPIENTS = 1000
+# Includes per-recipient DSN blocks: enforced during allocation, before walk().
+MAX_PARSE_OBJECTS = 128
+MAX_DEPTH = 16
+MAX_RECIPIENTS = 100
+DSN_TYPES = {"message/delivery-status", "message/global-delivery-status"}
 
 
-@dataclass(frozen=True)
-class RecipientResult:
-    final_recipient: str | None
-    original_recipient: str | None
-    action: str | None
-    status: str | None
-    status_class: str
-    disposition: str
-    retry_by_application: bool
-    evidence: str
-
-
-def _value(block, name: str) -> str | None:
-    value = block.get(name)
-    return str(value).strip() if value is not None else None
-
-
-def _recipient(value: str | None) -> str | None:
-    if not value:
+def _single(block, name: str, issues: list[str], *, required: bool = True):
+    values = block.get_all(name, [])
+    if len(values) != 1:
+        if required or len(values) > 1:
+            issues.append("FIELD_COUNT:" + name)
         return None
-    return value.split(";", 1)[-1].strip()
+    value = str(values[0]).strip()
+    if not value or any(ord(c) < 32 and c != "\t" for c in value):
+        issues.append("FIELD_VALUE:" + name)
+        return None
+    return value
 
 
-def _status_class(status: str | None) -> str:
-    if not status or not STATUS_RE.match(status):
-        return "UNKNOWN"
-    return {"2": "SUCCESS", "4": "TRANSIENT", "5": "PERMANENT"}[status[0]]
+def _typed(value, name: str, issues: list[str]):
+    if value is None:
+        return None
+    match = TYPED_RE.fullmatch(value)
+    if not match:
+        issues.append("TYPED_FIELD:" + name)
+        return None
+    return match.group(2).strip()
 
 
-def _disposition(action: str | None, status: str | None) -> tuple[str, bool]:
-    # RFC 3464 Action is the attempt outcome.  A failed 4.x.x DSN is terminal
-    # for that attempt even though the diagnostic class is transient.
-    if action == "failed":
-        return "ATTEMPT_FAILED", False
-    if action == "delayed":
-        return "MTA_RETRY_IN_PROGRESS", False
-    if action == "delivered":
-        return "DELIVERY_REPORTED", False
-    if action in {"relayed", "expanded"}:
-        return "INTERMEDIATE_SUCCESS", False
-    return "MANUAL_REVIEW", False
-
-
-def _iter_delivery_blocks(msg) -> Iterable:
-    part_count = 0
-    for part in msg.walk():
-        part_count += 1
-        if part_count > MAX_PARTS:
-            raise ValueError("MIME_PART_LIMIT_EXCEEDED")
-        if part.get_content_type() not in {
-            "message/delivery-status",
-            "message/global-delivery-status",
-        }:
-            continue
-        payload = part.get_payload()
-        if isinstance(payload, list):
-            # First block is per-message metadata; following blocks are
-            # per-recipient according to the DSN media format.
-            for block in payload[1:]:
-                yield block
+def _recipient(block, inherited: list[str]) -> dict:
+    issues = list(inherited)
+    final = _typed(_single(block, "Final-Recipient", issues), "Final-Recipient", issues)
+    original = _typed(_single(block, "Original-Recipient", issues, required=False),
+                      "Original-Recipient", issues)
+    action = _single(block, "Action", issues)
+    action = action.lower() if action else None
+    status = _single(block, "Status", issues)
+    valid_status = bool(status and STATUS_RE.fullmatch(status))
+    if action not in ACTION_CLASSES:
+        issues.append("INVALID_ACTION")
+    if not valid_status:
+        issues.append("INVALID_STATUS")
+    elif action in ACTION_CLASSES and status[0] not in ACTION_CLASSES[action]:
+        issues.append("ACTION_STATUS_CONFLICT")
+    return {
+        "final_recipient": final,
+        "original_recipient": original,
+        "action": action,
+        "status": status,
+        "status_class": ({"2": "SUCCESS", "4": "TRANSIENT", "5": "PERMANENT"}
+                         [status[0]] if valid_status else "UNKNOWN"),
+        "status_subject": (STATUS_SUBJECTS.get(status.split(".")[1], "UNKNOWN")
+                           if valid_status else "UNKNOWN"),
+        "disposition": DISPOSITIONS[action] if not issues else "MANUAL_REVIEW",
+        "retry_by_application": False,
+        "evidence": "STRUCTURED_DSN_UNVERIFIED_REPORT",
+        "issues": sorted(set(issues)),
+    }
 
 
 def classify(raw: bytes) -> dict:
+    """Classify bounded bytes; ValueError denotes a resource or parse failure.
+
+    The input cap and allocation cap are enforced before unbounded MIME walking.
+    This library does not claim a hard real-time deadline or raw-mail retention.
+    """
+    if not isinstance(raw, bytes):
+        raise TypeError("MESSAGE_MUST_BE_BYTES")
     if len(raw) > MAX_BYTES:
         raise ValueError("MESSAGE_SIZE_LIMIT_EXCEEDED")
-    msg = BytesParser(policy=policy.default).parsebytes(raw)
-    results: list[RecipientResult] = []
-    for block in _iter_delivery_blocks(msg):
-        if len(results) >= MAX_RECIPIENTS:
-            raise ValueError("RECIPIENT_LIMIT_EXCEEDED")
-        action = (_value(block, "Action") or "").lower() or None
-        status = _value(block, "Status")
-        if action not in ACTION_VALUES:
-            action = None
-        disposition, app_retry = _disposition(action, status)
-        results.append(
-            RecipientResult(
-                final_recipient=_recipient(_value(block, "Final-Recipient")),
-                original_recipient=_recipient(_value(block, "Original-Recipient")),
-                action=action,
-                status=status,
-                status_class=_status_class(status),
-                disposition=disposition,
-                retry_by_application=app_retry,
-                evidence="STRUCTURED_DSN",
-            )
-        )
+    allocated = 0
 
-    structured = bool(results)
-    # Heuristics are detection hints only. They never manufacture a status,
-    # recipient, authenticity claim, or delivery result.
+    def factory(*args, **kwargs):
+        nonlocal allocated
+        allocated += 1
+        if allocated > MAX_PARSE_OBJECTS:
+            raise ValueError("MIME_OBJECT_LIMIT_EXCEEDED")
+        return EmailMessage(*args, **kwargs)
+
+    try:
+        msg = BytesParser(_class=factory, policy=policy.default).parsebytes(raw)
+    except RecursionError as exc:
+        raise ValueError("MIME_RECURSION_LIMIT_EXCEEDED") from exc
+    parts = []
+    pending = [(msg, 0)]
+    envelope_issues: list[str] = []
+    while pending:
+        part, depth = pending.pop()
+        if depth > MAX_DEPTH:
+            raise ValueError("MIME_DEPTH_LIMIT_EXCEEDED")
+        parts.append(part)
+        if part.defects:
+            envelope_issues.append("MALFORMED_MIME")
+        for field in ("Content-Type", "Content-Transfer-Encoding", "MIME-Version"):
+            if len(part.get_all(field, [])) > 1:
+                envelope_issues.append("AMBIGUOUS_MIME_HEADER:" + field)
+        payload = part.get_payload()
+        if isinstance(payload, list):
+            pending.extend((child, depth + 1) for child in reversed(payload))
+
+    recipients = []
+    issues = list(envelope_issues)
+    structured = False
+    for part in parts:
+        media_type = part.get_content_type()
+        if media_type not in DSN_TYPES:
+            continue
+        structured = True
+        if media_type == "message/global-delivery-status":
+            # CPython treats this as generic message/*, not delivery-status blocks.
+            # Preserve the exact input digest; do not claim lossless EAI parsing.
+            issues.append("GLOBAL_DSN_REQUIRES_REVIEW")
+            continue
+        payload = part.get_payload()
+        if not isinstance(payload, list) or len(payload) < 2:
+            issues.append("MISSING_DSN_RECIPIENT_BLOCK")
+            continue
+        metadata_issues = list(envelope_issues)
+        _typed(_single(payload[0], "Reporting-MTA", metadata_issues),
+               "Reporting-MTA", metadata_issues)
+        _single(payload[0], "Original-Envelope-ID", metadata_issues, required=False)
+        issues.extend(metadata_issues)
+        for block in payload[1:]:
+            if len(recipients) >= MAX_RECIPIENTS:
+                raise ValueError("RECIPIENT_LIMIT_EXCEEDED")
+            result = _recipient(block, metadata_issues)
+            recipients.append(result)
+            issues.extend(result["issues"])
+
     subject = str(msg.get("Subject", ""))
-    heuristic = bool(re.search(
+    hint = bool(re.search(
         r"(?i)\b(undeliverable|unzustellbar|delivery status notification|"
-        r"returned mail|failure notice|nicht zugestellt|zustellfehler)\b",
-        subject,
-    ))
+        r"returned mail|failure notice|nicht zugestellt|zustellfehler)\b", subject))
+    overall = "NOT_IDENTIFIED_AS_DSN"
+    if issues or (hint and not structured) or (structured and not recipients):
+        overall = "MANUAL_REVIEW"
+    elif structured:
+        overall = "CLASSIFIED_STRUCTURED_DSN"
     return {
         "schema_version": "qikvrt.ndr-dsn.offline-classifier.v1",
+        "data_classification": "INTERNAL_SENSITIVE",
+        "raw_sha256": hashlib.sha256(raw).hexdigest(),
         "structured_dsn": structured,
-        "heuristic_ndr_hint": heuristic,
+        "heuristic_ndr_hint": hint,
         "authenticity": "UNVERIFIED",
         "correlation": "UNRESOLVED",
         "application_resend_authorized": False,
-        "recipients": [asdict(x) for x in results],
-        "overall": (
-            "CLASSIFIED_STRUCTURED_DSN"
-            if structured
-            else "MANUAL_REVIEW" if heuristic
-            else "NOT_IDENTIFIED_AS_DSN"
-        ),
+        "communication_effect_ack_done": False,
+        "recipients": recipients,
+        "issues": sorted(set(issues)),
+        "overall": overall,
     }
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("message", help="RFC 5322/MIME message file")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("message", help="RFC 5322/MIME message file (internal data)")
     args = parser.parse_args()
     try:
-        raw = open(args.message, "rb").read(MAX_BYTES + 1)
-        result = classify(raw)
-    except (OSError, ValueError) as exc:
+        with open(args.message, "rb") as stream:
+            result = classify(stream.read(MAX_BYTES + 1))
+    except OSError:
+        print(json.dumps({"overall": "CONTROLLED_ERROR", "error": "INPUT_READ_FAILED"}))
+        return 2
+    except ValueError as exc:
         print(json.dumps({"overall": "CONTROLLED_ERROR", "error": str(exc)}))
         return 2
     json.dump(result, sys.stdout, ensure_ascii=False, sort_keys=True, indent=2)
     sys.stdout.write("\n")
-    return 0
+    return 1 if result["overall"] == "MANUAL_REVIEW" else 0
 
 
 if __name__ == "__main__":
