@@ -1,3 +1,30 @@
+<!-- universal-effect-ack-frontdoor:v1 -->
+# QIK-VRT — Wirkung statt Aktivität
+
+> **TRANSPORT_ACK ≠ EFFECT_ACK. Beobachtung ≠ Handlung. Aktivität ≠ Wirkung. DONE gilt erst nach frischem, subject-gebundenem Wirkungs-Readback.**
+
+Die universalisierbare Methode dieses Repositories ist eine rekursive Effect-Acknowledgement-Schleife:
+
+```text
+ZIEL
+  → INSPECT (Zustand + Provenienz)
+  → SOLVE (erste kausale Abweichung)
+  → EXECUTE (kleinster zulässiger Übergang)
+  → OBSERVE_EFFECT
+  → VERIFY (Wirkung ↔ Übergang ↔ Subject)
+  → wenn Postcondition falsch: Abweichung := nächstes Work Unit
+  → CONTINUE
+  → EFFECT_ACK_DONE erst bei frisch nachgewiesener Postcondition
+```
+
+**Fail-closed ≠ globally idle.** Ein verbotener oder nicht belegter Übergang wird nicht ausgeführt oder als Erfolg ausgegeben; unabhängige zulässige Arbeit wird fortgesetzt. Ein Blocker ist deshalb kein Abschluss, sondern die Spezifikation des nächsten kausalen Problems.
+
+Warum: Ein System kann einen Fehler korrekt erkennen und erklären und dennoch operativ scheitern, wenn es Diagnose, gestarteten Prozess oder Tool-Erfolg mit der verlangten Wirkung verwechselt. Die vollständige, falsifizierbar formulierte Argumentation steht unmittelbar darunter in **„Wenn Beobachtung als Handeln ausgegeben wird“**. Sie beansprucht ausdrücklich nicht, dass jeder Assistent so scheitert oder QIK-VRT ohne kontrollierte Vergleichsexperimente universell überlegen sei.
+
+**Öffentliche Gegenreferenz:** Die kanonische Internet-Publikation soll auf diesen exakten Repository-Carrier zurückverweisen; bis ein externer Deposit mit öffentlichem Byte-Readback tatsächlich vorliegt, wird er nicht als veröffentlicht behauptet.
+
+<!-- /universal-effect-ack-frontdoor:v1 -->
+
 <!-- qikvrt-roundtrip-first:v1 -->
 ## Zuerst: ausfuehrbarer Roundtrip-Beweis / Start here
 
