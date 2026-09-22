@@ -139,6 +139,21 @@ class MaterializationScopeTests(unittest.TestCase):
                 workflow,
             )
 
+    def test_same_repository_pr_persists_verified_materialization(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        commit = workflow.index("- name: Commit materialized repository evidence")
+        persistence = workflow[commit:]
+        self.assertIn("github.event_name != 'pull_request' ||", persistence)
+        self.assertIn(
+            "github.event.pull_request.head.repo.full_name == github.repository",
+            persistence,
+        )
+        self.assertNotIn(
+            "- name: Commit materialized repository evidence\n"
+            "        if: github.event_name != 'pull_request'",
+            workflow,
+        )
+
     def test_integrity_and_complete_gates_remain_unconditional(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         integrity = workflow.index("- name: Regenerate and verify repository integrity")
