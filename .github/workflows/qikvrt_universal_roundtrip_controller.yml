@@ -1,0 +1,104 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT universal roundtrip controller
+
+on:
+  workflow_run:
+    workflows:
+      - "*"
+    types: [completed]
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review, review_requested]
+  issues:
+    types: [opened, reopened, edited, labeled, unlabeled]
+  create:
+  delete:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: qikvrt-universal-roundtrip-controller
+  cancel-in-progress: false
+
+jobs:
+  enforce-roundtrip:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.name != 'QIKVRT universal roundtrip controller' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact repository subject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Verify repository-wide round-trip policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json")
+          d=json.loads(p.read_text(encoding="utf-8"))
+          assert d["scope"] == "repository-wide"
+          assert d["required_roundtrip"] == [
+              "INSPECT","SOLVE","OBSERVE_EFFECT","VERIFY_READBACK","CONTINUE_OR_DONE"
+          ]
+          assert d["invariants"]["predecessor_evidence_transfer"] is False
+          assert d["invariants"]["unknown_fails_closed"] is True
+          assert d["done_state"] == "EFFECT_ACK_DONE"
+          print("ROUNDTRIP_POLICY=PASS")
+          PY
+
+      - name: Inspect exact state and derive continuation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          head="$(git rev-parse HEAD)"
+          tree="$(git rev-parse HEAD^{tree})"
+          printf 'EXACT_HEAD=%s\nEXACT_TREE=%s\n' "$head" "$tree"
+          printf 'SOURCE_EVENT=%s\n' "${{ github.event_name }}"
+          if [ "${{ github.event_name }}" = workflow_run ]; then
+            printf 'UPSTREAM_NAME=%s\nUPSTREAM_RUN_ID=%s\nUPSTREAM_CONCLUSION=%s\n'               "${{ github.event.workflow_run.name }}"               "${{ github.event.workflow_run.id }}"               "${{ github.event.workflow_run.conclusion }}"
+          fi
+          prs="$(gh api --paginate "repos/$REPOSITORY/pulls?state=open&per_page=100" --jq 'length' | awk '{s+=$1} END{print s+0}')"
+          issues="$(gh api --paginate "repos/$REPOSITORY/issues?state=open&per_page=100" --jq '[.[]|select(.pull_request|not)]|length' | awk '{s+=$1} END{print s+0}')"
+          branches="$(gh api --paginate "repos/$REPOSITORY/branches?per_page=100" --jq 'length' | awk '{s+=$1} END{print s+0}')"
+          non_main=$(( branches > 0 ? branches - 1 : 0 ))
+          printf 'OPEN_PULL_REQUESTS=%s\nOPEN_ISSUES=%s\nNON_MAIN_BRANCHES=%s\n' "$prs" "$issues" "$non_main"
+          if [ "$prs" -eq 0 ] && [ "$issues" -eq 0 ] && [ "$non_main" -eq 0 ]; then
+            echo "CONTINUATION=VERIFY_EFFECT_ACK_DONE"
+          else
+            echo "CONTINUATION=INSPECT_SOLVE_REPEAT"
+          fi
+
+      - name: Fail closed on unfinished repository work
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          prs="$(gh api --paginate "repos/$REPOSITORY/pulls?state=open&per_page=100" --jq 'length' | awk '{s+=$1} END{print s+0}')"
+          issues="$(gh api --paginate "repos/$REPOSITORY/issues?state=open&per_page=100" --jq '[.[]|select(.pull_request|not)]|length' | awk '{s+=$1} END{print s+0}')"
+          branches="$(gh api --paginate "repos/$REPOSITORY/branches?per_page=100" --jq 'length' | awk '{s+=$1} END{print s+0}')"
+          non_main=$(( branches > 0 ? branches - 1 : 0 ))
+          if [ "$prs" -gt 0 ] || [ "$issues" -gt 0 ] || [ "$non_main" -gt 0 ]; then
+            echo "WORK_REMAINING=true"
+            echo "EFFECT_ACK_DONE=false"
+            exit 1
+          fi
+          echo "WORK_REMAINING=false"
+          echo "EFFECT_ACK_DONE=UNVERIFIED"
+          exit 1
