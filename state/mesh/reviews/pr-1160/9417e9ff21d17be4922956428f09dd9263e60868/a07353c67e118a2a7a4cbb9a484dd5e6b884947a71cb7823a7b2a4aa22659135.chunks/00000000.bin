@@ -1,0 +1,74 @@
+diff --git a/AI b/AI
+index 1780c4fc262933779f24c718cadd0bc32f5ed390..2967df2e87d93a561e2fc13fed92ebf0e914705f 100644
+--- a/AI
++++ b/AI
+@@ -260,3 +260,8 @@ Competitiveness loop: identical reproducible workload and conditions -> QIK-VRT
+ Prioritize the first causal defect on the real end-user path over cosmetic CI activity or additional green infrastructure. The canonical end-user distribution path is public download -> exact bytes -> firmware/standard-platform boot -> Linux -> Mega-ST/MC68000 -> Metatransputer/Cloud Transputer -> Universal Terminal -> Firefox -> TEMDD -> Effect-Acknowledgement -> useful human task. Repair the first failing edge, create a successor subject, and restart fresh validation; never hide it behind unrelated successful lanes.
+ 
+ Release acceptance remains finite and evidence-bound under canonical TEMDD T1-T16, including DONE only from Working Software AND publicly reachable URL AND fresh readback of that URL. Continuous improvement does not terminate when a release reaches DONE: Release_n = DONE does not imply Improvement = DONE.
++
++
++MESH EFFECT-EVIDENCE INHERITANCE
++
++Every current and future QIK-VRT Mesh node MUST satisfy state/autonomy/MESH_EFFECT_EVIDENCE_INHERITANCE_V1.md before admission. Missing or unresolved inheritance is fail-closed and the node MUST NOT claim Mesh conformance. This requirement recursively applies to every future node, split, clone, successor repository, and descendant Mesh repository.
+diff --git a/state/autonomy/MESH_EFFECT_EVIDENCE_INHERITANCE_V1.md b/state/autonomy/MESH_EFFECT_EVIDENCE_INHERITANCE_V1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..400755fb5216ab6e61e4a8a7cb91f71e980bcde9
+--- /dev/null
++++ b/state/autonomy/MESH_EFFECT_EVIDENCE_INHERITANCE_V1.md
+@@ -0,0 +1,55 @@
++# QIK-VRT Mesh: Effect-Evidence Invariant
++
++Status: normative mesh inheritance contract
++Authority repository: Goldkelch/qik-vrt
++
++Every current Mesh node and every future Mesh repository/node MUST inherit this contract before admission.
++
++## Core invariants
++
++- TRANSPORT_ACK != EFFECT_ACK
++- PROCESS_COMPLETION != GOAL_COMPLETION
++- FAILURE_REPORT != FAILURE_RECOVERY
++- UNKNOWN => FAIL_CLOSED
++- CLAIM_SCOPE <= EVIDENCE_SCOPE
++- PREDECESSOR_EVIDENCE_TRANSFER = FALSE
++- MUTATION => REBIND_EXACT_SUBJECT
++
++No UI, workflow, transport, queue, API, mail client, cloud service, agent, or node may represent a stronger success state than its evidence establishes.
++
++## Required evidence classification
++
++Every material claim MUST be classified as exactly one of:
++1. DOCUMENTED_FACT — directly supported by retained primary evidence.
++2. DERIVED_FINDING — follows directly from documented facts; derivation must be stated.
++3. INTERPRETATION — system/ethical analysis, explicitly marked as interpretation.
++4. UNKNOWN — not established by available evidence.
++
++UNKNOWN MUST NOT be promoted to success, fact, delivery, recovery, effect, or completion.
++
++## Communication-specific invariant
++
++SENT != DELIVERED.
++DELIVERED != HUMAN_READ.
++NDR_GENERATED != RECOVERY_SUCCESS.
++
++A delivery failure or NDR is a new recovery work unit. A message remains effect-open until the claimed communication postcondition is supported by evidence within the same claim scope.
++
++The documented September 2026 incident establishes only the evidence scope retained for that incident: a send attempt, NDR generation, recipient-specific delivery failures reported with 550 5.7.520 / AS(4810), and no established successful recovery in that evidence. It does NOT establish that the content was objectively spam, intent by any operator, universal cloud failure, or a legal violation.
++
++## Node admission and inheritance
++
++Every node registration, split, clone, successor repository, and future Mesh repository MUST:
++- contain this contract or a byte-identical canonical reference resolved from Authority;
++- validate it during admission;
++- fail closed if absent, altered without an Authority successor, or unresolved;
++- preserve the fact/derivation/interpretation/UNKNOWN separation in generated evidence and user-visible status;
++- propagate this requirement to its own descendants.
++
++A node that cannot prove inheritance is NOT admitted as a conforming QIK-VRT Mesh node.
++
++## Effect closure
++
++EFFECT_ACK_DONE may be asserted as machine evidence only when the claimed postcondition is freshly observed, subject-bound, provenance-bound, and within evidence scope. Authority declarations remain distinct from machine-effect witnesses.
++
++This contract is recursive: future Mesh creation MUST install and validate the same invariant before the new node may claim conformance.
