@@ -163,6 +163,8 @@ sys.stdout.write(x.get("raw", "")); sys.exit(x.get("rc", 0))
 import os, pathlib, sys
 r=pathlib.Path(os.environ["FIXTURE_ROOT"])
 main="refs/heads/main" in sys.argv
+if "HEAD^{tree}" in sys.argv:
+    print("d"*40); sys.exit(0)
 v=("b" if main else "a")*40
 if (r/"slept").exists() and os.environ.get("REF_DRIFT")==("main" if main else "head"):
     v="c"*40
@@ -188,7 +190,9 @@ with (r/"sleeps.txt").open("a") as f: f.write(sys.argv[1]+"\\n")
             environment = dict(os.environ, FIXTURE_ROOT=str(root), RUNNER_TEMP=str(root),
                                PATH=str(binaries)+os.pathsep+os.environ["PATH"],
                                TARGET_REF="agent/repository-wide-roundtrip-invariant-v1",
-                               GITHUB_REPOSITORY="Goldkelch/qik-vrt", REF_DRIFT=drift)
+                               GITHUB_REPOSITORY="Goldkelch/qik-vrt", REF_DRIFT=drift,
+                               PERSISTED_HEAD="a"*40, PERSISTED_TREE="d"*40,
+                               GITHUB_RUN_ID="fixture-no-native-run")
             result = subprocess.run(["bash", "-c", prefix +
                 '\ngh_json --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input "'+str(payload)+'"\n'],
                 env=environment, text=True, capture_output=True, timeout=45)
@@ -275,6 +279,107 @@ with (r/"sleeps.txt").open("a") as f: f.write(sys.argv[1]+"\\n")
         self.assertIn('select(.state == "open" and .base.ref == "main")', step)
         self.assertIn("retry_deadline=$((SECONDS + 600))", step)
 
+
+
+class MaterializerHandoffIsolationTests(unittest.TestCase):
+    def workflow(self) -> str:
+        return (WORKFLOWS / 'qikvrt_batch04_integrity.yml').read_text(encoding='utf-8')
+
+    def script(self, name: str) -> str:
+        import textwrap
+        block = self.workflow().split('      - name: ' + name + '\n', 1)[1]
+        block = block.split('\n      - ', 1)[0].split('\n  handoff:', 1)[0]
+        return textwrap.dedent(block.split('        run: |\n', 1)[1])
+
+    def test_handoff_depends_on_successful_writer_without_replaying_it(self) -> None:
+        text = self.workflow()
+        materialize, handoff = text.split('\n  handoff:\n', 1)
+        self.assertIn('    needs: materialize\n', handoff)
+        self.assertNotIn('always()', handoff)
+        self.assertNotIn('git push', handoff)
+        self.assertNotIn('git commit', handoff)
+        self.assertNotIn('make test', handoff)
+        self.assertNotIn('gh_json', materialize)
+        self.assertIn('    timeout-minutes: 15\n', handoff)
+        self.assertIn('ref: ${{ env.PERSISTED_HEAD }}', handoff)
+        for name in ('head_sha', 'tree_sha', 'source_sha', 'source_run_id'):
+            self.assertIn(name + ': ${{ steps.persisted_subject.outputs.' + name + ' }}', materialize)
+            self.assertIn('${{ needs.materialize.outputs.' + name + ' }}', handoff)
+        self.assertLess(materialize.index('git push origin "HEAD:$TARGET_REF"'),
+                        materialize.index('- name: Bind persisted materializer subject'))
+        self.assertLess(handoff.index('Validate persisted handoff envelope before checkout'),
+                        handoff.index('uses: actions/checkout@'))
+
+    def test_missing_or_mismatched_outputs_fail_before_checkout(self) -> None:
+        import os
+        import subprocess
+        environment = dict(os.environ, PERSISTED_HEAD='a'*40, PERSISTED_TREE='b'*40,
+                           MATERIALIZER_SOURCE='c'*40, EVENT_SOURCE='c'*40,
+                           MATERIALIZER_RUN='123', GITHUB_RUN_ID='123')
+        script = self.script('Validate persisted handoff envelope before checkout')
+        valid = subprocess.run(['bash', '-c', script], env=environment, capture_output=True, timeout=10)
+        self.assertEqual(valid.returncode, 0, valid.stderr)
+        for overrides in ({'PERSISTED_HEAD': ''}, {'PERSISTED_TREE': 'refs/heads/main'},
+                          {'MATERIALIZER_SOURCE': 'd'*40}, {'MATERIALIZER_RUN': '124'}):
+            with self.subTest(overrides=overrides):
+                result = subprocess.run(['bash', '-c', script], env=dict(environment, **overrides),
+                                        capture_output=True, timeout=10)
+                self.assertNotEqual(result.returncode, 0)
+
+    def test_handoff_error_diagnostics_cannot_contaminate_json_stdout(self) -> None:
+        script = self.script('Continue persisted roundtrip head through native verification')
+        self.assertIn('set -Eeuo pipefail', script)
+        self.assertIn('HANDOFF_FAILURE phase=%s exit=%s subject=%s run=%s', script)
+        self.assertIn('"$GITHUB_RUN_ID" >&2; exit "$rc"', script)
+        for phase in ('BIND', 'PR_LOOKUP', 'PR_REOBSERVE', 'MAIN_ANCESTRY', 'DISPATCH'):
+            self.assertIn('handoff_phase=' + phase, script)
+        self.assertIn('test "$local_head" = "$PERSISTED_HEAD"', script)
+        self.assertIn('test "$(git rev-parse --verify HEAD^{tree})" = "$PERSISTED_TREE"', script)
+
+    def test_actual_git_subject_binding_and_remote_drift(self) -> None:
+        import os
+        import subprocess
+        import tempfile
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            work = root / 'work'
+            work.mkdir()
+            remote = root / 'remote.git'
+            branch = 'agent/repository-wide-roundtrip-invariant-v1'
+            def git(*args):
+                completed = subprocess.run(['git', *args], cwd=work, text=True,
+                                           capture_output=True, timeout=15)
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                return completed.stdout.strip()
+            git('init', '--bare', str(remote))
+            git('init', '-b', branch)
+            git('config', 'user.name', 'fixture')
+            git('config', 'user.email', 'fixture@example.invalid')
+            git('remote', 'add', 'origin', str(remote))
+            (work / 'subject').write_text('first\n')
+            git('add', 'subject'); git('commit', '-m', 'fixture source')
+            head = git('rev-parse', 'HEAD')
+            tree = git('rev-parse', 'HEAD^{tree}')
+            git('push', 'origin', branch)
+            output = root / 'outputs'
+            environment = dict(os.environ, TARGET_REF=branch, EXPECTED_HEAD=head,
+                               GITHUB_RUN_ID='123', GITHUB_OUTPUT=str(output))
+            script = self.script('Bind persisted materializer subject')
+            result = subprocess.run(['bash', '-c', script], cwd=work, env=environment,
+                                    text=True, capture_output=True, timeout=15)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            values = dict(line.split('=', 1) for line in output.read_text().splitlines())
+            self.assertEqual(values, {'head_sha': head, 'tree_sha': tree,
+                                      'source_sha': head, 'source_run_id': '123'})
+            (work / 'subject').write_text('new remote subject\n')
+            git('add', 'subject'); git('commit', '-m', 'fixture concurrent advancement')
+            git('push', 'origin', branch)
+            git('checkout', '--detach', head)
+            output.unlink()
+            drift = subprocess.run(['bash', '-c', script], cwd=work, env=environment,
+                                   text=True, capture_output=True, timeout=15)
+            self.assertNotEqual(drift.returncode, 0)
+            self.assertFalse(output.exists(), 'stale subject must never publish handoff outputs')
 
 if __name__ == "__main__":
     unittest.main()
