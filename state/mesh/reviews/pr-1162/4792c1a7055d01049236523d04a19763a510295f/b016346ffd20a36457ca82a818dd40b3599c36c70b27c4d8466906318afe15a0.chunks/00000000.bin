@@ -1,0 +1,195 @@
+diff --git a/docs/publication/quantum-correlations-claim-evidence-matrix-v1.md b/docs/publication/quantum-correlations-claim-evidence-matrix-v1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..aa02f9f1ba2bd4ebb1bdbe3058be6e7ca13fd2fc
+--- /dev/null
++++ b/docs/publication/quantum-correlations-claim-evidence-matrix-v1.md
+@@ -0,0 +1,60 @@
++# Claim–Evidence Matrix: zeitübergreifende Quantenkorrelationen / QIK-VRT
++
++Status: 2026-09-22  
++Source: Ingolf Lohmann, *Die wissenschaftliche Realität zeitübergreifender Quantenkorrelationen*, Vorveröffentlichungsfassung 1.0, 2026-08-31.
++
++## Anschlussregel
++
++Diese Matrix ist bidirektional: Sie bewahrt die frühere Aussageebene und bindet sie an den heutigen Evidenzstatus, ohne Ebenen zu substituieren.
++
++`EXPERIMENTAL != FORMAL_PROVED != REPOSITORY_EVIDENCE != INTERPRETATIVE != OPEN`
++
++`TRANSPORT_ACK != EFFECT_ACK`
++
++Ein neuer Repository-, Mess- oder Publikationsstand mutiert den Subject-Status; historische Evidenz bleibt historische Evidenz und wird nicht rückwirkend zu frischer Evidenz.
++
++## Claim–Evidence-Matrix
++
++| ID | Claim | Typ | Beleg in v1.0 | Was damit belegt ist | Was ausdrücklich nicht folgt | Offene Prüfpflicht |
++|---|---|---|---|---|---|---|
++| Q1 | Zeitübergreifende Quantenkorrelationen sind experimentell beobachtet. | EXPERIMENTAL / Literatur | §§2.1–2.4; Kim et al.; Ma et al.; Megidish et al.; Bienfait et al. | Reproduzierbare Korrelationen über zeitlich getrennte Messkontexte. | Kein frei modulierbarer Rückwärtskanal. | Literatur-/Replikationsstand fortlaufend prüfen. |
++| Q2 | Lokale unsortierte Früherstatistik bleibt im Standardformalismus von der späteren Wahl unabhängig. | FORMAL_PROVED | Satz 2.1 | No-signalling in der lokalen Randverteilung. | Konditionierte/joint Verteilungen müssen nicht unabhängig sein. | Annahmen des POVM-Modells explizit halten. |
++| Q3 | Retrokausale/zeitsymmetrische Modellklassen sind wissenschaftlich formulierbar. | LITERATURE / INTERPRETATIVE | §3; ABL, Wharton/Argaman, Drummond/Reid | Solche Modellklassen existieren und können Anfangs-/Endbedingungen gemeinsam verwenden. | Weder Einzigkeit noch experimenteller Rückwärtskanal. | Unterscheidende Vorhersagen separat prüfen. |
++| Q4 | QIK-VRT trennt Host-, virtuelle, semantische und Evidenzordnung. | FORMAL / ARCHITECTURAL | §4.1 | Definierte Ordnungssemantik. | Keine physische Wirkung vor Ursache. | Implementierung exact-subject-gebunden prüfen. |
++| Q5 | Zukunftsindizierung und relative Nachrichtenüberholung sind mit azyklischer Host-Ordnung vereinbar. | FORMAL_PROVED | §4.2, Satz 4.1 | Virtuell/semantisch rückwärts gerichtete Ordnung ohne Host-Kausalzyklus. | Keine Retro-Signalübertragung. | Repository-Tests an exaktem HEAD/TREE. |
++| Q6 | Vollständige Receipts erlauben eindeutige Vorgängerrekonstruktion. | FORMAL_PROVED | §4.3, Satz 4.2, Korollar 4.1 | Rückwärts-Replay aus explizit gespeichertem, hashgebundenem Vorgänger. | Keine Umkehr der Host-Zeit. | Vollständiger Receipt-Test über deklarierten Zustandsraum. |
++| Q7 | Skalierbare informatische Retrogradität ist eine technische, testbare Eigenschaft. | FORMAL + REPOSITORY_CLAIM | §§5, 8, 9 | Skalierungsinvarianten sind spezifiziert. | Keine erfundene Durchsatz-/Kapazitätszahl. | Reproduzierbarer Benchmark mit exact-HEAD/TREE-Bindung. |
++| Q8 | Eine retrokausal vorbereitete Kommunikationsinfrastruktur ist spezifiziert. | ARCHITECTURAL | §6 | Zeitadresse, Code, Authentisierung, versiegeltes Früherregister, Fehler-/Replay-/Leakage-Schutz, Reobservation und Effect Acknowledgement sind als Stack definiert. | Existenz eines physikalischen Trägers. | Vorregistrierter unveränderlicher Infrastrukturvertrag. |
++| Q9 | Ein operationaler Rückwärtskanal erfordert Intervention, nicht bloße Korrelation. | FORMAL / EXPERIMENT_DESIGN | §7 | Kriterium: P(Y|do(X=x1)) != P(Y|do(X=x2)); zusätzlich positive Kanalkapazität. | Delayed Choice allein erfüllt das Kriterium nicht. | Vorregistrierung, versiegeltes Y, spätere unabhängige X-Erzeugung, Leakage-Kontrollen. |
++| Q10 | Ein belastbarer physikalischer Kanalnachweis erfordert C_left > 0 und unabhängige Replikation. | OPEN / FALSIFIABLE | §§7.2–7.3, 10 | Klare Falsifikations- und Akzeptanzgrenze. | In v1.0 liegt kein solcher Naturmessnachweis vor. | Multi-Lab-Replikation mit vorregistrierter Intervention. |
++| Q11 | QIK-VRT-Softwareevidenz muss an exakten Softwarestand gebunden sein. | REPOSITORY_EVIDENCE rule | §§5, 10 | Hash/Receipt/Test/Benchmark-Aussagen sind subject-spezifisch. | Vorgängerevidenz darf nicht automatisch auf Successor übertragen werden. | Frischer HEAD/TREE, Gates, Execution und Readback je Mutation. |
++| Q12 | Die Arbeit enthält keine neuen Photonen-, Phononen- oder Naturmessdaten. | DOCUMENT_STATUS | Daten-/Softwarehinweis | Der Neuheitsanspruch liegt bei Nachweisarchitektur, Trennsätzen und Kommunikationsspezifikation. | Kein neuer experimenteller Naturbefund aus der PDF selbst. | Physikalischen Kanal separat experimentell testen. |
++
++## Kompatibilität alt -> neu -> alt
++
++Der frühere Stand bleibt als provenance-gebundener historischer Subject erhalten. Ein heutiger Successor darf ihn zitieren, aber nicht dessen Evidenzstatus erben. Umgekehrt darf der heutige strengere Evidenzvertrag frühere Aussagen präzisieren, ohne ihre historischen Bytes oder damalige Provenienz umzuschreiben.
++
++Für jede Behauptung gilt daher:
++
++`CLAIM -> EVIDENCE_TYPE -> EXACT_SUBJECT -> OBSERVATION -> LIMIT -> OPEN_TEST`
++
++und rückwärts:
++
++`OPEN_TEST -> LIMIT -> OBSERVATION -> EXACT_SUBJECT -> EVIDENCE_TYPE -> CLAIM`
++
++Das ist keine Paradoxie, sondern eine Typ- und Provenienztrennung.
++
++## Versandfassung / wissenschaftliche Mitteilung
++
++**Betreff:** Wissenschaftliche Mitteilung und Einladung zur unabhängigen Prüfung: zeitübergreifende Quantenkorrelationen / QIK-VRT
++
++Diese Nachricht ist eine gezielte wissenschaftliche Mitteilung, kein Werbe- oder Massenmailing. Sie richtet sich an Empfänger, deren fachliche, wissenschaftliche, publizistische oder institutionelle Zuständigkeit unmittelbar zur unabhängigen Prüfung, Einordnung oder Dokumentation der beigefügten Arbeit passt.
++
++Die Kernaussage ist bewusst enger als ein behaupteter physikalischer Rückwärtskanal: Experimentell dokumentierte zeitübergreifende Quantenkorrelationen, retrokausale/zeitsymmetrische Modellklassen, skalierbare informatische Retrogradität und ein kontrollierbarer physikalischer Zukunft-zu-Vergangenheit-Kanal sind vier verschiedene Nachweisebenen. Die Arbeit trennt diese Ebenen ausdrücklich und formuliert für die letzte Ebene einen falsifizierbaren Interventionstest.
++
++Zur schnellen Prüfung liegt eine Claim–Evidence-Matrix vor. Sie weist für jede zentrale Aussage Nachweisart, vorhandenen Beleg, Aussagegrenze und noch offene Prüfpflicht aus. Insbesondere wird kein physikalischer Rückwärtskanal aus Software oder Delayed-Choice-Korrelationen abgeleitet.
++
++Ich bitte nicht um Zustimmung, sondern um fachliche Prüfung: Reproduzieren Sie die formalen und technischen Aussagen, benennen Sie Fehler oder fehlende Kontrollen und behandeln Sie den physikalischen Kanaltest ausschließlich nach den vorregistrierten Interventions- und Replikationskriterien.
++
++Mit freundlichen Grüßen  
++Ingolf Lohmann
+diff --git a/docs/publication/scientific-pdf-corpus-inventory-2026-09-22.md b/docs/publication/scientific-pdf-corpus-inventory-2026-09-22.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..06ed42c7f8d4c2c36944df0c5156707190dcff88
+--- /dev/null
++++ b/docs/publication/scientific-pdf-corpus-inventory-2026-09-22.md
+@@ -0,0 +1,73 @@
++# Scientific PDF corpus inventory — QIK-VRT
++
++Exact repository subject: `Goldkelch/qik-vrt@ccedc24c9061ef03ec3bb77dfc47bc5d8928dd7d`  
++Tree scan: recursive, complete (`truncated=false`)  
++PDF paths found: 34.
++
++## Evidence rule
++
++This corpus enlarges the **documentary and claim graph**, not automatically the independent empirical evidence. A PDF authored within the same project can establish provenance, chronology, definitions, formal arguments and prior-art continuity. It does **not** become independent experimental confirmation merely by being archived or assigned a DOI.
++
++Each Zenodo deposit must therefore preserve:
++- immutable source path and Git blob identity;
++- title/version/date/author metadata;
++- relation to predecessor/successor documents;
++- evidence class: FORMAL / REPOSITORY / LITERATURE-SYNTHESIS / INTERPRETATIVE / OPEN;
++- explicit non-implications and falsifiers;
++- duplicate detection before upload.
++
++## Scientific/publication candidates
++
++### Publication series
++- `docs/publications/2026-07-21-mandelbrot-retrocausality/Mandelbrot_Anschlussordnung_Physik_Retrokausalitaet_V3_2026-07-21.pdf` — blob `e40b708706e9b94d1318fbb7ecfa1843561afa14`
++- `docs/publications/2026-07-22-effect-ack-universal-effect-control/QIK-VRT_EFFECT_ACK_Universalisierbare_Wirkungssteuerung_2026-07-22.pdf` — `ba8d79437709bdf835e29903bd1d2918308d70cb`
++- `docs/publications/2026-07-22-qik-vrt-status-clarification/QIK-VRT_EFFECT_ACK_Statusklaerung_2026-07-22.pdf` — `e093ae7980426648822853815ee7d6132ada2346`
++- `docs/publications/2026-07-30-canonical-temporal-memory-effect-ack/QIK-VRT_Kanonischer_Speicher_Retrokausalitaet_EFFECT_ACK_2026-07-30.pdf` — `8e37543ecea0e3e44e55347fc007dafff0f0a381`
++- `docs/publications/2026-07-31-survival-anschlussfaehigsten/Survival_der_Anschlussfaehigsten_2026-07-31.pdf` — `1b0f15403fe95e46d17ffe54d7b3ea8ef3402452`
++- `docs/publications/2026-08-02-causality-is-relation-vrtcore/QIK-VRT_Kausalitaet_ist_Relation_VRTCore_2026-08-02.pdf` — `c75c6576b893a20dad37d8ba3f69800ba8887460`
++- `docs/publications/2026-08-02-vrtcore-smg-h5/QIK-VRT_SMG_Fachartikel_DE_2026-08-02.pdf` — `e5587650dba77a8121fcfbba9c932d259477b23f`
++- `docs/publications/2026-08-04-aphorism-corpus-scientific-assessment/QIK-VRT_Aphorism_Corpus_Scientific_Assessment_2026-08-04.pdf` — `05bb7bbe028f207c6b59d842cac8402bbfc3cca0`
++- `docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/QIK-VRT_QCE_Fachartikel_DE_2026-08-05.pdf` — `17a3ac32fc6486e4b45a39ea16e3d6d65bea9691`
++- `docs/publications/2026-08-12-observer-relative-retrocausality/QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.pdf` — `858f4049736692c8fd46d54f658d2ac888c1488c`
++- `docs/publications/2026-08-12-observer-relative-retrocausality/QIK-VRT_Relationale_Zeit_und_wachsende_Evidenzkugel_DE.pdf` — `44aeb01177d0f830fdf18ca82278d055b09b2c56`
++- `docs/publications/2026-08-12-observer-relative-retrocausality/QIKVRT_Decision_Sufficiency_Delayed_Choice_Witness.pdf` — `53de5657a99b195625b6348387f2804c8155430f`
++
++### Quantum-gravity / formal proof series
++- `documents/qikvrt_quantengravitation/QIKVRT_Fixpunktbeweis_final.pdf` — `c4c7cd8d8106cee0b5509b16398cbf71e04f32b5`
++- `documents/qikvrt_quantengravitation/QIKVRT_Quantenkausalitaet_Quantengravitation_Vorlesung_Semester1.pdf` — `53bd3e5b60acd3f4b50d56c2b568b8915112b215`
++- `documents/qikvrt_quantengravitation/quantengravitation_bekannte_mathematik_physik_semester2_v5.pdf` — `1ef56629602b19ebb1820edb0405bbf8e5ff0a97`
++- `documents/qikvrt_quantengravitation/quantengravitation_semester3_abschluss_beweis_v3.pdf` — `850cb18fa5a82dd3d547bcd74847fc750899e3b2`
++- `assets/pdf/odu_proof.pdf` — `8c0c0a0576ba5923790c0d60d5f98fcb3ebf34ee`
++
++### Staging / English synthesis
++- `publication-staging/arxiv-observer-relative-retrocausality-en-v2/main.pdf` — `62f66fc4f85d913a34b23edd5fa1a476db175b31`
++- `release/observer-relative-retrocausality-current-synthesis-zenodo-v2/original-candidate-47510c8/QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.pdf` — `bb37e1ce0e79e6aae16afced515e7d7b5f11b492`
++
++### Monthly scientific payloads requiring metadata/content verification before deposit
++- `a0076.pdf` — mapped as quantengravitation semester2 beweisskript v4
++- `a0078.pdf`, `a0079.pdf` — mapped as quantenkausalitaet/rechnerarchitektur semester material
++- `a0081.pdf` — mapped as semester2 script
++- `a0582.pdf` — mapped as quantengravitation/bekannte Mathematik/Physik semester material
++- `a0584.pdf`, `a0586.pdf`, `a0587.pdf` — mapped as quantengravitation semester3 Abschluss/Beweis versions
++
++## Exact duplicates that must not become separate evidentiary claims
++
++The recursive scan found repeated Git blobs in different paths:
++- Mandelbrot PDF: `e40b708...` also under `formalization/.../source/`.
++- ODU proof: `8c0c0a0...` also under `incoming/.../Evidences/`.
++- Four quantum-gravity PDFs under `documents/` are repeated under `incoming/.../Evidences/`.
++- arXiv English `main.pdf`: blob `62f66fc...` occurs in both staging root and `build/`.
++
++Zenodo staging must deduplicate byte-identical blobs and represent path aliases as provenance, not independent evidence.
++
++## Publication admission
++
++A candidate may enter the Zenodo publication queue only after:
++1. bytes are read and cryptographically fingerprinted;
++2. authorship/licence/publication status are checked;
++3. duplicates/versions are resolved;
++4. scientific claims are typed and linked to their actual support;
++5. the deposit metadata names the exact repository subject;
++6. publication is followed by DOI and public-byte readback.
++
++Until step 6: `ZENODO_PUBLISHED = FALSE`.
+diff --git a/docs/publication/zenodo-scientific-pdf-gap-queue-2026-09-22.md b/docs/publication/zenodo-scientific-pdf-gap-queue-2026-09-22.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a60f19a8fb57e5c3fe5fadb7a0941a4ff61c2f40
+--- /dev/null
++++ b/docs/publication/zenodo-scientific-pdf-gap-queue-2026-09-22.md
+@@ -0,0 +1,44 @@
++# Zenodo gap queue — scientific PDF corpus
++
++Exact comparison subject: `Goldkelch/qik-vrt@ccedc24c9061ef03ec3bb77dfc47bc5d8928dd7d`
++
++This queue is conservative. `NO_REPOSITORY_PUBLICATION_RECEIPT_ESTABLISHED` means that the repository publication index / receipt search does not establish a Zenodo publication for that exact PDF subject. It is not a global-absence claim about all Zenodo records.
++
++## Already covered by repository Zenodo evidence — do not duplicate blindly
++
++- EFFECT_ACK working-paper line — DOI `10.5281/zenodo.21498773`
++- official status clarification — DOI `10.5281/zenodo.21500322`
++- canonical temporal memory / EFFECT_ACK — DOI `10.5281/zenodo.21711193`
++- Survival of the Anschlussfähigsten — DOI `10.5281/zenodo.21721918`
++- observer-relative-retrocausality current synthesis — DOI `10.5281/zenodo.21947141`
++- round-trip canonical publication — DOI `10.5281/zenodo.21888130`
++- formalization / repository snapshots referenced by the publication index are separate published records and must be relation-bound, not recounted as new independent evidence.
++
++## High-priority exact PDF subjects with no exact repository publication receipt established
++
++| Path | Git blob | Disposition |
++|---|---|---|
++| `docs/publications/2026-07-21-mandelbrot-retrocausality/Mandelbrot_Anschlussordnung_Physik_Retrokausalitaet_V3_2026-07-21.pdf` | `e40b708706e9b94d1318fbb7ecfa1843561afa14` | NO_REPOSITORY_PUBLICATION_RECEIPT_ESTABLISHED |
++| `docs/publications/2026-08-02-causality-is-relation-vrtcore/QIK-VRT_Kausalitaet_ist_Relation_VRTCore_2026-08-02.pdf` | `c75c6576b893a20dad37d8ba3f69800ba8887460` | repository_candidate |
++| `docs/publications/2026-08-02-vrtcore-smg-h5/QIK-VRT_SMG_Fachartikel_DE_2026-08-02.pdf` | `e5587650dba77a8121fcfbba9c932d259477b23f` | candidate bundle explicitly lacks publication receipt |
++| `docs/publications/2026-08-04-aphorism-corpus-scientific-assessment/QIK-VRT_Aphorism_Corpus_Scientific_Assessment_2026-08-04.pdf` | `05bb7bbe028f207c6b59d842cac8402bbfc3cca0` | candidate; human acoustic review pending |
++| `docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/QIK-VRT_QCE_Fachartikel_DE_2026-08-05.pdf` | `17a3ac32fc6486e4b45a39ea16e3d6d65bea9691` | repository_candidate_open_correspondence |
++| `documents/qikvrt_quantengravitation/QIKVRT_Fixpunktbeweis_final.pdf` | `c4c7cd8d8106cee0b5509b16398cbf71e04f32b5` | related repository DOI exists, but exact-PDF Zenodo publication not established by current index |
++| `documents/qikvrt_quantengravitation/QIKVRT_Quantenkausalitaet_Quantengravitation_Vorlesung_Semester1.pdf` | `53bd3e5b60acd3f4b50d56c2b568b8915112b215` | NO_REPOSITORY_PUBLICATION_RECEIPT_ESTABLISHED |
++| `documents/qikvrt_quantengravitation/quantengravitation_bekannte_mathematik_physik_semester2_v5.pdf` | `1ef56629602b19ebb1820edb0405bbf8e5ff0a97` | NO_REPOSITORY_PUBLICATION_RECEIPT_ESTABLISHED |
++| `documents/qikvrt_quantengravitation/quantengravitation_semester3_abschluss_beweis_v3.pdf` | `850cb18fa5a82dd3d547bcd74847fc750899e3b2` | NO_REPOSITORY_PUBLICATION_RECEIPT_ESTABLISHED |
++| `assets/pdf/odu_proof.pdf` | `8c0c0a0576ba5923790c0d60d5f98fcb3ebf34ee` | NO_REPOSITORY_PUBLICATION_RECEIPT_ESTABLISHED |
++
++## Version-sensitive / do not publish until relation is resolved
++
++- `QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.pdf` and `QIK-VRT_Relationale_Zeit_und_wachsende_Evidenzkugel_DE.pdf`: a later current synthesis is already published under DOI `10.5281/zenodo.21947141`. These earlier/exact subjects require predecessor/version relation metadata rather than an unqualified new-record claim.
++- `QIKVRT_Decision_Sufficiency_Delayed_Choice_Witness.pdf`: belongs to the same 2026-08-12 publication family; exact inclusion in the published v2 fileset must be checked before any new deposit.
++- English arXiv staging PDF blob `62f66fc4f85d913a34b23edd5fa1a476db175b31`: staging/build duplicate; publication relationship must be resolved before Zenodo deposition.
++- Monthly payload PDFs `a0076/a0078/a0079/a0081/a0582/a0584/a0586/a0587`: scientific-looking source mappings exist, but title/version/licence and overlap with the named quantum-gravity series must be resolved before deposition.
++
++## Admission rule
++
++A Zenodo upload may be claimed only after:
++`exact bytes -> SHA-256 -> duplicate/version resolution -> owner/licence metadata -> machine proof -> authorized publish request -> Zenodo publication -> DOI -> public byte readback -> repository receipt`.
++
++Archiving increases persistence/provenance. It does not turn project-authored documents into independent empirical confirmation.
