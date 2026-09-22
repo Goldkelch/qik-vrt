@@ -36,7 +36,22 @@ SEMANTIC_REJECT
 VALID
 ```
 
-ABNF_REJECT identifies a representation that does not conform to the profile grammar. BINDING_REJECT identifies a syntactically valid representation whose asserted artifact/subject binding cannot be established from the actual bytes and exact subject. SEMANTIC_REJECT identifies a representation with established syntax and binding whose state violates the profile's semantic invariant. VALID requires all applicable layers.
+The final result MUST use the order syntax, actual-byte binding, then state and
+evidence consistency. ABNF_REJECT identifies invalid syntax. BINDING_REJECT
+identifies missing/mismatching actual bytes or an inconsistent byte-id assertion.
+SEMANTIC_REJECT identifies a state or evidence-projection error after byte binding
+has passed. An earlier rejection takes precedence if multiple layers fail.
+
+VALID denotes a consistent report, not automatically Acceptance. A VALID OPEN
+report MUST NOT authorize an effect. Application-level subject binding remains an
+explicit Acceptance predicate; a truthful OPEN report can state that it is false.
+
+Every affirmative predicate MUST be backed by independently assessed evidence, not
+copied from the submitted record. The assessment producer MUST establish its
+origin, authority, policy, subject, freshness and required contradiction coverage.
+Unknown or missing assessments project to false, meaning not established true.
+The detailed epistemic reason MUST be retained separately. A content hash alone
+neither authenticates that producer nor proves these predicates.
 
 ## Case-sensitive ABNF
 

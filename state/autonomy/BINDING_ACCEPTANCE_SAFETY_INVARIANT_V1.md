@@ -27,6 +27,12 @@ boolean   = %s"true" / %s"false"
 status    = %s"OPEN" / %s"ACCEPTED"
 ```
 
+SP and CRLF are the core rules from RFC 5234 Appendix B.1. The wire encoding
+is US-ASCII: SP is one octet 0x20 and CRLF is the two octets 0x0D 0x0A.
+Both lines, including the last, MUST end with CRLF. A parser MUST consume the
+entire record and MUST NOT normalize whitespace, case, line endings or a BOM.
+Presentation wrapping in this Markdown file is not wire folding.
+
 The seven booleans MUST be interpreted, in order, as:
 1. requirements_approved
 2. acceptance_tests_executed
@@ -47,15 +53,57 @@ SEMANTIC_REJECT
 VALID
 ```
 
-ABNF_REJECT means the record does not match the canonical grammar.
+The final outcome MUST use this precedence, stopping at the first failing layer:
 
-BINDING_REJECT means the record matches the grammar, but validation against the actual artifact bytes or exact subject cannot establish the asserted binding. This includes missing/unreadable bytes, SHA-256 mismatch, subject mismatch, or a byte-id assertion inconsistent with the completed byte comparison.
+```text
+syntax -> actual-byte binding -> state and evidence consistency -> VALID
+```
 
-SEMANTIC_REJECT means syntax and binding are established but the status violates the Acceptance invariant.
+ABNF_REJECT means the complete record does not match the canonical grammar.
 
-VALID means syntax, artifact binding, exact-subject binding and semantic invariants all hold.
+BINDING_REJECT means syntax is valid but actual bytes are unavailable, unsafe to
+read, mismatching, or inconsistent with the record's asserted byte-id. The
+expected artifact is the exact digest-bound object; a filename or digest printed
+in the record MUST NOT substitute for reading that object.
 
-No lower layer MAY substitute evidence for a higher layer.
+SEMANTIC_REJECT means byte binding is verified but the claimed status does not
+match the conjunction, or the seven flags do not match independently assessed
+evidence. Application-level same_subject_binding is one of those seven predicates,
+not a prerequisite for truthfully reporting an OPEN state.
+
+VALID means the record is a consistent, byte-bound report. VALID with status OPEN
+is permitted and MUST NOT authorize Acceptance. VALID is not synonymous with
+ACCEPTED. An honestly negative or unknown byte-binding report may be retained as
+such, but the full validator returns BINDING_REJECT, not VALID.
+
+When several layers fail, the earlier failure MUST determine the final outcome.
+For example, NOT_VERIFIED or UNKNOWN plus ACCEPTED violates the pure state rule,
+but a full validation returns BINDING_REJECT first. Isolated state-rule tests MAY
+report the semantic violation separately; they MUST NOT call it a complete binding
+validation. Evidence from a lower layer MUST NOT substitute for evidence required
+by a higher layer.
+
+## 2.1. Evidence input and UNKNOWN projection
+
+The record contains assertions, not self-authenticating proofs. The validator MUST
+compare every flag with an independently obtained evidence assessment. The
+assessment producer MUST establish origin, authority, policy, freshness, scope,
+subject binding and contradiction coverage before returning true. Copying flags
+from the record into its own evidence input is forbidden.
+
+Each assessed predicate has one of three values: true, false or unknown. Wire true
+means established true. False or unknown, including a missing assessment, MUST map
+to wire false. Thus wire false means not established true, not necessarily that an
+external effect did not occur. Detailed reasons MUST remain in the evidence ledger.
+A flag that disagrees with this projection MUST cause SEMANTIC_REJECT. In particular,
+no_contradictory_required_evidence MUST NOT default to true merely because no
+contradiction was observed; the required evidence set must have been assessed.
+
+This pure validator does not authenticate the assessment producer, consult a clock,
+inspect remote systems or discover evidence by itself. A deployment MUST supply
+that trusted boundary. Untrusted dictionaries MUST NOT be treated as verified
+evidence. The standalone CLI supplies no affirmative assessments and cannot grant
+ACCEPTED. It does not execute effects.
 
 ## 3. Byte identity
 
@@ -104,18 +152,32 @@ artifact NDR_DSN_ACCEPTANCE_DELTA_V1(1).json sha256 936686c7b6c1e249e8b31215d511
 acceptance VERIFIED false false false false false false true OPEN
 ```
 
-This record asserts the canonical byte-identity state and an OPEN Acceptance state. The VERIFIED assertion is valid only when independently recomputed from the actual artifact bytes. It MUST NOT be promoted to Acceptance.
+This is an asserted example, not a fresh execution receipt. Its VERIFIED assertion
+requires an actual successful digest comparison; its last true flag additionally
+requires assessed contradiction coverage. Without the original artifact bytes,
+full validation returns BINDING_REJECT. This document does not assert that the
+artifact is available or independently reverified in any particular execution.
 
 ## 6. Mandatory negative classes
 
 A conformance suite MUST cover at least:
-- wrong filename, algorithm, digest literal, scope, byte-id token, boolean count/value, status, or case => ABNF_REJECT;
-- canonical record with unavailable/mismatching bytes, mismatching exact subject, or inconsistent byte-id => BINDING_REJECT;
-- VERIFIED plus any false Acceptance predicate plus ACCEPTED => SEMANTIC_REJECT;
-- NOT_VERIFIED or UNKNOWN plus ACCEPTED => SEMANTIC_REJECT;
-- missing same-subject binding, stale evidence, or contradictory required evidence plus ACCEPTED => SEMANTIC_REJECT;
-- complete conjunction plus OPEN => SEMANTIC_REJECT;
-- canonical bytes, exact subject, consistent byte-id and status matching the complete conjunction => VALID.
+- wrong filename, algorithm, digest literal, scope, byte-id token, boolean count/value,
+  status, case, whitespace, CRLF framing, BOM or trailing data => ABNF_REJECT;
+- canonical syntax with unavailable/mismatching bytes or inconsistent byte-id =>
+  BINDING_REJECT, even if its asserted Acceptance state is also inconsistent;
+- verified actual bytes and VERIFIED plus any false predicate plus ACCEPTED =>
+  SEMANTIC_REJECT;
+- verified actual bytes and a complete true conjunction plus OPEN => SEMANTIC_REJECT;
+- verified actual bytes and flags not supported by their assessed evidence =>
+  SEMANTIC_REJECT;
+- verified actual bytes, flags equal to assessed evidence and matching OPEN status =>
+  VALID, accepted=false;
+- verified actual bytes, all seven independently assessed predicates true and
+  matching ACCEPTED status => VALID, accepted=true.
+
+The isolated projection suite MUST cover all 768 combinations of three byte-id
+values, 128 seven-boolean vectors and two status values. These finite model tests
+are not evidence that any real communication, approval or End-to-End effect occurred.
 
 ## 7. Safety property
 
@@ -128,6 +190,22 @@ HashPass MUST NOT open the Acceptance gate by itself.
 ```
 
 This is an instance-specific safety contract, not a generic artifact grammar.
+
+## 8. Executable reference and scope
+
+The fixed-profile reference is `tools/qikvrt_binding_acceptance.py`. Regression tests
+are `tests/test_qikvrt_binding_acceptance.py`, included in the existing
+`repository-writer-contract` target of `make test`.
+
+The CLI accepts `--record` and `--artifact`. Exit 0 means record VALID, not
+Acceptance; callers MUST inspect the explicit accepted field and evidence boundary.
+There is no CLI evidence override. The Python API's evidence mapping must come from
+the trusted assessment producer specified above.
+
+The tests use separate fixture bytes and a private fixture profile for positive
+binding tests. They do not relabel fixture hashes as the canonical artifact hash.
+Installing this module does not establish deployment at every Mesh node, implement
+node admission, submit an IETF document or publish a Zenodo record.
 
 ## References
 
