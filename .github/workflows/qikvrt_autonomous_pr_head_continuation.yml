@@ -281,7 +281,8 @@ jobs:
             --arg pr "$selected_pr" \
             --arg ref "$selected_ref" \
             --arg head "$selected_head" \
-            '{d0:2,state:"REOBSERVE",event:$event,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,productive_effect:false,effect_ack:"NOT_REQUIRED",reason:"ZERO_JOB_ACTION_REQUIRED"}' \
+            --arg reason "$(jq -r '.reason' "$root/decision-${selected_pr}.json")" \
+            '{d0:2,state:"REOBSERVE",event:$event,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,productive_effect:false,effect_ack:"NOT_REQUIRED",reason:$reason}' \
             > "$root/decision-receipt.json"
 
       - name: Dispatch exact-head REOBSERVE continuation

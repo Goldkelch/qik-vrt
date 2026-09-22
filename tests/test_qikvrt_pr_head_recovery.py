@@ -199,10 +199,38 @@ class PrHeadRecoveryClassifierTests(unittest.TestCase):
         self.assertEqual(decision.d0, 1)
         self.assertEqual(decision.reason, "TRUSTED_EXACT_HEAD_VERIFICATION_FAILED")
 
-    def test_empty_observation_set_is_noop(self) -> None:
-        decision = classify_observations([])
+    def test_missing_exact_head_runs_reobserve_without_fabricating_execution(self) -> None:
+        for status in (None, "missing"):
+            with self.subTest(status=status):
+                decision = classify_observations([], exact_head_status=status)
+                self.assertEqual(
+                    decision,
+                    RecoveryDecision(
+                        d0=2,
+                        state="REOBSERVE",
+                        reason="MISSING_EXACT_HEAD_RUNS",
+                        active_workflows=0,
+                        executed_failures=0,
+                        zero_job_action_required=0,
+                    ),
+                )
+                self.assertIs(decision.to_mapping()["productive_effect"], False)
+                self.assertEqual(decision.to_mapping()["effect_ack"], "NOT_REQUIRED")
+
+    def test_empty_iterator_uses_the_same_reobservation_edge(self) -> None:
+        decision = classify_observations(iter(()))
+        self.assertEqual(decision.d0, 2)
+        self.assertEqual(decision.reason, "MISSING_EXACT_HEAD_RUNS")
+
+    def test_trusted_success_without_native_runs_is_not_dispatched_again(self) -> None:
+        decision = classify_observations([], exact_head_status="success")
         self.assertEqual(decision.d0, 0)
-        self.assertEqual(decision.reason, "CONSISTENT_OR_ALREADY_TERMINAL")
+        self.assertEqual(decision.reason, "TRUSTED_EXACT_HEAD_VERIFIED")
+
+    def test_dispatch_error_without_native_runs_requires_repair(self) -> None:
+        decision = classify_observations([], exact_head_status="error")
+        self.assertEqual(decision.d0, 1)
+        self.assertEqual(decision.reason, "TRUSTED_EXACT_HEAD_VERIFICATION_FAILED")
 
     def test_invalid_job_count_fails_closed(self) -> None:
         with self.assertRaisesRegex(ValueError, "jobs_total"):
