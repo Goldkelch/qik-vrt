@@ -108,10 +108,10 @@ class AphorismCorpusV2Tests(unittest.TestCase):
             "qikvrt-repository-evidence-${{ github.event_name }}-",
             workflow,
         )
-        # The same-repository admission guard is on the materialize job in
-        # this carrier. Bind its complete expression rather than demanding
-        # the obsolete blanket PR exclusion on the persistence step. This
-        # must still fail if repository equality or the actor guard is lost.
+        # Admission permits same-repository PR validation, not PR-head writes.
+        # Persist through the separately admitted branch push/manual writer;
+        # match the repository-wide test_pr_head_mutation_boundary contract.
+        # Keep repository equality and actor guards in addition to that boundary.
         job = workflow.split("  materialize:\n", 1)[1]
         admission, separator, _ = job.split("if: >-", 1)[1].partition("runs-on:")
         self.assertTrue(separator, "materialize job must declare its runner")
@@ -125,8 +125,13 @@ class AphorismCorpusV2Tests(unittest.TestCase):
             "github.actor != 'github-actions[bot]')",
         )
         commit_step = workflow.index("- name: Commit materialized repository evidence")
-        block = workflow[commit_step:]
-        self.assertNotIn("if: github.event_name != 'pull_request'", block)
+        block = workflow[commit_step:].split("\n      - name: ", 1)[0]
+        self.assertIn("if: github.event_name != 'pull_request'", block)
+        self.assertNotIn("--force", block)
+        self.assertIn("cancel-in-progress: false", workflow)
+        self.assertIn("queue: max", workflow)
+        push = workflow.split("  push:\n", 1)[1].split("  pull_request:\n", 1)[0]
+        self.assertIn("      - agent/repository-wide-roundtrip-invariant-v1\n", push)
         for token in (
             'source_head="$(git rev-parse --verify HEAD^{commit})"',
             'git ls-remote --heads origin "refs/heads/$TARGET_REF"',
