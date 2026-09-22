@@ -1,5 +1,54 @@
 # QIK-VRT
 
+## QIK-VRT — purpose and universal round-trip
+
+QIK-VRT exists to carry an intended result all the way to its **verified
+effect**, rather than confusing an instruction, dispatch, successful
+intermediate computation, workflow completion, transport acknowledgement, or
+observation with completion.
+
+Its repository-wide operating principle is recursive:
+
+```text
+USING QIK-VRT and every actually available authorized carrier
+
+REPEAT until EFFECT_ACK_DONE == TRUE
+(
+  while PullRequest, Issue, Branch, WorkUnit, Gate, or EffectObligation EXISTS
+  DO
+    INSPECT exact current subject and causal state
+    SOLVE the first concrete defect with an existing QIK-VRT pattern first
+    OBSERVE the actual effect
+    VERIFY a fresh readback on the resulting exact subject
+    CONTINUE with every remaining or newly exposed work unit
+)
+```
+
+In compact form:
+
+`INSPECT -> SOLVE -> OBSERVE_EFFECT -> VERIFY_READBACK -> CONTINUE_OR_DONE`.
+
+This rule applies from the first repository interaction to humans, artificial
+cognitive clients, agents, workflows, and tools. Every mutation creates a new
+subject: predecessor evidence does not transfer to that successor. Temporal
+proximity alone is not causality. A request, event, dispatch, queue entry,
+transport ACK, local execution, comment, observer result, or green intermediate
+workflow is not an `EFFECT_ACK`. Unknown evidence or authority fails closed.
+
+A failure or missing postcondition is therefore not a reason to stop at a
+status report: it becomes the next causal work unit. Independent eligible work
+continues independently. QIK-VRT does not manufacture human authority, weaken
+repository protection, expose credentials, or claim an unavailable execution
+carrier merely to reach a nominally green state.
+
+`EFFECT_ACK_DONE` is the terminal state only for the explicitly declared
+scope and only after its required effect exists and a fresh readback verifies
+that effect. Until then the state is nonterminal and the round trip continues.
+
+Machine-readable normative authority:
+`policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json`.
+
+
 [![QIKVRT CI](https://github.com/Goldkelch/qik-vrt/actions/workflows/qikvrt_ci.yml/badge.svg?branch=main)](https://github.com/Goldkelch/qik-vrt/actions/workflows/qikvrt_ci.yml)
 [![Release](https://img.shields.io/badge/release-v2026.07.22--effect--ack--universality--1.0.0-1f6feb)](https://github.com/Goldkelch/qik-vrt/tree/v2026.07.22-effect-ack-universality-1.0.0)
 [![License: source--available](https://img.shields.io/badge/code-PolyForm%20Noncommercial-orange)](LICENSE)
