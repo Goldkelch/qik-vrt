@@ -64,7 +64,7 @@ workflow-executor-mesh-contract: m68000-kernel-contract
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tools/qikvrt_workflow_executor.py snapshot --expect-head "$$(git rev-parse --verify HEAD^{commit})" --json >/dev/null
 
 repository-writer-contract:
-	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_materialization_scope tests.test_qikvrt_repository_writer_lease tests.test_qikvrt_required_review_gate tests.test_qikvrt_ruleset_reconcile tests.issue_agent.test_validate
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_materialization_scope tests.test_qikvrt_repository_writer_lease tests.test_qikvrt_required_review_gate tests.test_qikvrt_ruleset_reconcile tests.issue_agent.test_validate tests.test_qikvrt_pr_integrity_byte_carrier tests.test_qikvrt_binding_acceptance
 
 repository-terminal-test:
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_repository_terminal tests.test_qikvrt_cloud_transputer_mesh_runtime tests.test_qikvrt_live_status_carrier_classification tests.test_qikvrt_execution_precedence tests.test_qikvrt_unattended_pr_disposition tests.test_qikvrt_repository_dod_census
