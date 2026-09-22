@@ -107,3 +107,31 @@ deadlock repair, or other nonconflicting work.
 The only terminal success remains a freshly read-back postcondition. A
 deadlock detector that reports a deadlock and stops has failed its operational
 purpose.
+
+
+## Merge conflicts are forbidden idle states too
+
+A merge conflict is a causal work item, not a terminal report. For every open
+pull request or promotion candidate, a detected conflict MUST be classified
+against the exact base/head pair and resolved through the smallest
+history-preserving successor that retains both intended changes.
+
+The control rule is:
+
+`MERGE_CONFLICT -> BIND_BASE_HEAD -> CLASSIFY_OVERLAP -> RESOLVE_SUCCESSOR -> VALIDATE -> READBACK -> REPEAT`
+
+A conflict may stop the conflicting merge mutation, but it MUST NOT stop
+independent work. Reporting `CONFLICTING`, `DIRTY`, `BEHIND`, or
+`MERGE_BLOCKED` without deriving and executing an authorized resolution edge
+is a forbidden deadlock.
+
+Resolution MUST NOT discard either side silently, force-push protected history,
+transfer predecessor PASS evidence, or manufacture Code-Owner authority.
+After any conflict-resolution mutation the resulting commit/tree is a new
+subject: all required exact-subject gates, review bindings, publication
+bindings, and effect acknowledgements are stale until freshly re-established.
+
+Where GitHub cannot provide an atomic expected-base-and-head mutation, the
+repository must construct a history-preserving successor branch/commit, verify
+both parent intents and deterministic integrity, and submit that successor
+through the ordinary protected path.
