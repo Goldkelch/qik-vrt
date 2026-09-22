@@ -1,13 +1,33 @@
 # QIK-VRT
 
-## QIK-VRT — purpose and universal round-trip
+## QIK-VRT — from intent to verified effect
 
-QIK-VRT exists to carry an intended result all the way to its **verified
-effect**, rather than confusing an instruction, dispatch, successful
-intermediate computation, workflow completion, transport acknowledgement, or
-observation with completion.
+**QIK-VRT is built around one requirement: an action is not finished because it
+was requested, dispatched, executed locally, or reported as successful. It is
+finished only when the intended effect exists and that effect has been read
+back and verified.**
 
-Its repository-wide operating principle is recursive:
+That distinction is the shortest description of the system:
+
+```text
+INTENT
+  ↓
+INSPECT the exact current state
+  ↓
+SOLVE the first causal defect
+  ↓
+EXECUTE through an actually available, authorized carrier
+  ↓
+OBSERVE the resulting effect
+  ↓
+VERIFY a fresh readback
+  ↓
+POSTCONDITION SATISFIED?
+  ├─ no  → the discrepancy becomes the next work unit → repeat
+  └─ yes → EFFECT_ACK_DONE for the explicitly declared scope
+```
+
+### The executable rule
 
 ```text
 USING QIK-VRT and every actually available authorized carrier
@@ -16,37 +36,92 @@ REPEAT until EFFECT_ACK_DONE == TRUE
 (
   while PullRequest, Issue, Branch, WorkUnit, Gate, or EffectObligation EXISTS
   DO
-    INSPECT exact current subject and causal state
-    SOLVE the first concrete defect with an existing QIK-VRT pattern first
+  (
+    INSPECT exact current subject, provenance, authority, gates and causal state
+    SOLVE the first concrete defect using an existing QIK-VRT pattern first
+    EXECUTE the smallest authorized deterministic transition
     OBSERVE the actual effect
     VERIFY a fresh readback on the resulting exact subject
     CONTINUE with every remaining or newly exposed work unit
+  )
 )
 ```
 
-In compact form:
+### Why this exists
 
-`INSPECT -> SOLVE -> OBSERVE_EFFECT -> VERIFY_READBACK -> CONTINUE_OR_DONE`.
+Conventional automation can stop at the wrong boundary. A request can be
+accepted without being executed. A workflow can be green while its intended
+external effect never happened. A local commit can exist without reaching the
+protected branch. A transport acknowledgement can prove delivery while proving
+nothing about the downstream result.
 
-This rule applies from the first repository interaction to humans, artificial
-cognitive clients, agents, workflows, and tools. Every mutation creates a new
-subject: predecessor evidence does not transfer to that successor. Temporal
-proximity alone is not causality. A request, event, dispatch, queue entry,
-transport ACK, local execution, comment, observer result, or green intermediate
-workflow is not an `EFFECT_ACK`. Unknown evidence or authority fails closed.
+QIK-VRT therefore separates these states deliberately:
 
-A failure or missing postcondition is therefore not a reason to stop at a
-status report: it becomes the next causal work unit. Independent eligible work
-continues independently. QIK-VRT does not manufacture human authority, weaken
-repository protection, expose credentials, or claim an unavailable execution
-carrier merely to reach a nominally green state.
+```text
+REQUEST
+!= DISPATCH
+!= QUEUE
+!= TRANSPORT_ACK
+!= ADMITTED_EXECUTION
+!= LOCAL_RESULT
+!= OBSERVED_EFFECT
+!= VERIFIED_EFFECT_READBACK
+```
 
-`EFFECT_ACK_DONE` is the terminal state only for the explicitly declared
-scope and only after its required effect exists and a fresh readback verifies
-that effect. Until then the state is nonterminal and the round trip continues.
+Only the final, scope-bound verified state may become `EFFECT_ACK_DONE`.
 
-Machine-readable normative authority:
-`policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json`.
+### The recursive consequence
+
+A failure, missing postcondition, rejected write, stale proof, absent carrier,
+failed gate, or mismatching readback is **not the end of the algorithm**. It is
+the next causal work unit. The system inspects that defect, solves it through an
+existing repository-native pattern where possible, executes the repair, reads
+the result back, and repeats.
+
+Independent work does not stop merely because another lane is blocked.
+Conversely, activity is not progress: blind retries, wake-up commits, duplicate
+carriers, status-only loops, fabricated reviews, weakened protection, or
+unverified success claims do not satisfy the contract.
+
+### Evidence rules
+
+Every claim is bound to its exact subject. After a mutation there is a new
+subject, so predecessor evidence does not silently transfer. Temporal proximity
+alone does not establish causality. Observer output does not become native human
+authority. Unknown evidence or authority fails closed.
+
+The repository-wide invariant is therefore:
+
+`INSPECT → SOLVE → EXECUTE → OBSERVE_EFFECT → VERIFY_READBACK → CONTINUE_OR_DONE`
+
+and the release boundary remains:
+
+`TRANSPORT_ACK != EFFECT_ACK`
+
+### One contract for humans and machines
+
+This README is the human entrypoint. The root `/AI` file is the artificial-
+cognition entrypoint. `AGENTS.md` binds repository agents and tools. All three
+are projections of the same machine-readable normative authority:
+
+`policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json`
+
+The repository must not claim that these words themselves prove completion.
+The proof is the chain of exact repository identity, admitted execution,
+observed effect and fresh readback for the declared scope.
+
+### What “done” means
+
+`EFFECT_ACK_DONE` is deliberately narrow. It means that **all release
+conditions declared for one exact scope are satisfied and its required effect
+has been freshly verified**. It does not turn unrelated open work, empirical
+claims, future tasks, or external systems into completed facts.
+
+Until that condition is established, the correct state is nonterminal:
+
+```text
+inspect → solve → execute → observe → verify → continue
+```
 
 
 [![QIKVRT CI](https://github.com/Goldkelch/qik-vrt/actions/workflows/qikvrt_ci.yml/badge.svg?branch=main)](https://github.com/Goldkelch/qik-vrt/actions/workflows/qikvrt_ci.yml)
