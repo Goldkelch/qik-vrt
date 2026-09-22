@@ -8,6 +8,34 @@ Copyright (c) 2026 Ingolf Lohmann.
 These rules apply repository-wide to humans, agents, workflows, and tools that
 collect or use adaptive evidence.
 
+## Repository-wide round-trip invariant
+
+The machine-readable policy `policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json` is
+mandatory for **every repository action** by a human, agent, workflow, or tool.
+
+Every action MUST execute the same causal round trip:
+
+`INSPECT -> SOLVE -> OBSERVE_EFFECT -> VERIFY_READBACK -> CONTINUE_OR_DONE`.
+
+Before mutation, bind the exact repository subject (including HEAD/TREE where
+applicable), authority, prerequisites, and intended postcondition. After any
+mutation, predecessor evidence is stale for the successor: rebind the new exact
+subject and rerun every applicable gate. A request, event, dispatch, queue,
+transport acknowledgement, local execution, observer/comment, or successful
+intermediate workflow is not an effect acknowledgement.
+
+A failed or missing postcondition becomes the next causal work unit and MUST be
+solved recursively with an existing repository-native pattern first.
+Independent eligible lanes continue independently. Unknown authority, evidence,
+or executable capability fails closed. Temporal proximity alone never
+establishes causality. NOOP, blind retry, wake-up commits, duplicate carriers,
+fabricated review/authority, protection weakening, or unverified claims of
+effect MUST NOT be counted as progress.
+
+`EFFECT_ACK_DONE` is permitted only when the declared exact scope has reached
+its required postcondition and a fresh effect readback verifies it. Until then,
+the state remains explicitly nonterminal.
+
 ## Session reconstruction
 
 Every new AI, agent, IDE-assistant, or automation session MUST begin with the
