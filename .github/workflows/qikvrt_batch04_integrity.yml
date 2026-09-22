@@ -9,6 +9,7 @@ on:
       - agent/manuscript-formalization-v2-completion
       - docs/information-effect-axis-v1
       - publication/pr966-p5-successor-v1
+      - agent/repository-wide-roundtrip-invariant-v1
   pull_request:
     branches:
       - main
@@ -20,10 +21,12 @@ on:
 
 permissions:
   contents: write
+  pull-requests: read
 
 concurrency:
   group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   materialize:
@@ -36,6 +39,11 @@ jobs:
        github.actor != 'github-actions[bot]')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    outputs:
+      head_sha: ${{ steps.persisted_subject.outputs.head_sha }}
+      tree_sha: ${{ steps.persisted_subject.outputs.tree_sha }}
+      source_sha: ${{ steps.persisted_subject.outputs.source_sha }}
+      source_run_id: ${{ steps.persisted_subject.outputs.source_run_id }}
     env:
       TARGET_REF: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
       EXPECTED_HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -289,6 +297,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 -B -m unittest -v tests.test_pr_head_mutation_boundary
           make test
           python3 tools/qikvrt_integrity.py verify
       - name: Commit materialized repository evidence
@@ -366,3 +375,149 @@ jobs:
             exit 2
           fi
           git push origin "HEAD:$TARGET_REF"
+          persisted_head="$(git rev-parse --verify HEAD^{commit})"
+          readback_head="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')"
+          test "$persisted_head" = "$readback_head"
+          printf 'PERSISTED_HEAD=%s\n' "$persisted_head"
+          git rev-parse --verify HEAD^{tree}
+          echo 'EFFECT_ACK_CONTINUE: fresh successor validation and native review are still required'
+      - name: Bind persisted materializer subject
+        id: persisted_subject
+        if: github.event_name == 'push' && github.ref_name == 'agent/repository-wide-roundtrip-invariant-v1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          persisted_head="$(git rev-parse --verify HEAD^{commit})"
+          persisted_tree="$(git rev-parse --verify HEAD^{tree})"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')"
+          test "$persisted_head" = "$remote_head"
+          {
+            printf 'head_sha=%s\n' "$persisted_head"
+            printf 'tree_sha=%s\n' "$persisted_tree"
+            printf 'source_sha=%s\n' "$EXPECTED_HEAD"
+            printf 'source_run_id=%s\n' "$GITHUB_RUN_ID"
+          } >> "$GITHUB_OUTPUT"
+          printf 'MATERIALIZER_SUBJECT head=%s tree=%s source=%s run=%s\n' "$persisted_head" "$persisted_tree" "$EXPECTED_HEAD" "$GITHUB_RUN_ID"
+
+  handoff:
+    needs: materialize
+    if: github.event_name == 'push' && github.ref_name == 'agent/repository-wide-roundtrip-invariant-v1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TARGET_REF: ${{ github.ref_name }}
+      PERSISTED_HEAD: ${{ needs.materialize.outputs.head_sha }}
+      PERSISTED_TREE: ${{ needs.materialize.outputs.tree_sha }}
+      MATERIALIZER_SOURCE: ${{ needs.materialize.outputs.source_sha }}
+      MATERIALIZER_RUN: ${{ needs.materialize.outputs.source_run_id }}
+      EVENT_SOURCE: ${{ github.sha }}
+    steps:
+      - name: Validate persisted handoff envelope before checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$PERSISTED_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PERSISTED_TREE" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$MATERIALIZER_SOURCE" =~ ^[0-9a-f]{40}$ ]]
+          test "$MATERIALIZER_SOURCE" = "$EVENT_SOURCE"
+          test "$MATERIALIZER_RUN" = "$GITHUB_RUN_ID"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.PERSISTED_HEAD }}
+          fetch-depth: 2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Continue persisted roundtrip head through native verification
+        if: github.event_name == 'push' && github.ref_name == 'agent/repository-wide-roundtrip-invariant-v1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          handoff_phase=BIND
+          trap 'rc=$?; printf "::error::HANDOFF_FAILURE phase=%s exit=%s subject=%s run=%s\n" "$handoff_phase" "$rc" "$PERSISTED_HEAD" "$GITHUB_RUN_ID" >&2; exit "$rc"' ERR
+          local_head="$(git rev-parse --verify HEAD^{commit})"
+          test "$local_head" = "$PERSISTED_HEAD"
+          test "$(git rev-parse --verify HEAD^{tree})" = "$PERSISTED_TREE"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')"
+          test "$local_head" = "$remote_head"
+          main_head="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 {print $1}')"
+          test -n "$main_head"
+          # Reuse this carrier and credential. Only explicit rate-limit refusals
+          # are retryable; permission/transport failures never cause blind POSTs.
+          retry_deadline=$((SECONDS + 600))
+          gh_json() {
+            local attempt rc status retryable delay
+            local raw="$RUNNER_TEMP/qikvrt-handoff-http.txt"
+            local body="$RUNNER_TEMP/qikvrt-handoff-body.json"
+            local meta="$RUNNER_TEMP/qikvrt-handoff-meta.txt"
+            for attempt in 0 1 2 3; do
+              test "$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')" = "$local_head" || return 2
+              test "$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 {print $1}')" = "$main_head" || return 2
+              rc=0
+              timeout 65s gh api --hostname github.com --include "$@" > "$raw" 2> "$RUNNER_TEMP/qikvrt-handoff-stderr.txt" || rc=$?
+              python3 -B -S - "$raw" "$body" "$attempt" > "$meta" <<'PYHTTP'
+          import email.utils, json, math, pathlib, re, sys, time
+          raw = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").replace("\r\n", "\n")
+          header, separator, body = raw.partition("\n\n")
+          match = re.match(r"HTTP/\S+ (\d{3})(?: |$)", header)
+          if not separator or not match:
+              raise SystemExit("BLOCK: no definitive HTTP response; do not retry an ambiguous request")
+          status = int(match[1])
+          headers = dict(line.lower().split(":", 1) for line in header.splitlines()[1:] if ":" in line)
+          headers = {key.strip(): value.strip() for key, value in headers.items()}
+          primary = status == 403 and headers.get("x-ratelimit-remaining") == "0"
+          retryable = primary or status == 429 or (status == 403 and "secondary rate limit" in body.lower())
+          delays = []
+          if headers.get("x-ratelimit-remaining") == "0" and "x-ratelimit-reset" in headers:
+              delays.append(max(1, math.ceil(float(headers["x-ratelimit-reset"]) - time.time()) + 1))
+          if "retry-after" in headers:
+              value = headers["retry-after"]
+              delays.append(max(1, int(value)) if value.isdigit() else max(1, math.ceil(email.utils.parsedate_to_datetime(value).timestamp() - time.time()) + 1))
+          delay = max(delays) if delays else 60 * (2 ** int(sys.argv[3]))
+          pathlib.Path(sys.argv[2]).write_text(body, encoding="utf-8")
+          print(status, int(retryable), delay)
+          PYHTTP
+              test "$?" -eq 0 || return 2
+              read -r status retryable delay < "$meta"
+              if [ "$rc" -eq 0 ] && { [ "$status" = 200 ] || [ "$status" = 204 ]; }; then
+                cat "$body"
+                return 0
+              fi
+              if [ "$retryable" != 1 ]; then
+                echo "BLOCK: non-retryable handoff HTTP $status (CLI exit $rc)" >&2
+                return 2
+              fi
+              printf 'HANDOFF_RATE_LIMIT http=%s attempt=%s retry_after_seconds=%s\n' "$status" "$attempt" "$delay" >&2
+              if [ "$attempt" -eq 3 ] || [ "$((SECONDS + delay))" -gt "$retry_deadline" ]; then
+                printf 'HANDOFF_PENDING: exact HEAD %s requires fresh admission after provider reset; not EFFECT_ACK_DONE\n' "$local_head" >&2
+                return 75
+              fi
+              sleep "$delay"
+            done
+            return 75
+          }
+          handoff_phase=PR_LOOKUP
+          pages="$RUNNER_TEMP/qikvrt-materialized-pr-pages.json"
+          head_filter="$(jq -nr --arg head "${GITHUB_REPOSITORY%%/*}:$TARGET_REF" '$head|@uri')"
+          gh_json "repos/${GITHUB_REPOSITORY}/pulls?state=open&base=main&head=${head_filter}&per_page=100" > "$pages"
+          pr_number="$(jq -er --arg repo "$GITHUB_REPOSITORY" --arg ref "$TARGET_REF" \
+            '[.[] | select(.head.repo.full_name == $repo and .head.ref == $ref and .base.ref == "main")] |
+             if length == 1 then .[0].number else error("unique candidate PR not established") end' "$pages")"
+          handoff_phase=PR_REOBSERVE
+          current="$(gh_json "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" | jq -er 'select(.state == "open" and .base.ref == "main") | .head.sha')"
+          test "$current" = "$local_head"
+          handoff_phase=MAIN_ANCESTRY
+          common="$(gh_json "repos/${GITHUB_REPOSITORY}/compare/${main_head}...${local_head}" | jq -er '.merge_base_commit.sha')"
+          test "$common" = "$main_head"
+          payload="$RUNNER_TEMP/qikvrt-materialized-head-verification.json"
+          jq -n --arg repo "$GITHUB_REPOSITORY" --argjson pr "$pr_number" \
+            --arg ref "$TARGET_REF" --arg head "$local_head" --arg base "$main_head" \
+            --arg source_run "$GITHUB_RUN_ID" \
+            '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repo,pull_request:$pr,head_ref:$ref,head_sha:$head,base_sha:$base,source_materializer_run_id:$source_run}}' > "$payload"
+          test "$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')" = "$local_head"
+          handoff_phase=DISPATCH
+          gh_json --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input "$payload"
+          printf 'VERIFICATION_ADMISSION_REQUESTED_HEAD=%s\n' "$local_head"
+          echo 'Dispatch acknowledgment is not verification, native approval or EFFECT_ACK_DONE.'

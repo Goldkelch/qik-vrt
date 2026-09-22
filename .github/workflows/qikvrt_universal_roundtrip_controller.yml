@@ -1,0 +1,103 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT universal roundtrip controller
+
+on:
+  workflow_run:
+    workflows: ["*"]
+    types: [completed]
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review, review_requested]
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, review_requested, closed]
+  push:
+    branches: [main, agent/repository-wide-roundtrip-invariant-v1]
+    paths:
+      - .github/workflows/qikvrt_universal_roundtrip_controller.yml
+      - tools/qikvrt_universal_roundtrip_controller.py
+      - tests/test_qikvrt_universal_roundtrip_controller.py
+      - policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json
+  issues:
+    types: [opened, reopened, edited, labeled, unlabeled, closed]
+  create:
+  delete:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-universal-roundtrip-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-controller:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Test execution, admission and provenance boundaries
+        run: python3 -B -m unittest discover -s tests -p test_qikvrt_universal_roundtrip_controller.py -v
+
+  execute-native-continuation:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request' &&
+      (github.event_name != 'workflow_run' ||
+       github.event.workflow_run.name != 'QIKVRT universal roundtrip controller')
+    permissions:
+      contents: read
+      actions: write
+      pull-requests: read
+      issues: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      QIKVRT_CONTROLLER_HEAD: ${{ github.sha }}
+      QIKVRT_ROUNDTRIP_RECEIPT: /tmp/qikvrt-universal-roundtrip/receipt.json
+    steps:
+      - name: Check out trusted controller code, never PR code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Verify cached runtime contract
+        run: python3 -B tools/qikvrt_tool_cache.py verify
+      - name: Verify normative roundtrip policy
+        run: |
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          policy = json.loads(Path('policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json').read_text())
+          assert policy['scope'] == 'repository-wide'
+          assert policy['required_roundtrip'] == ['INSPECT', 'SOLVE', 'OBSERVE_EFFECT', 'VERIFY_READBACK', 'CONTINUE_OR_DONE']
+          assert policy['invariants']['predecessor_evidence_transfer'] is False
+          assert policy['invariants']['unknown_fails_closed'] is True
+          assert policy['done_state'] == 'EFFECT_ACK_DONE'
+          PY
+      - name: Validate the trusted execution bridge before dispatch
+        run: python3 -B -m unittest discover -s tests -p test_qikvrt_universal_roundtrip_controller.py -v
+      - name: Execute existing native carriers and reobserve their exact runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B tools/qikvrt_universal_roundtrip_controller.py
+      - name: Preserve nonterminal execution and causal-blocker receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-universal-roundtrip-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.QIKVRT_ROUNDTRIP_RECEIPT }}
+          if-no-files-found: error
+          retention-days: 30

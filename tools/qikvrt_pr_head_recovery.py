@@ -129,8 +129,9 @@ def classify_observations(
     """Classify one exact head without fabricating productive authority.
 
     Precedence is fail-closed: active work and executed failures HOLD; a trusted
-    exact-head status makes dispatch idempotent; only the characteristic latest
-    zero-job ``action_required`` state selects REOBSERVE.
+    exact-head status makes dispatch idempotent. Missing exact-head runs and the
+    characteristic latest zero-job ``action_required`` state select REOBSERVE.
+    Neither case is admitted execution or a productive effect.
     """
 
     normalized_status = "missing" if exact_head_status is None else exact_head_status
@@ -174,6 +175,11 @@ def classify_observations(
         return decision(0, "NOOP", "TRUSTED_EXACT_HEAD_VERIFIED")
     if executed_failures:
         return decision(1, "HOLD", "EXECUTED_FAILURE_PRESENT")
+    # The caller already bound an open internal PR to its current live head.
+    # No runs on that subject is missing validation, not a terminal success.
+    # Keep trusted pending/error/success precedence above to avoid duplicates.
+    if not latest:
+        return decision(2, "REOBSERVE", "MISSING_EXACT_HEAD_RUNS")
     if zero_job_action_required:
         return decision(2, "REOBSERVE", "ZERO_JOB_ACTION_REQUIRED")
     return decision(0, "NOOP", "CONSISTENT_OR_ALREADY_TERMINAL")

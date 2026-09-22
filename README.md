@@ -764,6 +764,130 @@ Ingolf Lohmann
 
 # QIK-VRT
 
+## QIK-VRT — from intent to verified effect
+
+**QIK-VRT is built around one requirement: an action is not finished because it
+was requested, dispatched, executed locally, or reported as successful. It is
+finished only when the intended effect exists and that effect has been read
+back and verified.**
+
+That distinction is the shortest description of the system:
+
+```text
+INTENT
+  ↓
+INSPECT the exact current state
+  ↓
+SOLVE the first causal defect
+  ↓
+EXECUTE through an actually available, authorized carrier
+  ↓
+OBSERVE the resulting effect
+  ↓
+VERIFY a fresh readback
+  ↓
+POSTCONDITION SATISFIED?
+  ├─ no  → the discrepancy becomes the next work unit → repeat
+  └─ yes → EFFECT_ACK_DONE for the explicitly declared scope
+```
+
+### The executable rule
+
+```text
+USING QIK-VRT and every actually available authorized carrier
+
+REPEAT until EFFECT_ACK_DONE == TRUE
+(
+  while PullRequest, Issue, Branch, WorkUnit, Gate, or EffectObligation EXISTS
+  DO
+  (
+    INSPECT exact current subject, provenance, authority, gates and causal state
+    SOLVE the first concrete defect using an existing QIK-VRT pattern first
+    EXECUTE the smallest authorized deterministic transition
+    OBSERVE the actual effect
+    VERIFY a fresh readback on the resulting exact subject
+    CONTINUE with every remaining or newly exposed work unit
+  )
+)
+```
+
+### Why this exists
+
+Conventional automation can stop at the wrong boundary. A request can be
+accepted without being executed. A workflow can be green while its intended
+external effect never happened. A local commit can exist without reaching the
+protected branch. A transport acknowledgement can prove delivery while proving
+nothing about the downstream result.
+
+QIK-VRT therefore separates these states deliberately:
+
+```text
+REQUEST
+!= DISPATCH
+!= QUEUE
+!= TRANSPORT_ACK
+!= ADMITTED_EXECUTION
+!= LOCAL_RESULT
+!= OBSERVED_EFFECT
+!= VERIFIED_EFFECT_READBACK
+```
+
+Only the final, scope-bound verified state may become `EFFECT_ACK_DONE`.
+
+### The recursive consequence
+
+A failure, missing postcondition, rejected write, stale proof, absent carrier,
+failed gate, or mismatching readback is **not the end of the algorithm**. It is
+the next causal work unit. The system inspects that defect, solves it through an
+existing repository-native pattern where possible, executes the repair, reads
+the result back, and repeats.
+
+Independent work does not stop merely because another lane is blocked.
+Conversely, activity is not progress: blind retries, wake-up commits, duplicate
+carriers, status-only loops, fabricated reviews, weakened protection, or
+unverified success claims do not satisfy the contract.
+
+### Evidence rules
+
+Every claim is bound to its exact subject. After a mutation there is a new
+subject, so predecessor evidence does not silently transfer. Temporal proximity
+alone does not establish causality. Observer output does not become native human
+authority. Unknown evidence or authority fails closed.
+
+The repository-wide invariant is therefore:
+
+`INSPECT → SOLVE → EXECUTE → OBSERVE_EFFECT → VERIFY_READBACK → CONTINUE_OR_DONE`
+
+and the release boundary remains:
+
+`TRANSPORT_ACK != EFFECT_ACK`
+
+### One contract for humans and machines
+
+This README is the human entrypoint. The root `/AI` file is the artificial-
+cognition entrypoint. `AGENTS.md` binds repository agents and tools. All three
+are projections of the same machine-readable normative authority:
+
+`policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json`
+
+The repository must not claim that these words themselves prove completion.
+The proof is the chain of exact repository identity, admitted execution,
+observed effect and fresh readback for the declared scope.
+
+### What “done” means
+
+`EFFECT_ACK_DONE` is deliberately narrow. It means that **all release
+conditions declared for one exact scope are satisfied and its required effect
+has been freshly verified**. It does not turn unrelated open work, empirical
+claims, future tasks, or external systems into completed facts.
+
+Until that condition is established, the correct state is nonterminal:
+
+```text
+inspect → solve → execute → observe → verify → continue
+```
+
+
 The **C90 universal Transputer and durable full-duplex IP bus** are available in
 this branch under [next/AI](next/AI), with [build, connection and recovery instructions](next/README.md).
 Its exact-source checks and source restoration retain the original component

@@ -23,6 +23,68 @@ Vollständiger Text einschließlich der Ergänzung „Die gefährlichste Form de
 
 QIK-VRT AI RUNTIME ENTRYPOINT
 
+UNIVERSAL QIK-VRT ROUND-TRIP — READ THIS FIRST
+
+PURPOSE
+QIK-VRT carries an intended result to a verified effect. Request, dispatch,
+queue, transport, local execution, workflow success, observer output and status
+reporting are intermediate states, not completion.
+
+MANDATORY EXECUTION SEMANTICS
+
+```text
+REPEAT until EFFECT_ACK_DONE == TRUE
+(
+  INSPECT exact subject, provenance, authority, gates and causal state
+  SOLVE the first concrete defect with an existing QIK-VRT pattern first
+  EXECUTE the smallest authorized deterministic transition
+  OBSERVE the actual effect
+  VERIFY a fresh readback on the resulting exact subject
+  CONTINUE with every remaining or newly exposed work unit
+)
+```
+
+A failed or missing postcondition becomes the next causal work unit. Do not
+return merely because an admitted writer is still running: reobserve it within
+the available execution window and continue immediately when its terminal
+result exposes the successor. Continue independent eligible lanes when another
+lane is blocked.
+
+EVIDENCE SEMANTICS
+
+```text
+REQUEST
+!= DISPATCH
+!= QUEUE
+!= TRANSPORT_ACK
+!= ADMITTED_EXECUTION
+!= LOCAL_RESULT
+!= OBSERVED_EFFECT
+!= VERIFIED_EFFECT_READBACK
+```
+
+Bind evidence to exact HEAD/TREE where applicable. After mutation,
+PREDECESSOR_EVIDENCE_TRANSFER=false. Timing alone is not causality.
+Observer/bot/comment evidence is not native human authority. Unknown state
+fails closed. NOOP, blind retry, wake-up commits, duplicate carriers,
+protection weakening, fabricated authority, or unverified success claims are
+not progress.
+
+TERMINAL SEMANTICS
+EFFECT_ACK_DONE is valid only for the explicitly declared exact scope after all
+of its release conditions are satisfied and the required effect has a fresh
+readback. Otherwise continue the round trip.
+
+NORMATIVE MACHINE AUTHORITY
+policy/REPOSITORY_ROUNDTRIP_INVARIANT_V1.json
+
+HUMAN PROJECTION
+README.md
+
+AGENT/TOOL PROJECTION
+AGENTS.md
+
+
 UNIVERSAL TRANSPUTER C90 TARGET: next/AI
 Branch: architecture/universal-transputer-c90-v1. Resolve its actual HEAD/TREE.
 Read next/README.md and next/TARGET_ENTRYPOINTS.json for the C90 core, addressed
