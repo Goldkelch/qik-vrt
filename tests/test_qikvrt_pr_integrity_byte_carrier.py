@@ -7,6 +7,7 @@ persistence. These tests neither dispatch workflows nor mutate a remote ref.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -182,6 +183,52 @@ class IntegrityByteCarrierTests(unittest.TestCase):
                 archive.writestr('CARRIER.json', b'{}')
         self.assertNotEqual(self.run_inline('PY_CARRIER_READBACK').returncode, 0)
 
+    def repository_fixture(self):
+        manifest = self.capture()
+        self.git('add', *PATHS)
+        self.git('commit', '-qm', 'integrity successor')
+        remote = self.base / 'remote'
+        remote.mkdir()
+        for entry in manifest['files']:
+            raw = (self.target / entry['path']).read_bytes()
+            response = {'encoding': 'base64', 'sha': entry['git_blob_sha1'],
+                        'size': len(raw), 'content': base64.b64encode(raw).decode()}
+            (remote / (entry['path'] + '.json')).write_text(json.dumps(response), encoding='utf-8')
+        return remote, dict(REPOSITORY_READBACK=str(remote), GITHUB_REPOSITORY='Goldkelch/qik-vrt',
+                            GITHUB_RUN_ID='123', GITHUB_RUN_ATTEMPT='1',
+                            PERSISTED_HEAD=self.git('rev-parse', 'HEAD').strip(),
+                            PERSISTED_TREE=self.git('rev-parse', 'HEAD^{tree}').strip())
+
+    def test_repository_readback_binds_direct_successor_and_actual_bytes(self) -> None:
+        remote, env = self.repository_fixture()
+        result = self.run_inline('PY_REPOSITORY_READBACK', **env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        value = json.loads((remote / 'RECEIPT.json').read_text())
+        self.assertEqual(value['successor_head'], env['PERSISTED_HEAD'])
+        self.assertEqual(value['source']['head_sha'], self.head)
+        self.assertFalse(value['fresh_successor_gates_pass'])
+        self.assertFalse(value['effect_ack_done'])
+
+    def test_repository_readback_rejects_wrong_source_run(self) -> None:
+        remote, env = self.repository_fixture()
+        env['GITHUB_RUN_ID'] = '124'
+        result = self.run_inline('PY_REPOSITORY_READBACK', **env)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('carrier source binding differs', result.stderr)
+        self.assertFalse((remote / 'RECEIPT.json').exists())
+
+    def test_repository_readback_rejects_same_length_different_bytes(self) -> None:
+        remote, env = self.repository_fixture()
+        path = remote / (PATHS[0] + '.json')
+        value = json.loads(path.read_text())
+        raw = base64.b64decode(value['content'])
+        value['content'] = base64.b64encode(bytes([raw[0] ^ 1]) + raw[1:]).decode()
+        path.write_text(json.dumps(value))
+        result = self.run_inline('PY_REPOSITORY_READBACK', **env)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('repository byte readback differs', result.stderr)
+        self.assertFalse((remote / 'RECEIPT.json').exists())
+
     def test_workflow_retains_writer_and_gate_boundaries(self) -> None:
         source = WORKFLOW.read_text(encoding='utf-8')
         self.assertIn("if: github.event_name != 'pull_request'", source)
@@ -195,6 +242,11 @@ class IntegrityByteCarrierTests(unittest.TestCase):
         self.assertNotIn('  actions: write', source)
         compile(inline('PY_CARRIER'), 'carrier', 'exec')
         compile(inline('PY_CARRIER_READBACK'), 'readback', 'exec')
+        compile(inline('PY_REPOSITORY_READBACK'), 'repository-readback', 'exec')
+        self.assertIn('      - mesh/effect-evidence-invariant-v1', source)
+        self.assertIn("github.event_name == 'push' && github.ref_name == 'mesh/effect-evidence-invariant-v1'", source)
+        self.assertIn('qikvrt_autonomous_exact_head_verify', source)
+        self.assertNotIn('gh run rerun', source)
 
 
 if __name__ == '__main__':

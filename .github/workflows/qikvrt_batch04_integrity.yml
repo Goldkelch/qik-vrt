@@ -9,6 +9,7 @@ on:
       - agent/manuscript-formalization-v2-completion
       - docs/information-effect-axis-v1
       - publication/pr966-p5-successor-v1
+      - mesh/effect-evidence-invariant-v1
   pull_request:
     branches:
       - main
@@ -21,6 +22,7 @@ on:
 permissions:
   contents: write
   actions: read
+  pull-requests: read
 
 concurrency:
   group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}
@@ -298,11 +300,11 @@ jobs:
           python3 tools/qikvrt_integrity.py verify
       - name: Freeze regenerated PR integrity bytes without a repository write
         id: byte_carrier
-        if: ${{ always() && github.event_name == 'pull_request' && steps.regenerated_integrity.outcome == 'success' }}
+        if: ${{ always() && steps.regenerated_integrity.outcome == 'success' && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_name == 'mesh/effect-evidence-invariant-v1')) }}
         env:
           CARRIER_DIRECTORY: ${{ runner.temp }}/qikvrt-pr-integrity-carrier
           CARRIER_REPOSITORY: ${{ github.repository }}
-          CARRIER_PR: ${{ github.event.pull_request.number }}
+          CARRIER_PR: ${{ github.event.pull_request.number || 1160 }}
           CARRIER_RUN_ID: ${{ github.run_id }}
           CARRIER_RUN_ATTEMPT: ${{ github.run_attempt }}
           CARRIER_GATES: ${{ steps.repository_gates.outcome }}
@@ -508,3 +510,87 @@ jobs:
             exit 2
           fi
           git push origin "HEAD:$TARGET_REF"
+
+      - name: Read back exact persisted integrity successor and request native verification
+        if: github.event_name == 'push' && github.ref_name == 'mesh/effect-evidence-invariant-v1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CARRIER_DIRECTORY: ${{ runner.temp }}/qikvrt-pr-integrity-carrier
+          REPOSITORY_READBACK: ${{ runner.temp }}/qikvrt-integrity-repository-readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'Goldkelch/qik-vrt'
+          persisted_head="$(git rev-parse --verify HEAD^{commit})"
+          persisted_tree="$(git rev-parse --verify HEAD^{tree})"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')"
+          test "$persisted_head" = "$remote_head"
+          export PERSISTED_HEAD="$persisted_head" PERSISTED_TREE="$persisted_tree"
+          mkdir "$REPOSITORY_READBACK"
+          for path in REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt; do
+            blob="$(git rev-parse "$persisted_head:$path")"
+            gh api "repos/${GITHUB_REPOSITORY}/git/blobs/$blob" > "$REPOSITORY_READBACK/$path.json"
+          done
+          python3 -B - <<'PY_REPOSITORY_READBACK'
+          import base64, hashlib, json, os, subprocess
+          from pathlib import Path
+          carrier = Path(os.environ['CARRIER_DIRECTORY'])
+          remote = Path(os.environ['REPOSITORY_READBACK'])
+          manifest = json.loads((carrier / 'CARRIER.json').read_bytes())
+          source = manifest['source']
+          if source['repository'] != os.environ['GITHUB_REPOSITORY'] or source['head_sha'] != os.environ['EXPECTED_HEAD'] or source['run_id'] != int(os.environ['GITHUB_RUN_ID']) or source['run_attempt'] != int(os.environ['GITHUB_RUN_ATTEMPT']) or source['pull_request'] != 1160:
+              raise SystemExit('BLOCK: carrier source binding differs')
+          if manifest['repository_gates_outcome'] != 'success' or not manifest['trio_covers_tracked_delta'] or manifest['other_modified_paths']:
+              raise SystemExit('BLOCK: integrity-only successor preconditions not satisfied')
+          head, tree = os.environ['PERSISTED_HEAD'], os.environ['PERSISTED_TREE']
+          def git(*args):
+              return subprocess.check_output(['git', *args]).decode().strip()
+          if git('rev-parse', 'HEAD') != head or git('rev-parse', 'HEAD^{tree}') != tree:
+              raise SystemExit('BLOCK: persisted subject differs')
+          if head != source['head_sha'] and git('rev-parse', 'HEAD^') != source['head_sha']:
+              raise SystemExit('BLOCK: successor is not a direct source child')
+          paths = ('REPOSITORY_FILE_MANIFEST.json', 'REPOSITORY_FILE_MANIFEST.json.sha256', 'SHA256SUMS.txt')
+          if [entry['path'] for entry in manifest['files']] != list(paths):
+              raise SystemExit('BLOCK: carrier scope differs')
+          for entry in manifest['files']:
+              expected = (carrier / entry['path']).read_bytes()
+              response = json.loads((remote / (entry['path'] + '.json')).read_bytes())
+              if response.get('encoding') != 'base64' or response.get('sha') != entry['git_blob_sha1'] or response.get('size') != len(expected):
+                  raise SystemExit('BLOCK: remote blob metadata differs')
+              raw = base64.b64decode(''.join(response['content'].split()), validate=True)
+              blob = hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest()
+              if raw != expected or len(raw) != entry['bytes'] or hashlib.sha256(raw).hexdigest() != entry['sha256'] or blob != entry['git_blob_sha1'] or git('rev-parse', head + ':' + entry['path']) != blob:
+                  raise SystemExit('BLOCK: repository byte readback differs')
+          result = {'state': 'REPOSITORY_INTEGRITY_SUCCESSOR_READBACK_VERIFIED',
+                    'source': source, 'successor_head': head, 'successor_tree': tree,
+                    'files': manifest['files'], 'fresh_successor_gates_pass': False,
+                    'effect_ack_done': False}
+          (remote / 'RECEIPT.json').write_text(json.dumps(result, sort_keys=True, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps(result, sort_keys=True))
+          PY_REPOSITORY_READBACK
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/1160" > "$REPOSITORY_READBACK/pr.json"
+          jq -e --arg head "$persisted_head" --arg ref "$TARGET_REF" --arg repo "$GITHUB_REPOSITORY" \
+            '.number == 1160 and .state == "open" and .head.sha == $head and .head.ref == $ref and .head.repo.full_name == $repo and .base.ref == "main"' \
+            "$REPOSITORY_READBACK/pr.json" >/dev/null
+          main_head="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 {print $1}')"
+          test -n "$main_head"
+          test "$(jq -r '.base.sha' "$REPOSITORY_READBACK/pr.json")" = "$main_head"
+          common="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${main_head}...${persisted_head}" --jq '.merge_base_commit.sha')"
+          test "$common" = "$main_head"
+          jq -n --arg repo "$GITHUB_REPOSITORY" --arg ref "$TARGET_REF" \
+            --arg head "$persisted_head" --arg base "$main_head" --arg source_run "$GITHUB_RUN_ID" \
+            '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repo,pull_request:1160,head_ref:$ref,head_sha:$head,base_sha:$base,source_materializer_run_id:$source_run}}' \
+            > "$REPOSITORY_READBACK/verification-request.json"
+          test "$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')" = "$persisted_head"
+          test "$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 {print $1}')" = "$main_head"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input "$REPOSITORY_READBACK/verification-request.json"
+          echo 'VERIFICATION_REQUESTED_NOT_VERIFICATION_OR_EFFECT_ACK_DONE'
+      - name: Preserve repository integrity readback receipt
+        if: ${{ always() && github.event_name == 'push' && github.ref_name == 'mesh/effect-evidence-invariant-v1' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-integrity-repository-readback-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qikvrt-integrity-repository-readback/RECEIPT.json
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 30
