@@ -101,7 +101,7 @@ class AphorismCorpusV2Tests(unittest.TestCase):
     def test_repository_writer_serializes_and_fails_closed_on_ref_drift(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(
-            "group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}",
+            "group: qikvrt-repository-writer-${{ github.repository }}-${{ github.head_ref || github.ref_name }}",
             workflow,
         )
         self.assertNotIn(
@@ -110,7 +110,20 @@ class AphorismCorpusV2Tests(unittest.TestCase):
         )
         commit_step = workflow.index("- name: Commit materialized repository evidence")
         block = workflow[commit_step:]
-        self.assertIn("if: github.event_name != 'pull_request'", block)
+        # Same-repository PRs must persist their deterministic successor. Match
+        # the complete folded condition, not the obsolete blanket PR exclusion;
+        # dropping the repository equality must still fail this regression test.
+        condition_marker = "if: >-"
+        self.assertIn(condition_marker, block)
+        condition, separator, _ = block.split(condition_marker, 1)[1].partition(
+            "shell: bash"
+        )
+        self.assertTrue(separator, "commit step must declare its bash shell")
+        self.assertEqual(
+            " ".join(condition.split()),
+            "github.event_name != 'pull_request' || "
+            "github.event.pull_request.head.repo.full_name == github.repository",
+        )
         for token in (
             'source_head="$(git rev-parse --verify HEAD^{commit})"',
             'git ls-remote --heads origin "refs/heads/$TARGET_REF"',
@@ -121,7 +134,7 @@ class AphorismCorpusV2Tests(unittest.TestCase):
         ):
             self.assertIn(token, block)
         self.assertLess(
-            block.index("if: github.event_name != 'pull_request'"),
+            block.index(condition_marker),
             block.index("git commit -m \"ci: materialize repository evidence\""),
         )
         self.assertLess(

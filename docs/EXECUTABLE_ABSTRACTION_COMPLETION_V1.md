@@ -79,6 +79,38 @@ When a repair pattern has been demonstrated with positive and negative evidence,
 
 A work ring is not complete merely because execution stops. Completion requires collection of the result, deterministic persistence, release of unnecessary resources, reobservation of the next executable state and delivery of the actual end state. `QUIESCENCE` is therefore a normal lifecycle state, not a synonym for failure or global halt.
 
+## Recursive repository closure and optimization transition
+
+After every bounded work-ring closure, the repository is inventoried again and the
+same principle is applied recursively to all remaining machine-owned repository
+work. The ordered closure is:
+
+```text
+CURRENT_CAUSAL_BLOCKER
+→ OPEN_PULL_REQUESTS
+→ OPEN_ISSUES
+→ UNMERGED_WORK_BRANCHES
+→ FRESH_REINVENTORY
+→ repeat while repository work remains
+```
+
+The repository-work fixed point is reached only when the fresh inventory yields
+`OPEN_ISSUES=0`, `OPEN_PULL_REQUESTS=0`, and
+`UNMERGED_WORK_BRANCHES=0`. The protected `main` branch is not an unmerged
+work branch; any other branch retained by an explicit repository invariant is
+likewise not silently deleted.
+
+Only after that fixed point is freshly observed does the controller enter the
+continuous performance-optimization phase:
+
+```text
+MEASURE → IDENTIFY_BOTTLENECK → OPTIMIZE → EXECUTE
+→ OBSERVE → VERIFY → PERSIST → REMEASURE → repeat
+```
+
+Performance optimization never weakens correctness, provenance, fail-closed
+gates, authority boundaries, or evidence freshness.
+
 ## Quality contract
 
 A reusable solution must expose:

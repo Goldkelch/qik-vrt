@@ -7,7 +7,7 @@ class RepositoryWriterLeaseTests(unittest.TestCase):
     def test_repository_materializer_keeps_exact_target_writer_lease(self):
         path = Path('.github/workflows/qikvrt_batch04_integrity.yml')
         text = path.read_text(encoding='utf-8')
-        expected = 'group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}'
+        expected = 'group: qikvrt-repository-writer-${{ github.repository }}-${{ github.head_ref || github.ref_name }}'
         self.assertIn(expected, text, str(path))
         self.assertIn('cancel-in-progress: false', text, str(path))
 

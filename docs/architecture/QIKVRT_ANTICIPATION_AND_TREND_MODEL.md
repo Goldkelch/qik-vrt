@@ -78,9 +78,11 @@ The stall record contains:
 
 After each dispatch the repository performs a new observation. The new observation is a distinct measurement point. The observer compares it with the previous verified state and then materializes a new trend, anticipation and next effect.
 
-`OBSERVE -> DERIVE -> SELECT -> DISPATCH -> OBSERVE`
+`OBSERVE -> PRE_DEADLOCK_DETECT -> DERIVE -> SELECT -> DISPATCH -> OBSERVE`
 
-The loop terminates only in `KERNEL_VERIFIZIERTER_ABSCHLUSS` with complete receipts and verified Authority/Mirror state.
+This is the single canonical repository roundtrip. `PRE_DEADLOCK_DETECT` is mandatory on every cycle and cannot be bypassed by an executor, writer, recovery carrier, optimization path or idle continuation. It combines event-driven observation with the five-minute fallback observation, preserves every admitted observation cycle until its terminal receipt, and fails closed before dispatch when a deadlock, pre-cycle writer conflict, stale writer lease, missing trusted gate, observation-cadence breach or unchanged productive topology is detected. The detected cause becomes the next bounded repair subject; a HOLD is therefore evidence for causal selection, never a completion claim.
+
+The loop terminates only in `KERNEL_VERIFIZIERTER_ABSCHLUSS` with complete receipts and verified Authority/Mirror state. No alternate autonomous endless loop may bypass this roundtrip.
 
 ## Component independence
 

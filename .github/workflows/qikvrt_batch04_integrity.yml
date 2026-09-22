@@ -22,7 +22,10 @@ permissions:
   contents: write
 
 concurrency:
-  group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}
+  # Share one writer lease with other repository-mutating controllers. A PR
+  # materializer must not sit behind an unrelated long-lived evidence writer;
+  # every admitted successor gets its own non-preemptive turn.
+  group: qikvrt-repository-writer-${{ github.repository }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -292,7 +295,13 @@ jobs:
           make test
           python3 tools/qikvrt_integrity.py verify
       - name: Commit materialized repository evidence
-        if: github.event_name != 'pull_request'
+        # Same-repository PRs are repository-internal review branches. Persist the
+        # deterministic materialization there as well; otherwise successful
+        # regeneration is discarded at runner teardown and the next cycle sees
+        # the identical blocker again.
+        if: >-
+          github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.full_name == github.repository
         shell: bash
         run: |
           set -euo pipefail

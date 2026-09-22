@@ -776,6 +776,61 @@ the Main release and its historical evidence keep their own scope.
 
 ![QIK-VRT — five-state auditable effect release](docs/assets/qikvrt-social-preview.png)
 
+## Purpose, operating principle, and target state
+
+QIK-VRT is built around one operational distinction: **a technical result is
+not yet an accountable effect**. The repository applies that distinction to
+itself.
+
+Its repository control plane is intended to converge by repeated,
+evidence-bound correction:
+
+```text
+OBSERVE → COMPARE TO TARGET → CLASSIFY DEVIATION
+→ SELECT REPOSITORY-NATIVE REPAIR → EXECUTE
+→ READBACK → VERIFY → PERSIST → REOBSERVE
+```
+
+A completed workflow is not the end of that loop. A freshly observed deviation
+becomes the next work item. Activity without a causally bound state or evidence
+change is not progress.
+
+The repository-level target is deliberately simple:
+
+```text
+OPEN_ISSUES = 0
+OPEN_PULL_REQUESTS = 0
+UNMERGED_WORK_BRANCHES = 0
+```
+
+Here, `main` is not an unmerged work branch, and an explicitly required
+protected branch may remain when a repository invariant requires it. After
+every bounded closure the inventory is taken again, so work created by the
+repair process is not silently omitted.
+
+At suitable freshly verified milestones, the existing repository-native
+release/tag/publication mechanisms are reused and their effects read back.
+A release is a checkpoint, not a reason to stop the recursive controller.
+
+After the repository-work fixed point is reached, the objective changes from
+closure to continuous measured optimization:
+
+```text
+MEASURE → IDENTIFY BOTTLENECK → OPTIMIZE → EXECUTE
+→ OBSERVE → VERIFY → PERSIST → REMEASURE
+```
+
+The optimization target is **the best measured state reachable under the
+repository's invariants**, not an unsupported claim of mathematical or
+engineering perfection. Correctness, provenance, fail-closed gates, authority
+boundaries, and fresh evidence are constraints on optimization, not variables
+that may be traded away for speed.
+
+The machine-readable contract for this behavior is
+[`policy/EXECUTABLE_ABSTRACTION_COMPLETION_V1.json`](policy/EXECUTABLE_ABSTRACTION_COMPLETION_V1.json);
+the explanatory contract is
+[`docs/EXECUTABLE_ABSTRACTION_COMPLETION_V1.md`](docs/EXECUTABLE_ABSTRACTION_COMPLETION_V1.md).
+
 <!-- qikvrt-global-completion:start -->
 ## Global claim-completion contract
 

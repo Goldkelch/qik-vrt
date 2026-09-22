@@ -59,7 +59,9 @@ permissions:
 
 concurrency:
   group: qikvrt-reflexive-watchdog-${{ github.repository }}-${{ github.event.pull_request.number || 'main' }}
-  cancel-in-progress: true
+  # Preserve an admitted observation cycle. New trigger bursts queue behind it instead
+  # of cancelling the only run capable of producing the successor receipt.
+  cancel-in-progress: false
 
 jobs:
   pre-deadlock-observation:
