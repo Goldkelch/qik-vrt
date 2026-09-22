@@ -1,0 +1,507 @@
+diff --git a/.github/workflows/qikvrt_batch04_integrity.yml b/.github/workflows/qikvrt_batch04_integrity.yml
+index 9e1dd5f05697b3b974351f4e73622c9658ca108f..92060c98c85f2c921eca6d9f05a3f6bc1e9d1bd7 100644
+--- a/.github/workflows/qikvrt_batch04_integrity.yml
++++ b/.github/workflows/qikvrt_batch04_integrity.yml
+@@ -22,7 +22,10 @@ permissions:
+   contents: write
+ 
+ concurrency:
+-  group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}
++  # Share one writer lease with other repository-mutating controllers. A PR
++  # materializer must not sit behind an unrelated long-lived evidence writer;
++  # every admitted successor gets its own non-preemptive turn.
++  group: qikvrt-repository-writer-${{ github.repository }}-${{ github.head_ref || github.ref_name }}
+   cancel-in-progress: false
+ 
+ jobs:
+@@ -292,7 +295,13 @@ jobs:
+           make test
+           python3 tools/qikvrt_integrity.py verify
+       - name: Commit materialized repository evidence
+-        if: github.event_name != 'pull_request'
++        # Same-repository PRs are repository-internal review branches. Persist the
++        # deterministic materialization there as well; otherwise successful
++        # regeneration is discarded at runner teardown and the next cycle sees
++        # the identical blocker again.
++        if: >-
++          github.event_name != 'pull_request' ||
++          github.event.pull_request.head.repo.full_name == github.repository
+         shell: bash
+         run: |
+           set -euo pipefail
+diff --git a/.github/workflows/qikvrt_reflexive_repository_watchdog.yml b/.github/workflows/qikvrt_reflexive_repository_watchdog.yml
+index bd28c51d30c1238a74167990485745be5e44b1bb..72e221f7ac6697b74b5b20d34c39197f461ab8d2 100644
+--- a/.github/workflows/qikvrt_reflexive_repository_watchdog.yml
++++ b/.github/workflows/qikvrt_reflexive_repository_watchdog.yml
+@@ -59,7 +59,9 @@ permissions:
+ 
+ concurrency:
+   group: qikvrt-reflexive-watchdog-${{ github.repository }}-${{ github.event.pull_request.number || 'main' }}
+-  cancel-in-progress: true
++  # Preserve an admitted observation cycle. New trigger bursts queue behind it instead
++  # of cancelling the only run capable of producing the successor receipt.
++  cancel-in-progress: false
+ 
+ jobs:
+   pre-deadlock-observation:
+diff --git a/.github/workflows/qikvrt_self_governance.yml b/.github/workflows/qikvrt_self_governance.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..05ec129a2b665bef1ade3c524e417ed596393b4d
+--- /dev/null
++++ b/.github/workflows/qikvrt_self_governance.yml
+@@ -0,0 +1,37 @@
++name: QIKVRT repository self-governance invariant
++
++on:
++  push:
++    branches: [main]
++  pull_request:
++    branches: [main]
++  schedule:
++    - cron: '7,22,37,52 * * * *'
++  workflow_dispatch:
++
++permissions:
++  contents: read
++  issues: read
++  pull-requests: read
++
++concurrency:
++  group: qikvrt-self-governance-${{ github.repository }}-${{ github.ref }}
++  cancel-in-progress: false
++
++jobs:
++  enforce:
++    runs-on: ubuntu-24.04
++    timeout-minutes: 10
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
++        with:
++          persist-credentials: false
++      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
++        with:
++          python-version: '3.12'
++      - name: Enforce repository target-state contract
++        env:
++          GH_TOKEN: ${{ github.token }}
++          QIKVRT_REPOSITORY: ${{ github.repository }}
++          QIKVRT_EVENT: ${{ github.event_name }}
++        run: python3 -B tools/qikvrt_self_governance.py
+diff --git a/README.md b/README.md
+index 0cbb6622ee8f166953d636d9865d7ef0046d62df..9b697a6ef964724a6b310f648dc6754cc1d767a8 100644
+--- a/README.md
++++ b/README.md
+@@ -6,6 +6,61 @@
+ 
+ ![QIK-VRT — five-state auditable effect release](docs/assets/qikvrt-social-preview.png)
+ 
++## Purpose, operating principle, and target state
++
++QIK-VRT is built around one operational distinction: **a technical result is
++not yet an accountable effect**. The repository applies that distinction to
++itself.
++
++Its repository control plane is intended to converge by repeated,
++evidence-bound correction:
++
++```text
++OBSERVE → COMPARE TO TARGET → CLASSIFY DEVIATION
++→ SELECT REPOSITORY-NATIVE REPAIR → EXECUTE
++→ READBACK → VERIFY → PERSIST → REOBSERVE
++```
++
++A completed workflow is not the end of that loop. A freshly observed deviation
++becomes the next work item. Activity without a causally bound state or evidence
++change is not progress.
++
++The repository-level target is deliberately simple:
++
++```text
++OPEN_ISSUES = 0
++OPEN_PULL_REQUESTS = 0
++UNMERGED_WORK_BRANCHES = 0
++```
++
++Here, `main` is not an unmerged work branch, and an explicitly required
++protected branch may remain when a repository invariant requires it. After
++every bounded closure the inventory is taken again, so work created by the
++repair process is not silently omitted.
++
++At suitable freshly verified milestones, the existing repository-native
++release/tag/publication mechanisms are reused and their effects read back.
++A release is a checkpoint, not a reason to stop the recursive controller.
++
++After the repository-work fixed point is reached, the objective changes from
++closure to continuous measured optimization:
++
++```text
++MEASURE → IDENTIFY BOTTLENECK → OPTIMIZE → EXECUTE
++→ OBSERVE → VERIFY → PERSIST → REMEASURE
++```
++
++The optimization target is **the best measured state reachable under the
++repository's invariants**, not an unsupported claim of mathematical or
++engineering perfection. Correctness, provenance, fail-closed gates, authority
++boundaries, and fresh evidence are constraints on optimization, not variables
++that may be traded away for speed.
++
++The machine-readable contract for this behavior is
++[`policy/EXECUTABLE_ABSTRACTION_COMPLETION_V1.json`](policy/EXECUTABLE_ABSTRACTION_COMPLETION_V1.json);
++the explanatory contract is
++[`docs/EXECUTABLE_ABSTRACTION_COMPLETION_V1.md`](docs/EXECUTABLE_ABSTRACTION_COMPLETION_V1.md).
++
+ <!-- qikvrt-global-completion:start -->
+ ## Global claim-completion contract
+ 
+diff --git a/docs/EXECUTABLE_ABSTRACTION_COMPLETION_V1.md b/docs/EXECUTABLE_ABSTRACTION_COMPLETION_V1.md
+index f2e81b5bacd39d7f45eff3b2fae0d5380bb1c54d..280ea4d45c2796d797d4d5832831daf5c26dccd0 100644
+--- a/docs/EXECUTABLE_ABSTRACTION_COMPLETION_V1.md
++++ b/docs/EXECUTABLE_ABSTRACTION_COMPLETION_V1.md
+@@ -79,6 +79,38 @@ When a repair pattern has been demonstrated with positive and negative evidence,
+ 
+ A work ring is not complete merely because execution stops. Completion requires collection of the result, deterministic persistence, release of unnecessary resources, reobservation of the next executable state and delivery of the actual end state. `QUIESCENCE` is therefore a normal lifecycle state, not a synonym for failure or global halt.
+ 
++## Recursive repository closure and optimization transition
++
++After every bounded work-ring closure, the repository is inventoried again and the
++same principle is applied recursively to all remaining machine-owned repository
++work. The ordered closure is:
++
++```text
++CURRENT_CAUSAL_BLOCKER
++→ OPEN_PULL_REQUESTS
++→ OPEN_ISSUES
++→ UNMERGED_WORK_BRANCHES
++→ FRESH_REINVENTORY
++→ repeat while repository work remains
++```
++
++The repository-work fixed point is reached only when the fresh inventory yields
++`OPEN_ISSUES=0`, `OPEN_PULL_REQUESTS=0`, and
++`UNMERGED_WORK_BRANCHES=0`. The protected `main` branch is not an unmerged
++work branch; any other branch retained by an explicit repository invariant is
++likewise not silently deleted.
++
++Only after that fixed point is freshly observed does the controller enter the
++continuous performance-optimization phase:
++
++```text
++MEASURE → IDENTIFY_BOTTLENECK → OPTIMIZE → EXECUTE
++→ OBSERVE → VERIFY → PERSIST → REMEASURE → repeat
++```
++
++Performance optimization never weakens correctness, provenance, fail-closed
++gates, authority boundaries, or evidence freshness.
++
+ ## Quality contract
+ 
+ A reusable solution must expose:
+diff --git a/docs/architecture/QIKVRT_ANTICIPATION_AND_TREND_MODEL.md b/docs/architecture/QIKVRT_ANTICIPATION_AND_TREND_MODEL.md
+index 8cc8565bf39217b185f2194d5c93f54872bac901..b64722aa603ff6ab19c59b875ddcefc5c6198ece 100644
+--- a/docs/architecture/QIKVRT_ANTICIPATION_AND_TREND_MODEL.md
++++ b/docs/architecture/QIKVRT_ANTICIPATION_AND_TREND_MODEL.md
+@@ -78,9 +78,11 @@ The stall record contains:
+ 
+ After each dispatch the repository performs a new observation. The new observation is a distinct measurement point. The observer compares it with the previous verified state and then materializes a new trend, anticipation and next effect.
+ 
+-`OBSERVE -> DERIVE -> SELECT -> DISPATCH -> OBSERVE`
++`OBSERVE -> PRE_DEADLOCK_DETECT -> DERIVE -> SELECT -> DISPATCH -> OBSERVE`
+ 
+-The loop terminates only in `KERNEL_VERIFIZIERTER_ABSCHLUSS` with complete receipts and verified Authority/Mirror state.
++This is the single canonical repository roundtrip. `PRE_DEADLOCK_DETECT` is mandatory on every cycle and cannot be bypassed by an executor, writer, recovery carrier, optimization path or idle continuation. It combines event-driven observation with the five-minute fallback observation, preserves every admitted observation cycle until its terminal receipt, and fails closed before dispatch when a deadlock, pre-cycle writer conflict, stale writer lease, missing trusted gate, observation-cadence breach or unchanged productive topology is detected. The detected cause becomes the next bounded repair subject; a HOLD is therefore evidence for causal selection, never a completion claim.
++
++The loop terminates only in `KERNEL_VERIFIZIERTER_ABSCHLUSS` with complete receipts and verified Authority/Mirror state. No alternate autonomous endless loop may bypass this roundtrip.
+ 
+ ## Component independence
+ 
+diff --git a/policy/EXECUTABLE_ABSTRACTION_COMPLETION_V1.json b/policy/EXECUTABLE_ABSTRACTION_COMPLETION_V1.json
+index d5265bc7256529261645841e7c8e6adc44acd2b3..1d314d7f0c908f44055c9ee0aacc0dc2d2febc66 100644
+--- a/policy/EXECUTABLE_ABSTRACTION_COMPLETION_V1.json
++++ b/policy/EXECUTABLE_ABSTRACTION_COMPLETION_V1.json
+@@ -43,7 +43,10 @@
+     "ACTUAL_END_STATE_DELIVERY"
+   ],
+   "completion_rule": {
+-    "open_work_must_be": ["ACTIVE_PATH", "PRECISE_EXTERNAL_HOLD"],
++    "open_work_must_be": [
++      "ACTIVE_PATH",
++      "PRECISE_EXTERNAL_HOLD"
++    ],
+     "passive_orphan_allowed": false,
+     "activity_is_progress": false,
+     "retry_without_new_causal_evidence_is_progress": false,
+@@ -80,10 +83,122 @@
+     "NO_AUTHORITY_NO_AUTHORITY_EFFECT",
+     "NO_ACTUAL_END_STATE_NO_OWNER_QUESTION",
+     "MACHINE_OWNED_WORK_REMAINING_CONTINUE_AUTONOMOUSLY",
+-    "NO_FALSE_PASS"
++    "NO_FALSE_PASS",
++    "NO_REPOSITORY_FIXED_POINT_NO_PERFORMANCE_OPTIMIZATION_PHASE",
++    "TARGET_STATE_DEVIATION_WITH_MACHINE_OWNED_REPAIR_MUST_REENTER_RECURSION",
++    "SELF_OBSERVATION_CYCLE_TERMINATION_MUST_NOT_DISABLE_RECURRENT_OBSERVATION"
+   ],
+   "external_effect": "NONE",
+   "pass": false,
+   "final_pass": false,
+-  "effect_ack_done": false
++  "effect_ack_done": false,
++  "repository_recursive_closure": {
++    "scope": [
++      "OPEN_ISSUES",
++      "OPEN_PULL_REQUESTS",
++      "UNMERGED_WORK_BRANCHES"
++    ],
++    "rule": "After every bounded work-ring closure, re-inventory repository work and recursively continue while any machine-owned item remains.",
++    "ordering": [
++      "CURRENT_CAUSAL_BLOCKER",
++      "OPEN_PULL_REQUESTS",
++      "OPEN_ISSUES",
++      "UNMERGED_WORK_BRANCHES",
++      "FRESH_REINVENTORY"
++    ],
++    "fixed_point": "OPEN_ISSUES=0 AND OPEN_PULL_REQUESTS=0 AND UNMERGED_WORK_BRANCHES=0",
++    "main_branch_excluded_from_unmerged_work_branches": true,
++    "protected_or_required_branches_may_remain_only_with_explicit_repository_invariant": true,
++    "post_fixed_point": "ENTER_CONTINUOUS_PERFORMANCE_OPTIMIZATION",
++    "optimization_loop": [
++      "MEASURE",
++      "IDENTIFY_BOTTLENECK",
++      "OPTIMIZE",
++      "EXECUTE",
++      "OBSERVE",
++      "VERIFY",
++      "PERSIST",
++      "REMEASURE"
++    ],
++    "optimization_must_preserve": [
++      "CORRECTNESS",
++      "PROVENANCE",
++      "FAIL_CLOSED_GATES",
++      "AUTHORITY_BOUNDARIES",
++      "EVIDENCE_FRESHNESS"
++    ],
++    "release_policy": {
++      "rule": "At suitable verified milestones, use an existing repository-native release/tag/publication carrier that is causally equivalent to the milestone; do not invent a weaker release path.",
++      "suitable_milestones": [
++        "REPOSITORY_WORK_FIXED_POINT",
++        "MATERIAL_VERSIONED_PRODUCT_OR_FORMALIZATION_MILESTONE",
++        "PERFORMANCE_OPTIMIZATION_MILESTONE_WITH_FRESH_REGRESSION_EVIDENCE"
++      ],
++      "preconditions": [
++        "EXACT_MAIN_HEAD_TREE_BOUND",
++        "FRESH_REQUIRED_GATES_PASS",
++        "RELEASE_CARRIER_CONTRACT_SATISFIED",
++        "AUTHORITY_REQUIREMENTS_SATISFIED",
++        "NO_STALE_EVIDENCE_TRANSFER"
++      ],
++      "sequence": [
++        "SELECT_EXISTING_RELEASE_CARRIER",
++        "VALIDATE_EXACT_SOURCE",
++        "CREATE_OR_VERIFY_VERSIONED_RELEASE_EFFECT",
++        "READBACK_RELEASE_EFFECT",
++        "CONTINUE_RECURSIVE_WORK"
++      ],
++      "release_does_not_stop_recursion": true
++    }
++  },
++  "repository_target_state": {
++    "schema": "QIKVRT_REPOSITORY_TARGET_STATE_V1",
++    "objective": "Converge from repository work closure through verified milestone release into continuous measurement-driven optimization while preserving all safety, provenance, authority, and evidence invariants.",
++    "operating_states": [
++      "CLOSURE",
++      "VERIFIED_MILESTONE_RELEASE",
++      "PERFORMANCE_OPTIMIZATION"
++    ],
++    "convergence_rule": "Each accepted iteration MUST reduce a causally bound deficit or produce fresh evidence that changes the next admissible action; activity-only fan-out is not progress.",
++    "deviation_rule": "A freshly observed deviation from the target state is a work item and MUST enter the same recursive execution-observation-verification-persistence loop unless an explicit authority or scope boundary forbids autonomous correction.",
++    "anti_noise_rule": "Controller-generated activity MUST NOT be treated as productive work unless it changes a bound repository state, evidence state, or admissible next action.",
++    "self_observation": {
++      "required": true,
++      "subjects": [
++        "OPEN_ISSUES",
++        "OPEN_PULL_REQUESTS",
++        "UNMERGED_WORK_BRANCHES",
++        "MAIN_HEAD_TREE",
++        "REQUIRED_GATES",
++        "RELEASE_EFFECTS",
++        "CONTROLLER_LIVENESS",
++        "MATERIALIZATION_PERSISTENCE",
++        "WORKFLOW_FAILURE_CLASSES",
++        "PERFORMANCE_BASELINES"
++      ],
++      "cycle": [
++        "OBSERVE",
++        "COMPARE_TO_TARGET",
++        "CLASSIFY_DEVIATION",
++        "SELECT_REPOSITORY_NATIVE_REPAIR",
++        "EXECUTE",
++        "READBACK",
++        "VERIFY",
++        "PERSIST",
++        "REOBSERVE"
++      ],
++      "terminal_semantics": "A cycle may terminate; repository self-observation MUST remain recurrent. QUIESCENCE means no current corrective mutation, not controller shutdown."
++    },
++    "correction_priority": [
++      "LOSS_OF_CONTROLLER_LIVENESS",
++      "LOSS_OF_EVIDENCE_OR_PERSISTENCE",
++      "BROKEN_REQUIRED_GATE",
++      "CURRENT_CAUSAL_BLOCKER",
++      "OPEN_PULL_REQUESTS",
++      "OPEN_ISSUES",
++      "UNMERGED_WORK_BRANCHES",
++      "PERFORMANCE_DEVIATION"
++    ],
++    "post_fixed_point_goal": "Continuously improve measured performance without weakening correctness or governance."
++  }
+ }
+diff --git a/state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json b/state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json
+index 04b625d48018b87199e769881c5fece5846e3c37..a960e2827dab1861366af80d240d2ea48fc28ae5 100644
+--- a/state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json
++++ b/state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json
+@@ -337,6 +337,17 @@
+       "zero_job_is_trusted_execution": false,
+       "deadlock_freedom_proved": false,
+       "universal_relational_database_superiority_proved": false
++    },
++    "canonical_roundtrip_invariant": {
++      "loop": "OBSERVE -> PRE_DEADLOCK_DETECT -> DERIVE -> SELECT -> DISPATCH -> OBSERVE",
++      "mandatory": true,
++      "bypass": "FORBIDDEN",
++      "observation": "EVENT_DRIVEN_PLUS_PT5M_FALLBACK",
++      "admitted_observation_preemption": "FORBIDDEN",
++      "pre_deadlock_detection_required_before_dispatch": true,
++      "deadlock_or_precycle_conflict_disposition": "HOLD_AND_SELECT_CAUSAL_REPAIR",
++      "termination": "ONLY_KERNEL_VERIFIZIERTER_ABSCHLUSS_WITH_COMPLETE_RECEIPTS_AND_VERIFIED_AUTHORITY_MIRROR_STATE",
++      "completion_claim_before_termination": "FORBIDDEN"
+     }
+   },
+   "boundaries": {
+diff --git a/tests/test_aphorism_corpus_v2.py b/tests/test_aphorism_corpus_v2.py
+index 0f47bf8e13c6625721c52bebab087293fd430aaa..c2f5114934589634cf1d06a2315d2d8e09bf48c8 100644
+--- a/tests/test_aphorism_corpus_v2.py
++++ b/tests/test_aphorism_corpus_v2.py
+@@ -101,7 +101,7 @@ class AphorismCorpusV2Tests(unittest.TestCase):
+     def test_repository_writer_serializes_and_fails_closed_on_ref_drift(self) -> None:
+         workflow = WORKFLOW.read_text(encoding="utf-8")
+         self.assertIn(
+-            "group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}",
++            "group: qikvrt-repository-writer-${{ github.repository }}-${{ github.head_ref || github.ref_name }}",
+             workflow,
+         )
+         self.assertNotIn(
+@@ -110,7 +110,20 @@ class AphorismCorpusV2Tests(unittest.TestCase):
+         )
+         commit_step = workflow.index("- name: Commit materialized repository evidence")
+         block = workflow[commit_step:]
+-        self.assertIn("if: github.event_name != 'pull_request'", block)
++        # Same-repository PRs must persist their deterministic successor. Match
++        # the complete folded condition, not the obsolete blanket PR exclusion;
++        # dropping the repository equality must still fail this regression test.
++        condition_marker = "if: >-"
++        self.assertIn(condition_marker, block)
++        condition, separator, _ = block.split(condition_marker, 1)[1].partition(
++            "shell: bash"
++        )
++        self.assertTrue(separator, "commit step must declare its bash shell")
++        self.assertEqual(
++            " ".join(condition.split()),
++            "github.event_name != 'pull_request' || "
++            "github.event.pull_request.head.repo.full_name == github.repository",
++        )
+         for token in (
+             'source_head="$(git rev-parse --verify HEAD^{commit})"',
+             'git ls-remote --heads origin "refs/heads/$TARGET_REF"',
+@@ -121,7 +134,7 @@ class AphorismCorpusV2Tests(unittest.TestCase):
+         ):
+             self.assertIn(token, block)
+         self.assertLess(
+-            block.index("if: github.event_name != 'pull_request'"),
++            block.index(condition_marker),
+             block.index("git commit -m \"ci: materialize repository evidence\""),
+         )
+         self.assertLess(
+diff --git a/tests/test_qikvrt_materialization_scope.py b/tests/test_qikvrt_materialization_scope.py
+index 78ab77725b017a16a924d2cbddd00f97f865e44a..eb306a37feb65272f01f25139daf39915d890cf3 100644
+--- a/tests/test_qikvrt_materialization_scope.py
++++ b/tests/test_qikvrt_materialization_scope.py
+@@ -139,6 +139,21 @@ class MaterializationScopeTests(unittest.TestCase):
+                 workflow,
+             )
+ 
++    def test_same_repository_pr_persists_verified_materialization(self) -> None:
++        workflow = WORKFLOW.read_text(encoding="utf-8")
++        commit = workflow.index("- name: Commit materialized repository evidence")
++        persistence = workflow[commit:]
++        self.assertIn("github.event_name != 'pull_request' ||", persistence)
++        self.assertIn(
++            "github.event.pull_request.head.repo.full_name == github.repository",
++            persistence,
++        )
++        self.assertNotIn(
++            "- name: Commit materialized repository evidence\n"
++            "        if: github.event_name != 'pull_request'",
++            workflow,
++        )
++
+     def test_integrity_and_complete_gates_remain_unconditional(self) -> None:
+         workflow = WORKFLOW.read_text(encoding="utf-8")
+         integrity = workflow.index("- name: Regenerate and verify repository integrity")
+diff --git a/tests/test_qikvrt_reflexive_repository_watchdog.py b/tests/test_qikvrt_reflexive_repository_watchdog.py
+index cc200925806734b40b46d9aca9b506f1ea17f08d..4451e86c1a3f61dfc55246e1c7e0999d3956687b 100644
+--- a/tests/test_qikvrt_reflexive_repository_watchdog.py
++++ b/tests/test_qikvrt_reflexive_repository_watchdog.py
+@@ -430,7 +430,7 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
+         self.assertIn('cron: "*/5 * * * *"', workflow)
+         self.assertIn("workflow_run:", workflow)
+         self.assertIn("types: [requested, in_progress, completed]", workflow)
+-        self.assertIn("cancel-in-progress: true", workflow)
++        # Liveness invariant: trigger coalescing must never preempt an admitted\n        # observation cycle. A terminal receipt is required before the next\n        # queued cycle may become authoritative.\n        self.assertIn("cancel-in-progress: false", workflow)\n        self.assertNotIn("cancel-in-progress: true", workflow)
+         self.assertIn("actions: read", workflow)
+         self.assertIn("contents: read", workflow)
+         self.assertIn("qikvrt_reflexive_repository_watchdog.py", workflow)
+diff --git a/tests/test_qikvrt_repository_writer_lease.py b/tests/test_qikvrt_repository_writer_lease.py
+index a19f7276c045098ecfded881da981b1473c0c878..d4cfcc3bb696f7c12aa732dada9fd63451d5c728 100644
+--- a/tests/test_qikvrt_repository_writer_lease.py
++++ b/tests/test_qikvrt_repository_writer_lease.py
+@@ -7,7 +7,7 @@ class RepositoryWriterLeaseTests(unittest.TestCase):
+     def test_repository_materializer_keeps_exact_target_writer_lease(self):
+         path = Path('.github/workflows/qikvrt_batch04_integrity.yml')
+         text = path.read_text(encoding='utf-8')
+-        expected = 'group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}'
++        expected = 'group: qikvrt-repository-writer-${{ github.repository }}-${{ github.head_ref || github.ref_name }}'
+         self.assertIn(expected, text, str(path))
+         self.assertIn('cancel-in-progress: false', text, str(path))
+ 
+diff --git a/tools/qikvrt_self_governance.py b/tools/qikvrt_self_governance.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..946f37ca454e52d88c22466adc67718f77c6b146
+--- /dev/null
++++ b/tools/qikvrt_self_governance.py
+@@ -0,0 +1,26 @@
++from __future__ import annotations
++import json, os, urllib.request
++from pathlib import Path
++def fail(msg): raise SystemExit("BLOCK: "+msg)
++p=json.loads(Path("policy/EXECUTABLE_ABSTRACTION_COMPLETION_V1.json").read_text())
++target=p.get("repository_target_state") or fail("repository_target_state absent")
++closure=p.get("repository_recursive_closure") or fail("repository_recursive_closure absent")
++if target.get("self_observation",{}).get("required") is not True: fail("self observation not mandatory")
++if closure.get("fixed_point")!="OPEN_ISSUES=0 AND OPEN_PULL_REQUESTS=0 AND UNMERGED_WORK_BRANCHES=0": fail("fixed point changed")
++if closure.get("post_fixed_point")!="ENTER_CONTINUOUS_PERFORMANCE_OPTIMIZATION": fail("optimization transition changed")
++if closure.get("release_policy",{}).get("release_does_not_stop_recursion") is not True: fail("release stops recursion")
++readme=Path("README.md").read_text()
++for n in ("OPEN_ISSUES = 0","OPEN_PULL_REQUESTS = 0","UNMERGED_WORK_BRANCHES = 0","MEASURE → IDENTIFY BOTTLENECK"):
++    if n not in readme: fail("README target missing: "+n)
++watch=Path(".github/workflows/qikvrt_reflexive_repository_watchdog.yml").read_text()
++if "cancel-in-progress: false" not in watch or "cancel-in-progress: true" in watch: fail("watchdog preemptive")
++if os.environ.get("QIKVRT_EVENT") in {"push","schedule","workflow_dispatch"}:
++    repo=os.environ["QIKVRT_REPOSITORY"]; token=os.environ["GH_TOKEN"]
++    def api(path):
++        req=urllib.request.Request("https://api.github.com/repos/"+repo+path,headers={"Authorization":"Bearer "+token,"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","User-Agent":"qikvrt-self-governance"})
++        with urllib.request.urlopen(req,timeout=30) as r:return json.load(r)
++    items=api("/issues?state=open&per_page=100")
++    issues=sum("pull_request" not in x for x in items); prs=sum("pull_request" in x for x in items)
++    branches=api("/branches?per_page=100"); work=sum(x["name"]!="main" for x in branches)
++    print(json.dumps({"state":"CONTINUE" if issues or prs or work else "REPOSITORY_WORK_FIXED_POINT","open_issues":issues,"open_pull_requests":prs,"non_main_branches":work},sort_keys=True))
++print("SELF_GOVERNANCE_INVARIANTS=PASS")
