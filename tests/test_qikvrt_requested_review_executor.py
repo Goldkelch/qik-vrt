@@ -67,6 +67,16 @@ CONFLICT_DIFF_BYTES = DEFAULT_DIFF_BYTES + b"""+<<<<<<< HEAD
 +>>>>>>> competing-branch
 """
 
+AUTHORITY_DIFF_BYTES = b"""diff --git a/.github/workflows/example.yml b/.github/workflows/example.yml
+index 1111111111111111111111111111111111111111..2222222222222222222222222222222222222222 100644
+--- a/.github/workflows/example.yml
++++ b/.github/workflows/example.yml
+@@ -1 +1,3 @@
+ name: example
++permissions:
++  contents: write
+"""
+
 
 def sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
@@ -298,6 +308,61 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         )
         self.assert_safety_boundaries(result)
         return result
+
+    def authority_discussion(self, *, commit_id: str = HEAD_SHA, paths=None):
+        return {
+            "kind": "PULL_REQUEST_REVIEW",
+            "id": "authority-review-1",
+            "author": "owner",
+            "author_association": "COLLABORATOR",
+            "state": "COMMENTED",
+            "commit_id": commit_id,
+            "updated_at": "2026-09-17T14:04:04Z",
+            "body_sha256": sha256_bytes(b"authority declaration"),
+            "authority_scope_paths": [".github/workflows/example.yml"] if paths is None else paths,
+        }
+
+    def authority_snapshot(self, discussion_items):
+        changed = [{
+            "path": ".github/workflows/example.yml",
+            "status": "modified",
+            "base_blob_sha": "1" * 40,
+            "head_blob_sha": "2" * 40,
+        }]
+        return self.snapshot(
+            diff_payload=AUTHORITY_DIFF_BYTES,
+            changed_files=changed,
+            scope_sha256=scope_sha256(changed),
+            discussion_items=discussion_items,
+        )
+
+    def test_exact_head_scope_authority_declaration_discharges_permission_finding(self):
+        result = self.evaluate(
+            self.authority_snapshot([self.authority_discussion()]),
+            AUTHORITY_DIFF_BYTES,
+        )
+        self.assertEqual("APPROVE", result["state"])
+        self.assertIsNone(result["first_blocker"])
+        self.assertTrue(any(
+            finding["finding_id"] == "MESH_AUTHORITY_SATISFIED_BY_OWNER_DECLARATION"
+            for finding in result["findings"]
+        ))
+
+    def test_predecessor_authority_declaration_does_not_discharge_current_head(self):
+        result = self.evaluate(
+            self.authority_snapshot([self.authority_discussion(commit_id="9" * 40)]),
+            AUTHORITY_DIFF_BYTES,
+        )
+        self.assertEqual("COMMENT_WITH_BLOCKER", result["state"])
+        self.assertEqual("MESH_WORKFLOW_PERMISSION_WIDENING", result["first_blocker"])
+
+    def test_partial_authority_scope_does_not_discharge_permission_finding(self):
+        result = self.evaluate(
+            self.authority_snapshot([self.authority_discussion(paths=[".github/workflows/other.yml"])]),
+            AUTHORITY_DIFF_BYTES,
+        )
+        self.assertEqual("COMMENT_WITH_BLOCKER", result["state"])
+        self.assertEqual("MESH_WORKFLOW_PERMISSION_WIDENING", result["first_blocker"])
 
     def finding_ids(self, result: dict[str, object]) -> list[str]:
         return [finding["finding_id"] for finding in result["findings"]]
@@ -1515,6 +1580,39 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertTrue(report["checks"]["stored_receipt_parses_as_expected"])
         self.assertFalse(report["checks"]["stored_receipt_bytes"])
 
+    def test_exact_scope_authority_review_parser_accepts_canonical_workflow_lines(self):
+        paths = [
+            ".github/workflows/qikvrt_cloud_transputer_integrity_objects_v1.yml",
+            ".github/workflows/qikvrt_megast_distribution_v1.yml",
+        ]
+        blob_a = "a" * 40
+        blob_b = "b" * 40
+        body = (
+            f"<!-- {MODULE.HUMAN_AUTHORITY_REVIEW_MARKER}:349:{HEAD_SHA} -->\n"
+            f"- `{paths[0]}`: Git-Blob `{blob_a}`; Workflow-Deklaration `permissions.contents: write`.\n"
+            f"- `{paths[1]}`: Git-Blob `{blob_b}`; Workflow-Deklaration `permissions.contents: write`.\n"
+        )
+        review = {
+            "id": 77,
+            "body": body,
+            "user": {"login": "ingolf-lohmann"},
+            "author_association": "COLLABORATOR",
+            "state": "COMMENTED",
+            "commit_id": HEAD_SHA,
+            "submitted_at": "2026-09-18T12:04:56Z",
+        }
+
+        def pages(endpoint):
+            return [review] if "/reviews?" in endpoint else []
+
+        with mock.patch.object(MODULE, "_gh_pages", side_effect=pages):
+            observed = MODULE._discussion_observation("example/qik-vrt", 349)
+
+        authority = next(
+            item for item in observed if item["kind"] == "PULL_REQUEST_REVIEW"
+        )
+        self.assertEqual(authority["authority_scope_paths"], sorted(paths))
+
     def test_own_mesh_projection_is_excluded_from_causal_discussion(self):
         own = {
             "id": 1,
@@ -1867,6 +1965,19 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             [0.25, 1.0],
         )
 
+    def test_recursive_queue_intent_separates_same_successor_from_distinct_predecessors(self):
+        receipt = self.evaluate(self.snapshot())
+        successor = receipt["evidence_fingerprint"]
+        first_path, first = MODULE.review_queue_intent(receipt, "a" * 64)
+        second_path, second = MODULE.review_queue_intent(receipt, "b" * 64)
+
+        self.assertNotEqual(first_path, second_path)
+        self.assertTrue(first_path.endswith(f"/{'a' * 64}/{successor}.json"))
+        self.assertTrue(second_path.endswith(f"/{'b' * 64}/{successor}.json"))
+        self.assertEqual(first["successor_fingerprint"], successor)
+        self.assertEqual(second["successor_fingerprint"], successor)
+        self.assertNotEqual(first["predecessor_fingerprint"], second["predecessor_fingerprint"])
+
     def test_recursive_queue_intent_and_ack_are_content_addressed_and_immutable(self):
         receipt = self.evaluate(self.snapshot())
         predecessor = "a" * 64
@@ -1874,7 +1985,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertEqual(
             path,
             f"{MODULE.REVIEW_QUEUE_ROOT}/pr-349/{HEAD_SHA}/"
-            f"{receipt['evidence_fingerprint']}.json",
+            f"{predecessor}/{receipt['evidence_fingerprint']}.json",
         )
         self.assertEqual(intent["predecessor_fingerprint"], predecessor)
         self.assertEqual(

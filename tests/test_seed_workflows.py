@@ -358,6 +358,18 @@ class SeedWorkflowTests(unittest.TestCase):
         self.assertIn('"source_tree": os.environ["ACTUAL_TREE"]', workflow)
         self.assertIn("qikvrt_seed_dashboard_exact_head_binding_v1", workflow)
 
+    def test_dashboard_continue_is_not_mislabelled_as_current_dashboard_evidence(self) -> None:
+        repository = Path(__file__).resolve().parents[1]
+        workflow = (
+            repository / ".github/workflows/qikvrt_seed_dashboard_publish.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("dashboard_execution=NOT_EXECUTED", workflow)
+        self.assertIn("current_dashboard_evidence=NOT_ESTABLISHED", workflow)
+        self.assertIn("NODE_REVALIDATION_CONTINUE", workflow)
+        self.assertIn('"predecessor_evidence_transfer": False', workflow)
+        self.assertIn("Build dashboard only from PASS revalidation", workflow)
+        self.assertIn("steps.revalidate.outputs.dashboard_execution == 'ADMITTED'", workflow)
+
     def test_seed_workflows_are_pinned_read_only_and_do_not_push(self) -> None:
         repository = Path(__file__).resolve().parents[1]
         for workflow in sorted((repository / ".github/workflows").glob("qikvrt_seed_*.yml")):

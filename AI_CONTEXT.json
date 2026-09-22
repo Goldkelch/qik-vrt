@@ -4,6 +4,16 @@
   "entrypoint": "AI",
   "entrypoint_rule": "Every QIK-VRT repository exposes the same root path /AI as the shortest GitHub-native human and machine runtime entrypoint.",
   "adapter_registry": "AI_ADAPTERS.json",
+  "universal_transputer_target": {
+    "entrypoint": "next/AI",
+    "component_registry": "next/TARGET_ENTRYPOINTS.json",
+    "implementation": "next/core/include/qikvrt_transputer.h",
+    "bus": "next/core/include/qikvrt_bus.h",
+    "branch": "architecture/universal-transputer-c90-v1",
+    "verification": "python3 next/tools/run_checks.py --output-dir <external-new-directory>",
+    "work_unit": "state/work_units/UNIVERSAL_TRANSPUTER_C90_BUS_20260921_V1.json",
+    "evidence_rule": "Resolve actual HEAD/TREE; preserve prior identity, versions and result bytes; no predecessor proof transfer or implicit Main promotion."
+  },
   "progress_protocol": {
     "human_contract": "docs/HUMAN_MACHINE_PROGRESS_PROTOCOL.md",
     "normative_standard": "docs/HUMAN_MACHINE_PROGRESS_STANDARD.md",
@@ -105,6 +115,7 @@
     "AI_CONTEXT.json",
     "AI_ADAPTERS.json",
     "AGENTS.md",
+    "next/AI",
     "docs/AI_PERSONAL_WORKING_MEMORY_ORIGIN_AND_ATTRIBUTION.md",
     "policy/AI_PERSONAL_WORKING_MEMORY_ORIGIN_AND_ATTRIBUTION_V1.json",
     "docs/AI_BOOTSTRAP_KNOWLEDGE_CORPUS.md",

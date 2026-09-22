@@ -16,6 +16,18 @@ class PrecedenceError(ValueError):
     pass
 
 
+_CONVERGENCE_REPOSITORIES = {
+    "Goldkelch/qik-vrt",
+    "ingolf-lohmann/qik-vrt",
+}
+_CONVERGENCE_METRICS = (
+    "open_issues",
+    "open_pull_requests",
+    "open_work_branches",
+    "unclassified_branch_refs",
+)
+
+
 def load_policy(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -92,6 +104,49 @@ def validate_policy(policy: Mapping[str, Any]) -> None:
         if not isinstance(spec, Mapping) or spec.get("requires") != [barrier]:
             raise PrecedenceError(f"{ident}: must depend exactly on common barrier")
 
+    convergence = policy.get("repository_convergence")
+    if not isinstance(convergence, Mapping):
+        raise PrecedenceError("repository_convergence missing")
+    if convergence.get("schema") != "qikvrt_repository_carrier_convergence_v1":
+        raise PrecedenceError("unexpected repository convergence schema")
+    if convergence.get("completion_role") != "NECESSARY_NOT_SUFFICIENT":
+        raise PrecedenceError("repository convergence must be necessary but not sufficient")
+    repositories = convergence.get("repositories")
+    if (
+        not isinstance(repositories, list)
+        or len(repositories) != len(_CONVERGENCE_REPOSITORIES)
+        or any(
+            not isinstance(repository, str)
+            or repository not in _CONVERGENCE_REPOSITORIES
+            for repository in repositories
+        )
+        or len({repository for repository in repositories}) != len(repositories)
+    ):
+        raise PrecedenceError("repository convergence must cover Authority and Mirror")
+    targets = convergence.get("target_counts")
+    if not isinstance(targets, Mapping) or set(targets) != set(_CONVERGENCE_METRICS):
+        raise PrecedenceError("repository convergence target counts are incomplete")
+    for metric in _CONVERGENCE_METRICS:
+        if type(targets.get(metric)) is not int or targets[metric] != 0:
+            raise PrecedenceError(f"{metric}: repository convergence target must be integer zero")
+    branch_semantics = convergence.get("branch_count_semantics")
+    if not isinstance(branch_semantics, Mapping):
+        raise PrecedenceError("branch_count_semantics missing")
+    if branch_semantics.get("unclassified_branch_ref") != "BLOCKING_AND_COUNTED":
+        raise PrecedenceError("unclassified branch refs must block convergence")
+    global_barrier = convergence.get("global_completion_barrier")
+    if not isinstance(global_barrier, Mapping):
+        raise PrecedenceError("global completion barrier missing")
+    required = global_barrier.get("requires")
+    if not isinstance(required, list):
+        raise PrecedenceError("global completion requirements must be a list")
+    for gate in (
+        "AUTHORITY_REPOSITORY_CARRIERS_ZERO",
+        "MIRROR_REPOSITORY_CARRIERS_ZERO",
+    ):
+        if gate not in required:
+            raise PrecedenceError(f"global completion barrier missing {gate}")
+
 
 def next_eligible(policy: Mapping[str, Any], states: Mapping[str, str]) -> dict[str, Any]:
     """Return exact eligible nodes from declared predecessor state only.
@@ -129,4 +184,94 @@ def next_eligible(policy: Mapping[str, Any], states: Mapping[str, str]) -> dict[
         "eligible": eligible,
         "blocked": blocked,
         "hold_unverified": not bool(eligible),
+    }
+
+
+def evaluate_repository_convergence(
+    policy: Mapping[str, Any],
+    observations: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Evaluate only the Authority/Mirror zero-carrier prerequisite.
+
+    The observation is external input and must already be a fresh authoritative
+    readback. This function checks exact binding fields and the zero targets; it
+    never promotes the result to publication, PASS, FINAL_PASS or EFFECT_ACK.
+    """
+    validate_policy(policy)
+    convergence = policy["repository_convergence"]
+    targets = convergence["target_counts"]
+    blockers: list[dict[str, Any]] = []
+    repository_states: dict[str, dict[str, Any]] = {}
+
+    for repository in convergence["repositories"]:
+        observation = observations.get(repository)
+        repo_blockers: list[dict[str, Any]] = []
+        normalized_counts: dict[str, int] = {}
+
+        if not isinstance(observation, Mapping):
+            repo_blockers.append({
+                "code": "MISSING_REPOSITORY_OBSERVATION",
+                "repository": repository,
+            })
+        else:
+            if observation.get("repository") != repository:
+                repo_blockers.append({
+                    "code": "REPOSITORY_BINDING_MISMATCH",
+                    "repository": repository,
+                })
+            for field in ("observed_at", "exact_main_sha", "exact_main_tree"):
+                value = observation.get(field)
+                if not isinstance(value, str) or not value.strip():
+                    repo_blockers.append({
+                        "code": "MISSING_EXACT_OBSERVATION_BINDING",
+                        "repository": repository,
+                        "field": field,
+                    })
+            counts = observation.get("counts")
+            if not isinstance(counts, Mapping):
+                repo_blockers.append({
+                    "code": "MISSING_CARRIER_COUNTS",
+                    "repository": repository,
+                })
+            else:
+                for metric in _CONVERGENCE_METRICS:
+                    value = counts.get(metric)
+                    if type(value) is not int or value < 0:
+                        repo_blockers.append({
+                            "code": "INVALID_CARRIER_COUNT",
+                            "repository": repository,
+                            "metric": metric,
+                            "observed": value,
+                        })
+                        continue
+                    normalized_counts[metric] = value
+                    if value != targets[metric]:
+                        repo_blockers.append({
+                            "code": "NONZERO_OPEN_CARRIER_COUNT",
+                            "repository": repository,
+                            "metric": metric,
+                            "observed": value,
+                            "required": targets[metric],
+                        })
+
+        blockers.extend(repo_blockers)
+        repository_states[repository] = {
+            "state": "SATISFIED" if not repo_blockers else "HOLD",
+            "counts": normalized_counts,
+            "blockers": repo_blockers,
+        }
+
+    satisfied = not blockers
+    return {
+        "schema": "qikvrt_repository_carrier_convergence_disposition_v1",
+        "state": "SATISFIED" if satisfied else "HOLD",
+        "repository_convergence_satisfied": satisfied,
+        "repository_states": repository_states,
+        "blockers": blockers,
+        "completion_claims": {
+            "GLOBAL_REPOSITORY_CONVERGED": False,
+            "PASS": False,
+            "FINAL_PASS": False,
+            "EFFECT_ACK_DONE": False,
+        },
     }

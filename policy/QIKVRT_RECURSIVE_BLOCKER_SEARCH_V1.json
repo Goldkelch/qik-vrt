@@ -1,0 +1,57 @@
+{
+  "schema": "qikvrt_recursive_blocker_search_v1",
+  "version": 1,
+  "purpose": "Find and eliminate repository blockers by recursively combining breadth-first blocker discovery with depth-first causal closure.",
+  "predecessor_evidence_transfer": false,
+  "algorithm": {
+    "outer": "BFS",
+    "outer_scope": [
+      "technical_closure",
+      "integrity",
+      "validation",
+      "review_admission",
+      "native_review",
+      "ruleset_authority",
+      "main_adoption",
+      "deployment",
+      "effect_readback"
+    ],
+    "inner": "DFS",
+    "inner_rule": "For the first actionable blocker, descend to the first deterministic causal closure boundary before mutating anything.",
+    "return_rule": "After closure and fresh validation, return to BFS and reobserve the complete blocker frontier."
+  },
+  "closure_invariant": [
+    "TYPE",
+    "EXPLICIT_CLOSURE_RULE",
+    "BOUNDED_MUTATION",
+    "PERSISTENCE",
+    "EXACT_HEAD_TREE_READBACK",
+    "FRESH_VALIDATION"
+  ],
+  "head_mutation_rule": "Any HEAD/TREE mutation resets validation and all downstream evidence bindings for that subject.",
+  "fail_closed": {
+    "unknown": "HOLD_UNVERIFIED",
+    "stale": "HOLD_UNVERIFIED",
+    "missing_readback": "HOLD_UNVERIFIED",
+    "missing_fresh_validation": "HOLD_UNVERIFIED",
+    "transport_ack_is_effect_ack": false,
+    "workflow_success_is_closure": false,
+    "draft_hold_with_remaining_actionable_work_is_terminal": false
+  },
+  "technical_fixpoint": {
+    "all_required": true,
+    "predicates": [
+      "work_remaining == 0",
+      "no_known_technical_closure_missing",
+      "all_required_evidence_bound_to_current_subject"
+    ]
+  },
+  "separation": {
+    "technical_validation": "does_not_imply_review",
+    "review": "does_not_imply_main",
+    "main": "does_not_imply_deployment",
+    "deployment": "does_not_imply_effect",
+    "effect": "requires_its_own_readback"
+  },
+  "termination": "Stop only when a fresh BFS frontier contains no actionable blocker in the declared target scope and the applicable fixpoint/effect predicates are independently satisfied."
+}

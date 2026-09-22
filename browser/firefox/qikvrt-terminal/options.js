@@ -1,4 +1,11 @@
 const fields = ["accent", "fontScale", "density", "position"];
+const message = name => browser.i18n.getMessage(name);
+document.documentElement.lang = message("@@ui_locale").replaceAll("_", "-");
+document.documentElement.dir = message("@@bidi_dir");
+document.title = `QIKVRT AI Terminal · ${message("personalize")}`;
+document.querySelectorAll("[data-i18n]").forEach(node => {
+  node.textContent = message(node.dataset.i18n);
+});
 
 async function load() {
   const stored = await browser.storage.local.get("qikvrtTerminalPreferences");
@@ -11,7 +18,7 @@ async function save() {
   for (const id of fields) value[id] = document.getElementById(id).value;
   value.fontScale = Number(value.fontScale);
   await browser.storage.local.set({qikvrtTerminalPreferences: value});
-  document.getElementById("status").textContent = "gespeichert";
+  document.getElementById("status").textContent = message("saved");
 }
 
 document.getElementById("save").addEventListener("click", () => save().catch(error => {
