@@ -101,7 +101,7 @@ class AphorismCorpusV2Tests(unittest.TestCase):
     def test_repository_writer_serializes_and_fails_closed_on_ref_drift(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(
-            "group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}",
+            "group: qikvrt-repository-writer-${{ github.repository }}-${{ github.head_ref || github.ref_name }}",
             workflow,
         )
         self.assertNotIn(
