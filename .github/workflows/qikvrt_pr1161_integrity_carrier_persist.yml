@@ -1,14 +1,13 @@
-# One-shot transport only. Do not merge this workflow into the target branch.
+# Transport only; never merge into the target. No REST quota dependency.
 name: QIKVRT PR1161 exact integrity carrier persistence
 
 on:
   pull_request:
     branches: [docs/exact-subject-truth-reality-20260922-v1]
-    types: [opened]
+    types: [opened, synchronize]
 
 permissions:
   contents: write
-  actions: read
 
 concurrency:
   group: qikvrt-pr1161-exact-carrier-2c2a2e987503534fbc87b370a096714ee7964da2
@@ -27,86 +26,44 @@ jobs:
       BASE_TREE: 72dc8fa56f5e801b541d2062b38a77dd175f2c03
       TARGET_REF: docs/exact-subject-truth-reality-20260922-v1
       REPOSITORY: Goldkelch/qik-vrt
-      ARTIFACT_ID: '10697596265'
-      SOURCE_RUN: '35735801609'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: 2c2a2e987503534fbc87b370a096714ee7964da2
           fetch-depth: 2
           persist-credentials: false
-      - name: Bind source and retrieve the already generated exact byte carrier
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Bind source via Git and reproduce the downloaded exact byte carrier
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$BASE_HEAD"
           test "$(git rev-parse HEAD^{tree})" = "$BASE_TREE"
+          test "$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | cut -f1)" = "$BASE_HEAD"
           out="$RUNNER_TEMP/pr1161-exact-carrier"
           mkdir -p "$out/source" "$out/readback"
-          gh api "repos/$REPOSITORY/pulls/1161" > "$out/source-pr.json"
-          gh api "repos/$REPOSITORY/actions/artifacts/$ARTIFACT_ID" > "$out/source-artifact.json"
-          gh api "repos/$REPOSITORY/actions/runs/$SOURCE_RUN" > "$out/source-run.json"
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
           python3 -B - <<'PY'
-          import json, os
+          import hashlib, json, os, subprocess
           from pathlib import Path
           p = Path(os.environ['RUNNER_TEMP']) / 'pr1161-exact-carrier'
-          pr = json.loads((p/'source-pr.json').read_text())
-          a = json.loads((p/'source-artifact.json').read_text())
-          r = json.loads((p/'source-run.json').read_text())
-          assert pr['state'] == 'open' and not pr['merged']
-          assert pr['head']['repo']['full_name'] == os.environ['REPOSITORY']
-          assert pr['head']['ref'] == os.environ['TARGET_REF']
-          assert pr['head']['sha'] == os.environ['BASE_HEAD']
-          assert a['id'] == int(os.environ['ARTIFACT_ID']) and not a['expired']
-          assert a['workflow_run']['id'] == int(os.environ['SOURCE_RUN'])
-          assert a['workflow_run']['head_sha'] == os.environ['BASE_HEAD']
-          assert a['size_in_bytes'] == 409137
-          assert a['digest'] == 'sha256:696c7a68c6140b609c4b5ba325313eae3e18568f967a19f646a4807d3bb35569'
-          assert r['id'] == int(os.environ['SOURCE_RUN'])
-          assert r['head_sha'] == os.environ['BASE_HEAD']
-          assert r['event'] == 'pull_request' and r['conclusion'] == 'success'
-          PY
-          gh api "repos/$REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" > "$out/carrier.zip"
-          python3 -B - <<'PY'
-          import hashlib, json, os, stat, zipfile
-          from pathlib import Path
-          p = Path(os.environ['RUNNER_TEMP']) / 'pr1161-exact-carrier'
-          raw = (p/'carrier.zip').read_bytes()
-          assert len(raw) == 409137
-          assert hashlib.sha256(raw).hexdigest() == '696c7a68c6140b609c4b5ba325313eae3e18568f967a19f646a4807d3bb35569'
+          # These digests were computed from the actual downloaded artifact
+          # 10697596265, bound by source run 35735801609 to BASE_HEAD/BASE_TREE.
+          # The controller must additionally compare final readback bytes to
+          # that original local ZIP before promoting the target PR ref.
           expected = {
             'REPOSITORY_FILE_MANIFEST.json': [1191389, '0ff8adca74478e9ad86db44d84ff94f623a4e9316c1f5192933eb2260f2483f0', '1d5cd45734c04a1717f18400f5d07879c1476c5b'],
             'REPOSITORY_FILE_MANIFEST.json.sha256': [96, '8841dc3757171edda809c426d9cc52389169abe80013215bd3409ac5af7af9e7', '209fb3c77d54232a3b3d87828db7abef5be7900a'],
             'SHA256SUMS.txt': [562983, 'ed3bf396d676f3882cde4c41774f536acb8cab933a0b9afd8be67207aace06ff', 'bcd6ccee43bff11aeaf29f56e982b161aa1b97eb'],
           }
-          with zipfile.ZipFile(p/'carrier.zip') as z:
-            assert len(z.infolist()) == 3 and set(z.namelist()) == set(expected)
-            for name, (size, sha256, blob) in expected.items():
-              info = z.getinfo(name)
-              assert info.file_size == size and not stat.S_ISLNK(info.external_attr >> 16)
-              b = z.read(name)
-              assert len(b) == size and hashlib.sha256(b).hexdigest() == sha256
-              assert hashlib.sha1(b'blob '+str(len(b)).encode()+b'\0'+b).hexdigest() == blob
-              (p/'source'/name).write_bytes(b)
-          (p/'expected-files.json').write_text(json.dumps(expected, indent=2)+'\n')
-          PY
-      - name: Independently regenerate and require byte identity before mutation
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -B tools/qikvrt_integrity.py generate
-          python3 -B tools/qikvrt_integrity.py verify
-          python3 -B - <<'PY'
-          import json, os, subprocess
-          from pathlib import Path
-          p = Path(os.environ['RUNNER_TEMP']) / 'pr1161-exact-carrier'
-          expected = json.loads((p/'expected-files.json').read_text())
-          for name in expected:
-            assert Path(name).read_bytes() == (p/'source'/name).read_bytes(), name
+          for name, (size, sha256, blob) in expected.items():
+            b = Path(name).read_bytes()
+            assert len(b) == size and hashlib.sha256(b).hexdigest() == sha256, name
+            assert hashlib.sha1(b'blob '+str(len(b)).encode()+b'\0'+b).hexdigest() == blob, name
+            (p/'source'/name).write_bytes(b)
           changed = subprocess.check_output(['git','diff','--name-only','-z']).decode().split('\0')
           assert set(filter(None, changed)) == set(expected), changed
+          (p/'expected-files.json').write_text(json.dumps(expected, indent=2)+'\n')
           PY
       - name: Persist only the three integrity files on a new repository carrier ref
         env:
@@ -115,7 +72,7 @@ jobs:
         run: |
           set -euo pipefail
           out="$RUNNER_TEMP/pr1161-exact-carrier"
-          test "$(gh api "repos/$REPOSITORY/pulls/1161" --jq '.head.sha')" = "$BASE_HEAD"
+          test "$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | cut -f1)" = "$BASE_HEAD"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -- REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
@@ -134,45 +91,61 @@ jobs:
           printf '%s\n' "$tree" > "$out/successor-tree.txt"
           printf '%s\n' "$carrier" > "$out/successor-ref.txt"
           printf 'SUCCESSOR_HEAD=%s\nSUCCESSOR_TREE=%s\nCARRIER_REF=%s\n' "$candidate" "$tree" "$carrier"
-          gh api "repos/$REPOSITORY/git/commits/$candidate" > "$out/remote-commit.json"
-      - name: Fresh public immutable byte readback and exact successor binding
+      - name: Independent remote Git readback plus fresh public immutable file bytes
         shell: bash
         run: |
           set -euo pipefail
           out="$RUNNER_TEMP/pr1161-exact-carrier"
           head="$(cat "$out/successor-head.txt")"
+          tree="$(cat "$out/successor-tree.txt")"
+          carrier="$(cat "$out/successor-ref.txt")"
+          remote="$RUNNER_TEMP/pr1161-independent-remote.git"
+          test ! -e "$remote"
+          git init --bare "$remote"
+          git --git-dir="$remote" fetch --no-tags --depth=1 \
+            "https://github.com/$REPOSITORY.git" "refs/heads/$carrier"
+          test "$(git --git-dir="$remote" rev-parse FETCH_HEAD)" = "$head"
+          test "$(git --git-dir="$remote" rev-parse FETCH_HEAD^{tree})" = "$tree"
+          git --git-dir="$remote" cat-file commit "$head" > "$out/remote-commit.txt"
+          git --git-dir="$remote" show -s --format=%cI "$head" > "$out/remote-committed-at.txt"
           for path in REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt; do
+            git --git-dir="$remote" show "$head:$path" > "$out/readback/$path.git"
             curl --fail --silent --show-error --location --proto '=https' \
               -H 'Cache-Control: no-cache' \
               "https://raw.githubusercontent.com/$REPOSITORY/$head/$path" \
               -o "$out/readback/$path"
+            cmp "$out/source/$path" "$out/readback/$path.git"
             cmp "$out/source/$path" "$out/readback/$path"
           done
           python3 -B - <<'PY'
           import datetime, hashlib, json, os
           from pathlib import Path
           p = Path(os.environ['RUNNER_TEMP']) / 'pr1161-exact-carrier'
-          c = json.loads((p/'remote-commit.json').read_text())
           head = (p/'successor-head.txt').read_text().strip()
           tree = (p/'successor-tree.txt').read_text().strip()
-          assert c['sha'] == head and c['tree']['sha'] == tree
-          assert [x['sha'] for x in c['parents']] == [os.environ['BASE_HEAD']]
+          raw = (p/'remote-commit.txt').read_bytes()
+          assert hashlib.sha1(b'commit '+str(len(raw)).encode()+b'\0'+raw).hexdigest() == head
+          header = raw.decode().split('\n\n', 1)[0].splitlines()
+          assert [s[5:] for s in header if s.startswith('tree ')] == [tree]
+          assert [s[7:] for s in header if s.startswith('parent ')] == [os.environ['BASE_HEAD']]
           files = {}
           for name, (size, sha256, blob) in json.loads((p/'expected-files.json').read_text()).items():
             b = (p/'readback'/name).read_bytes()
-            assert b == (p/'source'/name).read_bytes()
+            assert b == (p/'source'/name).read_bytes() == (p/'readback'/(name+'.git')).read_bytes()
             assert len(b) == size and hashlib.sha256(b).hexdigest() == sha256
             assert hashlib.sha1(b'blob '+str(len(b)).encode()+b'\0'+b).hexdigest() == blob
-            files[name] = {'bytes': size, 'sha256': sha256, 'git_blob': blob, 'byte_identical': True}
-          receipt = {'schema':'qikvrt_pr1161_exact_carrier_readback_v1',
+            files[name] = {'bytes':size, 'sha256':sha256, 'git_blob':blob, 'byte_identical':True}
+          receipt = {'schema':'qikvrt_pr1161_exact_carrier_readback_v2',
             'repository':os.environ['REPOSITORY'], 'base_head':os.environ['BASE_HEAD'],
-            'base_tree':os.environ['BASE_TREE'], 'source_artifact_id':int(os.environ['ARTIFACT_ID']),
-            'source_run_id':int(os.environ['SOURCE_RUN']), 'writer_run_id':int(os.environ['GITHUB_RUN_ID']),
+            'base_tree':os.environ['BASE_TREE'], 'source_artifact_id':10697596265,
+            'source_run_id':35735801609, 'writer_run_id':int(os.environ['GITHUB_RUN_ID']),
+            'source_zip_sha256':'696c7a68c6140b609c4b5ba325313eae3e18568f967a19f646a4807d3bb35569',
             'successor_head':head, 'successor_tree':tree,
             'successor_ref':(p/'successor-ref.txt').read_text().strip(),
-            'remote_committed_at':c['committer']['date'],
+            'remote_committed_at':(p/'remote-committed-at.txt').read_text().strip(),
             'readback_observed_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),
             'files':files, 'repository_byte_readback':'PASS', 'fresh_full_gates':'NOT_YET_RUN',
+            'controller_original_zip_byte_comparison':'REQUIRED_BEFORE_PROMOTION',
             'target_pr_ref_promoted':False, 'predecessor_evidence_transfer':False,
             'zenodo_published':False, 'publication_public_readback':False, 'EFFECT_ACK_DONE':False}
           (p/'receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
@@ -209,7 +182,7 @@ jobs:
           tail -n 80 "$out/fresh-full-gates.log"
           test "$gates_rc" -eq 0
           test "$integrity_rc" -eq 0
-      - name: Preserve carrier, independent readback and scoped receipt even on failure
+      - name: Preserve independent readback and scoped receipt even on failure
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
