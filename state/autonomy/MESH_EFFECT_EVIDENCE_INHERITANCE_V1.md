@@ -53,3 +53,8 @@ A node that cannot prove inheritance is NOT admitted as a conforming QIK-VRT Mes
 EFFECT_ACK_DONE may be asserted as machine evidence only when the claimed postcondition is freshly observed, subject-bound, provenance-bound, and within evidence scope. Authority declarations remain distinct from machine-effect witnesses.
 
 This contract is recursive: future Mesh creation MUST install and validate the same invariant before the new node may claim conformance.
+
+
+## QIK-VRT MVP inheritance
+
+Every conforming node MUST also inherit and enforce state/autonomy/QIKVRT_MVP_EXACT_SUBJECT_RECOVERY_V1.md (or an Authority-bound byte-identical canonical reference). MVP conformance is fail-closed when this recovery contract is absent or unresolved.
