@@ -20,6 +20,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}
@@ -47,6 +48,8 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.12"
+      - name: Test PR integrity byte-carrier boundaries
+        run: python3 -B -m unittest discover -s tests -p test_qikvrt_pr_integrity_byte_carrier.py -v
       - name: Classify deterministic materialization scope
         id: scope
         env:
@@ -280,17 +283,156 @@ jobs:
           python3 -B "$script" --check --json
           python3 -B -m unittest -v tests.test_aphorism_corpus_v2
       - name: Regenerate and verify repository integrity
+        id: regenerated_integrity
         shell: bash
         run: |
           set -euo pipefail
           python3 tools/qikvrt_integrity.py generate
           python3 tools/qikvrt_integrity.py verify
       - name: Run complete repository gates before persistence
+        id: repository_gates
         shell: bash
         run: |
           set -euo pipefail
           make test
           python3 tools/qikvrt_integrity.py verify
+      - name: Freeze regenerated PR integrity bytes without a repository write
+        id: byte_carrier
+        if: ${{ always() && github.event_name == 'pull_request' && steps.regenerated_integrity.outcome == 'success' }}
+        env:
+          CARRIER_DIRECTORY: ${{ runner.temp }}/qikvrt-pr-integrity-carrier
+          CARRIER_REPOSITORY: ${{ github.repository }}
+          CARRIER_PR: ${{ github.event.pull_request.number }}
+          CARRIER_RUN_ID: ${{ github.run_id }}
+          CARRIER_RUN_ATTEMPT: ${{ github.run_attempt }}
+          CARRIER_GATES: ${{ steps.repository_gates.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY_CARRIER'
+          import hashlib, json, os, re, stat, subprocess
+          from pathlib import Path
+
+          def git(*args):
+              return subprocess.check_output(['git', *args])
+
+          def blob(raw):
+              return hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest()
+
+          def regular(path):
+              fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+              with os.fdopen(fd, 'rb') as handle:
+                  if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                      raise SystemExit('BLOCK: non-regular integrity file')
+                  raw = handle.read(64 * 1024 * 1024 + 1)
+              if len(raw) > 64 * 1024 * 1024:
+                  raise SystemExit('BLOCK: integrity file exceeds byte limit')
+              return raw
+
+          root = Path.cwd().resolve()
+          target = Path(os.environ['CARRIER_DIRECTORY']).resolve()
+          if target == root or root in target.parents:
+              raise SystemExit('BLOCK: carrier must be outside the checkout')
+          head = git('rev-parse', '--verify', 'HEAD^{commit}').decode().strip()
+          tree = git('rev-parse', '--verify', 'HEAD^{tree}').decode().strip()
+          if not re.fullmatch('[0-9a-f]{40}', os.environ['EXPECTED_HEAD']) or head != os.environ['EXPECTED_HEAD']:
+              raise SystemExit('BLOCK: exact source HEAD drift')
+          repository = os.environ['CARRIER_REPOSITORY']
+          if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository):
+              raise SystemExit('BLOCK: invalid repository identity')
+          ids = {key: os.environ[key] for key in ('CARRIER_PR', 'CARRIER_RUN_ID', 'CARRIER_RUN_ATTEMPT')}
+          if any(not re.fullmatch('[1-9][0-9]*', value) for value in ids.values()):
+              raise SystemExit('BLOCK: invalid PR/run binding')
+          gates = os.environ['CARRIER_GATES']
+          if gates not in ('success', 'failure', 'cancelled', 'skipped'):
+              raise SystemExit('BLOCK: unknown gate outcome')
+          paths = ('REPOSITORY_FILE_MANIFEST.json', 'REPOSITORY_FILE_MANIFEST.json.sha256', 'SHA256SUMS.txt')
+          delta = git('diff', '--name-only', '--no-renames', '-z', 'HEAD', '--')
+          changed = sorted(path.decode('utf-8') for path in delta.split(b'\0') if path)
+          payload, entries = {}, []
+          for name in paths:
+              entry = git('ls-tree', '-z', 'HEAD', '--', name).split(b'\0')
+              if len(entry) != 2 or entry[-1] or b'\t' not in entry[0]:
+                  raise SystemExit('BLOCK: missing or ambiguous integrity source path')
+              metadata, returned_path = entry[0].split(b'\t', 1)
+              mode, kind, before = metadata.decode().split()
+              if returned_path.decode() != name or kind != 'blob' or mode != '100644':
+                  raise SystemExit('BLOCK: invalid integrity source tree entry')
+              raw = regular(root / name)
+              payload[name] = raw
+              entries.append({'path': name, 'mode': mode, 'source_blob_sha1': before,
+                              'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(),
+                              'git_blob_sha1': blob(raw)})
+          other = sorted(set(changed) - set(paths))
+          manifest = {'schema': 'qikvrt_pr_integrity_byte_carrier_v1',
+                      'source': {'repository': repository, 'head_sha': head, 'tree_sha': tree,
+                                 'pull_request': int(ids['CARRIER_PR']), 'run_id': int(ids['CARRIER_RUN_ID']),
+                                 'run_attempt': int(ids['CARRIER_RUN_ATTEMPT'])},
+                      'repository_gates_outcome': gates, 'files': entries,
+                      'other_modified_paths': other, 'trio_covers_tracked_delta': not other,
+                      'claims': {'repository_successor_persisted': False,
+                                 'fresh_successor_gates_pass': False, 'effect_ack_done': False}}
+          if git('rev-parse', 'HEAD').decode().strip() != head or git('diff', '--name-only', '--no-renames', '-z', 'HEAD', '--') != delta:
+              raise SystemExit('BLOCK: source changed during byte capture')
+          if any(regular(root / name) != raw for name, raw in payload.items()):
+              raise SystemExit('BLOCK: integrity bytes changed during capture')
+          target.mkdir(parents=True, exist_ok=False)
+          for name, raw in payload.items():
+              (target / name).write_bytes(raw)
+              if regular(target / name) != raw:
+                  raise SystemExit('BLOCK: local carrier readback mismatch')
+          manifest_raw = (json.dumps(manifest, sort_keys=True, indent=2, allow_nan=False) + '\n').encode()
+          (target / 'CARRIER.json').write_bytes(manifest_raw)
+          if regular(target / 'CARRIER.json') != manifest_raw:
+              raise SystemExit('BLOCK: local manifest readback mismatch')
+          print('PR_INTEGRITY_CARRIER_HEAD=' + head)
+          print('PR_INTEGRITY_CARRIER_TREE=' + tree)
+          print('PR_INTEGRITY_CARRIER_SHA256=' + hashlib.sha256(manifest_raw).hexdigest())
+          print('BYTE_CARRIER_CREATED_NOT_REPOSITORY_SUCCESSOR')
+          PY_CARRIER
+      - name: Preserve regenerated PR integrity byte carrier
+        id: upload_byte_carrier
+        if: ${{ always() && steps.byte_carrier.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-pr-integrity-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qikvrt-pr-integrity-carrier/
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 30
+      - name: Freshly read back persisted PR integrity bytes
+        if: ${{ always() && steps.upload_byte_carrier.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CARRIER_DIRECTORY: ${{ runner.temp }}/qikvrt-pr-integrity-carrier
+          CARRIER_ARCHIVE: ${{ runner.temp }}/qikvrt-pr-integrity-readback.zip
+          CARRIER_ARTIFACT_ID: ${{ steps.upload_byte_carrier.outputs.artifact-id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CARRIER_ARTIFACT_ID"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${CARRIER_ARTIFACT_ID}/zip" > "$CARRIER_ARCHIVE"
+          python3 -B - <<'PY_CARRIER_READBACK'
+          import hashlib, json, os, zipfile
+          from pathlib import Path
+          root = Path(os.environ['CARRIER_DIRECTORY'])
+          names = ('CARRIER.json', 'REPOSITORY_FILE_MANIFEST.json', 'REPOSITORY_FILE_MANIFEST.json.sha256', 'SHA256SUMS.txt')
+          with zipfile.ZipFile(os.environ['CARRIER_ARCHIVE']) as archive:
+              if sorted(archive.namelist()) != sorted(names):
+                  raise SystemExit('BLOCK: artifact entries differ or repeat')
+              for name in names:
+                  expected = (root / name).read_bytes()
+                  info = archive.getinfo(name)
+                  if info.file_size != len(expected) or archive.read(name) != expected:
+                      raise SystemExit('BLOCK: persisted artifact bytes differ: ' + name)
+          manifest_raw = (root / 'CARRIER.json').read_bytes()
+          manifest = json.loads(manifest_raw)
+          print(json.dumps({'state': 'BYTE_CARRIER_READBACK_VERIFIED',
+                            'artifact_id': os.environ['CARRIER_ARTIFACT_ID'],
+                            'carrier_sha256': hashlib.sha256(manifest_raw).hexdigest(),
+                            'source': manifest['source'], 'files': manifest['files'],
+                            'repository_successor_persisted': False, 'effect_ack_done': False}, sort_keys=True))
+          PY_CARRIER_READBACK
       - name: Commit materialized repository evidence
         if: github.event_name != 'pull_request'
         shell: bash
