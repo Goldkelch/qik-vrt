@@ -89,5 +89,23 @@ class PullRequestHeadMutationBoundaryTests(unittest.TestCase):
         self.assertIn("cancel-in-progress: false", text)
 
 
+    def test_roundtrip_materialization_uses_the_admitted_branch_push(self) -> None:
+        text = (WORKFLOWS / "qikvrt_batch04_integrity.yml").read_text(encoding="utf-8")
+        push = text.split("  push:\n", 1)[1].split("  pull_request:\n", 1)[0]
+        self.assertIn("      - agent/repository-wide-roundtrip-invariant-v1\n", push)
+        self.assertIn("github.actor != 'github-actions[bot]'", text)
+        self.assertNotIn("pull_request_target:", text)
+
+    def test_materialization_requires_fresh_remote_successor_readback(self) -> None:
+        text = (WORKFLOWS / "qikvrt_batch04_integrity.yml").read_text(encoding="utf-8")
+        persist = text.split("- name: Commit materialized repository evidence", 1)[1]
+        after_push = persist.split('git push origin "HEAD:$TARGET_REF"', 1)[1]
+        self.assertIn('git ls-remote --heads origin "refs/heads/$TARGET_REF"', after_push)
+        self.assertIn('test "$persisted_head" = "$readback_head"', after_push)
+        self.assertIn('HEAD^{tree}', after_push)
+        self.assertIn('EFFECT_ACK_CONTINUE', after_push)
+        self.assertNotIn('EFFECT_ACK_DONE=true', after_push)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -9,6 +9,7 @@ on:
       - agent/manuscript-formalization-v2-completion
       - docs/information-effect-axis-v1
       - publication/pr966-p5-successor-v1
+      - agent/repository-wide-roundtrip-invariant-v1
   pull_request:
     branches:
       - main
@@ -292,6 +293,7 @@ jobs:
           make test
           python3 tools/qikvrt_integrity.py verify
       - name: Commit materialized repository evidence
+        if: github.event_name != 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
@@ -365,3 +367,9 @@ jobs:
             exit 2
           fi
           git push origin "HEAD:$TARGET_REF"
+          persisted_head="$(git rev-parse --verify HEAD^{commit})"
+          readback_head="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')"
+          test "$persisted_head" = "$readback_head"
+          printf 'PERSISTED_HEAD=%s\n' "$persisted_head"
+          git rev-parse --verify HEAD^{tree}
+          echo 'EFFECT_ACK_CONTINUE: fresh successor validation and native review are still required'
