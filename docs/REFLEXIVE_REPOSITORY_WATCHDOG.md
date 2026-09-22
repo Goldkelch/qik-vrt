@@ -135,3 +135,33 @@ Where GitHub cannot provide an atomic expected-base-and-head mutation, the
 repository must construct a history-preserving successor branch/commit, verify
 both parent intents and deterministic integrity, and submit that successor
 through the ordinary protected path.
+
+
+## Minimal Valuable Product flow priority
+
+Repository housekeeping is subordinate to delivery of the current Minimal
+Valuable Product (MVP), except where a defect directly blocks correctness,
+security, provenance, required authority, or the MVP effect itself.
+
+Every open PR, issue, branch, conflict, failed gate, and deadlock MUST therefore
+be classified against the MVP critical path:
+
+- `MVP_BLOCKER`: prevents an MVP acceptance predicate; resolve first.
+- `MVP_ENABLER`: smallest change that unlocks one or more blockers; execute next.
+- `INDEPENDENT_LOW_HANGING_FRUIT`: merge/persist immediately when its exact
+  gates and authority permit it and doing so does not invalidate the active MVP
+  subject.
+- `POST_MVP`: preserve provenance and defer without consuming the critical
+  writer/review path.
+
+The scheduler must maximize verified reduction of the MVP blocker set, not the
+number of comments, workflow runs, branches, or intermediate artifacts.
+
+`MVP -> exact acceptance predicates -> first causal blocker -> smallest
+productive transition -> fresh validation -> effect readback`
+
+A technically mergeable candidate that is an MVP enabler may not remain idle
+merely because unrelated backlog exists. Conversely, bulk-merging unrelated
+work is forbidden when it increases integration risk or invalidates fresh MVP
+evidence. Agile flow means reducing verified lead time to a usable effect while
+retaining QIK-VRT's provenance and effect boundaries.
