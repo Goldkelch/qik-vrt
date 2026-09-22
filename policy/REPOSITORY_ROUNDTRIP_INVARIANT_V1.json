@@ -2,8 +2,28 @@
   "schema": "qikvrt-repository-roundtrip-invariant/1.0",
   "id": "qikvrt-repository-wide-roundtrip-invariant-v1",
   "scope": "repository-wide",
-  "applies_to": ["human", "agent", "workflow", "tool", "issue", "pull_request", "branch", "commit", "review", "merge", "release", "deployment", "external_effect"],
-  "required_roundtrip": ["INSPECT", "SOLVE", "OBSERVE_EFFECT", "VERIFY_READBACK", "CONTINUE_OR_DONE"],
+  "applies_to": [
+    "human",
+    "agent",
+    "workflow",
+    "tool",
+    "issue",
+    "pull_request",
+    "branch",
+    "commit",
+    "review",
+    "merge",
+    "release",
+    "deployment",
+    "external_effect"
+  ],
+  "required_roundtrip": [
+    "INSPECT",
+    "SOLVE",
+    "OBSERVE_EFFECT",
+    "VERIFY_READBACK",
+    "CONTINUE_OR_DONE"
+  ],
   "invariants": {
     "exact_subject_binding_required": true,
     "predecessor_evidence_transfer": false,
@@ -19,5 +39,18 @@
   "terminal_rule": "No repository action may be treated as complete merely because it was requested, dispatched, queued, transported, locally executed, commented on, or observed. Completion requires the declared postcondition and its fresh readback on the exact current subject.",
   "failure_rule": "Any failed or missing postcondition becomes the next causal work unit. Continue independent eligible work; fail closed where authority, evidence, or executable capability is missing.",
   "authority_boundary": "This invariant never fabricates human review or authority, weakens branch protection, exposes credentials, or authorizes an external effect that lacks its own authorization.",
-  "done_state": "EFFECT_ACK_DONE"
+  "done_state": "EFFECT_ACK_DONE",
+  "governance": {
+    "classification": "repository-wide foundational rule",
+    "admissibility_rule": "Every repository action, workflow, pull request, issue, branch, work unit, gate and effect obligation must conform to this invariant.",
+    "nonconformance_disposition": [
+      "INSPECT the exact nonconforming subject and evidence",
+      "SOLVE by repairing or migrating it to the invariant when productive intent remains valid",
+      "SUPERSEDE or CLOSE only when exact evidence establishes redundancy, invalidity, or replacement",
+      "DELETE a branch only after its productive work has an evidenced terminal disposition and repository policy permits deletion",
+      "NEVER discard unresolved productive work merely to reduce counters"
+    ],
+    "enforcement": "fail-closed",
+    "scope_terminal_condition": "EFFECT_ACK_DONE"
+  }
 }
