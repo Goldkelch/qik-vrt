@@ -1,0 +1,23 @@
+{
+  "schema": "qikvrt-repository-roundtrip-invariant/1.0",
+  "id": "qikvrt-repository-wide-roundtrip-invariant-v1",
+  "scope": "repository-wide",
+  "applies_to": ["human", "agent", "workflow", "tool", "issue", "pull_request", "branch", "commit", "review", "merge", "release", "deployment", "external_effect"],
+  "required_roundtrip": ["INSPECT", "SOLVE", "OBSERVE_EFFECT", "VERIFY_READBACK", "CONTINUE_OR_DONE"],
+  "invariants": {
+    "exact_subject_binding_required": true,
+    "predecessor_evidence_transfer": false,
+    "temporal_proximity_implies_causality": false,
+    "transport_ack_equals_effect_ack": false,
+    "observer_equals_native_authority": false,
+    "unknown_fails_closed": true,
+    "mutation_requires_fresh_validation": true,
+    "noop_retry_wakeup_counts_as_progress": false,
+    "independent_lanes_remain_independent_without_evidenced_edge": true,
+    "effect_ack_done_requires_fresh_effect_readback": true
+  },
+  "terminal_rule": "No repository action may be treated as complete merely because it was requested, dispatched, queued, transported, locally executed, commented on, or observed. Completion requires the declared postcondition and its fresh readback on the exact current subject.",
+  "failure_rule": "Any failed or missing postcondition becomes the next causal work unit. Continue independent eligible work; fail closed where authority, evidence, or executable capability is missing.",
+  "authority_boundary": "This invariant never fabricates human review or authority, weakens branch protection, exposes credentials, or authorizes an external effect that lacks its own authorization.",
+  "done_state": "EFFECT_ACK_DONE"
+}
