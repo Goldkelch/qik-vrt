@@ -63,3 +63,8 @@ Every conforming node MUST also inherit and enforce state/autonomy/QIKVRT_MVP_EX
 ## Unified architecture principle
 
 Every conforming node MUST inherit and expose state/autonomy/QIKVRT_UNIFIED_ARCHITECTURE_PRINCIPLE_V1.md or an Authority-bound byte-identical canonical reference. This binds Haltepunktdefinition, TEMDD, Effect Acknowledgment, Metatransistor and artificial cognition to the same evidence-bounded transition semantics; it does not transfer implementation or effect evidence between those domains.
+
+
+## Binding / Acceptance safety invariant
+
+Every conforming current or future Mesh node MUST inherit and enforce `state/autonomy/BINDING_ACCEPTANCE_SAFETY_INVARIANT_V1.md` or an Authority-bound byte-identical canonical reference. Syntax, byte identity, effect evidence and Acceptance remain distinct validation layers. A hash PASS MUST NOT open an Acceptance gate. Missing inheritance or enforcement is fail-closed and MUST NOT be reported as Mesh conformance.
