@@ -67,7 +67,7 @@ class EntrypointTests(unittest.TestCase):
             (root / "next/AI").write_bytes(entry.START + b"conflict")
             with self.assertRaisesRegex(ValueError, "CONFLICTING"):
                 entry.materialize(root, check=False)
-            self.assertEqual((root / "AI").read_bytes(), originals["AI"])
+            self.assertEqual((root / "AGENTS.md").read_bytes(), originals["AGENTS.md"])
 
     def test_missing_file_is_not_silently_created(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -80,7 +80,7 @@ class EntrypointTests(unittest.TestCase):
 
     def test_relative_links_resolve(self):
         self.assertIn(b"[../ROUNDTRIP.md](../ROUNDTRIP.md)", entry.prefix("next/AI"))
-        self.assertIn(b"[ROUNDTRIP.md](ROUNDTRIP.md)", entry.prefix("AI"))
+        self.assertIn(b"[ROUNDTRIP.md](ROUNDTRIP.md)", entry.prefix("README.md"))
 
 
 class RunnerTests(unittest.TestCase):
