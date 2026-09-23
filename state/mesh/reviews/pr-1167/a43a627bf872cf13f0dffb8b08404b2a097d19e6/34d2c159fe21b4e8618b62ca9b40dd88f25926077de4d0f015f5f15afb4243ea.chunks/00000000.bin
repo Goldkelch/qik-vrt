@@ -1,0 +1,552 @@
+diff --git a/AI_CONTEXT.json b/AI_CONTEXT.json
+index d4903df780ce193c3dd8c967aad234b4fbb3f2dc..434bf7fb460d13c39ccc0290c7203e93b2d68d64 100644
+--- a/AI_CONTEXT.json
++++ b/AI_CONTEXT.json
+@@ -115,6 +115,8 @@
+     "AI_CONTEXT.json",
+     "AI_ADAPTERS.json",
+     "AGENTS.md",
++    "docs/CHARTA_MASCHINENPRUEFBARE_WISSENSCHAFT.md",
++    "policy/QIKVRT_MESH_CHARTER_CONFORMANCE_V1.json",
+     "next/AI",
+     "docs/AI_PERSONAL_WORKING_MEMORY_ORIGIN_AND_ATTRIBUTION.md",
+     "policy/AI_PERSONAL_WORKING_MEMORY_ORIGIN_AND_ATTRIBUTION_V1.json",
+diff --git a/docs/CHARTA_MASCHINENPRUEFBARE_WISSENSCHAFT.md b/docs/CHARTA_MASCHINENPRUEFBARE_WISSENSCHAFT.md
+index d6533d9be451f8ac922ef7c11cbf04900fa3066f..2ea9463aebf98fe6215ed5447b6bfa7c39618db5 100644
+--- a/docs/CHARTA_MASCHINENPRUEFBARE_WISSENSCHAFT.md
++++ b/docs/CHARTA_MASCHINENPRUEFBARE_WISSENSCHAFT.md
+@@ -219,3 +219,40 @@ Die Architektur beschreibt keine biologische Kognition, sondern ein informatisch
+ 
+ **q.e.d.**  
+ **Ingolf Lohmann**
++
++# Mesh-Mitgliedschaft, Charta-Konformität und Rang
++
++## Normative Grundregel
++
++Ein Repository-Node, der als Teil eines QIK-VRT-Mesh geführt werden will, **MUSS** diese Charta als verbindliche Betriebs- und Nachweisregel anerkennen und ihre maschinenprüfbaren Anforderungen im jeweils aktuellen, für den Node maßgeblichen Repository-Zustand erfüllen.
++
++Die Mesh-Mitgliedschaft und der Mesh-Rang sind dabei strikt zu trennen:
++
++1. **Vollständig konformer Node (`PEER`)**  
++   Ein Node ist gegenüber anderen vollständig konformen Nodes gleichrangig, wenn seine Charta-Konformität für den aktuellen Gegenstand frisch und maschinenprüfbar belegt ist.
++
++2. **Nicht oder nicht vollständig konformer Node (`SUBORDINATE`)**  
++   Kann ein bereits registrierter Node die Charta-Anforderungen nicht vollständig belegen oder einhalten, wird er **nicht allein aus diesem Grund unmittelbar aus dem Mesh ausgeschlossen**. Seine Mitgliedschaft bleibt bestehen, sofern keine davon getrennte Suspendierungs- oder Widerrufsentscheidung vorliegt. Er wird jedoch gegenüber vollständig konformen Nodes als **untergeordnetes Mitglied** behandelt.
++
++3. **Folge der Unterordnung**  
++   Ein `SUBORDINATE`-Node darf für Mesh-Governance, Kontrollentscheidungen, Autoritätsableitungen oder Gleichrangigkeitsbehauptungen keine gleichrangige Stellung gegenüber einem `PEER`-Node beanspruchen. Sein Status darf insbesondere nicht verwendet werden, um fehlende Charta-Konformität eines `PEER`-Pfades zu ersetzen, zu überstimmen oder als gleichwertige Evidenz auszugeben.
++
++4. **Keine epistemische Abkürzung**  
++   Der Mesh-Rang entscheidet nicht über die Wahrheit einer wissenschaftlichen Aussage. Wissenschaftliche Aussagen bleiben nach Quelle, Methode, Evidenz und Geltungsbereich zu beurteilen. Der Rang ordnet ausschließlich die repository- und meshbezogene Vertrauens-, Governance- und Weitergabestellung unter dieser Charta.
++
++5. **Reversibilität und Wiederaufstieg**  
++   Unterordnung ist kein dauerhafter Makel. Sobald ein `SUBORDINATE`-Node die Anforderungen für den aktuellen Gegenstand vollständig erfüllt und dies durch eine frische Revalidierung belegt, **MUSS** er wieder den Rang `PEER` erhalten. Vorgänger-Evidenz darf dabei nicht auf einen geänderten Subject-Zustand übertragen werden.
++
++6. **Ausschluss bleibt getrennt**  
++   Suspendierung, Widerruf oder Ausschluss bleiben eigenständige, ausdrücklich zu belegende Zustände. Charta-Nichtkonformität allein **DARF NICHT** automatisch als Ausschluss, Widerruf oder Löschung der Mesh-Mitgliedschaft behandelt werden.
++
++## Maschinenprüfbare Konsequenz
++
++Jede QIK-VRT-Mesh-Registry **MUSS** mindestens die folgenden Zustände getrennt ausweisen:
++
++- Mitgliedschaft bzw. Lifecycle-Status,
++- aktuellen technischen Node-Status,
++- aktuellen Charta-Konformitätsstatus und
++- daraus abgeleiteten Mesh-Rang `PEER` oder `SUBORDINATE`.
++
++Gleichrangigkeit **DARF NUR** aus frischer, subject-gebundener Charta-Konformität folgen. Fehlende, veraltete oder ungültige Konformität **MUSS** fail-closed zu `SUBORDINATE` führen, nicht automatisch zu Ausschluss.
+diff --git a/policy/QIKVRT_CLOUD_TRANSPUTER_V1.json b/policy/QIKVRT_CLOUD_TRANSPUTER_V1.json
+index f140c351215e1500e3faa6cb3bcca7fd94426e06..987e464af0c1797b011429010f29c514f43b292c 100644
+--- a/policy/QIKVRT_CLOUD_TRANSPUTER_V1.json
++++ b/policy/QIKVRT_CLOUD_TRANSPUTER_V1.json
+@@ -1,6 +1,16 @@
+ {
+   "schema": "qik-vrt-cloud-transputer-v1",
+   "architecture": "MC68000",
++  "mesh_membership_conformance": {
++    "charter": "docs/CHARTA_MASCHINENPRUEFBARE_WISSENSCHAFT.md",
++    "policy": "policy/QIKVRT_MESH_CHARTER_CONFORMANCE_V1.json",
++    "full_conformance_rank": "PEER",
++    "nonconformance_rank": "SUBORDINATE",
++    "nonconformance_automatically_revokes_membership": false,
++    "promotion_requires_fresh_revalidation": true,
++    "predecessor_evidence_transfer": false,
++    "scientific_truth_is_not_determined_by_mesh_rank": true
++  },
+   "framework_principle": {
+     "name": "STAY_FAIL_CLOSED_KEEP_FUTURE_OPEN",
+     "statement": "Stay fail closed and keep future open!",
+diff --git a/policy/QIKVRT_MESH_CHARTER_CONFORMANCE_V1.json b/policy/QIKVRT_MESH_CHARTER_CONFORMANCE_V1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..954b78c95f3e017c79b74f07e45d58765cbf4077
+--- /dev/null
++++ b/policy/QIKVRT_MESH_CHARTER_CONFORMANCE_V1.json
+@@ -0,0 +1,31 @@
++{
++  "charter_path": "docs/CHARTA_MASCHINENPRUEFBARE_WISSENSCHAFT.md",
++  "charter_sha256": "442099d0595a0164c4504771979f54516f43a60d85fdd7a49d5a1a6a6ac4bb94",
++  "demotion_rule": "MISSING_STALE_PARTIAL_OR_FAILED_CURRENT_SUBJECT_CONFORMANCE",
++  "membership_and_rank_are_separate": true,
++  "nonconformance_automatically_revokes_membership": false,
++  "nonconformance_default_rank": "SUBORDINATE",
++  "policy_id": "qikvrt-mesh-charter-conformance-v1",
++  "predecessor_evidence_transfer": false,
++  "promotion_rule": "FRESH_CURRENT_SUBJECT_REVALIDATION_TO_FULL_CONFORMANCE",
++  "ranks": {
++    "PEER": {
++      "equal_rank_with": "PEER",
++      "governance_precedence": 2,
++      "requires": "FRESH_CURRENT_SUBJECT_MACHINE_VERIFIABLE_CHARTER_CONFORMANCE"
++    },
++    "SUBORDINATE": {
++      "automatic_exclusion": false,
++      "governance_precedence": 1,
++      "membership_retained": true,
++      "requires": "MISSING_STALE_PARTIAL_OR_FAILED_CHARTER_CONFORMANCE"
++    }
++  },
++  "required_read_order_paths": [
++    "docs/CHARTA_MASCHINENPRUEFBARE_WISSENSCHAFT.md",
++    "policy/QIKVRT_MESH_CHARTER_CONFORMANCE_V1.json"
++  ],
++  "revocation_or_suspension_requires_separate_policy_evidence": true,
++  "schema": "qikvrt_mesh_charter_conformance_v1",
++  "scientific_truth_is_not_determined_by_mesh_rank": true
++}
+diff --git a/registry/NODE_DISCOVERY_POLICY.json b/registry/NODE_DISCOVERY_POLICY.json
+index 0dd4584a2e9ced084d1652f10c90e74915610588..a04ad946016a013b07c10d9523967e124d333fe7 100644
+--- a/registry/NODE_DISCOVERY_POLICY.json
++++ b/registry/NODE_DISCOVERY_POLICY.json
+@@ -2,7 +2,10 @@
+   "qikvrt_event": "OPEN_MULTI_NODE_DISCOVERY_POLICY_4AV1",
+   "fixed_node_count": false,
+   "node_count_prompt": false,
+-  "discovery_scope": ["registry/KNOWN_NODE_REQUESTS.tsv", "registry/node_request_queue/*.tsv"],
++  "discovery_scope": [
++    "registry/KNOWN_NODE_REQUESTS.tsv",
++    "registry/node_request_queue/*.tsv"
++  ],
+   "no_global_scanning": true,
+   "seed_writes_only_to_seed_repository": true,
+   "future_nodes_added_by_queue_rows": true,
+@@ -24,5 +27,16 @@
+     "node_liveness": "EXACT_NODE_RECORDS_OR_NOT_APPLICABLE",
+     "admission_policy": "PREEMPTIVE_HOLD_BEFORE_SECOND_WRITER",
+     "seed_validation": "EXACT_REFLEXIVE_WATCHDOG_CONTRACT_REQUIRED"
++  },
++  "charter_conformance": {
++    "required_for_mesh_rank": true,
++    "policy_path": "policy/QIKVRT_MESH_CHARTER_CONFORMANCE_V1.json",
++    "charter_path": "docs/CHARTA_MASCHINENPRUEFBARE_WISSENSCHAFT.md",
++    "peer_requires": "FRESH_CURRENT_SUBJECT_MACHINE_VERIFIABLE_CHARTER_CONFORMANCE",
++    "nonconformance_rank": "SUBORDINATE",
++    "nonconformance_automatically_revokes_membership": false,
++    "promotion_rule": "FRESH_CURRENT_SUBJECT_REVALIDATION_TO_FULL_CONFORMANCE",
++    "predecessor_evidence_transfer": false,
++    "scientific_truth_is_not_determined_by_mesh_rank": true
+   }
+ }
+diff --git a/tests/test_seed_workflows.py b/tests/test_seed_workflows.py
+index 65851a56f61028ba56e53eab73a82b7eb151100a..614e7d93095c29d36b3a81c20a5a8e6eebb010d1 100644
+--- a/tests/test_seed_workflows.py
++++ b/tests/test_seed_workflows.py
+@@ -15,6 +15,8 @@ from tools import qikvrt_workflow_executor as workflow_executor
+ from tools.qikvrt_seed_common import (
+     FetchedJson,
+     MAX_INPUT_BYTES,
++    MESH_CHARTER_PATH,
++    MESH_CHARTER_POLICY_PATH,
+     SeedError,
+     canonical_json_bytes,
+     load_nodes,
+@@ -82,6 +84,9 @@ def request_document() -> dict[str, object]:
+ 
+ def remote_documents() -> dict[str, dict[str, object]]:
+     prefix = f"https://raw.githubusercontent.com/{SOURCE}/main/qikvrt/runtime/onboarding/"
++    repository_prefix = f"https://raw.githubusercontent.com/{SOURCE}/main/"
++    repository_root = Path(__file__).resolve().parents[1]
++    charter_policy = read_json(repository_root / MESH_CHARTER_POLICY_PATH)
+     boundaries = {
+         "no_global_scanning": True,
+         "no_self_propagation": True,
+@@ -89,6 +94,10 @@ def remote_documents() -> dict[str, dict[str, object]]:
+     }
+     return {
+         REQUEST_URL: request_document(),
++        repository_prefix + "AI_CONTEXT.json": {
++            "required_read_order": charter_policy["required_read_order_paths"],
++        },
++        repository_prefix + MESH_CHARTER_POLICY_PATH: charter_policy,
+         prefix + "NODE_HEALTH.json": {
+             "qikvrt_event": "NODE_HEALTH_HEARTBEAT",
+             "guid": GUID,
+@@ -124,6 +133,14 @@ class SeedWorkflowTests(unittest.TestCase):
+     def setUp(self) -> None:
+         self.temporary = tempfile.TemporaryDirectory()
+         self.root = Path(self.temporary.name)
++        repository_root = Path(__file__).resolve().parents[1]
++        # Copy the charter contract into the synthetic repository because
++        # run_maintenance validates the repository-local policy/charter pair.
++        for relative in (MESH_CHARTER_PATH, MESH_CHARTER_POLICY_PATH):
++            source = repository_root / relative
++            target = self.root / relative
++            target.parent.mkdir(parents=True, exist_ok=True)
++            target.write_bytes(source.read_bytes())
+         (self.root / "registry/node_request_queue").mkdir(parents=True)
+         (self.root / "registry/KNOWN_NODE_REQUESTS.tsv").write_text(
+             "# guid\tsource_repo\tseed_repo\trequest_url\tnode_branch\theartbeat_ttl_minutes\tlifecycle_policy\n"
+@@ -294,7 +311,11 @@ class SeedWorkflowTests(unittest.TestCase):
+         )
+         self.assertEqual("PASS", result["status"])
+         self.assertEqual(1, result["active_count"])
++        self.assertEqual(1, result["peer_count"])
++        self.assertEqual(0, result["subordinate_count"])
+         node = result["nodes"][0]
++        self.assertEqual("PEER", node["mesh_rank"])
++        self.assertEqual("FULL_CONFORMANT", node["charter_conformance_status"])
+         self.assertEqual("FRESH", node["heartbeat_status"])
+         # Claimed expiry is capped by the allowlisted 1500-minute TTL.
+         self.assertEqual("2026-07-21T12:00:00Z", node["effective_expires_utc"])
+@@ -319,6 +340,61 @@ class SeedWorkflowTests(unittest.TestCase):
+         revalidation = run_revalidation(self.root, "revalidate-blocked", now=NOW)
+         self.assertEqual("CONTINUE", revalidation["status"])
+ 
++    def test_charter_nonconformance_demotes_without_revoking_membership_and_can_recover(self) -> None:
++        self.accept()
++        documents = remote_documents()
++        policy_url = (
++            f"https://raw.githubusercontent.com/{SOURCE}/main/"
++            + MESH_CHARTER_POLICY_PATH
++        )
++        del documents[policy_url]
++        subordinate = run_maintenance(
++            self.root,
++            "maint-subordinate",
++            FakeFetcher(documents),
++            now=NOW,
++        )
++        self.assertEqual("PASS", subordinate["status"])
++        self.assertEqual(1, subordinate["active_count"])
++        self.assertEqual(0, subordinate["peer_count"])
++        self.assertEqual(1, subordinate["subordinate_count"])
++        self.assertEqual(0, subordinate["error_count"])
++        node = subordinate["nodes"][0]
++        self.assertEqual("ACCEPTED", node["registry_status"])
++        self.assertEqual("ACTIVE", node["policy_status"])
++        self.assertEqual("ACTIVE", node["effective_status"])
++        self.assertEqual("SUBORDINATE", node["mesh_rank"])
++        self.assertEqual("SUBORDINATE", node["charter_conformance_status"])
++        self.assertTrue(node["charter_conformance_findings"])
++
++        revalidation = run_revalidation(
++            self.root,
++            "revalidate-subordinate",
++            now=NOW,
++        )
++        self.assertEqual("PASS", revalidation["status"])
++        self.assertEqual(0, revalidation["peer_count"])
++        self.assertEqual(1, revalidation["subordinate_count"])
++        self.assertFalse(revalidation["peer_equivalence_available"])
++
++        recovered = run_maintenance(
++            self.root,
++            "maint-recovered",
++            FakeFetcher(remote_documents()),
++            now=NOW,
++        )
++        self.assertEqual(1, recovered["peer_count"])
++        self.assertEqual(0, recovered["subordinate_count"])
++        self.assertEqual("PEER", recovered["nodes"][0]["mesh_rank"])
++
++    def test_local_charter_policy_hash_matches_charter_bytes(self) -> None:
++        repository_root = Path(__file__).resolve().parents[1]
++        policy = read_json(repository_root / MESH_CHARTER_POLICY_PATH)
++        charter_sha256 = hashlib.sha256(
++            (repository_root / MESH_CHARTER_PATH).read_bytes()
++        ).hexdigest()
++        self.assertEqual(charter_sha256, policy["charter_sha256"])
++
+     def test_revalidation_detects_counter_tampering(self) -> None:
+         self.accept()
+         run_maintenance(self.root, "maint-2", FakeFetcher(remote_documents()), now=NOW)
+diff --git a/tools/qikvrt_seed_common.py b/tools/qikvrt_seed_common.py
+index 43643e473b8dc8a1c963a360185246f96f0aaf26..bd6d6daadc4ec3a1da3732b8da7630e30da728be 100644
+--- a/tools/qikvrt_seed_common.py
++++ b/tools/qikvrt_seed_common.py
+@@ -45,6 +45,11 @@ BRANCH_RE = re.compile(r"[A-Za-z0-9._~/-]+\Z")
+ RUN_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+ POLICY_STATES = frozenset({"ACTIVE", "SUSPENDED", "REVOKED"})
+ EFFECTIVE_STATES = frozenset({"ACTIVE", "STALE", "SUSPENDED", "REVOKED", "UNKNOWN"})
++MESH_RANKS = frozenset({"PEER", "SUBORDINATE", "NOT_APPLICABLE"})
++CHARTER_CONFORMANCE_STATES = frozenset({"FULL_CONFORMANT", "SUBORDINATE", "NOT_APPLICABLE"})
++MESH_CHARTER_PATH = "docs/CHARTA_MASCHINENPRUEFBARE_WISSENSCHAFT.md"
++MESH_CHARTER_POLICY_PATH = "policy/QIKVRT_MESH_CHARTER_CONFORMANCE_V1.json"
++MESH_CHARTER_POLICY_SCHEMA = "qikvrt_mesh_charter_conformance_v1"
+ BOUNDARY_KEYS = (
+     "no_global_scanning",
+     "no_self_propagation",
+@@ -687,6 +692,84 @@ def _raw_node_url(node: NodeRecord, filename: str) -> str:
+     )
+ 
+ 
++def _raw_repository_url(node: NodeRecord, path: str) -> str:
++    branch = urllib.parse.quote(node.node_branch, safe="/-._~")
++    relative = path.lstrip("/")
++    if not relative or ".." in relative.split("/"):
++        raise SeedError("invalid repository-relative path")
++    return f"https://raw.githubusercontent.com/{node.source_repository}/{branch}/{relative}"
++
++
++def _load_local_charter_policy(root: Path) -> dict[str, Any]:
++    policy = read_json(root / MESH_CHARTER_POLICY_PATH, "local mesh charter policy")
++    _require_exact(policy, "schema", MESH_CHARTER_POLICY_SCHEMA, "local mesh charter policy")
++    actual_charter_sha256 = hashlib.sha256(
++        _read_bytes_limited(root / MESH_CHARTER_PATH)
++    ).hexdigest()
++    _require_exact(
++        policy,
++        "charter_sha256",
++        actual_charter_sha256,
++        "local mesh charter policy",
++    )
++    _require_exact(
++        policy,
++        "nonconformance_default_rank",
++        "SUBORDINATE",
++        "local mesh charter policy",
++    )
++    _require_exact(
++        policy,
++        "nonconformance_automatically_revokes_membership",
++        False,
++        "local mesh charter policy",
++    )
++    _require_exact(
++        policy,
++        "scientific_truth_is_not_determined_by_mesh_rank",
++        True,
++        "local mesh charter policy",
++    )
++    return policy
++
++
++def _validate_mesh_charter_conformance(
++    policy_document: Mapping[str, Any],
++    ai_context: Mapping[str, Any],
++    expected_policy: Mapping[str, Any],
++    node: NodeRecord,
++) -> None:
++    label = f"mesh charter conformance for {node.guid}"
++    for key in (
++        "schema",
++        "policy_id",
++        "charter_path",
++        "charter_sha256",
++        "required_read_order_paths",
++        "membership_and_rank_are_separate",
++        "ranks",
++        "nonconformance_default_rank",
++        "nonconformance_automatically_revokes_membership",
++        "promotion_rule",
++        "demotion_rule",
++        "predecessor_evidence_transfer",
++        "scientific_truth_is_not_determined_by_mesh_rank",
++        "revocation_or_suspension_requires_separate_policy_evidence",
++    ):
++        if key not in expected_policy:
++            raise SeedError(f"local mesh charter policy is missing {key}")
++        _require_exact(policy_document, key, expected_policy[key], label)
++
++    read_order = ai_context.get("required_read_order")
++    if not isinstance(read_order, list) or not all(
++        isinstance(item, str) and item for item in read_order
++    ):
++        raise SeedError(f"{label}: AI_CONTEXT required_read_order must be a string list")
++    for path in expected_policy["required_read_order_paths"]:
++        if path not in read_order:
++            raise SeedError(f"{label}: required_read_order does not include {path}")
++
++
+ def _validate_health(document: Mapping[str, Any], node: NodeRecord, now: dt.datetime) -> tuple[str, str, str]:
+     label = f"health record for {node.guid}"
+     _require_exact(document, "qikvrt_event", "NODE_HEALTH_HEARTBEAT", label)
+@@ -769,6 +852,7 @@ def run_maintenance(
+     now = now or _utc_now()
+     run_id, utc = _run_metadata(run_id, now)
+     nodes, policies = load_nodes(root, seed_repository)
++    charter_policy = _load_local_charter_policy(root)
+     index_nodes: list[dict[str, Any]] = []
+     status_nodes: list[dict[str, Any]] = []
+     error_count = 0
+@@ -788,10 +872,17 @@ def run_maintenance(
+             "health_sha256": None,
+             "ack_sha256": None,
+             "renewal_sha256": None,
++            "charter_policy_sha256": None,
++            "ai_context_sha256": None,
+         }
+         health_url = _raw_node_url(node, "NODE_HEALTH.json")
+         ack_url = _raw_node_url(node, "SEED_ACCEPTANCE_STATUS.json")
+         renewal_url = _raw_node_url(node, "NODE_REGISTRATION_RENEWAL.json")
++        charter_policy_url = _raw_repository_url(node, MESH_CHARTER_POLICY_PATH)
++        ai_context_url = _raw_repository_url(node, "AI_CONTEXT.json")
++        mesh_rank = "NOT_APPLICABLE"
++        charter_conformance_status = "NOT_APPLICABLE"
++        charter_conformance_findings: list[str] = []
+         if policy.status == "ACTIVE" and registry_status == "ACCEPTED":
+             try:
+                 health = fetch(health_url)
+@@ -815,6 +906,24 @@ def run_maintenance(
+             except SeedError as exc:
+                 errors.append({"source": "renewal", "error": str(exc)})
+ 
++            mesh_rank = "SUBORDINATE"
++            charter_conformance_status = "SUBORDINATE"
++            try:
++                remote_charter_policy = fetch(charter_policy_url)
++                remote_ai_context = fetch(ai_context_url)
++                _validate_mesh_charter_conformance(
++                    remote_charter_policy.value,
++                    remote_ai_context.value,
++                    charter_policy,
++                    node,
++                )
++                mesh_rank = "PEER"
++                charter_conformance_status = "FULL_CONFORMANT"
++                evidence["charter_policy_sha256"] = remote_charter_policy.sha256
++                evidence["ai_context_sha256"] = remote_ai_context.sha256
++            except SeedError as exc:
++                charter_conformance_findings.append(str(exc))
++
+         if policy.status == "SUSPENDED":
+             effective_status = "SUSPENDED"
+         elif policy.status == "REVOKED":
+@@ -834,6 +943,9 @@ def run_maintenance(
+             "registry_status": registry_status,
+             "policy_status": policy.status,
+             "effective_status": effective_status,
++            "mesh_rank": mesh_rank,
++            "charter_conformance_status": charter_conformance_status,
++            "charter_conformance_findings": charter_conformance_findings,
+             "heartbeat_ttl_minutes": node.heartbeat_ttl_minutes,
+             "errors": errors,
+         }
+@@ -846,6 +958,8 @@ def run_maintenance(
+                 "node_health_url": health_url,
+                 "node_ack_url": ack_url,
+                 "node_renewal_url": renewal_url,
++                "charter_policy_url": charter_policy_url,
++                "ai_context_url": ai_context_url,
+                 "remote_evidence": evidence,
+             }
+         )
+@@ -863,8 +977,20 @@ def run_maintenance(
+         )
+ 
+     counts = {state.lower() + "_count": 0 for state in EFFECTIVE_STATES}
++    rank_counts = {
++        "peer_count": 0,
++        "subordinate_count": 0,
++        "rank_not_applicable_count": 0,
++    }
+     for node_status in status_nodes:
+         counts[str(node_status["effective_status"]).lower() + "_count"] += 1
++        rank = str(node_status["mesh_rank"])
++        if rank == "PEER":
++            rank_counts["peer_count"] += 1
++        elif rank == "SUBORDINATE":
++            rank_counts["subordinate_count"] += 1
++        else:
++            rank_counts["rank_not_applicable_count"] += 1
+     operation_status = "PASS" if error_count == 0 else "CONTINUE"
+     base = {
+         "generated_utc": utc,
+@@ -873,6 +999,7 @@ def run_maintenance(
+         "fixed_node_count": False,
+         "node_count": len(status_nodes),
+         **counts,
++        **rank_counts,
+         "error_count": error_count,
+         "status": operation_status,
+     }
+@@ -938,6 +1065,8 @@ def validate_aggregate_pair(root: Path, seed_repository: str = DEFAULT_SEED_REPO
+         _int_field(document, "error_count", label)
+         for state in EFFECTIVE_STATES:
+             _int_field(document, state.lower() + "_count", label)
++        for key in ("peer_count", "subordinate_count", "rank_not_applicable_count"):
++            _int_field(document, key, label)
+     if index["run_id"] != status["run_id"] or index["generated_utc"] != status["generated_utc"]:
+         raise SeedError("mesh index and status were not produced by the same run")
+     index_by_guid: dict[str, Mapping[str, Any]] = {}
+@@ -957,6 +1086,12 @@ def validate_aggregate_pair(root: Path, seed_repository: str = DEFAULT_SEED_REPO
+                 raise SeedError(f"{label}: duplicate node GUID {guid}")
+             if entry.get("effective_status") not in EFFECTIVE_STATES:
+                 raise SeedError(f"{label}: invalid effective status for {guid}")
++            if entry.get("mesh_rank") not in MESH_RANKS:
++                raise SeedError(f"{label}: invalid mesh rank for {guid}")
++            if entry.get("charter_conformance_status") not in CHARTER_CONFORMANCE_STATES:
++                raise SeedError(f"{label}: invalid charter conformance status for {guid}")
++            if not isinstance(entry.get("charter_conformance_findings"), list):
++                raise SeedError(f"{label}: charter conformance findings must be an array for {guid}")
+             if entry.get("policy_status") not in POLICY_STATES:
+                 raise SeedError(f"{label}: invalid policy status for {guid}")
+             if not isinstance(entry.get("errors"), list):
+@@ -967,18 +1102,33 @@ def validate_aggregate_pair(root: Path, seed_repository: str = DEFAULT_SEED_REPO
+     for guid in sorted(status_by_guid):
+         left = index_by_guid[guid]
+         right = status_by_guid[guid]
+-        for key in ("repository", "registry_status", "policy_status", "effective_status"):
++        for key in ("repository", "registry_status", "policy_status", "effective_status", "mesh_rank", "charter_conformance_status"):
+             if left.get(key) != right.get(key):
+                 raise SeedError(f"mesh index/status mismatch for {guid}: {key}")
+     actual_counts = {state.lower() + "_count": 0 for state in EFFECTIVE_STATES}
++    actual_rank_counts = {
++        "peer_count": 0,
++        "subordinate_count": 0,
++        "rank_not_applicable_count": 0,
++    }
+     actual_errors = 0
+     for entry in status_by_guid.values():
+         actual_counts[str(entry["effective_status"]).lower() + "_count"] += 1
++        rank = str(entry["mesh_rank"])
++        if rank == "PEER":
++            actual_rank_counts["peer_count"] += 1
++        elif rank == "SUBORDINATE":
++            actual_rank_counts["subordinate_count"] += 1
++        else:
++            actual_rank_counts["rank_not_applicable_count"] += 1
+         actual_errors += len(entry["errors"])
+     for document, label in ((index, "mesh index"), (status, "mesh status")):
+         for key, expected in actual_counts.items():
+             if document[key] != expected:
+                 raise SeedError(f"{label}: {key} does not match node data")
++        for key, expected in actual_rank_counts.items():
++            if document[key] != expected:
++                raise SeedError(f"{label}: {key} does not match node data")
+         if document["error_count"] != actual_errors:
+             raise SeedError(f"{label}: error_count does not match node data")
+         expected_status = "PASS" if actual_errors == 0 else "CONTINUE"
+@@ -1020,6 +1170,12 @@ def run_revalidation(
+         "node_count": source_status["node_count"],
+         "accepted_count": accepted_count,
+         "active_count": source_status["active_count"],
++        "peer_count": source_status["peer_count"],
++        "subordinate_count": source_status["subordinate_count"],
++        "rank_not_applicable_count": source_status["rank_not_applicable_count"],
++        "peer_equivalence_available": (
++            source_status["peer_count"] > 0 and source_status["subordinate_count"] == 0
++        ),
+         "stale_count": stale,
+         "suspended_count": source_status["suspended_count"],
+         "revoked_count": source_status["revoked_count"],
+@@ -1051,6 +1207,9 @@ def validate_revalidation(root: Path, source_status: Mapping[str, Any], seed_rep
+     for key in (
+         "node_count",
+         "active_count",
++        "peer_count",
++        "subordinate_count",
++        "rank_not_applicable_count",
+         "stale_count",
+         "suspended_count",
+         "revoked_count",
