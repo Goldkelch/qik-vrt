@@ -32,37 +32,53 @@ class TEMDDRuntimeSubjectBindingTests(unittest.TestCase):
         return subprocess.run(["/bin/sh", "-c", script], env=env,
                               capture_output=True, text=True, timeout=5)
 
-    def assert_subject(self, variables, expected):
+    def assert_subject(self, variables, switch=None, value=None):
         result = self.invoke(variables)
         self.assertEqual(result.returncode, 0, result.stderr)
         args = result.stdout.splitlines()
         self.assertIn("/opt/qikvrt/src/qikvrt_temdd_event_ledger.py", args)
-        self.assertEqual(args.count("--pr"), int(expected is not None))
-        if expected is not None:
-            self.assertEqual(args[-2:], ["--pr", expected])
+        self.assertEqual(args.count("--pr"), int(switch == "--pr"))
+        self.assertEqual(args.count("--ref"), int(switch == "--ref"))
+        if switch is not None:
+            self.assertEqual(args[-2:], [switch, value])
 
     def test_unsealed_reference_launch_keeps_compatibility(self):
-        self.assert_subject({}, None)
+        self.assert_subject({})
 
     def test_explicit_pr_is_passed_as_two_arguments(self):
-        self.assert_subject({"QIKVRT_TEMDD_PR": "1124"}, "1124")
+        self.assert_subject({"QIKVRT_TEMDD_PR": "1124"}, "--pr", "1124")
 
-    def test_exact_head_requires_explicit_pr(self):
+    def test_explicit_main_ref_is_passed_as_two_arguments(self):
+        self.assert_subject({"QIKVRT_TEMDD_REF": "main"}, "--ref", "main")
+
+    def test_exact_head_requires_explicit_selector(self):
         result = self.invoke({"QIKVRT_EXACT_HEAD": "a" * 40})
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("QIKVRT_TEMDD_PR", result.stderr)
+        self.assertIn("exact deployment requires", result.stderr)
         self.assertEqual(result.stdout, "")
 
-    def test_exact_tree_requires_explicit_pr(self):
+    def test_exact_tree_requires_explicit_selector(self):
         result = self.invoke({"QIKVRT_EXACT_TREE": "b" * 40})
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("QIKVRT_TEMDD_PR", result.stderr)
+        self.assertIn("exact deployment requires", result.stderr)
         self.assertEqual(result.stdout, "")
 
     def test_exact_subject_uses_configured_pr_not_legacy_default(self):
         self.assert_subject({"QIKVRT_EXACT_HEAD": "a" * 40,
                              "QIKVRT_EXACT_TREE": "b" * 40,
-                             "QIKVRT_TEMDD_PR": "1124"}, "1124")
+                             "QIKVRT_TEMDD_PR": "1124"}, "--pr", "1124")
+
+    def test_exact_main_subject_uses_ref_without_false_pr_identity(self):
+        self.assert_subject({"QIKVRT_EXACT_HEAD": "a" * 40,
+                             "QIKVRT_EXACT_TREE": "b" * 40,
+                             "QIKVRT_TEMDD_REF": "main"}, "--ref", "main")
+
+    def test_conflicting_selectors_fail_closed(self):
+        result = self.invoke({"QIKVRT_TEMDD_PR": "1124",
+                              "QIKVRT_TEMDD_REF": "main"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("choose exactly one", result.stderr)
+        self.assertEqual(result.stdout, "")
 
     def test_invalid_pr_cannot_start_ledger(self):
         for value in ("", "0", "01124", "-1", "1124;echo BAD", " 1124", "1124\n", "abc"):
@@ -70,6 +86,14 @@ class TEMDDRuntimeSubjectBindingTests(unittest.TestCase):
                 result = self.invoke({"QIKVRT_TEMDD_PR": value})
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("QIKVRT_TEMDD_PR", result.stderr)
+                self.assertEqual(result.stdout, "")
+
+    def test_invalid_ref_cannot_start_ledger(self):
+        for value in ("", "master", "refs/heads/main", "main/other", " main", "main\n"):
+            with self.subTest(value=value):
+                result = self.invoke({"QIKVRT_TEMDD_REF": value})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("QIKVRT_TEMDD_REF", result.stderr)
                 self.assertEqual(result.stdout, "")
 
     def test_guard_precedes_runtime_side_effects(self):
