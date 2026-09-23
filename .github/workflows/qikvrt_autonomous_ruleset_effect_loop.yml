@@ -425,7 +425,7 @@ jobs:
           printf '%s\n' "$preflight_rc" > "$root/preflight-exit-code.txt"
 
           observed_state="$(jq -r .state "$root/effect-receipt.json")"
-          if [ "$observed_state" != CURRENT ] && [ "$observed_state" != REQUEST_AUTHORITY ]; then
+          if [ "$observed_state" != CURRENT ] && [ "$observed_state" != REQUEST_AUTHORITY ] && [ "$observed_state" != EXTERNAL_TRANSITION_REQUIRED ]; then
             jq \
               --arg observed "$observed_state" \
               '. + {
@@ -449,14 +449,19 @@ jobs:
           test "$current_head" = "$EXPECTED_HEAD"
           test "$branch_head" = "$EXPECTED_HEAD"
 
-          if [ "$observed_state" = REQUEST_AUTHORITY ]; then
+          if [ "$observed_state" = REQUEST_AUTHORITY ] || [ "$observed_state" = EXTERNAL_TRANSITION_REQUIRED ]; then
             blocker="$(jq -r '.first_blocker // "RULESET_ADMIN_AUTHORITY_REQUIRED"' "$root/effect-receipt.json")"
+            if [ "$observed_state" = EXTERNAL_TRANSITION_REQUIRED ]; then
+              next_action=MATERIALIZE_QIKVRT_RULESET_ADMIN_TOKEN_WITH_ADMINISTRATION_WRITE
+            else
+              next_action=ROUTE_RULESET_ADMIN_AUTHORITY_THROUGH_ACTIVE_PR
+            fi
             python3 -B tools/qikvrt_hold_admissibility.py \
               --pull-request-carrier "#${PR_NUMBER}@${EXPECTED_HEAD}" \
               --branch-carrier "${HEAD_REF}@${EXPECTED_HEAD}" \
-              --continuation-state REQUEST_AUTHORITY \
+              --continuation-state "$observed_state" \
               --first-blocker "$blocker" \
-              --next-action ROUTE_RULESET_ADMIN_AUTHORITY_THROUGH_ACTIVE_PR \
+              --next-action "$next_action" \
               --receipt "$root/hold-admissibility.json" \
               > "$root/hold-admissibility.stdout.json"
             jq -s \
@@ -486,16 +491,24 @@ jobs:
           print(f"mutation={value.get('mutation') or ''}")
           print(f"effect_observed={'true' if value.get('effect_observed') else 'false'}")
           print(f"hold_admissible={'true' if value.get('hold_admissible') else 'false'}")
+          print(f"retry_permitted={'true' if value.get('retry_permitted', True) else 'false'}")
+          print(f"deadlock={'true' if value.get('deadlock') else 'false'}")
           PY
 
       - name: Publish and read back exact repository continuation
-        if: steps.select.outputs.state == 'CANDIDATE' && steps.reconcile.outputs.state == 'REQUEST_AUTHORITY'
+        if: >-
+          steps.select.outputs.state == 'CANDIDATE' &&
+          (steps.reconcile.outputs.state == 'REQUEST_AUTHORITY' ||
+           steps.reconcile.outputs.state == 'EXTERNAL_TRANSITION_REQUIRED')
         env:
           PR_NUMBER: ${{ steps.select.outputs.pr }}
           EXPECTED_HEAD: ${{ steps.select.outputs.head }}
           HEAD_REF: ${{ steps.select.outputs.head_ref }}
           EXPECTED_MAIN: ${{ steps.select.outputs.main }}
           BLOCKER: ${{ steps.reconcile.outputs.blocker }}
+          CONTINUATION_STATE: ${{ steps.reconcile.outputs.state }}
+          RETRY_PERMITTED: ${{ steps.reconcile.outputs.retry_permitted }}
+          DEADLOCK: ${{ steps.reconcile.outputs.deadlock }}
         shell: bash
         run: |
           set -euo pipefail
@@ -509,18 +522,21 @@ jobs:
           test "$(gh api "repos/${REPOSITORY}/git/ref/heads/${HEAD_REF}" --jq .object.sha)" = "$EXPECTED_HEAD"
 
           detail="${BLOCKER:-RULESET_ADMIN_AUTHORITY_REQUIRED}"
+          next_action="$(jq -r '.next_action // "ROUTE_RULESET_ADMIN_AUTHORITY_THROUGH_ACTIVE_PR"' "$root/continuation-receipt.json")"
           fingerprint="$(printf '%s\0%s\0%s\0%s\0%s' \
             "$REPOSITORY" "$PR_NUMBER" "$EXPECTED_HEAD" "$EXPECTED_MAIN" "$detail" \
             | sha256sum | cut -d' ' -f1)"
           marker="<!-- qikvrt-ruleset-authority:${fingerprint} -->"
           body="${marker}
-          REQUEST_AUTHORITY is a nonterminal repository continuation.
+          ${CONTINUATION_STATE} is a nonterminal repository continuation.
 
           Exact subject: #${PR_NUMBER}@${EXPECTED_HEAD}
           Exact work branch: ${HEAD_REF}@${EXPECTED_HEAD}
           Exact trusted Main: ${EXPECTED_MAIN}
           First blocker: ${detail}
-          Next action: route the ruleset-administration effect through this active PR/branch and reobserve the same exact subject.
+          Retry permitted without a material authority change: ${RETRY_PERMITTED}
+          Deadlock: ${DEADLOCK}
+          Next action: ${next_action}
 
           HOLD_ADMISSIBLE=false because an open pull request and its work branch are authoritative active carriers. This comment is a deduplicated issue_comment control event; it is not approval, merge, publication, PASS, FINAL_PASS, empirical confirmation, or EFFECT_ACK_DONE."
 
@@ -545,7 +561,7 @@ jobs:
           gh api --method POST "repos/${REPOSITORY}/statuses/${EXPECTED_HEAD}" \
             -f state=pending \
             -f context="$EFFECT_STATUS_CONTEXT" \
-            -f description="REQUEST_AUTHORITY; active PR/branch; HOLD inadmissible" \
+            -f description="${CONTINUATION_STATE}; retry=${RETRY_PERMITTED}; HOLD inadmissible" \
             -f target_url="${GITHUB_SERVER_URL}/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
           test "$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)" = "$EXPECTED_HEAD"
@@ -560,9 +576,14 @@ jobs:
             --arg head_ref "$HEAD_REF" \
             --arg main "$EXPECTED_MAIN" \
             --arg blocker "$detail" \
+            --arg state "$CONTINUATION_STATE" \
+            --argjson retry_permitted "$RETRY_PERMITTED" \
+            --argjson deadlock "$DEADLOCK" \
             '{
               schema: "qikvrt_ruleset_authority_continuation_readback_v1",
-              state: "REQUEST_AUTHORITY",
+              state: $state,
+              retry_permitted: $retry_permitted,
+              deadlock: $deadlock,
               hold_admissible: false,
               pr_number: ($pr | tonumber),
               head_sha: $head,

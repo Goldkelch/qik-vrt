@@ -8,7 +8,7 @@
     "ruleset_name": "QIK-VRT main protection",
     "target_ref": "refs/heads/main"
   },
-  "observed_blocker": "CODE_OWNER_RULE_NOT_ENFORCED",
+  "observed_blocker": "RULESET_ADMIN_AUTHORITY_NOT_INJECTED",
   "observed_drift": {
     "required_approving_review_count": 0,
     "require_code_owner_review": false,
@@ -44,7 +44,8 @@
     "review_status_separation": false,
     "charter_bytes_mutation": false,
     "postmerge_evidence_mutation": false,
-    "predecessor_evidence_transfer": false
+    "predecessor_evidence_transfer": false,
+    "deadlock_escape_semantics": true
   },
   "effect_path": {
     "reconciler": "tools/qikvrt_ruleset_reconcile.py",
@@ -52,6 +53,27 @@
     "readback_required": true,
     "effect_ack_done_claimed": false
   },
-  "state": "REQUEST_AUTHORITY",
-  "next_action": "RECONCILE_RULESET_19344903_AND_REOBSERVE_EXACT_STATE"
+  "state": "EXTERNAL_TRANSITION_REQUIRED",
+  "next_action": "MATERIALIZE_QIKVRT_RULESET_ADMIN_TOKEN_WITH_ADMINISTRATION_WRITE",
+  "runtime_evidence": {
+    "writer_run_id": 35868717813,
+    "attempts_observed": [
+      1,
+      2
+    ],
+    "first_failing_step": "Select exact ruleset-repair subject and active carriers",
+    "gh_token_runtime": "EMPTY",
+    "first_executable_failure": "gh api repos/Goldkelch/qik-vrt/commits/main -> exit 4",
+    "ruleset_put_attempted": false
+  },
+  "deadlock_policy": {
+    "predicate": "STABLE_AND_NOT_DONE_AND_NO_INTERNAL_PROGRESS",
+    "state": "EXTERNAL_TRANSITION_REQUIRED",
+    "retry_permitted_without_material_change": false,
+    "required_external_effect": {
+      "credential": "QIKVRT_RULESET_ADMIN_TOKEN",
+      "minimum_permission": "Administration: write"
+    },
+    "wake_condition": "QIKVRT_RULESET_ADMIN_TOKEN_AVAILABLE_AND_AUTHORIZED"
+  }
 }

@@ -37,6 +37,18 @@ class HoldAdmissibilityTests(unittest.TestCase):
         self.assertFalse(result["hold_admissible"])
         self.assertEqual(result["carrier_count"], 1)
 
+    def test_external_transition_required_is_nonterminal_and_not_hold(self):
+        result = admissibility.classify(
+            pull_request_carriers=["#1173@24c4a886"],
+            branch_carriers=["repair/governance@24c4a886"],
+            continuation_state="EXTERNAL_TRANSITION_REQUIRED",
+            first_blocker="QIKVRT_RULESET_ADMIN_TOKEN_UNAVAILABLE",
+            next_action="MATERIALIZE_QIKVRT_RULESET_ADMIN_TOKEN_WITH_ADMINISTRATION_WRITE",
+        )
+        self.assertEqual(result["state"], "EXTERNAL_TRANSITION_REQUIRED")
+        self.assertFalse(result["hold_admissible"])
+        self.assertEqual(result["carrier_count"], 2)
+
     def test_work_branch_forces_successor(self):
         result = admissibility.classify(
             branch_carriers=["repair/ruleset@2284b9ea"],
