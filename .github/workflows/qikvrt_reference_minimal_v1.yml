@@ -81,6 +81,108 @@ jobs:
           QIKVRT_REFERENCE_WORK: ${{ runner.temp }}/qikvrt-ref-b
           QIKVRT_REFERENCE_OUT: ${{ runner.temp }}/qikvrt-ref-b-out
         run: sudo -E ./distribution/qikvrt-reference-minimal/build.sh
+      - name: Diagnose rebuild byte drift without weakening gate
+        run: |
+          set -euo pipefail
+          a='${{ runner.temp }}/qikvrt-ref-a-out/qikvrt-reference-linux-amd64.iso'
+          b='${{ runner.temp }}/qikvrt-ref-b-out/qikvrt-reference-linux-amd64.iso'
+          echo 'QIKVRT_REPRO_DIAGNOSTIC_BEGIN'
+          sha256sum "$a" "$b"
+          echo 'FIRST_DIFFERING_BYTES'
+          cmp -l "$a" "$b" | head -n 32 || true
+
+          iso_a='${{ runner.temp }}/qikvrt-iso-a'
+          iso_b='${{ runner.temp }}/qikvrt-iso-b'
+          rm -rf "$iso_a" "$iso_b"
+          mkdir -p "$iso_a" "$iso_b"
+          xorriso -osirrox on -indev "$a" -extract / "$iso_a" >/tmp/qikvrt-xorriso-a.log 2>&1
+          xorriso -osirrox on -indev "$b" -extract / "$iso_b" >/tmp/qikvrt-xorriso-b.log 2>&1
+
+          python3 - "$iso_a" "$iso_b" <<'PY'
+          import hashlib
+          import os
+          import pathlib
+          import sys
+
+          roots = [pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])]
+
+          def digest(path):
+              h = hashlib.sha256()
+              with path.open("rb") as stream:
+                  for block in iter(lambda: stream.read(1024 * 1024), b""):
+                      h.update(block)
+              return h.hexdigest()
+
+          def snapshot(root):
+              result = {}
+              for path in sorted(root.rglob("*")):
+                  rel = path.relative_to(root).as_posix()
+                  if path.is_symlink():
+                      result[rel] = ("symlink", os.readlink(path))
+                  elif path.is_file():
+                      st = path.stat()
+                      result[rel] = ("file", st.st_size, digest(path))
+              return result
+
+          a, b = map(snapshot, roots)
+          diffs = []
+          for rel in sorted(set(a) | set(b)):
+              if a.get(rel) != b.get(rel):
+                  diffs.append((rel, a.get(rel), b.get(rel)))
+          print(f"ISO_PATH_DIFF_COUNT={len(diffs)}")
+          for rel, av, bv in diffs[:80]:
+              print(f"ISO_PATH_DIFF path={rel} a={av} b={bv}")
+          PY
+
+          sq_a="$iso_a/live/filesystem.squashfs"
+          sq_b="$iso_b/live/filesystem.squashfs"
+          if [ -f "$sq_a" ] && [ -f "$sq_b" ] && ! cmp -s "$sq_a" "$sq_b"; then
+            root_a='${{ runner.temp }}/qikvrt-squash-a'
+            root_b='${{ runner.temp }}/qikvrt-squash-b'
+            rm -rf "$root_a" "$root_b"
+            unsquashfs -quiet -d "$root_a" "$sq_a"
+            unsquashfs -quiet -d "$root_b" "$sq_b"
+            python3 - "$root_a" "$root_b" <<'PY'
+          import hashlib
+          import os
+          import pathlib
+          import stat
+          import sys
+
+          roots = [pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])]
+
+          def digest(path):
+              h = hashlib.sha256()
+              with path.open("rb") as stream:
+                  for block in iter(lambda: stream.read(1024 * 1024), b""):
+                      h.update(block)
+              return h.hexdigest()
+
+          def snapshot(root):
+              result = {}
+              for path in sorted(root.rglob("*")):
+                  rel = path.relative_to(root).as_posix()
+                  st = path.lstat()
+                  meta = (stat.S_IMODE(st.st_mode), int(st.st_mtime))
+                  if path.is_symlink():
+                      result[rel] = ("symlink", meta, os.readlink(path))
+                  elif path.is_file():
+                      result[rel] = ("file", meta, st.st_size, digest(path))
+                  elif path.is_dir():
+                      result[rel] = ("dir", meta)
+              return result
+
+          a, b = map(snapshot, roots)
+          diffs = []
+          for rel in sorted(set(a) | set(b)):
+              if a.get(rel) != b.get(rel):
+                  diffs.append((rel, a.get(rel), b.get(rel)))
+          print(f"SQUASHFS_PATH_DIFF_COUNT={len(diffs)}")
+          for rel, av, bv in diffs[:120]:
+              print(f"SQUASHFS_PATH_DIFF path={rel} a={av} b={bv}")
+          PY
+          fi
+          echo 'QIKVRT_REPRO_DIAGNOSTIC_END'
       - name: Verify deterministic rebuild and bind accepted candidate bytes
         run: |
           set -euo pipefail
