@@ -1,0 +1,78 @@
+{
+  "schema": "qikvrt_information_carrier_effect_verification_v1",
+  "id": "qikvrt-information-carrier-effect-verification-v1",
+  "version": "1.0.0",
+  "status": "PROPOSED_REVIEW_CARRIER",
+  "author": "Ingolf Lohmann",
+  "applies_to": [
+    "Goldkelch/qik-vrt",
+    "ingolf-lohmann/qik-vrt",
+    "QIK-VRT Mesh nodes inheriting the canonical policy set"
+  ],
+  "canonical_document": "docs/research/2026-09-24-information-singularity-effect-verification.md",
+  "formal_boundary": {
+    "proof_kernel": "Lean kernel",
+    "project_orchestration": "Lake",
+    "judgement": "Gamma |- p",
+    "rule": "FORMAL_DERIVABILITY != EMPIRICAL_CONFIRMATION"
+  },
+  "representation_boundary": {
+    "abstraction": "BIDIRECTIONAL_REPRESENTATION_BOTTLENECK",
+    "chain": [
+      "STATE",
+      "ENCODE_SERIALIZE",
+      "CANONICAL_CARRIER",
+      "DECODE_DESERIALIZE",
+      "SUCCESSOR_STATE"
+    ],
+    "roundtrip_contract": "decode(encode(s)) ~= s under an explicitly declared equivalence relation",
+    "equivalence_relation_must_be_explicit": true
+  },
+  "effect_boundary": {
+    "invariant": "TRANSPORT_ACK != EFFECT_ACK != EFFECT_ACK_DONE",
+    "runtime_chain": [
+      "TEST",
+      "OBSERVE",
+      "READBACK",
+      "ACCEPT",
+      "EFFECT_ACK_DONE"
+    ],
+    "exact_subject_required": true,
+    "fresh_readback_required": true,
+    "predecessor_evidence_transfer": false
+  },
+  "physical_constraints": [
+    "BANDWIDTH",
+    "LATENCY",
+    "NOISE",
+    "ENERGY",
+    "ERROR_PROBABILITY",
+    "QUANTIZATION",
+    "CLOCKING",
+    "MEASUREMENT_UNCERTAINTY"
+  ],
+  "mandatory_distinctions": [
+    "BYTES != MEANING",
+    "SEQUENCE != CAUSALITY",
+    "TRANSPORT_ACK != EFFECT_ACK",
+    "COMMAND != OBSERVED_EFFECT",
+    "OBSERVATION != TRUTH",
+    "FORMAL_DERIVABILITY != EMPIRICAL_CONFIRMATION",
+    "REPOSITORY_PERSISTENCE != PUBLICATION",
+    "PUBLICATION != PEER_REVIEW",
+    "EFFECT_ACK != EFFECT_ACK_DONE"
+  ],
+  "scientific_boundaries": {
+    "cosmological_singularity_is_metaphor": true,
+    "planck_boundary_is_architectural_metaphor": true,
+    "general_halting_problem_solved": false,
+    "black_hole_mechanism_claimed": false,
+    "novelty_or_priority_established": false
+  },
+  "failure_semantics": {
+    "missing_required_evidence": "HOLD",
+    "stale_or_unbound_observation": "REOBSERVE",
+    "failed_effect": "EFFECT_NACK",
+    "unsafe_or_unresolvable_state": "BLOCK_OR_ISOLATE"
+  }
+}
