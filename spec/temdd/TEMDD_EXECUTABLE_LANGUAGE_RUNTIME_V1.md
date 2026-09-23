@@ -69,6 +69,122 @@ EFFECT_ACK_DONE
 
 `EFFECT_ACK_DONE` ist damit kein Erfolgscode eines Einzelschritts, sondern der evidenzgebundene Haltepunkt der vollständigen Ausführung.
 
+## Atomare Effect-Akzeptanz und evidenzgebundene Haltebedingung
+
+TEMDD behandelt den Abschluss nicht als Liste unabhängig erreichbarer Erfolgsmarker,
+sondern als **eine Akzeptanzentscheidung über genau einen gebundenen tatsächlichen
+Folgezustand**. `atomic` bezeichnet hier die Unteilbarkeit des
+Akzeptanzurteils; es behauptet **keine** CPU-, Speicher-, Datenbank- oder
+ACID-Atomarität der zugrunde liegenden Ausführung.
+
+Sei `Σ` der Zustandsraum und
+
+```text
+s_n --EXECUTE(input_n)--> s_(n+1)^actual
+```
+
+der tatsächlich eingetretene Folgezustand. Danach wird nicht die Intention,
+sondern dieser tatsächliche Successor gebunden:
+
+```text
+b_(n+1) := BIND(
+    s_(n+1)^actual,
+    subject_identity,
+    provenance,
+    artifact_identity,
+    execution_identity
+)
+```
+
+Die Akzeptanzevidenz wird erst nach dem Effekt und gegen denselben gebundenen
+Successor erzeugt:
+
+```text
+e_(n+1) := READBACK_fresh,independent(b_(n+1))
+```
+
+`fresh` bedeutet: nach dem zu prüfenden Effekt erhoben und gegen dessen
+Identität/Version gebunden. `independent` bedeutet mindestens, dass die
+Akzeptanz nicht allein aus dem Erfolgsrückgabewert des Executors abgeleitet
+wird; die konkrete Unabhängigkeitsklasse des Beobachtungspfads muss
+dokumentierbar sein.
+
+Für einen expliziten Acceptance-Scope `C_scope` gilt:
+
+```text
+ACCEPTED(b, e, C_scope)
+    := ∧ { p(b, e) | p ∈ C_scope }
+
+EFFECT_ACK_DONE(b, e, C_scope)
+    := ACCEPTED(b, e, C_scope)
+
+HALT_TEMDD
+    ⇔ EFFECT_ACK_DONE(b_(n+1), e_(n+1), C_scope)
+```
+
+Damit gilt insbesondere:
+
+```text
+EXECUTION_OCCURRED        ≠ EFFECT_ACK_DONE
+TESTS_PASSED              ≠ EFFECT_ACK_DONE
+WORKFLOW_SUCCESS          ≠ EFFECT_ACK_DONE
+ARTIFACT_CREATED          ≠ EFFECT_ACK_DONE
+PUBLICATION_ATTEMPTED     ≠ EFFECT_ACK_DONE
+PREDECESSOR_EVIDENCE      ≠ EFFECT_ACK_DONE
+```
+
+Die Konjunktion wird semantisch als **ein Urteil** ausgewertet. Technisch dürfen
+die einzelnen Evidenzträger aus mehreren Messungen oder Systemen stammen; sie
+müssen jedoch auf denselben gebundenen Successor referenzieren und zu einem
+frischen, konsistenten Acceptance-Snapshot zusammengeführt werden. Ein
+Teilprädikat darf den terminalen Zustand nicht stellvertretend behaupten.
+
+Ein öffentlicher Artefakt-Readback ist **scope-abhängig**, nicht für jede
+Berechnung universell:
+
+```text
+C_scope.requires_public_artifact
+    ⇒ PUBLIC_ARTIFACT_READBACK ∈ C_scope
+```
+
+Ist die Akzeptanzkonjunktion falsch, entsteht kein synthetischer Endzustand.
+Ein identifizierbarer Folgezustand wird nach erneuter Identitäts- und
+Provenienzbindung zum nächsten Subject; ist er nicht sicher bindbar, ist
+fail-closed zu blockieren oder zu isolieren:
+
+```text
+if EFFECT_ACK_DONE == false:
+    if BINDABLE(s_(n+1)^actual):
+        subject := BIND(s_(n+1)^actual)
+        CONTINUE
+    else:
+        BLOCK_OR_ISOLATE
+```
+
+Liveness bleibt davon getrennt: Diese Semantik garantiert nicht, dass für jedes
+Programm oder jede Umgebung irgendwann `EFFECT_ACK_DONE` erreicht wird. Sie
+löst insbesondere **nicht** das Halteproblem für beliebige Programme; sie
+definiert eine domänenspezifische Akzeptanz- und Freigabesemantik.
+
+### Fachliche Einordnung
+
+Die Bausteine besitzen klare Vorläufer: Postconditions und Programmkorrektheit
+in der Hoare-Logik (Hoare 1969, DOI `10.1145/363235.363259`), atomare
+Wirkungspunkte für nebenläufige Objekte in der Linearizierbarkeit (Herlihy &
+Wing 1990, DOI `10.1145/78969.78972`), End-to-End-Prüfung statt bloßer
+Schichtbestätigung (Saltzer, Reed & Clark 1984, DOI
+`10.1145/357401.357402`), dynamische Trace-Prüfung in Runtime Verification
+(Leucker & Schallhart 2009, DOI `10.1016/j.jlap.2008.08.004`) sowie die
+TOCTOU-Problematik (MITRE CWE-367).
+
+Der TEMDD-Forschungsgegenstand ist die konkrete Komposition aus
+Exact-Successor-Bindung, provenance-gebundener Evidenz, frischem
+nicht-selbstbestätigendem Readback und einem unteilbaren
+Effect-Acceptance-Urteil als Laufzeit-Freigabesemantik. Ob und in welchem Umfang
+diese **Komposition** wissenschaftlich neu oder prioritätsbegründend ist, ist
+durch Repository- oder Zenodo-Persistenz allein nicht bewiesen und erfordert
+eine systematische Prior-Art-Prüfung sowie unabhängige fachliche Begutachtung.
+
 ## Entwicklungs- und Laufzeitrollen
 
 - **Compiler:** übersetzt TEMDD-Modelle und -Programme in eine ausführbare oder weiter bindbare Repräsentation.
