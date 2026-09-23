@@ -18,6 +18,14 @@ START_URL="${QIKVRT_START_URL:-about:blank}"
 # A deployed subject is either one positive PR number or the exact main ref.
 # Unsealed standalone/reference launches retain their existing compatibility.
 set --
+if [ "${QIKVRT_TEMDD_PR+x}" = x ] && [ -z "${QIKVRT_TEMDD_PR}" ]; then
+  echo "BLOCK: QIKVRT_TEMDD_PR must be a positive canonical PR number" >&2
+  exit 64
+fi
+if [ "${QIKVRT_TEMDD_REF+x}" = x ] && [ -z "${QIKVRT_TEMDD_REF}" ]; then
+  echo "BLOCK: QIKVRT_TEMDD_REF must be main" >&2
+  exit 64
+fi
 if [ -n "${QIKVRT_TEMDD_PR:-}" ] && [ -n "${QIKVRT_TEMDD_REF:-}" ]; then
   echo "BLOCK: choose exactly one TEMDD subject selector" >&2
   exit 64
