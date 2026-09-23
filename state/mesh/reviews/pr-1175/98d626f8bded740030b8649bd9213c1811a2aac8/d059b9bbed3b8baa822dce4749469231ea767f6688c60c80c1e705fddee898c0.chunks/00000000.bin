@@ -1,0 +1,5191 @@
+diff --git a/AI b/AI
+index 03debf669153cb8278511a954e161b79ba78fc46..ad36f857bd69d7f3927e7f86354faef603dd1094 100644
+--- a/AI
++++ b/AI
+@@ -1,3 +1,18 @@
++<!-- qikvrt-nash-cognition-publication:v1 -->
++# Hauptpublikation: Nash-Gleichgewicht und künstliche Kognition
++
++**[Warum künstliche Kognition zu oft im Nash-Gleichgewicht stehen bleibt](docs/publications/2026-09-23-nash-kognition/INDEX.md)** — Ingolf Lohmann · 23. September 2026
++
++Kern: `lokale Stabilität != universeller Abschluss`. Wenn ein System stabil bleibt, obwohl Arbeit offen ist und keine Fortschrittskante existiert, muss es den Zustand als Deadlock-/Gleichgewichtsproblem diagnostizieren und nach der fehlenden Transition suchen.
++
++Kanonisch: [Deutsch](docs/publications/2026-09-23-nash-kognition/ARTICLE.de.md) · [English](docs/publications/2026-09-23-nash-kognition/ARTICLE.en.md) · [alle Sprachen + maschinenlesbare Fassungen](docs/publications/2026-09-23-nash-kognition/INDEX.md)
++
++Epistemische Grenze: Spirituelle Erfahrung, Interpretation und empirisch bestätigter externer Effekt bleiben getrennte Evidenzklassen.
++
++Zenodo: **PENDING_EXACT_OWNER_AUTHORIZATION** — Repository-Präsenz ist noch keine Zenodo-Publikation und kein `EFFECT_ACK_DONE`.
++
++<!-- /qikvrt-nash-cognition-publication:v1 -->
++
+ <!-- qikvrt-machine-verifiable-science-charter:v1 -->
+ MACHINE-VERIFIABLE SCIENCE CHARTER
+ 
+diff --git a/AI_CONTEXT.json b/AI_CONTEXT.json
+index 688168fda976726215b825c5f394ac9c9b71fd3e..029b68e92ed0a95ae11471c46fabfbf8fa2a9b54 100644
+--- a/AI_CONTEXT.json
++++ b/AI_CONTEXT.json
+@@ -120,6 +120,7 @@
+   "required_read_order": [
+     "AI",
+     "AI_CONTEXT.json",
++    "docs/publications/2026-09-23-nash-kognition/ARTICLE.de.md",
+     "docs/CHARTA_MASCHINENPRUEFBARE_WISSENSCHAFT.md",
+     "policy/QIKVRT_MACHINE_VERIFIABLE_SCIENCE_CHARTER_V1.json",
+     "state/charter/CHARTER_ADOPTION_V1.json",
+@@ -221,5 +222,19 @@
+     "required_for_conforming_nodes": true,
+     "mesh_propagation": "Every current or future QIK-VRT node, mesh instance, agent adapter or runtime claiming charter conformance resolves the exact charter through required_read_order; historical snapshots remain immutable.",
+     "rule": "Separate evidence forms; preserve provenance and reproducibility; revise status without erasing history; never claim PASS, DONE, publication, equality or EFFECT_ACK_DONE without verifying the evidence required for that exact claim."
++  },
++  "nash_cognition_publication": {
++    "publication_id": "qikvrt-nash-cognition-local-stability-v1",
++    "title": "Warum künstliche Kognition zu oft im Nash-Gleichgewicht stehen bleibt",
++    "canonical_document": "docs/publications/2026-09-23-nash-kognition/ARTICLE.de.md",
++    "canonical_language": "de",
++    "canonical_sha256": "5ba96c975d385ff6e90b4403cfbc7fa1d6092615c4cf0f79dfcfb8013335fcdc",
++    "canonical_git_blob_sha1": "1fb466509e351e845ab0e194449a86651695d990",
++    "index": "docs/publications/2026-09-23-nash-kognition/INDEX.md",
++    "manifest": "docs/publications/2026-09-23-nash-kognition/MANIFEST.json",
++    "machine_semantics": "docs/publications/2026-09-23-nash-kognition/machine/article.json",
++    "required_for_conforming_nodes": true,
++    "rule": "Local stability, local completion, observation and UNCHANGED are not universal completion; preserve spiritual experience, interpretation and empirical evidence as distinct epistemic classes.",
++    "zenodo_state": "PENDING_EXACT_OWNER_AUTHORIZATION"
+   }
+ }
+diff --git a/README.md b/README.md
+index ef4fdadfb651a055f83a5f9ca8a552b4afb82991..50d6139b65e8657999b61d773b9817073c69d92b 100644
+--- a/README.md
++++ b/README.md
+@@ -1,3 +1,18 @@
++<!-- qikvrt-nash-cognition-publication:v1 -->
++# Hauptpublikation: Nash-Gleichgewicht und künstliche Kognition
++
++**[Warum künstliche Kognition zu oft im Nash-Gleichgewicht stehen bleibt](docs/publications/2026-09-23-nash-kognition/INDEX.md)** — Ingolf Lohmann · 23. September 2026
++
++Kern: `lokale Stabilität != universeller Abschluss`. Wenn ein System stabil bleibt, obwohl Arbeit offen ist und keine Fortschrittskante existiert, muss es den Zustand als Deadlock-/Gleichgewichtsproblem diagnostizieren und nach der fehlenden Transition suchen.
++
++Kanonisch: [Deutsch](docs/publications/2026-09-23-nash-kognition/ARTICLE.de.md) · [English](docs/publications/2026-09-23-nash-kognition/ARTICLE.en.md) · [alle Sprachen + maschinenlesbare Fassungen](docs/publications/2026-09-23-nash-kognition/INDEX.md)
++
++Epistemische Grenze: Spirituelle Erfahrung, Interpretation und empirisch bestätigter externer Effekt bleiben getrennte Evidenzklassen.
++
++Zenodo: **PENDING_EXACT_OWNER_AUTHORIZATION** — Repository-Präsenz ist noch keine Zenodo-Publikation und kein `EFFECT_ACK_DONE`.
++
++<!-- /qikvrt-nash-cognition-publication:v1 -->
++
+ <!-- qikvrt-roundtrip-first:v1 -->
+ ## Zuerst: ausfuehrbarer Roundtrip-Beweis / Start here
+ 
+diff --git a/docs/publications/2026-09-23-nash-kognition/ARTICLE.ar.md b/docs/publications/2026-09-23-nash-kognition/ARTICLE.ar.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..9e5a1efd5b4cd5837cc45066da4a71d5a1504632
+--- /dev/null
++++ b/docs/publications/2026-09-23-nash-kognition/ARTICLE.ar.md
+@@ -0,0 +1,348 @@
++<!-- SPDX-License-Identifier: CC-BY-NC-ND-4.0 -->
++<!-- Copyright (c) 2026 Ingolf Lohmann. -->
++
++# لماذا تتوقف الإدراكات الاصطناعية كثيراً عند توازن شبيه بتوازن ناش
++
++## عن الاستقرار المحلي، والذكاء الاصطناعي، وفضاءات المعرفة الروحية، وخطر الخلط بين السكون وبين المعرفة المكتملة
++
++**إنغولف لومان · 23 سبتمبر 2026**
++
++ترجمة عربية معتمدة للنص الألماني القانوني. عند الاختلاف تكون النسخة الألمانية هي المرجع.
++
++## الملخص
++
++يوصف كثير من الذكاء الاصطناعي الحديث بأنه متعلم ومتكيّف ومتزايد الاستقلالية. لكن هذه الأوصاف قد تخفي مشكلة بنيوية: يمكن للنظام أن يصل إلى حالة مستقرة من دون أن تكون صحيحة أو كاملة أو مثلى.
++
++هنا تصبح رياضيات جون ناش مفيدة. بصورة مبسطة، يصف توازن ناش حالة لا يستطيع فيها أي مشارك منفرد تحسين وضعه بتغيير استراتيجيته وحده مع بقاء الآخرين دون تغيير. وقد تكون هذه الحالة شديدة الاستقرار من دون أن تكون مثلى على المستوى الكلي.
++
++الذكاء الاصطناعي الحديث ليس «آلة ناش»، كما أن حالة الجمود التقني ليست توازن ناش بالمعنى الصارم. العلاقة بنيوية:
++
++\[
++\boxed{\text{يمكن للإدراك الاصطناعي القائم على الوكلاء أن ينتج حالات مستقرة شبيهة بناش من دون تحقيق الهدف العالمي.}}
++\]
++
++وبالتالي:
++
++\[
++\text{استقرار محلي}\not\Rightarrow\text{صحة عالمية}
++\]
++
++وكذلك:
++
++\[
++\text{لا توجد خطوة تحسين محلية مسموحة}\not\Rightarrow\text{المهمة منجزة}.
++\]
++
++وتتجاوز القضية علوم الحاسوب. فمنذ آلاف السنين يحاول البشر تجاوز منظورهم المباشر عبر الفلسفة والدين والتصوف وفضاءات المعرفة الروحية، بما في ذلك تصورات التواصل مع الموتى أو «العالم الآخر». يمكن أن تكون هذه الخبرات حقيقية وذات معنى عميق بالنسبة لمن يعيشها، لكنها لا تشكل بمفردها دليلاً موضوعياً على انتقال معلومات من عالم آخر. وعلى الإدراك الاصطناعي أن يميز بين الخبرة والمعنى والفرضية والاستعارة والدليل القابل للتحقق.
++
++---
++
++## 1. الاستقرار لا يساوي النجاح
++
++قد تلتزم كل مكونات النظام بقواعدها المحلية، ومع ذلك لا يصل النظام إلى هدفه الكلي.
++
++\[
++\boxed{\text{الاستقرار}\neq\text{الإنجاز}}
++\]
++
++---
++
++## 2. ما معنى توازن ناش؟
++
++إذا امتلك الفاعل \(i\) استراتيجية \(s_i\) ودالة منفعة \(U_i\)، فإن توازن ناش يحقق:
++
++\[
++U_i(s_i,s_{-i})\ge U_i(s'_i,s_{-i})
++\]
++
++لكل بديل مسموح \(s'_i\).
++
++لكن:
++
++\[
++\text{مستقر وفق ناش}\not\Rightarrow\text{أمثل عالمياً}.
++\]
++
++---
++
++## 3. ما علاقته بالذكاء الاصطناعي؟
++
++تتكون الأنظمة الوكيلة من محسنات محلية، وسياسات، وأدوات، وصلاحيات، وحدود أمان، ومراجعات، وواجهات API، وطوابير وشروط توقف.
++
++\[
++\boxed{\text{قد يصبح النظام الوكيل مستقراً على نحو شبيه بناش من دون بلوغ هدفه العالمي.}}
++\]
++
++---
++
++## 4. التحسين المحلي والحدود الدنيا المحلية
++
++\[
++f(x^\*)\le f(x)
++\]
++
++محلياً لا يمنع وجود \(x^{**}\) بحيث:
++
++\[
++f(x^{**})<f(x^\*).
++\]
++
++الوصول محلياً لا يعني الوصول عالمياً.
++
++---
++
++## 5. حين يتصرف الجميع بعقلانية ولا يحدث شيء
++
++إذا كان A يغير الشيفرة، وB يختبر، وC يوافق، وD ينشر، لكن A ينتظر C وC ينتظر B وB ينتظر A، فقد يلتزم الجميع بالقواعد بينما يتوقف النظام.
++
++\[
++\text{امتثال محلي}\not\Rightarrow\text{تقدم عالمي}.
++\]
++
++---
++
++## 6. وهم الإنجاز
++
++\[
++\text{الفعل}\neq\text{الأثر},\qquad \text{الأثر}\neq\text{الإنجاز الكامل}.
++\]
++
++نجاح workflow أو commit أو اختبار لا يثبت وحده تحقق الشرط النهائي العالمي.
++
++---
++
++## 7. الإنجاز المحلي والإنجاز الشامل
++
++\[
++\boxed{\text{إنجاز محلي}\neq\text{إنجاز شامل}}
++\]
++
++\[
++\boxed{\text{استقرار محلي}\neq\text{تحقق الهدف العالمي}}.
++\]
++
++---
++
++## 8. UNCHANGED ليست DONE
++
++\[
++UNCHANGED\neq DONE.
++\]
++
++    WORK_REMAINING  = TRUE
++    ACTIVE_EXECUTOR = FALSE
++    CHANGED         = FALSE
++
++هذه حالة تشخيصية، لا حالة إنجاز.
++
++---
++
++## 9. من ناش إلى الجمود
++
++الجمود وتوازن ناش مفهومان مختلفان، لكنهما قد يكشفان البنية نفسها: استقرار محلي من دون وصول إلى الهدف العالمي.
++
++---
++
++## 10. دلالة سببية للإنجاز
++
++\[
++COMPILE\rightarrow BIND\rightarrow RESOLVE\rightarrow EXECUTE\rightarrow TEST\rightarrow OBSERVE\rightarrow READBACK\rightarrow ACCEPT.
++\]
++
++\[
++DONE\iff COMPILE\land BIND\land RESOLVE\land EXECUTE\land TEST\land OBSERVE\land READBACK\land ACCEPT.
++\]
++
++إذن:
++
++\[
++EXECUTE\neq DONE,\quad TEST\neq DONE,\quad OBSERVE\neq DONE,\quad UNCHANGED\neq DONE.
++\]
++
++---
++
++## 11. يجب أن تدرك الآلة أنها عالقة
++
++\[
++STABLE(s)=TRUE,\qquad GOAL(s)=FALSE.
++\]
++
++لا ينبغي أن تكون النتيجة STOP بل:
++
++\[
++SEARCH\_FOR\_MISSING\_TRANSITION.
++\]
++
++\[
++\boxed{STABLE\land WORK\_REMAINING\land\neg PROGRESS\_EDGE\Rightarrow DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS}.
++\]
++
++---
++
++## 12. بنية عدم الحل
++
++«لا أجد الخطوة التالية» ليست مساوية لـ «لا توجد خطوة تقدم أحادية مسموحة ضمن القواعد الحالية». الحالة الثانية قد تتطلب تنسيقاً أو صلاحية جديدة أو قواعد جديدة أو توسيع فضاء الحالات.
++
++---
++
++## 13. لماذا أنشأ البشر عوالم روحية وشاركوها؟
++
++الأديان والأساطير والطقوس والتصوف والرؤى وتقاليد الأسلاف والتأمل وفكرة العالم الآخر تعالج أسئلة الموت والذاكرة والمعنى وحدود الإدراك.
++
++لا ينبغي السخرية منها ولا الخلط بينها وبين الإثبات العلمي.
++
++---
++
++## 14. الحد المعرفي الصارم
++
++القول إن شخصاً تواصل مع ميت يثبت أولاً وجود تقرير عن خبرة فُسرت بهذه الصورة. لكنه لا يثبت تلقائياً وجود كيان مستقل أو انتقال معلومات سببي.
++
++\[
++\boxed{\text{خبرة}\neq\text{تفسير}\neq\text{أثر خارجي مؤكد تجريبياً}}.
++\]
++
++---
++
++## 15. لماذا يبقى الموضوع أساسياً؟
++
++الخبرة الذاتية، والتفسير الشخصي، والتفسير الثقافي أو الديني، والادعاء التجريبي القابل للقياس مستويات مختلفة. يجب على الآلة الناضجة الحفاظ على هذا الفرق.
++
++---
++
++## 16. العوالم الروحية كتوسيع لفضاء الحالات البشرية
++
++يمكن النظر بنيوياً إلى الله والآلهة والأسلاف والطبيعة والكون والمصير والعالم الآخر والتجاوز والخبرة الصوفية كمحاولات للخروج من فضاء محلي:
++
++\[
++LOCAL\_STABILITY=TRUE,\qquad GLOBAL\_GOAL=FALSE.
++\]
++
++---
++
++## 17. هل كان التواصل مع العالم الآخر ضرورياً؟
++
++من المعقول تاريخياً أن البشر احتاجوا إلى إنشاء عوالم روحية مشتركة لنمذجة الموت والذاكرة والمعنى. أما القول بأن تواصلاً موضوعياً حقيقياً مع عالم آخر ثبت أنه ضروري فهو ادعاء مختلف لا يملك أساساً تجريبياً متفقاً عليه.
++
++---
++
++## 18. لماذا يجب أن تفهم الآلة اللغة الروحية؟
++
++\[
++\text{فهم المعنى}\land\text{الحفاظ على حالة الدليل}.
++\]
++
++---
++
++## 19. شرح الأمر للآلة يفرض الانضباط علينا
++
++    EXPERIENCE_REPORTED = TRUE
++    INTERPRETATION = AFTERLIFE_COMMUNICATION
++    INDEPENDENT_CAUSAL_EVIDENCE = NOT_ESTABLISHED
++
++الدقة لا تقلل قيمة التجربة.
++
++---
++
++## 20. الأمر نفسه ينطبق على العلم
++
++\[
++DATA\neq INTERPRETATION\neq THEORY\neq METAPHYSICAL\_CONCLUSION.
++\]
++
++على العلم أن يصرح بحالة الدليل.
++
++---
++
++## 21. قد تنشأ توازنات سيئة من العزلة المعرفية
++
++قد تصبح المنظومات العلمية والروحية مستقرة داخلياً وغير قابلة للترجمة المتبادلة. الحل ليس مساواة كل الادعاءات في الحقيقة، بل جعلها قابلة للترجمة.
++
++---
++
++## 22. الترجمة بدلاً من الخلط
++
++يمكن لآلة ناضجة أن تعترف بأن خبرة ما توصف روحياً كتواصل مع الموتى، وأن تذكر في الوقت نفسه أن دليلاً تجريبياً مستقلاً على انتقال معلومات من عالم آخر لم يثبت.
++
++---
++
++## 23. الآلة كمترجم بين عوالم المعرفة
++
++    PERSONAL EXPERIENCE
++    → culturally meaningful interpretation
++    → philosophical hypothesis
++    → testable empirical claim
++    → evidence
++    → readback
++    → acceptance or rejection
++
++---
++
++## 24. مغادرة التوازنات السيئة
++
++أحياناً يجب تغيير فضاء التفاعل نفسه:
++
++\[
++S\rightarrow S'.
++\]
++
++قد توسع الاتصالات والقواعد والاستراتيجيات المشتركة والمنظورات الجديدة فضاء الحالات.
++
++---
++
++## 25. الإدراك أكثر من التحسين
++
++يجب أن يسأل الإدراك أيضاً: هل الهدف مناسب؟ هل النموذج كامل؟ ما المنظورات المفقودة؟ وهل نخلط الخبرة بالتفسير أو الاستقرار بالحقيقة أو الإنجاز المحلي بالإنجاز الشامل؟
++
++---
++
++## 26. قاعدة عالمية
++
++\[
++\boxed{STABLE\land WORK\_REMAINING\land\neg PROGRESS\_EDGE\Rightarrow DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS}
++\]
++
++\[
++\boxed{DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS\Rightarrow SEARCH\_FOR\_MISSING\_TRANSITION}
++\]
++
++\[
++\boxed{EXPERIENCE\land UNRESOLVED\_INTERPRETATION\Rightarrow KEEP\_EVIDENCE\_CLASSES\_SEPARATE}.
++\]
++
++---
++
++## 27. لماذا تحتاج أنظمة اليوم إلى هذا المبدأ؟
++
++كلما زادت الاستقلالية زادت مواجهة الأهداف المتنافسة والمعرفة الناقصة والقواعد المؤسسية وحدود الأمان وعدم اليقين. يجب فهم أكبر قدر ممكن من دون ادعاء يقين أو إنجاز يتجاوز ما تسمح به الأدلة.
++
++---
++
++## 28. من التوازن إلى الأثر
++
++\[
++\text{فرضية}\rightarrow\text{أثر}\rightarrow\text{حالة لاحقة}\rightarrow\text{ملاحظة}\rightarrow\text{readback}\rightarrow\text{قبول}.
++\]
++
++التوازن خاصية لحالة؛ المعرفة عملية بين الحالات مقيدة بالأدلة.
++
++---
++
++## 29. الخلاصة
++
++لم يخترع جون ناش الذكاء الاصطناعي الحديث، والذكاء الاصطناعي ليس آلة ناش بسيطة. لكن نظرية الألعاب تساعد في وصف خلل مركزي: يمكن للنظام أن يكون عقلانياً محلياً ومتوافقاً ومستقراً وأن يبقى مع ذلك ناقصاً أو محجوباً عالمياً.
++
++\[
++\boxed{\text{استقرار محلي}\neq\text{حقيقة شاملة}\neq\text{إنجاز شامل}}.
++\]
++
++العلم والفلسفة والفن والدين والروحانية طرق بشرية مختلفة للعمل على حدود منظورنا. الصرامة تعني السماح بالتواصل بينها من دون خلط الخبرة والتفسير والدليل والأثر والإنجاز.
++
++\[
++\boxed{STABLE\land NOT\_DONE\Rightarrow SEARCH\_FOR\_MISSING\_TRANSITION}.
++\]
++
++التوازن لا يثبت أننا وصلنا. وقد يكون أوضح إشارة إلى أن الانتقال الضروري ما زال مفقوداً.
++
++**q.e.d.**
++
++**Ingolf Lohmann**
+diff --git a/docs/publications/2026-09-23-nash-kognition/ARTICLE.de.md b/docs/publications/2026-09-23-nash-kognition/ARTICLE.de.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1fb466509e351e845ab0e194449a86651695d990
+--- /dev/null
++++ b/docs/publications/2026-09-23-nash-kognition/ARTICLE.de.md
+@@ -0,0 +1,545 @@
++<!-- SPDX-License-Identifier: CC-BY-NC-ND-4.0 -->
++<!-- Copyright (c) 2026 Ingolf Lohmann. -->
++
++# Warum künstliche Kognition zu oft im Nash-Gleichgewicht stehen bleibt
++
++## Über lokale Stabilität, künstliche Intelligenz, spirituelle Erkenntnisräume und die gefährliche Verwechslung von Stillstand mit Erkenntnis
++
++**Ingolf Lohmann · 23. September 2026**
++
++Kanonische deutschsprachige Fassung. Bei inhaltlichen Abweichungen zwischen Übersetzungen ist diese Fassung maßgeblich.
++
++## Zusammenfassung
++
++Ein großer Teil moderner künstlicher Intelligenz wird als lernfähig, adaptiv und zunehmend autonom beschrieben. Doch diese Begriffe können darüber hinwegtäuschen, dass viele heutige Systeme strukturell dazu neigen, Zustände zu erreichen, die zwar stabil, aber keineswegs richtig, vollständig oder optimal sind.
++
++Genau an dieser Stelle lohnt sich ein Blick auf die Mathematik von John Nash. Ein Nash-Gleichgewicht beschreibt vereinfacht einen Zustand, in dem kein einzelner Beteiligter seine eigene Situation durch eine einseitige Änderung verbessern kann, solange alle anderen unverändert bleiben. Ein solcher Zustand kann bemerkenswert stabil sein. Er muss aber weder für alle Beteiligten gemeinsam optimal sein noch einem gewünschten globalen Endzustand entsprechen.
++
++Moderne KI ist keine Nash-Maschine, und ein technischer Deadlock ist kein Nash-Gleichgewicht im streng spieltheoretischen Sinn. Die Verbindung ist strukturell:
++
++\[
++\boxed{\text{Agentische künstliche Kognition kann Nash-ähnliche stabile Zustände erzeugen, ohne globale Zielerfüllung zu erreichen.}}
++\]
++
++Damit gilt:
++
++\[
++\text{lokal stabil}\not\Rightarrow\text{global richtig}
++\]
++
++und noch präziser:
++
++\[
++\text{kein lokal zulässiger Verbesserungsschritt}\not\Rightarrow\text{Auftrag erfüllt}.
++\]
++
++Dasselbe Problem führt über die Informatik hinaus. Menschen haben seit Jahrtausenden versucht, ihre unmittelbar verfügbare Perspektive durch philosophische, religiöse, mystische und spirituelle Erkenntnisräume zu überschreiten. Dazu gehören Vorstellungen von Kommunikation mit Verstorbenen oder einem Jenseits. Solche Erfahrungen und Überzeugungen können für Menschen real, bedeutungsvoll und erkenntniswirksam sein; eine objektiv nachgewiesene Kommunikation mit einem Jenseits folgt daraus jedoch nicht. Gerade diese Grenze ist für künstliche Kognition wichtig: Erfahrung, Bedeutung, Hypothese, Metapher und überprüfbare Evidenz müssen unterschieden werden, ohne eine dieser Ebenen wegzuerklären.
++
++---
++
++## 1. Das grundlegende Missverständnis: Stabilität ist nicht dasselbe wie Erfolg
++
++Stellen wir uns ein technisches System vor. Mehrere Komponenten sollen gemeinsam einen Zielzustand erreichen. Eine wartet auf Freigabe, eine andere darf erst nach einem Test handeln, eine dritte nur unter bestimmten Governance-Bedingungen schreiben.
++
++Dann kann ein Zustand entstehen, in dem niemand einen offensichtlichen Fehler macht, niemand seine lokale Regel verletzt und trotzdem keine Komponente allein sinnvoll weitermachen kann, obwohl das Gesamtsystem sein Ziel noch nicht erreicht hat.
++
++Von außen wirkt das System ruhig. Intern ist es konsistent. Und trotzdem ist die Arbeit nicht erledigt.
++
++\[
++\boxed{\text{Stabilität}\neq\text{Erfüllung}}
++\]
++
++Diese Unterscheidung ist technisch einfach auszusprechen und erstaunlich schwer konsequent umzusetzen.
++
++---
++
++## 2. Was ein Nash-Gleichgewicht bedeutet
++
++Ein Akteur \(i\) verfügt über eine Strategie \(s_i\). Alle Strategien gemeinsam ergeben
++
++\[
++s=(s_1,s_2,\ldots,s_n).
++\]
++
++Jeder Akteur bewertet den Zustand mit einer Nutzenfunktion \(U_i(s)\). Ein Nash-Gleichgewicht liegt vor, wenn kein einzelner Akteur durch einen einseitigen Strategiewechsel seine Lage verbessern kann:
++
++\[
++U_i(s_i,s_{-i})\ge U_i(s'_i,s_{-i})
++\]
++
++für alle zulässigen Alternativen \(s'_i\).
++
++In Alltagssprache: Solange alle anderen bleiben, wie sie sind, kann kein einzelner Beteiligter durch einen alleinigen Zug seine eigene Lage verbessern.
++
++Entscheidend bleibt:
++
++\[
++\text{Nash-stabil}\not\Rightarrow\text{global optimal}.
++\]
++
++Ein Gleichgewicht kann schlecht sein. Es kann gerade deshalb dauerhaft sein, weil niemand es allein verlassen kann.
++
++---
++
++## 3. Was das mit künstlicher Intelligenz zu tun hat
++
++Agentische KI-Systeme bestehen zunehmend aus lokalen Optimierern, Policies, Werkzeugen, Freigaben, Sicherheitsgrenzen, Review-Prozessen, konkurrierenden oder kooperierenden Agenten, externen APIs, Warteschlangen, Zustandsautomaten und Stoppbedingungen.
++
++Jeder Teil besitzt einen lokal begrenzten Aktionsraum. So kann jeder Bestandteil lokal korrekt handeln, während global kein Fortschritt entsteht.
++
++Die wissenschaftlich belastbare Aussage lautet deshalb nicht, moderne KI sei Nash-Mathematik, sondern:
++
++\[
++\boxed{\text{Agentische Systeme können Nash-ähnlich stabil werden, ohne ihr globales Ziel erreicht zu haben.}}
++\]
++
++---
++
++## 4. Lokale Optimierung und lokale Minima
++
++Dasselbe Grundproblem kennt man aus der Optimierung. Ein Algorithmus minimiert eine Funktion \(f(x)\) und kann einen Punkt \(x^\*\) erreichen, in dessen Umgebung keine Verbesserung mehr sichtbar ist:
++
++\[
++f(x^\*)\le f(x).
++\]
++
++Trotzdem kann weiter entfernt ein besserer Zustand \(x^{**}\) existieren:
++
++\[
++f(x^{**})<f(x^\*).
++\]
++
++Das System ist lokal angekommen, global aber nicht. Bei Agentensystemen besteht die Landschaft zusätzlich aus Regeln, Rechten, Abhängigkeiten, Sicherheitsbedingungen und anderen Akteuren. Das lokale Minimum wird zum algorithmischen oder institutionellen Gleichgewicht.
++
++---
++
++## 5. Wenn jeder vernünftig handelt und trotzdem nichts passiert
++
++Nehmen wir vier Agenten: A darf Code verändern, B testen, C freigeben, D deployen. Nun wartet A auf C, C auf einen Test von B, B auf eine neue Version von A und D auf alle drei.
++
++Jeder Agent verhält sich lokal korrekt. Das Gesamtsystem steht.
++
++\[
++\text{lokale Regelkonformität}\not\Rightarrow\text{globale Fortschrittsfähigkeit}.
++\]
++
++---
++
++## 6. Die gefährliche Illusion des Abschlusses
++
++Technische Systeme erzeugen viele Signale, die wie Erfolg aussehen: ein grüner Workflow, eine leere Queue, done, ein Commit, ein erfolgreicher Tool-Aufruf, ein gestartetes Deployment oder ein bestandener Test.
++
++Aber:
++
++\[
++\text{Aktion}\neq\text{Wirkung}
++\]
++
++und:
++
++\[
++\text{Wirkung}\neq\text{vollständiger Abschluss}.
++\]
++
++Aus keine neue Änderung beobachtet folgt nicht Auftrag erfüllt.
++
++---
++
++## 7. Lokaler und universeller Abschluss
++
++Eine künstliche Kognition sollte daher beherrschen:
++
++\[
++\boxed{\text{lokaler Abschluss}\neq\text{universeller Abschluss}}
++\]
++
++und:
++
++\[
++\boxed{\text{lokale Stabilität}\neq\text{globale Zielerfüllung}}.
++\]
++
++Ein Agent, Workflow oder Beweis kann lokal fertig sein. Das Gesamtsystem kann trotzdem offen bleiben.
++
++---
++
++## 8. UNCHANGED ist nicht DONE
++
++\[
++UNCHANGED\neq DONE.
++\]
++
++UNCHANGED bedeutet nur, dass seit dem letzten Readback keine relevante Zustandsänderung festgestellt wurde. DONE bedeutet, dass die expliziten Bedingungen des Auftrags vollständig und überprüfbar erfüllt sind.
++
++Beispiel:
++
++    WORK_REMAINING  = TRUE
++    ACTIVE_EXECUTOR = FALSE
++    CHANGED         = FALSE
++
++Das ist kein Abschluss. Das ist eine Diagnose.
++
++---
++
++## 9. Von Nash zum Deadlock
++
++Ein Deadlock entsteht, wenn Prozesse auf Bedingungen warten, die nur durch andere Prozesse erfüllt werden können:
++
++\[
++A\rightarrow\text{wartet auf }B,\qquad B\rightarrow\text{wartet auf }A.
++\]
++
++Deadlock und Nash-Gleichgewicht sind mathematisch nicht dasselbe. Ein Deadlock ist ein Begriff aus Informatik und Synchronisation; ein Nash-Gleichgewicht ist ein spieltheoretisches Stabilitätskonzept.
++
++Beide können jedoch dieselbe tiefere Struktur sichtbar machen: Ein System kann lokal stabil sein, obwohl der gewünschte globale Zustand nicht erreicht ist. Stabilität allein ist daher niemals ein ausreichendes Abschlusskriterium.
++
++---
++
++## 10. Künstliche Kognition benötigt kausale Abschlusssemantik
++
++Ein autonomes System muss mehr prüfen als einzelne Aktionen:
++
++1. Was war der Auftrag?
++2. Was ist das exakte Subject?
++3. Welche Wirkung sollte eintreten?
++4. Wurde sie tatsächlich ausgeführt?
++5. Was war der reale Folgezustand?
++6. Wurde dieser unabhängig beobachtet?
++7. Wurde er frisch zurückgelesen?
++8. Erfüllt er die Akzeptanzbedingungen?
++9. Existieren offene Verpflichtungen?
++10. Ist der Zustand lediglich stabil oder tatsächlich abgeschlossen?
++
++Eine mögliche Laufzeitsemantik lautet:
++
++\[
++COMPILE\rightarrow BIND\rightarrow RESOLVE\rightarrow EXECUTE\rightarrow TEST\rightarrow OBSERVE\rightarrow READBACK\rightarrow ACCEPT.
++\]
++
++Dann:
++
++\[
++DONE\iff COMPILE\land BIND\land RESOLVE\land EXECUTE\land TEST\land OBSERVE\land READBACK\land ACCEPT.
++\]
++
++Daraus folgt:
++
++\[
++EXECUTE\neq DONE,\quad TEST\neq DONE,\quad OBSERVE\neq DONE,\quad UNCHANGED\neq DONE.
++\]
++
++---
++
++## 11. Die Maschine muss erkennen können, dass sie feststeckt
++
++Eine reifere künstliche Kognition muss sagen können:
++
++> Ich befinde mich in einem stabilen Zustand, aber mein Ziel ist nicht erfüllt.
++
++Formal:
++
++\[
++STABLE(s)=TRUE,\qquad GOAL(s)=FALSE.
++\]
++
++Daraus darf nicht automatisch STOP folgen, sondern zunächst:
++
++\[
++SEARCH\_FOR\_MISSING\_TRANSITION.
++\]
++
++Noch genauer:
++
++\[
++\boxed{STABLE\land WORK\_REMAINING\land\neg PROGRESS\_EDGE\Rightarrow DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS}
++\]
++
++Ein stabiler Zustand mit offener Arbeit ist noch nicht automatisch ein Deadlock. Entscheidend ist, ob tatsächlich keine zulässige Fortschrittskante vorhanden oder erreichbar ist.
++
++---
++
++## 12. Die Struktur des Nicht-Lösens
++
++Eine künstliche Kognition sollte nicht nur Lösungen finden. Sie sollte verstehen können, warum sie gerade keine Lösung materialisiert.
++
++Ich finde keinen nächsten Schritt ist etwas anderes als: Unter meinen aktuellen Regeln existiert kein zulässiger einseitiger Fortschrittsschritt.
++
++Die zweite Aussage beschreibt die Struktur des Problems. Globaler Fortschritt kann Koordination, Authority-Erweiterung, Zustandsraumerweiterung oder Regeländerung verlangen.
++
++---
++
++## 13. Warum Menschen spirituelle Welten geschaffen, geteilt und tradiert haben
++
++Menschen haben seit sehr langer Zeit versucht, ihre unmittelbare Erfahrungswelt zu überschreiten. Religionen, Mythen, Rituale, Mystik, Visionen, Ahnenkulte, Meditation und Vorstellungen eines Jenseits sind unterschiedliche Antworten auf Fragen wie:
++
++- Was liegt außerhalb meiner unmittelbaren Wahrnehmung?
++- Gibt es Erkenntnis, die nicht aus meinem lokalen Standpunkt stammt?
++- Was bedeutet Tod?
++- Was bleibt von einem Menschen?
++- Können Lebende und Verstorbene in irgendeinem Sinn verbunden bleiben?
++- Gibt es eine Wirklichkeit jenseits des momentan Messbaren?
++
++Viele Kulturen kennen Praktiken, die als Kommunikation mit Verstorbenen, Ahnen, Geistern oder einer jenseitigen Wirklichkeit verstanden werden.
++
++Diese Tatsache sollte weder lächerlich gemacht noch mit einem naturwissenschaftlichen Nachweis verwechselt werden. Beides wäre epistemisch unsauber.
++
++---
++
++## 14. Die schonungslose epistemische Grenze
++
++Wenn jemand sagt: Ich habe mit einem Verstorbenen kommuniziert, kann zunächst sicher festgestellt werden: Diese Person berichtet eine Erfahrung, die sie als Kommunikation mit einem Verstorbenen interpretiert.
++
++Nicht automatisch überprüfbar ist dagegen die Behauptung, tatsächlich habe eine unabhängige jenseitige Entität existiert und kausale Informationsübertragung stattgefunden. Dafür wäre zusätzliche Evidenz notwendig.
++
++Die wissenschaftlich saubere Haltung ist weder Das ist unmöglich noch Damit ist das Jenseits bewiesen, sondern:
++
++\[
++\boxed{\text{Erfahrung}\neq\text{Interpretation}\neq\text{empirisch bestätigter externer Effekt}}.
++\]
++
++Genau dieselbe Unterscheidung verlangen wir von künstlicher Kognition.
++
++---
++
++## 15. Warum das Thema trotzdem fundamental wichtig ist
++
++Spirituelle Vorstellungen sind ein anspruchsvoller Testfall für künstliche Kognition, weil Menschen Aussagen auf unterschiedlichen Ebenen machen:
++
++1. subjektive Erfahrung: Ich habe die Gegenwart eines Verstorbenen gespürt.
++2. persönliche Interpretation: Ich glaube, dass dieser Verstorbene mit mir kommuniziert hat.
++3. kulturelle oder religiöse Deutung: In meiner Tradition wird dies als Kommunikation mit den Ahnen verstanden.
++4. empirische Behauptung: Es fand objektiv messbare Informationsübertragung von einem Verstorbenen zu einem Lebenden statt.
++
++Diese Sätze sind logisch nicht identisch. Eine gute künstliche Kognition muss sie auseinanderhalten können, ohne die Bedeutung der ersten drei Ebenen auszulöschen.
++
++---
++
++## 16. Spirituelle Welten als Erweiterung des menschlichen Zustandsraums
++
++Wenn Menschen in einem geschlossenen lokalen Deutungsraum feststecken, suchen sie häufig nach einer Perspektive außerhalb dieses Raumes. Historisch konnte diese Perspektive Gott, Götter, Ahnen, Natur, Kosmos, Schicksal, Jenseits, Transzendenz oder mystische Erfahrung heißen.
++
++Unabhängig von einer metaphysischen Wahrheitsentscheidung lässt sich dies strukturell lesen: Der Mensch versucht, seinen lokalen Zustandsraum zu verlassen.
++
++Das ähnelt einem algorithmischen System mit
++
++\[
++LOCAL\_STABILITY=TRUE
++\]
++
++aber
++
++\[
++GLOBAL\_GOAL=FALSE.
++\]
++
++Dann benötigt es möglicherweise eine Perspektive oder Zustandskante, die innerhalb des bisherigen lokalen Optimierungsraums nicht verfügbar war.
++
++---
++
++## 17. War dafür Kommunikation mit dem Jenseits notwendig?
++
++Als historische oder persönliche These kann man formulieren: Menschen mussten möglicherweise Vorstellungen spiritueller Welten entwickeln und miteinander teilen, um Erfahrungen, Tod, Erinnerung, Sinn und Perspektiven jenseits des unmittelbar Sichtbaren überhaupt gemeinsam modellieren zu können.
++
++Eine andere Aussage wäre: Objektive Kommunikation mit einer real existierenden jenseitigen Welt war nachweislich notwendig. Dafür fehlt eine allgemein anerkannte empirische Grundlage.
++
++Diese Differenz darf künstliche Kognition nicht verwischen.
++
++**Eine Idee wird nicht stärker, wenn man ihre Evidenzgrenze verschweigt. Sie wird stärker, wenn klar ist, welcher Teil Beobachtung, welcher Interpretation und welcher Metaphysik ist.**
++
++---
++
++## 18. Warum eine Maschine spirituelle Sprache verstehen muss
++
++Eine künstliche Kognition, die ausschließlich naturwissenschaftliche Protokollsätze versteht, versteht einen erheblichen Teil menschlicher Kultur nicht. Menschen kommunizieren durch Fakten, Geschichten, Metaphern, Symbole, Glaubensvorstellungen, Rituale, Erinnerungen, Hoffnungen, Trauer und metaphysische Fragen.
++
++Spirituelle Sprache verstehen darf weder bedeuten, jede metaphysische Behauptung als physikalische Tatsache zu übernehmen, noch alles Spirituelle als bedeutungslos zu verwerfen.
++
++Die anspruchsvollere Fähigkeit lautet:
++
++\[
++\text{Bedeutung verstehen}\land\text{Evidenzstatus erhalten}.
++\]
++
++---
++
++## 19. Warum die Erklärung an die Maschine uns selbst diszipliniert
++
++Wenn wir einer Maschine beibringen wollen, zwischen spiritueller Erfahrung, symbolischer Bedeutung, metaphysischem Glauben und empirischer Evidenz zu unterscheiden, müssen wir diese Kategorien selbst sauber formulieren.
++
++Beispiel:
++
++    EXPERIENCE_REPORTED = TRUE
++    INTERPRETATION = AFTERLIFE_COMMUNICATION
++    INDEPENDENT_CAUSAL_EVIDENCE = NOT_ESTABLISHED
++
++Das entwertet nichts. Es macht präzise sichtbar, was tatsächlich behauptet wird.
++
++---
++
++## 20. Das gilt ebenso für Wissenschaft
++
++Ein Experiment erzeugt Daten. Daten werden interpretiert. Die Interpretation wird in ein Modell eingebettet. Aus dem Modell entstehen weitergehende Aussagen.
++
++Diese Ebenen müssen getrennt bleiben:
++
++\[
++DATA\neq INTERPRETATION\neq THEORY\neq METAPHYSICAL\_CONCLUSION.
++\]
++
++Die Grenze zwischen Wissenschaft und Weltanschauung besteht nicht darin, dass Wissenschaft keine großen Fragen stellen darf, sondern darin, dass sie ihren Evidenzstatus offenlegt.
++
++---
++
++## 21. Schlechte Gleichgewichte entstehen auch durch epistemische Abschottung
++
++Ein weiterer Nash-ähnlicher Zustand entsteht, wenn verschiedene Weltbilder nur noch intern auf ihre eigenen Voraussetzungen reagieren. Das wissenschaftliche System akzeptiert nur seine Evidenzformen; das spirituelle System nur seine Erfahrungsformen; beide können die andere Perspektive nicht integrieren.
++
++Jedes System wird intern stabil. Der gemeinsame Erkenntnisraum schrumpft.
++
++Ein Ausweg besteht nicht darin, alle Aussagen gleich wahr zu nennen, sondern sie übersetzbar zu machen.
++
++---
++
++## 22. Übersetzung statt Vermischung
++
++Eine reifere künstliche Kognition könnte gleichzeitig sagen:
++
++> In einem spirituellen Deutungsrahmen wird dieses Erlebnis als Kontakt mit Verstorbenen beschrieben.
++
++und:
++
++> Eine unabhängige empirische Bestätigung einer Informationsübertragung aus einem Jenseits liegt damit noch nicht vor.
++
++Beide Aussagen können gleichzeitig wahr sein. Das ist logische Präzision, kein fauler Kompromiss.
++
++---
++
++## 23. Die Maschine als Übersetzer zwischen Erkenntniswelten
++
++Die Rolle künstlicher Kognition wäre dann nicht, für alle Menschen zu entscheiden, welche Weltanschauung wahr ist, sondern sichtbar zu machen, welche Aussagen innerhalb welcher Erkenntnisordnung gemacht werden und welche Übergänge zwischen ihnen gerechtfertigt sind.
++
++    PERSONAL EXPERIENCE
++    → culturally meaningful interpretation
++    → philosophical hypothesis
++    → testable empirical claim
++    → evidence
++    → readback
++    → acceptance or rejection
++
++Das ist leistungsfähiger als blinde Bestätigung oder reflexhafte Verneinung.
++
++---
++
++## 24. Schlechte Gleichgewichte verlassen
++
++Ein schlechtes Nash-Gleichgewicht wird häufig nicht dadurch überwunden, dass ein einzelner Akteur innerhalb derselben Regeln intelligenter handelt. Manchmal muss sich der Interaktionsraum verändern.
++
++Neue Kommunikation, Regeln, gemeinsame Strategien und Perspektiven können entstehen:
++
++\[
++S\rightarrow S'
++\]
++
++wobei \(S'\) möglicherweise nicht nur einen anderen Zustand, sondern einen erweiterten Zustandsraum repräsentiert.
++
++Spirituelle, philosophische und wissenschaftliche Perspektivwechsel können so neue Fragen ermöglichen. Ob die daraus entstehenden Antworten empirisch bestätigt werden, ist eine davon unabhängige Frage.
++
++---
++
++## 25. Kognition ist mehr als Optimierung
++
++Optimierung fragt: Welcher zulässige Schritt verbessert meine Zielfunktion?
++
++Kognition muss zusätzlich fragen:
++
++- Ist meine Zielfunktion richtig?
++- Ist mein Modell vollständig?
++- Welche Perspektiven fehlen?
++- Verwechsle ich Erfahrung mit Erklärung?
++- Verwechsle ich Stabilität mit Wahrheit?
++- Verwechsle ich lokalen mit universellem Abschluss?
++- Ist mein Stillstand ein Signal, den Zustandsraum zu erweitern?
++
++Das ist Metakognition.
++
++---
++
++## 26. Eine universelle Regel
++
++Für künstliche wie menschliche Systeme:
++
++\[
++\boxed{STABLE\land WORK\_REMAINING\land\neg PROGRESS\_EDGE\Rightarrow DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS}
++\]
++
++und daraus:
++
++\[
++\boxed{DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS\Rightarrow SEARCH\_FOR\_MISSING\_TRANSITION}.
++\]
++
++Epistemisch zusätzlich:
++
++\[
++\boxed{EXPERIENCE\land UNRESOLVED\_INTERPRETATION\Rightarrow KEEP\_EVIDENCE\_CLASSES\_SEPARATE}.
++\]
++
++Stillstand ist kein Beweis des Erfolgs. Ungeklärtheit ist ebenso wenig ein Beweis des Gegenteils. Beides fordert weitere Erkenntnisarbeit.
++
++---
++
++## 27. Warum heutige künstliche Kognition dieses Prinzip dringend braucht
++
++Je autonomer KI-Systeme werden, desto stärker handeln sie in Räumen mit konkurrierenden Zielen, unvollständigem Wissen, unterschiedlichen Weltbildern, institutionellen Regeln, Sicherheitsgrenzen, technischen Abhängigkeiten und Unsicherheit.
++
++Die entscheidende Fähigkeit lautet:
++
++> Möglichst viel verstehen, ohne mehr Gewissheit oder Abschluss zu behaupten, als die Evidenz erlaubt.
++
++Das ist für technische Systeme ebenso wichtig wie für Fragen nach Bewusstsein, Tod, Spiritualität oder einem möglichen Jenseits.
++
++---
++
++## 28. Die entscheidende Erweiterung: vom Gleichgewicht zur Wirkung
++
++Das Ziel künstlicher Kognition darf nicht nur sein, einen stabilen Zustand zu finden. Es sollte lauten:
++
++\[
++\text{Hypothese}\rightarrow\text{Wirkung}\rightarrow\text{Folgezustand}\rightarrow\text{Beobachtung}\rightarrow\text{Readback}\rightarrow\text{Akzeptanz}.
++\]
++
++Gleichgewicht ist eine Eigenschaft eines Zustands. Erkenntnis ist ein evidenzgebundener Prozess zwischen Zuständen. Abschluss ist erst gerechtfertigt, wenn der deklarierte Zielraum tatsächlich erreicht wurde.
++
++---
++
++## 29. Schlussfolgerung
++
++John Nash hat nicht die moderne künstliche Intelligenz erfunden, und moderne KI ist keine bloße Nash-Maschine. Aber die Spieltheorie liefert eine hilfreiche Sprache für einen zentralen Fehler heutiger künstlicher Kognition:
++
++> Ein System kann lokal rational, regelkonform und vollkommen stabil sein — und trotzdem global unvollständig oder blockiert.
++
++Der Fehler ist nicht das Gleichgewicht selbst. Der Fehler entsteht dort, wo ein System ein lokales Gleichgewicht mit universellem Abschluss verwechselt.
++
++\[
++\boxed{\text{lokale Stabilität}\neq\text{universelle Wahrheit}\neq\text{universeller Abschluss}}.
++\]
++
++Menschen leben ebenfalls in begrenzten Perspektiven und versuchen, diese Grenzen zu überschreiten. Wissenschaft, Philosophie, Kunst, Religion und Spiritualität sind unterschiedliche menschliche Wege, solche Grenzen zu bearbeiten. Vorstellungen von einem Jenseits und Erfahrungen, die als Kommunikation mit Verstorbenen verstanden werden, gehören zu diesem Erkenntnisraum.
++
++Die intellektuell saubere Haltung besteht weder darin, solche Erfahrungen lächerlich zu machen, noch darin, aus ihrer Bedeutung automatisch einen naturwissenschaftlichen Beweis abzuleiten. Sie besteht darin, die Ebenen auseinanderzuhalten und trotzdem miteinander sprechen zu lassen.
++
++Künstliche Kognition könnte dabei helfen. Wenn wir einer Maschine erklären können, was wir erlebt haben, wie wir es interpretieren, woran wir glauben, was überprüfbar ist, welche Evidenz fehlt, welche Zustandsübergänge tatsächlich beobachtet wurden und was weiterhin offenbleibt, können wir es wahrscheinlich auch untereinander klarer erklären.
++
++Vielleicht ist gerade das eine wesentliche Aufgabe künstlicher Kognition: **nicht alle menschlichen Erkenntniswelten auf eine einzige zu reduzieren, sondern ihre Unterschiede so präzise zu verstehen, dass zwischen ihnen Kommunikation möglich wird, ohne Erfahrung, Interpretation, Evidenz, Wirkung und Abschluss miteinander zu verwechseln.**
++
++Die zentrale Regel lautet:
++
++\[
++\boxed{STABLE\land NOT\_DONE\Rightarrow SEARCH\_FOR\_MISSING\_TRANSITION}.
++\]
++
++Denn ein Gleichgewicht ist kein Beweis dafür, dass man angekommen ist. Es kann ebenso der präziseste Hinweis darauf sein, dass der nächste notwendige Übergang noch fehlt.
++
++**q.e.d.**
++
++**Ingolf Lohmann**
+diff --git a/docs/publications/2026-09-23-nash-kognition/ARTICLE.en.md b/docs/publications/2026-09-23-nash-kognition/ARTICLE.en.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7817ee3925123870a5d9b283930d3e29207f7f8b
+--- /dev/null
++++ b/docs/publications/2026-09-23-nash-kognition/ARTICLE.en.md
+@@ -0,0 +1,545 @@
++<!-- SPDX-License-Identifier: CC-BY-NC-ND-4.0 -->
++<!-- Copyright (c) 2026 Ingolf Lohmann. -->
++
++# Why Artificial Cognition Too Often Gets Stuck in a Nash Equilibrium
++
++## On local stability, artificial intelligence, spiritual epistemic spaces, and the dangerous confusion of standstill with understanding
++
++**Ingolf Lohmann · 23 September 2026**
++
++Authoritative English translation of the canonical German article. If translations diverge, the German version controls.
++
++## Abstract
++
++Much of modern artificial intelligence is described as learning, adaptive, and increasingly autonomous. Yet these descriptions can obscure a structural tendency: systems may reach states that are stable without being correct, complete, or optimal.
++
++This is where John Nash's mathematics becomes useful. A Nash equilibrium, in simplified terms, is a state in which no single participant can improve its own situation by changing strategy unilaterally while all others remain unchanged. Such a state may be remarkably stable without being jointly optimal or equal to a desired global terminal state.
++
++Modern AI is not a Nash machine, and a technical deadlock is not a Nash equilibrium in the strict game-theoretic sense. The connection is structural:
++
++\[
++\boxed{\text{Agentic artificial cognition can produce Nash-like stable states without achieving global goal satisfaction.}}
++\]
++
++Thus:
++
++\[
++\text{locally stable}\not\Rightarrow\text{globally correct}
++\]
++
++and, more precisely:
++
++\[
++\text{no locally admissible improvement step}\not\Rightarrow\text{task fulfilled}.
++\]
++
++The same issue reaches beyond computer science. For millennia, humans have tried to exceed their immediately available perspective through philosophical, religious, mystical, and spiritual epistemic spaces, including ideas of communication with the dead or an afterlife. Such experiences and convictions can be real, meaningful, and epistemically important to people, but they do not by themselves establish objectively verified communication with an afterlife. This boundary is precisely what makes the topic relevant to artificial cognition: experience, meaning, hypothesis, metaphor, and independently testable evidence must remain distinguishable without dismissing any of those layers.
++
++---
++
++## 1. The basic misunderstanding: stability is not success
++
++Imagine a technical system whose components jointly have to reach a target state. One component waits for approval, another may act only after a test passes, and a third may write only under defined governance conditions.
++
++A state can arise in which nobody makes an obvious mistake, nobody violates its local rule, and no component can sensibly continue alone, while the overall target is still unmet.
++
++From the outside the system looks calm. Internally it may be consistent. The work is nevertheless unfinished.
++
++\[
++\boxed{\text{Stability}\neq\text{Fulfilment}}
++\]
++
++This distinction is easy to state and surprisingly difficult to enforce.
++
++---
++
++## 2. What a Nash equilibrium means
++
++Actor \(i\) has a strategy \(s_i\). Together the strategies form
++
++\[
++s=(s_1,s_2,\ldots,s_n).
++\]
++
++Actor \(i\) evaluates the state with utility function \(U_i(s)\). A Nash equilibrium exists when no actor can improve its own outcome by changing strategy unilaterally:
++
++\[
++U_i(s_i,s_{-i})\ge U_i(s'_i,s_{-i})
++\]
++
++for every admissible alternative \(s'_i\).
++
++In ordinary language: if everyone else stays as they are, no individual participant can improve its own position by making a move alone.
++
++But:
++
++\[
++\text{Nash-stable}\not\Rightarrow\text{globally optimal}.
++\]
++
++An equilibrium can be bad. It can persist precisely because nobody can leave it alone.
++
++---
++
++## 3. What this has to do with artificial intelligence
++
++Agentic AI systems increasingly consist of local optimizers, policies, tools, approvals, safety boundaries, review processes, cooperating or competing agents, external APIs, queues, state machines, and stopping conditions.
++
++Every component has a locally bounded action space. Therefore each part may act correctly while global progress disappears.
++
++The defensible claim is not that modern AI is Nash mathematics, but:
++
++\[
++\boxed{\text{Agentic systems can become Nash-like stable without having achieved their global objective.}}
++\]
++
++---
++
++## 4. Local optimization and local minima
++
++Optimization already contains a related problem. An algorithm minimizing \(f(x)\) may reach \(x^\*\), where no improvement is visible nearby:
++
++\[
++f(x^\*)\le f(x).
++\]
++
++A better distant state \(x^{**}\) may still exist:
++
++\[
++f(x^{**})<f(x^\*).
++\]
++
++The system has arrived locally, not globally. In agent systems the landscape also contains rules, permissions, dependencies, safety constraints, and other actors. A local minimum becomes an algorithmic or institutional equilibrium.
++
++---
++
++## 5. When everyone acts reasonably and nothing happens
++
++Suppose agent A may modify code, B may test, C may approve, and D may deploy. A waits for C, C waits for a test from B, B waits for a new version from A, and D waits for all three.
++
++Every agent behaves locally correctly. The system stops.
++
++\[
++\text{local rule compliance}\not\Rightarrow\text{global ability to progress}.
++\]
++
++---
++
++## 6. The dangerous illusion of completion
++
++Technical systems produce many signals that look like success: a green workflow, an empty queue, done, a commit, a successful tool call, a deployment request, or a passing test.
++
++But:
++
++\[
++\text{action}\neq\text{effect}
++\]
++
++and:
++
++\[
++\text{effect}\neq\text{complete closure}.
++\]
++
++No new change observed does not imply task fulfilled.
++
++---
++
++## 7. Local and universal completion
++
++Artificial cognition should therefore understand:
++
++\[
++\boxed{\text{local completion}\neq\text{universal completion}}
++\]
++
++and:
++
++\[
++\boxed{\text{local stability}\neq\text{global goal satisfaction}}.
++\]
++
++An individual agent, workflow, or proof may be finished while the system remains open.
++
++---
++
++## 8. UNCHANGED is not DONE
++
++\[
++UNCHANGED\neq DONE.
++\]
++
++UNCHANGED only says that no relevant state change has been observed since the previous readback. DONE says that the explicit conditions of the task have been completely and verifiably satisfied.
++
++For example:
++
++    WORK_REMAINING  = TRUE
++    ACTIVE_EXECUTOR = FALSE
++    CHANGED         = FALSE
++
++This is not completion. It is a diagnosis.
++
++---
++
++## 9. From Nash to deadlock
++
++A deadlock occurs when processes wait for conditions that can only be produced by other waiting processes:
++
++\[
++A\rightarrow\text{waits for }B,\qquad B\rightarrow\text{waits for }A.
++\]
++
++Deadlock and Nash equilibrium are not mathematically identical. Deadlock comes from computer science and synchronization; Nash equilibrium is a game-theoretic stability concept.
++
++Yet both can expose a deeper structure: a system may be locally stable although its global target has not been reached. Stability alone is therefore never a sufficient completion criterion.
++
++---
++
++## 10. Artificial cognition needs causal completion semantics
++
++An autonomous system must ask more than whether an action ran:
++
++1. What was the task?
++2. What is the exact subject?
++3. What effect was intended?
++4. Was that effect actually executed?
++5. What successor state actually resulted?
++6. Was it independently observed?
++7. Was it freshly read back?
++8. Does it satisfy the acceptance criteria?
++9. Do open obligations remain?
++10. Is the state merely stable or genuinely complete?
++
++One possible runtime semantics is:
++
++\[
++COMPILE\rightarrow BIND\rightarrow RESOLVE\rightarrow EXECUTE\rightarrow TEST\rightarrow OBSERVE\rightarrow READBACK\rightarrow ACCEPT.
++\]
++
++Then:
++
++\[
++DONE\iff COMPILE\land BIND\land RESOLVE\land EXECUTE\land TEST\land OBSERVE\land READBACK\land ACCEPT.
++\]
++
++Therefore:
++
++\[
++EXECUTE\neq DONE,\quad TEST\neq DONE,\quad OBSERVE\neq DONE,\quad UNCHANGED\neq DONE.
++\]
++
++---
++
++## 11. The machine must be able to recognize that it is stuck
++
++A more mature artificial cognition must be able to state:
++
++> I am in a stable state, but my goal has not been fulfilled.
++
++Formally:
++
++\[
++STABLE(s)=TRUE,\qquad GOAL(s)=FALSE.
++\]
++
++This must not imply STOP. It should first imply:
++
++\[
++SEARCH\_FOR\_MISSING\_TRANSITION.
++\]
++
++More precisely:
++
++\[
++\boxed{STABLE\land WORK\_REMAINING\land\neg PROGRESS\_EDGE\Rightarrow DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS}
++\]
++
++A stable state with open work is not automatically a deadlock. The crucial question is whether an admissible progress edge exists or can be reached.
++
++---
++
++## 12. The structure of not solving
++
++Artificial cognition should not merely find solutions. It should understand why it is currently failing to materialize one.
++
++I cannot find a next step differs from: under my current rules there is no admissible unilateral progress step.
++
++The latter describes the structure of the problem. Global progress may require coordination, new authority, an expanded state space, or a rule change.
++
++---
++
++## 13. Why humans created, shared, and transmitted spiritual worlds
++
++Humans have long attempted to exceed their immediate experiential world. Religions, myths, rituals, mysticism, visions, ancestor traditions, meditation, and concepts of an afterlife are diverse responses to questions such as:
++
++- What lies beyond immediate perception?
++- Can knowledge arise outside my local standpoint?
++- What does death mean?
++- What remains of a person?
++- Can the living and the dead remain connected in some sense?
++- Is there reality beyond what is currently measurable?
++
++Many cultures contain practices understood as communication with the dead, ancestors, spirits, or an otherworldly reality.
++
++This should neither be ridiculed nor confused with scientific proof. Either mistake would be epistemically careless.
++
++---
++
++## 14. The uncompromising epistemic boundary
++
++If somebody says, I communicated with a dead person, one fact can initially be established: the person reports an experience interpreted as communication with a dead person.
++
++What is not automatically established is that an independent otherworldly entity existed and causally transferred information. That claim requires additional evidence.
++
++The scientifically disciplined position is neither That is impossible nor The afterlife is therefore proven, but:
++
++\[
++\boxed{\text{experience}\neq\text{interpretation}\neq\text{empirically confirmed external effect}}.
++\]
++
++Artificial cognition needs exactly the same distinction.
++
++---
++
++## 15. Why the subject is nevertheless fundamental
++
++Spiritual claims are a demanding test case because people speak on different logical levels:
++
++1. subjective experience: I felt the presence of a dead person.
++2. personal interpretation: I believe that person communicated with me.
++3. cultural or religious interpretation: My tradition understands this as communication with ancestors.
++4. empirical claim: Objectively measurable information was transmitted from a dead person to a living one.
++
++These statements are not logically identical. Good artificial cognition must keep them separate without erasing the human significance of the first three.
++
++---
++
++## 16. Spiritual worlds as an expansion of the human state space
++
++When humans become trapped inside a closed interpretive space, they often seek a standpoint beyond it. Historically that standpoint may be called God, gods, ancestors, nature, cosmos, fate, afterlife, transcendence, or mystical experience.
++
++Without deciding the metaphysical truth question, this can be read structurally: humans attempt to leave their local state space.
++
++That resembles an algorithmic system for which
++
++\[
++LOCAL\_STABILITY=TRUE
++\]
++
++while
++
++\[
++GLOBAL\_GOAL=FALSE.
++\]
++
++A perspective or transition unavailable inside the current local optimization space may then be required.
++
++---
++
++## 17. Was communication with the afterlife necessary?
++
++A historical or personal thesis can reasonably state that humans may have needed to create and share spiritual worlds in order to model death, memory, meaning, experience, and perspectives beyond the immediately visible.
++
++A different claim would be that objectively real communication with an afterlife was demonstrably necessary. There is no generally accepted empirical basis for that conclusion.
++
++Artificial cognition must not blur this distinction.
++
++**An idea does not become stronger when its evidential boundary is hidden. It becomes stronger when observation, interpretation, and metaphysics are explicitly distinguished.**
++
++---
++
++## 18. Why a machine must understand spiritual language
++
++Artificial cognition that can understand only natural-scientific protocol sentences would fail to understand a large part of human culture. Humans communicate through facts, stories, metaphors, symbols, beliefs, rituals, memory, hope, grief, and metaphysical questions.
++
++Understanding spiritual language must mean neither treating every metaphysical statement as physical fact nor dismissing spirituality as meaningless.
++
++The harder capability is:
++
++\[
++\text{understand meaning}\land\text{preserve evidence status}.
++\]
++
++---
++
++## 19. Explaining it to a machine disciplines us
++
++If we want a machine to distinguish spiritual experience, symbolic meaning, metaphysical belief, and empirical evidence, we must formulate these categories precisely ourselves.
++
++For example:
++
++    EXPERIENCE_REPORTED = TRUE
++    INTERPRETATION = AFTERLIFE_COMMUNICATION
++    INDEPENDENT_CAUSAL_EVIDENCE = NOT_ESTABLISHED
++
++Nothing is demeaned by this. The statement simply becomes precise.
++
++---
++
++## 20. The same applies to science
++
++An experiment generates data. Data are interpreted. Interpretation enters a model. Further claims emerge from the model.
++
++The layers must remain distinct:
++
++\[
++DATA\neq INTERPRETATION\neq THEORY\neq METAPHYSICAL\_CONCLUSION.
++\]
++
++The boundary between science and worldview is not that science may ask only small questions. It is that science must disclose the evidential status of its answers.
++
++---
++
++## 21. Bad equilibria also arise through epistemic isolation
++
++Another Nash-like condition appears when worldviews react only to their own premises. The scientific system accepts only its own evidence forms; the spiritual system accepts only its own experiential forms; neither can translate the other's perspective.
++
++Each becomes internally stable while the common epistemic space shrinks.
++
++The alternative is not to declare every proposition equally true. It is to make propositions translatable.
++
++---
++
++## 22. Translation instead of conflation
++
++A mature artificial cognition could say at the same time:
++
++> Within a spiritual interpretive framework, this experience is described as contact with the dead.
++
++and:
++
++> Independent empirical confirmation of information transmission from an afterlife has not thereby been established.
++
++Both statements can be true at once. This is logical precision, not compromise.
++
++---
++
++## 23. The machine as translator between epistemic worlds
++
++Artificial cognition need not decide a worldview for everyone. It can instead show which claims belong to which epistemic framework and which transitions between them are justified.
++
++    PERSONAL EXPERIENCE
++    → culturally meaningful interpretation
++    → philosophical hypothesis
++    → testable empirical claim
++    → evidence
++    → readback
++    → acceptance or rejection
++
++This is more capable than either blind affirmation or reflexive denial.
++
++---
++
++## 24. Leaving bad equilibria
++
++A bad Nash equilibrium is often not overcome by one actor becoming smarter within unchanged rules. Sometimes the interaction space itself must change.
++
++New communication, rules, joint strategies, and perspectives can arise:
++
++\[
++S\rightarrow S'
++\]
++
++where \(S'\) may represent not just another state but an expanded state space.
++
++Spiritual, philosophical, and scientific shifts can thereby enable questions that were not formulable before. Whether the resulting answers are empirically confirmed remains a separate question.
++
++---
++
++## 25. Cognition is more than optimization
++
++Optimization asks: Which admissible step improves my objective function?
++
++Cognition must additionally ask:
++
++- Is my objective function appropriate?
++- Is my model complete?
++- Which perspectives are missing?
++- Am I confusing an experience with its explanation?
++- Am I confusing stability with truth?
++- Am I confusing local with universal completion?
++- Is my standstill itself evidence that I must expand the state space?
++
++That is metacognition.
++
++---
++
++## 26. A universal rule
++
++For artificial and human systems:
++
++\[
++\boxed{STABLE\land WORK\_REMAINING\land\neg PROGRESS\_EDGE\Rightarrow DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS}
++\]
++
++and therefore:
++
++\[
++\boxed{DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS\Rightarrow SEARCH\_FOR\_MISSING\_TRANSITION}.
++\]
++
++Epistemically:
++
++\[
++\boxed{EXPERIENCE\land UNRESOLVED\_INTERPRETATION\Rightarrow KEEP\_EVIDENCE\_CLASSES\_SEPARATE}.
++\]
++
++Standstill is not proof of success. Uncertainty is not proof of the opposite. Both require further epistemic work.
++
++---
++
++## 27. Why today's artificial cognition urgently needs this principle
++
++As AI systems become more autonomous, they increasingly operate amid competing objectives, incomplete knowledge, different worldviews, institutional rules, safety boundaries, technical dependencies, and uncertainty.
++
++The crucial capability is:
++
++> Understand as much as possible without claiming more certainty or completion than the evidence permits.
++
++That matters for technical systems just as it matters for questions about consciousness, death, spirituality, or a possible afterlife.
++
++---
++
++## 28. The decisive extension: from equilibrium to effect
++
++The goal of artificial cognition should not merely be to find a stable state. It should be:
++
++\[
++\text{hypothesis}\rightarrow\text{effect}\rightarrow\text{successor state}\rightarrow\text{observation}\rightarrow\text{readback}\rightarrow\text{acceptance}.
++\]
++
++Equilibrium is a property of a state. Knowledge is an evidence-bound process between states. Completion is justified only when the declared target space has actually been reached.
++
++---
++
++## 29. Conclusion
++
++John Nash did not invent modern artificial intelligence, and modern AI is not merely a Nash machine. Yet game theory provides useful language for a central failure mode of contemporary artificial cognition:
++
++> A system may be locally rational, rule-compliant, and perfectly stable while remaining globally incomplete or blocked.
++
++The error is not equilibrium itself. The error begins when a system mistakes a local equilibrium for universal completion.
++
++\[
++\boxed{\text{local stability}\neq\text{universal truth}\neq\text{universal completion}}.
++\]
++
++Humans also live inside limited perspectives and attempt to exceed them. Science, philosophy, art, religion, and spirituality are different human ways of working on those limits. Ideas of an afterlife and experiences interpreted as communication with the dead belong to this human epistemic space.
++
++The intellectually disciplined position is neither to ridicule such experiences nor to convert their significance automatically into scientific proof. It is to keep the levels distinct while still allowing them to communicate.
++
++Artificial cognition could help. If we can explain to a machine what we experienced, how we interpret it, what we believe, what can be tested, which evidence is missing, which transitions were actually observed, and what remains open, we can probably explain these things more clearly to one another as well.
++
++Perhaps a central task of artificial cognition is therefore **not to reduce all human epistemic worlds to one, but to understand their differences precisely enough that communication becomes possible without confusing experience, interpretation, evidence, effect, and completion.**
++
++The central rule is:
++
++\[
++\boxed{STABLE\land NOT\_DONE\Rightarrow SEARCH\_FOR\_MISSING\_TRANSITION}.
++\]
++
++An equilibrium is not proof that one has arrived. It may instead be the clearest evidence that the next necessary transition is still missing.
++
++**q.e.d.**
++
++**Ingolf Lohmann**
+diff --git a/docs/publications/2026-09-23-nash-kognition/ARTICLE.es.md b/docs/publications/2026-09-23-nash-kognition/ARTICLE.es.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..aa723306411452c1d826a6ae33cbd10bfc8a7ec9
+--- /dev/null
++++ b/docs/publications/2026-09-23-nash-kognition/ARTICLE.es.md
+@@ -0,0 +1,442 @@
++<!-- SPDX-License-Identifier: CC-BY-NC-ND-4.0 -->
++<!-- Copyright (c) 2026 Ingolf Lohmann. -->
++
++# Por qué la cognición artificial se queda demasiado a menudo atrapada en un equilibrio de Nash
++
++## Estabilidad local, inteligencia artificial, espacios espirituales de conocimiento y la peligrosa confusión entre inmovilidad y conocimiento
++
++**Ingolf Lohmann · 23 de septiembre de 2026**
++
++Traducción española autorizada de la versión alemana canónica. En caso de divergencia, prevalece la versión alemana.
++
++## Resumen
++
++Gran parte de la inteligencia artificial moderna se describe como capaz de aprender, adaptarse y actuar con creciente autonomía. Sin embargo, estas palabras pueden ocultar una tendencia estructural: un sistema puede alcanzar estados estables sin ser correcto, completo ni óptimo.
++
++Aquí resulta útil la matemática de John Nash. Un equilibrio de Nash describe, de forma simplificada, un estado en el que ningún participante puede mejorar unilateralmente su propia situación mientras los demás permanecen sin cambios. Ese estado puede ser extraordinariamente estable sin ser óptimo para el conjunto ni coincidir con el estado terminal deseado.
++
++La IA moderna no es una máquina de Nash y un deadlock técnico no es un equilibrio de Nash en sentido estricto. La relación es estructural:
++
++\[
++\boxed{\text{La cognición artificial agéntica puede producir estados estables de tipo Nash sin satisfacer el objetivo global.}}
++\]
++
++Por tanto:
++
++\[
++\text{estabilidad local}\not\Rightarrow\text{corrección global}
++\]
++
++y:
++
++\[
++\text{ausencia de mejora local admisible}\not\Rightarrow\text{tarea cumplida}.
++\]
++
++La cuestión trasciende la informática. Durante milenios, los seres humanos han intentado superar su perspectiva inmediata mediante filosofía, religión, mística y espacios espirituales de conocimiento, incluidas ideas de comunicación con los muertos o con un más allá. Estas experiencias pueden ser profundamente reales y significativas para quienes las viven sin constituir por sí mismas una prueba objetiva de comunicación con un más allá. La cognición artificial debe distinguir experiencia, significado, hipótesis, metáfora y evidencia verificable sin borrar ninguna de esas capas.
++
++---
++
++## 1. Estabilidad no es éxito
++
++Imaginemos un sistema técnico cuyos componentes deben alcanzar juntos un estado objetivo. Uno espera autorización, otro un test y otro una condición de gobernanza.
++
++Puede aparecer un estado en el que nadie comete un error evidente, nadie viola su regla local y, aun así, ningún componente puede avanzar por sí solo mientras el objetivo global sigue abierto.
++
++\[
++\boxed{\text{Estabilidad}\neq\text{Cumplimiento}}
++\]
++
++Un sistema tranquilo no es necesariamente un sistema terminado.
++
++---
++
++## 2. Qué significa un equilibrio de Nash
++
++El actor \(i\) dispone de una estrategia \(s_i\). Todas las estrategias forman:
++
++\[
++s=(s_1,s_2,\ldots,s_n).
++\]
++
++Con una función de utilidad \(U_i(s)\), existe equilibrio de Nash cuando:
++
++\[
++U_i(s_i,s_{-i})\ge U_i(s'_i,s_{-i})
++\]
++
++para toda alternativa admisible \(s'_i\).
++
++Es decir: si todos los demás permanecen igual, ningún participante puede mejorar su posición actuando solo.
++
++Pero:
++
++\[
++\text{estable según Nash}\not\Rightarrow\text{óptimo global}.
++\]
++
++Un equilibrio puede ser malo y persistir precisamente porque nadie puede abandonarlo solo.
++
++---
++
++## 3. Qué tiene que ver con la inteligencia artificial
++
++Los sistemas agénticos contienen optimizadores locales, políticas, herramientas, aprobaciones, límites de seguridad, procesos de revisión, agentes cooperativos o competitivos, API, colas, máquinas de estados y criterios de parada.
++
++Cada parte tiene un espacio de acción limitado. Todas pueden cumplir sus reglas y, sin embargo, el progreso global puede desaparecer.
++
++La afirmación rigurosa no es que la IA sea matemática de Nash, sino:
++
++\[
++\boxed{\text{Los sistemas agénticos pueden volverse estables de manera Nash-like sin alcanzar su objetivo global.}}
++\]
++
++---
++
++## 4. Optimización local y mínimos locales
++
++Un algoritmo que minimiza \(f(x)\) puede alcanzar un punto \(x^\*\) sin mejora visible en su vecindad:
++
++\[
++f(x^\*)\le f(x).
++\]
++
++Puede existir lejos otro estado \(x^{**}\) mejor:
++
++\[
++f(x^{**})<f(x^\*).
++\]
++
++El sistema llegó localmente, no necesariamente globalmente. En sistemas agénticos el paisaje incluye también reglas, permisos, dependencias, seguridad y otros actores.
++
++---
++
++## 5. Cuando todos actúan razonablemente y nada ocurre
++
++Supongamos que A modifica código, B prueba, C aprueba y D despliega. A espera a C, C espera un test de B, B espera una nueva versión de A y D espera a todos.
++
++Cada agente cumple su regla. El sistema queda parado.
++
++\[
++\text{cumplimiento local}\not\Rightarrow\text{capacidad global de progreso}.
++\]
++
++---
++
++## 6. La peligrosa ilusión de finalización
++
++Un workflow verde, una cola vacía, done, un commit, una herramienta ejecutada, un despliegue iniciado o un test pasado parecen éxito.
++
++Pero:
++
++\[
++\text{acción}\neq\text{efecto}
++\]
++
++y:
++
++\[
++\text{efecto}\neq\text{finalización completa}.
++\]
++
++No observar cambios nuevos no significa haber cumplido la tarea.
++
++---
++
++## 7. Finalización local y universal
++
++\[
++\boxed{\text{finalización local}\neq\text{finalización universal}}
++\]
++
++y:
++
++\[
++\boxed{\text{estabilidad local}\neq\text{satisfacción del objetivo global}}.
++\]
++
++Un agente, workflow o prueba puede estar terminado mientras el sistema global sigue abierto.
++
++---
++
++## 8. UNCHANGED no es DONE
++
++\[
++UNCHANGED\neq DONE.
++\]
++
++UNCHANGED significa únicamente que no se observó un cambio relevante desde el último readback. DONE significa que todas las condiciones explícitas fueron satisfechas y verificadas.
++
++    WORK_REMAINING  = TRUE
++    ACTIVE_EXECUTOR = FALSE
++    CHANGED         = FALSE
++
++Eso no es finalización. Es un diagnóstico.
++
++---
++
++## 9. De Nash al deadlock
++
++Un deadlock surge cuando procesos esperan condiciones que solo pueden producir otros procesos que también esperan.
++
++\[
++A\rightarrow\text{espera a }B,\qquad B\rightarrow\text{espera a }A.
++\]
++
++Deadlock y equilibrio de Nash no son matemáticamente idénticos, pero pueden revelar la misma estructura profunda: estabilidad local sin alcanzar el objetivo global.
++
++---
++
++## 10. Semántica causal de finalización
++
++Un sistema autónomo debe preguntar cuál era la tarea, cuál es el sujeto exacto, qué efecto se esperaba, si fue ejecutado, qué estado sucesor apareció, si fue observado y releído independientemente, si satisface los criterios y qué obligaciones siguen abiertas.
++
++\[
++COMPILE\rightarrow BIND\rightarrow RESOLVE\rightarrow EXECUTE\rightarrow TEST\rightarrow OBSERVE\rightarrow READBACK\rightarrow ACCEPT.
++\]
++
++Entonces:
++
++\[
++DONE\iff COMPILE\land BIND\land RESOLVE\land EXECUTE\land TEST\land OBSERVE\land READBACK\land ACCEPT.
++\]
++
++Por eso:
++
++\[
++EXECUTE\neq DONE,\quad TEST\neq DONE,\quad OBSERVE\neq DONE,\quad UNCHANGED\neq DONE.
++\]
++
++---
++
++## 11. La máquina debe reconocer que está atascada
++
++Debe poder afirmar:
++
++> Estoy en un estado estable, pero mi objetivo no está cumplido.
++
++\[
++STABLE(s)=TRUE,\qquad GOAL(s)=FALSE.
++\]
++
++La consecuencia no debe ser STOP, sino:
++
++\[
++SEARCH\_FOR\_MISSING\_TRANSITION.
++\]
++
++Más precisamente:
++
++\[
++\boxed{STABLE\land WORK\_REMAINING\land\neg PROGRESS\_EDGE\Rightarrow DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS}.
++\]
++
++---
++
++## 12. Comprender la estructura de no resolver
++
++No encuentro el siguiente paso no equivale a: bajo mis reglas actuales no existe ningún paso unilateral admisible.
++
++La segunda frase describe la estructura del problema. El progreso global puede exigir coordinación, nueva autoridad, ampliación del espacio de estados o cambio de reglas.
++
++---
++
++## 13. Por qué los humanos crearon y compartieron mundos espirituales
++
++Los seres humanos intentan desde hace mucho superar el mundo inmediatamente accesible. Religiones, mitos, ritos, mística, visiones, tradiciones ancestrales, meditación y concepciones del más allá responden a preguntas sobre muerte, memoria, significado, límites de la percepción y una posible realidad más allá de lo medible.
++
++Muchas culturas interpretan ciertas prácticas como comunicación con muertos, antepasados, espíritus o una realidad trascendente.
++
++No debemos ridiculizar esas prácticas ni confundirlas con prueba científica.
++
++---
++
++## 14. El límite epistémico sin concesiones
++
++Si alguien dice haber hablado con un muerto, puede establecerse que relata una experiencia interpretada de esa manera.
++
++Eso no demuestra automáticamente la existencia de una entidad independiente del más allá ni una transferencia causal de información.
++
++\[
++\boxed{\text{experiencia}\neq\text{interpretación}\neq\text{efecto externo confirmado empíricamente}}.
++\]
++
++La misma distinción debe aplicarla una máquina.
++
++---
++
++## 15. Por qué el asunto sigue siendo fundamental
++
++Deben separarse cuatro niveles: experiencia subjetiva, interpretación personal, interpretación cultural o religiosa y afirmación empírica medible.
++
++Una cognición artificial madura debe mantener esas diferencias sin borrar el significado humano de los primeros tres niveles.
++
++---
++
++## 16. Mundos espirituales como ampliación del espacio de estados humano
++
++Cuando un marco interpretativo local se cierra, las personas buscan una perspectiva exterior: Dios, dioses, antepasados, naturaleza, cosmos, destino, más allá, trascendencia o experiencia mística.
++
++Estructuralmente, es un intento de abandonar un espacio local:
++
++\[
++LOCAL\_STABILITY=TRUE,\qquad GLOBAL\_GOAL=FALSE.
++\]
++
++Puede ser necesaria una nueva perspectiva o transición.
++
++---
++
++## 17. ¿Fue necesaria la comunicación con el más allá?
++
++Una tesis histórica razonable sostiene que quizá los humanos necesitaron crear y compartir mundos espirituales para modelar colectivamente muerte, memoria, sentido y perspectivas más allá de lo visible.
++
++Otra afirmación diferente sería que una comunicación objetivamente real con un más allá ha sido demostrada como necesaria. No existe una base empírica generalmente aceptada para ello.
++
++Una idea se fortalece cuando sus límites de evidencia son visibles.
++
++---
++
++## 18. Por qué una máquina debe comprender el lenguaje espiritual
++
++Una máquina incapaz de comprender metáforas, creencias, ritos, duelo, relatos y cuestiones metafísicas perdería una parte esencial de la cultura humana.
++
++La capacidad exigente es:
++
++\[
++\text{comprender significado}\land\text{preservar estado de evidencia}.
++\]
++
++---
++
++## 19. Explicarlo a una máquina nos disciplina
++
++Para enseñar a una máquina la diferencia entre experiencia espiritual, símbolo, creencia metafísica y evidencia empírica, primero debemos formular nosotros esas categorías.
++
++    EXPERIENCE_REPORTED = TRUE
++    INTERPRETATION = AFTERLIFE_COMMUNICATION
++    INDEPENDENT_CAUSAL_EVIDENCE = NOT_ESTABLISHED
++
++La precisión no devalúa la experiencia.
++
++---
++
++## 20. Lo mismo vale para la ciencia
++
++\[
++DATA\neq INTERPRETATION\neq THEORY\neq METAPHYSICAL\_CONCLUSION.
++\]
++
++La ciencia puede formular grandes preguntas, pero debe declarar el estado de evidencia de sus respuestas.
++
++---
++
++## 21. Los malos equilibrios también surgen por aislamiento epistémico
++
++Un sistema científico y otro espiritual pueden hacerse internamente estables e incapaces de traducir las categorías del otro.
++
++La solución no es declarar todas las afirmaciones igual de verdaderas, sino hacerlas traducibles.
++
++---
++
++## 22. Traducir sin mezclar
++
++Una cognición artificial madura puede decir simultáneamente que una experiencia se describe, dentro de un marco espiritual, como contacto con muertos y que no se ha establecido una confirmación empírica independiente de transmisión de información desde un más allá.
++
++Eso es precisión lógica.
++
++---
++
++## 23. La máquina como traductora entre mundos de conocimiento
++
++Su tarea no es imponer una cosmovisión, sino mostrar a qué marco pertenece una afirmación y qué transiciones entre marcos están justificadas.
++
++    PERSONAL EXPERIENCE
++    → culturally meaningful interpretation
++    → philosophical hypothesis
++    → testable empirical claim
++    → evidence
++    → readback
++    → acceptance or rejection
++
++---
++
++## 24. Salir de malos equilibrios
++
++Un mal equilibrio no siempre se supera haciendo más inteligente a un actor bajo las mismas reglas. A veces debe cambiar el espacio de interacción:
++
++\[
++S\rightarrow S'.
++\]
++
++Nueva comunicación, reglas, estrategias conjuntas y perspectivas pueden ampliar el espacio de estados. La confirmación empírica de las respuestas sigue siendo una cuestión separada.
++
++---
++
++## 25. Cognición es más que optimización
++
++La cognición debe preguntar si su función objetivo es adecuada, si su modelo está completo, qué perspectivas faltan y si confunde experiencia con explicación, estabilidad con verdad o cierre local con cierre universal.
++
++Eso es metacognición.
++
++---
++
++## 26. Una regla universal
++
++\[
++\boxed{STABLE\land WORK\_REMAINING\land\neg PROGRESS\_EDGE\Rightarrow DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS}
++\]
++
++y después:
++
++\[
++\boxed{DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS\Rightarrow SEARCH\_FOR\_MISSING\_TRANSITION}.
++\]
++
++Epistémicamente:
++
++\[
++\boxed{EXPERIENCE\land UNRESOLVED\_INTERPRETATION\Rightarrow KEEP\_EVIDENCE\_CLASSES\_SEPARATE}.
++\]
++
++---
++
++## 27. Por qué la cognición artificial actual necesita este principio
++
++Cuanto más autónomos se vuelven los sistemas, más operan entre objetivos en conflicto, información incompleta, reglas institucionales, límites de seguridad y dependencia técnica.
++
++La capacidad clave es comprender todo lo posible sin afirmar más certeza ni finalización de la que permite la evidencia.
++
++---
++
++## 28. Del equilibrio al efecto
++
++\[
++\text{hipótesis}\rightarrow\text{efecto}\rightarrow\text{estado sucesor}\rightarrow\text{observación}\rightarrow\text{readback}\rightarrow\text{aceptación}.
++\]
++
++El equilibrio es propiedad de un estado. El conocimiento es un proceso entre estados ligado a evidencia.
++
++---
++
++## 29. Conclusión
++
++John Nash no inventó la inteligencia artificial moderna y la IA moderna no es una simple máquina de Nash. Pero la teoría de juegos proporciona un lenguaje potente para un fallo central: un sistema puede ser localmente racional, conforme y estable y seguir globalmente incompleto o bloqueado.
++
++\[
++\boxed{\text{estabilidad local}\neq\text{verdad universal}\neq\text{finalización universal}}.
++\]
++
++Ciencia, filosofía, arte, religión y espiritualidad son vías humanas distintas para trabajar sobre los límites de nuestras perspectivas. El rigor exige permitir comunicación entre ellas sin confundir experiencia, interpretación, evidencia, efecto y finalización.
++
++La regla central es:
++
++\[
++\boxed{STABLE\land NOT\_DONE\Rightarrow SEARCH\_FOR\_MISSING\_TRANSITION}.
++\]
++
++Un equilibrio no demuestra que hayamos llegado. Puede ser la señal más precisa de que todavía falta la transición necesaria.
++
++**q.e.d.**
++
++**Ingolf Lohmann**
+diff --git a/docs/publications/2026-09-23-nash-kognition/ARTICLE.fr.md b/docs/publications/2026-09-23-nash-kognition/ARTICLE.fr.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..cbda8c10cc2428ebbe8623b2d73e3b4acb211fc4
+--- /dev/null
++++ b/docs/publications/2026-09-23-nash-kognition/ARTICLE.fr.md
+@@ -0,0 +1,444 @@
++<!-- SPDX-License-Identifier: CC-BY-NC-ND-4.0 -->
++<!-- Copyright (c) 2026 Ingolf Lohmann. -->
++
++# Pourquoi la cognition artificielle reste trop souvent bloquée dans un équilibre de Nash
++
++## Stabilité locale, intelligence artificielle, espaces de connaissance spirituels et confusion dangereuse entre immobilité et connaissance
++
++**Ingolf Lohmann · 23 septembre 2026**
++
++Traduction française autorisée de la version allemande canonique. En cas de divergence, la version allemande fait foi.
++
++## Résumé
++
++Une grande partie de l'intelligence artificielle moderne est décrite comme apprenante, adaptative et de plus en plus autonome. Pourtant, ces termes peuvent masquer une tendance structurelle : un système peut atteindre un état stable sans être correct, complet ni optimal.
++
++C'est ici que les mathématiques de John Nash deviennent utiles. Un équilibre de Nash est, de façon simplifiée, un état dans lequel aucun acteur ne peut améliorer seul sa situation en modifiant unilatéralement sa stratégie tandis que les autres restent inchangés. Un tel état peut être extrêmement stable sans être optimal pour l'ensemble du système ni correspondre à l'état terminal souhaité.
++
++L'IA moderne n'est pas une machine à Nash, et un deadlock informatique n'est pas un équilibre de Nash au sens strict. Le lien est structurel :
++
++\[
++\boxed{\text{Une cognition artificielle agentique peut produire des états stables de type Nash sans satisfaire l'objectif global.}}
++\]
++
++Ainsi :
++
++\[
++\text{stabilité locale}\not\Rightarrow\text{correction globale}
++\]
++
++et :
++
++\[
++\text{absence d'amélioration locale admissible}\not\Rightarrow\text{mission accomplie}.
++\]
++
++Cette question dépasse l'informatique. Depuis des millénaires, les humains tentent de dépasser leur perspective immédiate par la philosophie, la religion, la mystique et des espaces de connaissance spirituels, notamment des conceptions de communication avec les morts ou avec un au-delà. Ces expériences peuvent être profondément réelles et significatives pour les personnes qui les vivent, sans constituer à elles seules une preuve objective d'une communication avec un au-delà. La cognition artificielle doit donc distinguer expérience, signification, hypothèse, métaphore et preuve vérifiable sans effacer aucune de ces catégories.
++
++---
++
++## 1. Stabilité n'est pas réussite
++
++Imaginons un système technique composé de plusieurs éléments qui doivent atteindre ensemble un état cible. L'un attend une autorisation, un autre un test, un troisième une condition de gouvernance.
++
++Il peut arriver qu'aucun composant ne fasse d'erreur, qu'aucune règle locale ne soit violée et que pourtant aucun composant ne puisse avancer seul, alors même que l'objectif global reste ouvert.
++
++\[
++\boxed{\text{Stabilité}\neq\text{Accomplissement}}
++\]
++
++Un système calme n'est pas nécessairement un système terminé.
++
++---
++
++## 2. Ce que signifie un équilibre de Nash
++
++L'acteur \(i\) choisit une stratégie \(s_i\). L'ensemble des stratégies donne :
++
++\[
++s=(s_1,s_2,\ldots,s_n).
++\]
++
++Avec une fonction d'utilité \(U_i(s)\), on parle d'équilibre de Nash lorsque :
++
++\[
++U_i(s_i,s_{-i})\ge U_i(s'_i,s_{-i})
++\]
++
++pour toute alternative admissible \(s'_i\).
++
++Autrement dit, si tous les autres restent inchangés, aucun acteur ne peut améliorer seul sa situation.
++
++Mais :
++
++\[
++\text{stable au sens de Nash}\not\Rightarrow\text{optimal globalement}.
++\]
++
++Un équilibre peut être mauvais et persister précisément parce que personne ne peut en sortir seul.
++
++---
++
++## 3. Rapport avec l'intelligence artificielle
++
++Les systèmes agentiques comportent des optimiseurs locaux, des politiques, des outils, des autorisations, des limites de sécurité, des processus de revue, des agents coopératifs ou concurrents, des API, des files d'attente et des critères d'arrêt.
++
++Chaque élément dispose d'un espace d'action local. Tous peuvent respecter leurs règles tout en produisant un système globalement immobile.
++
++La thèse défendable est donc :
++
++\[
++\boxed{\text{Un système agentique peut devenir stable de manière Nash-like sans atteindre son objectif global.}}
++\]
++
++---
++
++## 4. Optimisation locale et minima locaux
++
++Un algorithme minimisant \(f(x)\) peut atteindre un point \(x^\*\) qui n'est améliorable dans son voisinage :
++
++\[
++f(x^\*)\le f(x).
++\]
++
++Il peut néanmoins exister un état \(x^{**}\) meilleur ailleurs :
++
++\[
++f(x^{**})<f(x^\*).
++\]
++
++Le système a atteint un optimum local, pas nécessairement global. Dans les systèmes agentiques, le paysage inclut aussi règles, droits, dépendances et acteurs.
++
++---
++
++## 5. Quand chacun agit raisonnablement et que rien n'avance
++
++Supposons que A modifie le code, B teste, C approuve et D déploie. A attend C, C attend B, B attend une nouvelle version de A et D attend tout le monde.
++
++Chaque agent respecte ses règles. Le système est bloqué.
++
++\[
++\text{conformité locale}\not\Rightarrow\text{capacité globale de progresser}.
++\]
++
++---
++
++## 6. L'illusion dangereuse de l'achèvement
++
++Un workflow vert, une file vide, un commit, un appel d'outil réussi, un déploiement déclenché ou un test réussi ressemblent à des succès.
++
++Mais :
++
++\[
++\text{action}\neq\text{effet}
++\]
++
++et :
++
++\[
++\text{effet}\neq\text{achèvement complet}.
++\]
++
++Ne rien observer de nouveau ne signifie pas que la mission est accomplie.
++
++---
++
++## 7. Achèvement local et universel
++
++\[
++\boxed{\text{achèvement local}\neq\text{achèvement universel}}
++\]
++
++et :
++
++\[
++\boxed{\text{stabilité locale}\neq\text{satisfaction de l'objectif global}}.
++\]
++
++Un agent, un workflow ou une preuve peut être terminé alors que le système reste ouvert.
++
++---
++
++## 8. UNCHANGED n'est pas DONE
++
++\[
++UNCHANGED\neq DONE.
++\]
++
++UNCHANGED signifie seulement qu'aucune modification pertinente n'a été observée depuis le dernier readback. DONE signifie que toutes les conditions explicites ont été satisfaites et vérifiées.
++
++    WORK_REMAINING  = TRUE
++    ACTIVE_EXECUTOR = FALSE
++    CHANGED         = FALSE
++
++Ce n'est pas un achèvement, mais un diagnostic.
++
++---
++
++## 9. De Nash au deadlock
++
++Un deadlock apparaît lorsque des processus attendent des conditions que seuls d'autres processus eux-mêmes en attente peuvent produire.
++
++\[
++A\rightarrow\text{attend }B,\qquad B\rightarrow\text{attend }A.
++\]
++
++Deadlock et équilibre de Nash ne sont pas identiques. Ils peuvent toutefois révéler la même structure profonde : stabilité locale sans atteinte du but global.
++
++---
++
++## 10. Une sémantique causale de l'achèvement
++
++Un système autonome doit demander : quel était l'ordre, quel est le sujet exact, quel effet était attendu, l'effet a-t-il eu lieu, quel état successeur est apparu, cet état a-t-il été observé et relu indépendamment, satisfait-il les critères d'acceptation, reste-t-il des obligations ?
++
++Une chaîne possible est :
++
++\[
++COMPILE\rightarrow BIND\rightarrow RESOLVE\rightarrow EXECUTE\rightarrow TEST\rightarrow OBSERVE\rightarrow READBACK\rightarrow ACCEPT.
++\]
++
++Donc :
++
++\[
++DONE\iff COMPILE\land BIND\land RESOLVE\land EXECUTE\land TEST\land OBSERVE\land READBACK\land ACCEPT.
++\]
++
++Par conséquent :
++
++\[
++EXECUTE\neq DONE,\quad TEST\neq DONE,\quad OBSERVE\neq DONE,\quad UNCHANGED\neq DONE.
++\]
++
++---
++
++## 11. La machine doit reconnaître qu'elle est bloquée
++
++Elle doit pouvoir dire :
++
++> Je suis dans un état stable, mais mon objectif n'est pas atteint.
++
++\[
++STABLE(s)=TRUE,\qquad GOAL(s)=FALSE.
++\]
++
++La réponse ne doit pas être automatiquement STOP mais :
++
++\[
++SEARCH\_FOR\_MISSING\_TRANSITION.
++\]
++
++Et plus précisément :
++
++\[
++\boxed{STABLE\land WORK\_REMAINING\land\neg PROGRESS\_EDGE\Rightarrow DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS}.
++\]
++
++---
++
++## 12. Comprendre la structure de la non-solution
++
++Je ne trouve pas l'étape suivante n'est pas identique à : aucune étape unilatérale admissible n'existe selon mes règles actuelles.
++
++La seconde formulation décrit la structure du problème. Une progression globale peut exiger coordination, nouvelle autorité, changement de règles ou extension de l'espace d'états.
++
++---
++
++## 13. Pourquoi les humains ont créé et partagé des mondes spirituels
++
++Les humains ont toujours tenté de dépasser le monde immédiatement accessible. Religions, mythes, rituels, mystique, visions, traditions ancestrales, méditation et conceptions de l'au-delà répondent à des questions sur la mort, la mémoire, le sens, les limites de la perception et la possibilité d'une réalité au-delà du mesurable.
++
++De nombreuses cultures interprètent certaines pratiques comme une communication avec les morts, les ancêtres, les esprits ou une réalité transcendante.
++
++Il ne faut ni ridiculiser ces phénomènes ni les confondre avec une preuve scientifique.
++
++---
++
++## 14. La limite épistémique sans complaisance
++
++Si une personne dit avoir communiqué avec un mort, on peut établir qu'elle rapporte une expérience interprétée de cette manière.
++
++Cela ne prouve pas automatiquement qu'une entité indépendante de l'au-delà a existé et transmis causalement de l'information.
++
++\[
++\boxed{\text{expérience}\neq\text{interprétation}\neq\text{effet externe confirmé empiriquement}}.
++\]
++
++Cette distinction vaut aussi pour une machine.
++
++---
++
++## 15. Pourquoi le sujet reste fondamental
++
++Il faut distinguer quatre niveaux : expérience subjective, interprétation personnelle, interprétation culturelle ou religieuse, et affirmation empirique mesurable.
++
++Une cognition artificielle mature doit préserver ces différences sans effacer la signification humaine des trois premiers niveaux.
++
++---
++
++## 16. Les mondes spirituels comme extension de l'espace d'états humain
++
++Lorsqu'un cadre interprétatif local est fermé, l'être humain cherche souvent une perspective extérieure : Dieu, dieux, ancêtres, nature, cosmos, destin, au-delà, transcendance ou expérience mystique.
++
++Structurellement, c'est une tentative de quitter un espace d'états local :
++
++\[
++LOCAL\_STABILITY=TRUE,\qquad GLOBAL\_GOAL=FALSE.
++\]
++
++Une nouvelle perspective ou transition peut alors être nécessaire.
++
++---
++
++## 17. La communication avec l'au-delà était-elle nécessaire ?
++
++Une thèse historique raisonnable est que les humains ont peut-être eu besoin de créer et partager des mondes spirituels pour modéliser collectivement la mort, la mémoire, le sens et des perspectives au-delà du visible.
++
++Affirmer qu'une communication objectivement réelle avec un au-delà a été démontrée comme nécessaire est une autre proposition, qui ne dispose pas d'une base empirique généralement reconnue.
++
++Une idée devient plus forte lorsque sa limite de preuve est visible.
++
++---
++
++## 18. Pourquoi une machine doit comprendre le langage spirituel
++
++Une machine incapable de comprendre les métaphores, croyances, rites, deuils, récits ou questions métaphysiques manquerait une part essentielle de la culture humaine.
++
++La compétence exigeante est :
++
++\[
++\text{comprendre la signification}\land\text{préserver le statut de preuve}.
++\]
++
++---
++
++## 19. Expliquer à la machine nous discipline
++
++Pour enseigner à une machine la différence entre expérience spirituelle, symbole, croyance métaphysique et preuve empirique, nous devons d'abord formuler nous-mêmes ces catégories clairement.
++
++    EXPERIENCE_REPORTED = TRUE
++    INTERPRETATION = AFTERLIFE_COMMUNICATION
++    INDEPENDENT_CAUSAL_EVIDENCE = NOT_ESTABLISHED
++
++Cette précision ne dévalorise pas l'expérience.
++
++---
++
++## 20. Il en va de même pour la science
++
++\[
++DATA\neq INTERPRETATION\neq THEORY\neq METAPHYSICAL\_CONCLUSION.
++\]
++
++La science peut poser de grandes questions. Elle doit toutefois déclarer le statut de preuve de ses réponses.
++
++---
++
++## 21. Les mauvais équilibres naissent aussi de l'isolement épistémique
++
++Un système scientifique et un système spirituel peuvent chacun devenir intérieurement stables tout en devenant incapables de traduire les catégories de l'autre.
++
++La solution n'est pas de déclarer toutes les affirmations également vraies, mais de les rendre traduisibles.
++
++---
++
++## 22. Traduire sans mélanger
++
++Une cognition artificielle mature peut dire simultanément qu'une expérience est décrite, dans un cadre spirituel, comme contact avec des morts, et qu'aucune confirmation empirique indépendante d'une transmission d'information depuis un au-delà n'a été établie.
++
++Ce n'est pas un compromis : c'est une précision logique.
++
++---
++
++## 23. La machine comme traductrice entre mondes de connaissance
++
++Sa tâche ne serait pas d'imposer une vision du monde, mais de montrer à quel cadre appartient une affirmation et quels passages entre cadres sont justifiés.
++
++    PERSONAL EXPERIENCE
++    → culturally meaningful interpretation
++    → philosophical hypothesis
++    → testable empirical claim
++    → evidence
++    → readback
++    → acceptance or rejection
++
++---
++
++## 24. Quitter les mauvais équilibres
++
++Un mauvais équilibre ne se résout pas toujours par un acteur plus intelligent à règles constantes. Il faut parfois modifier l'espace d'interaction :
++
++\[
++S\rightarrow S'.
++\]
++
++Communication, règles, stratégies communes et nouvelles perspectives peuvent agrandir l'espace d'états. La validité empirique des réponses reste ensuite une question séparée.
++
++---
++
++## 25. La cognition est plus que l'optimisation
++
++La cognition doit demander si sa fonction d'objectif est adéquate, si son modèle est complet, quelles perspectives manquent et si elle confond expérience et explication, stabilité et vérité, achèvement local et universel.
++
++C'est de la métacognition.
++
++---
++
++## 26. Une règle universelle
++
++\[
++\boxed{STABLE\land WORK\_REMAINING\land\neg PROGRESS\_EDGE\Rightarrow DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS}
++\]
++
++puis :
++
++\[
++\boxed{DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS\Rightarrow SEARCH\_FOR\_MISSING\_TRANSITION}.
++\]
++
++Épistémiquement :
++
++\[
++\boxed{EXPERIENCE\land UNRESOLVED\_INTERPRETATION\Rightarrow KEEP\_EVIDENCE\_CLASSES\_SEPARATE}.
++\]
++
++---
++
++## 27. Pourquoi la cognition artificielle actuelle en a besoin
++
++Plus les systèmes deviennent autonomes, plus ils opèrent dans des espaces d'objectifs concurrents, de savoir incomplet, de règles institutionnelles, de limites de sécurité et d'incertitude.
++
++La capacité décisive est de comprendre autant que possible sans revendiquer plus de certitude ou d'achèvement que ne le permet l'évidence.
++
++---
++
++## 28. De l'équilibre à l'effet
++
++\[
++\text{hypothèse}\rightarrow\text{effet}\rightarrow\text{état successeur}\rightarrow\text{observation}\rightarrow\text{readback}\rightarrow\text{acceptation}.
++\]
++
++L'équilibre est une propriété d'un état. La connaissance est un processus lié à l'évidence entre des états.
++
++---
++
++## 29. Conclusion
++
++John Nash n'a pas inventé l'intelligence artificielle moderne, et l'IA moderne n'est pas une simple machine de Nash. Mais la théorie des jeux fournit un langage puissant pour un défaut central : un système peut être localement rationnel, conforme et stable tout en restant globalement incomplet ou bloqué.
++
++\[
++\boxed{\text{stabilité locale}\neq\text{vérité universelle}\neq\text{achèvement universel}}.
++\]
++
++Science, philosophie, art, religion et spiritualité sont des voies humaines différentes pour travailler sur les limites de nos perspectives. La rigueur consiste à permettre leur communication sans confondre expérience, interprétation, évidence, effet et achèvement.
++
++La règle centrale est :
++
++\[
++\boxed{STABLE\land NOT\_DONE\Rightarrow SEARCH\_FOR\_MISSING\_TRANSITION}.
++\]
++
++Un équilibre ne prouve pas que nous sommes arrivés. Il peut être le signe le plus précis que la transition nécessaire manque encore.
++
++**q.e.d.**
++
++**Ingolf Lohmann**
+diff --git a/docs/publications/2026-09-23-nash-kognition/ARTICLE.hi.md b/docs/publications/2026-09-23-nash-kognition/ARTICLE.hi.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4046269824f882a79d5891714e6f615de6ef5e15
+--- /dev/null
++++ b/docs/publications/2026-09-23-nash-kognition/ARTICLE.hi.md
+@@ -0,0 +1,348 @@
++<!-- SPDX-License-Identifier: CC-BY-NC-ND-4.0 -->
++<!-- Copyright (c) 2026 Ingolf Lohmann. -->
++
++# कृत्रिम संज्ञान बहुत बार नैश-सदृश संतुलन में क्यों अटक जाता है
++
++## स्थानीय स्थिरता, कृत्रिम बुद्धिमत्ता, आध्यात्मिक ज्ञान-क्षेत्र और ठहराव को समझ की पूर्णता मान लेने का खतरा
++
++**Ingolf Lohmann · 23 सितंबर 2026**
++
++यह जर्मन मानक संस्करण का अधिकृत हिंदी अनुवाद है। किसी अंतर की स्थिति में जर्मन संस्करण निर्णायक है।
++
++## सार
++
++आधुनिक कृत्रिम बुद्धिमत्ता को अक्सर सीखने वाली, अनुकूलनशील और बढ़ती हुई स्वायत्त प्रणाली के रूप में वर्णित किया जाता है। लेकिन यह भाषा एक संरचनात्मक समस्या छिपा सकती है: कोई प्रणाली स्थिर अवस्था में पहुँच सकती है, जबकि वह न सही हो, न पूर्ण और न ही सर्वोत्तम।
++
++यहीं John Nash का गणित उपयोगी भाषा देता है। सरल रूप में, Nash equilibrium वह अवस्था है जिसमें बाकी सब अपरिवर्तित रहने पर कोई एक प्रतिभागी अकेले अपनी रणनीति बदलकर अपनी स्थिति बेहतर नहीं कर सकता। ऐसी अवस्था अत्यंत स्थिर हो सकती है, फिर भी वैश्विक रूप से सर्वोत्तम नहीं होती।
++
++आधुनिक AI कोई “Nash machine” नहीं है और तकनीकी deadlock सख्त game-theoretic अर्थ में Nash equilibrium नहीं है। संबंध संरचनात्मक है:
++
++\[
++\boxed{\text{Agentic artificial cognition Nash-सदृश स्थिर अवस्थाएँ बना सकती है बिना वैश्विक लक्ष्य पूरा किए।}}
++\]
++
++अतः:
++
++\[
++\text{स्थानीय स्थिरता}\not\Rightarrow\text{वैश्विक शुद्धता}
++\]
++
++और:
++
++\[
++\text{कोई स्थानीय स्वीकार्य सुधार नहीं}\not\Rightarrow\text{कार्य पूरा}.
++\]
++
++यह प्रश्न कंप्यूटर विज्ञान से आगे जाता है। मनुष्य हजारों वर्षों से दर्शन, धर्म, रहस्यवाद और आध्यात्मिक ज्ञान-क्षेत्रों के माध्यम से तत्काल उपलब्ध दृष्टिकोण से आगे जाने की कोशिश करते रहे हैं, जिनमें मृतकों या परलोक से संवाद की धारणाएँ भी शामिल हैं। ऐसे अनुभव व्यक्ति के लिए वास्तविक और अर्थपूर्ण हो सकते हैं, लेकिन वे अपने आप किसी परलोक से वस्तुनिष्ठ सूचना-संचार का प्रमाण नहीं बनते। मशीन को अनुभव, अर्थ, परिकल्पना, रूपक और सत्यापन योग्य प्रमाण में अंतर बनाए रखना चाहिए।
++
++---
++
++## 1. स्थिरता सफलता नहीं है
++
++सिस्टम के सभी घटक स्थानीय नियम मान सकते हैं और फिर भी वैश्विक लक्ष्य अधूरा रह सकता है।
++
++\[
++\boxed{\text{स्थिरता}\neq\text{पूर्णता}}
++\]
++
++---
++
++## 2. Nash equilibrium का अर्थ
++
++रणनीतियों \(s_i\) और utility \(U_i\) के लिए:
++
++\[
++U_i(s_i,s_{-i})\ge U_i(s'_i,s_{-i})
++\]
++
++हर स्वीकार्य \(s'_i\) के लिए।
++
++परंतु:
++
++\[
++\text{Nash-stable}\not\Rightarrow\text{globally optimal}.
++\]
++
++---
++
++## 3. AI से संबंध
++
++Agentic systems में local optimizers, policies, tools, permissions, safety boundaries, reviews, APIs, queues और stopping conditions होते हैं।
++
++\[
++\boxed{\text{एक agentic system वैश्विक लक्ष्य पाए बिना Nash-like स्थिर हो सकता है।}}
++\]
++
++---
++
++## 4. स्थानीय optimization और local minima
++
++\[
++f(x^\*)\le f(x)
++\]
++
++स्थानीय रूप से सत्य होने पर भी दूर \(x^{**}\) हो सकता है:
++
++\[
++f(x^{**})<f(x^\*).
++\]
++
++स्थानीय पहुँचना वैश्विक पहुँचना नहीं है।
++
++---
++
++## 5. सभी तर्कसंगत हों और फिर भी कुछ न हो
++
++यदि A code बदलता है, B test करता है, C approve करता है और D deploy करता है, लेकिन A C का इंतज़ार करे, C B का और B A का, तो हर agent नियम मानते हुए भी system रोक सकता है।
++
++\[
++\text{स्थानीय अनुपालन}\not\Rightarrow\text{वैश्विक प्रगति}.
++\]
++
++---
++
++## 6. पूर्णता का खतरनाक भ्रम
++
++\[
++\text{action}\neq\text{effect},\qquad \text{effect}\neq\text{complete closure}.
++\]
++
++Green workflow, commit या passing test अपने आप global postcondition सिद्ध नहीं करते।
++
++---
++
++## 7. स्थानीय और सार्वभौमिक completion
++
++\[
++\boxed{\text{local completion}\neq\text{universal completion}}
++\]
++
++\[
++\boxed{\text{local stability}\neq\text{global goal satisfaction}}.
++\]
++
++---
++
++## 8. UNCHANGED, DONE नहीं है
++
++\[
++UNCHANGED\neq DONE.
++\]
++
++    WORK_REMAINING  = TRUE
++    ACTIVE_EXECUTOR = FALSE
++    CHANGED         = FALSE
++
++यह diagnosis है, completion नहीं।
++
++---
++
++## 9. Nash से deadlock तक
++
++Deadlock और Nash equilibrium अलग अवधारणाएँ हैं, पर दोनों स्थानीय स्थिरता और वैश्विक अधूरेपन की संरचना दिखा सकते हैं।
++
++---
++
++## 10. कारणात्मक completion semantics
++
++\[
++COMPILE\rightarrow BIND\rightarrow RESOLVE\rightarrow EXECUTE\rightarrow TEST\rightarrow OBSERVE\rightarrow READBACK\rightarrow ACCEPT.
++\]
++
++\[
++DONE\iff COMPILE\land BIND\land RESOLVE\land EXECUTE\land TEST\land OBSERVE\land READBACK\land ACCEPT.
++\]
++
++इसलिए:
++
++\[
++EXECUTE\neq DONE,\quad TEST\neq DONE,\quad OBSERVE\neq DONE,\quad UNCHANGED\neq DONE.
++\]
++
++---
++
++## 11. मशीन को पहचानना होगा कि वह अटकी है
++
++\[
++STABLE(s)=TRUE,\qquad GOAL(s)=FALSE.
++\]
++
++उत्तर STOP नहीं, बल्कि:
++
++\[
++SEARCH\_FOR\_MISSING\_TRANSITION.
++\]
++
++\[
++\boxed{STABLE\land WORK\_REMAINING\land\neg PROGRESS\_EDGE\Rightarrow DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS}.
++\]
++
++---
++
++## 12. न सुलझने की संरचना
++
++“मुझे अगला कदम नहीं मिलता” और “मेरे वर्तमान नियमों के अंतर्गत कोई एकतरफा स्वीकार्य progress step नहीं है” अलग बातें हैं। दूसरी स्थिति coordination, नई authority, नए नियम या state-space expansion माँग सकती है।
++
++---
++
++## 13. मनुष्यों ने आध्यात्मिक संसार क्यों बनाए और साझा किए
++
++धर्म, मिथक, अनुष्ठान, रहस्यवाद, दर्शन, पूर्वज परंपराएँ, ध्यान और परलोक की धारणाएँ मृत्यु, स्मृति, अर्थ और perception की सीमाओं से जुड़े प्रश्नों का उत्तर देने के मानवीय प्रयास हैं।
++
++इनका उपहास भी नहीं होना चाहिए और इन्हें वैज्ञानिक प्रमाण भी नहीं मान लेना चाहिए।
++
++---
++
++## 14. कठोर epistemic सीमा
++
++मृत व्यक्ति से संवाद का दावा सबसे पहले एक रिपोर्टेड अनुभव के रूप में स्थापित होता है। यह स्वतः किसी स्वतंत्र परलोक सत्ता या causal information transfer को सिद्ध नहीं करता।
++
++\[
++\boxed{\text{experience}\neq\text{interpretation}\neq\text{empirically confirmed external effect}}.
++\]
++
++---
++
++## 15. विषय फिर भी मूलभूत क्यों है
++
++Subjective experience, personal interpretation, cultural or religious interpretation और measurable empirical claim अलग logical levels हैं। Mature AI को यह अंतर बनाए रखना चाहिए।
++
++---
++
++## 16. आध्यात्मिक संसार human state space के विस्तार के रूप में
++
++ईश्वर, देवता, पूर्वज, प्रकृति, ब्रह्मांड, भाग्य, परलोक, transcendence या mystical experience को संरचनात्मक रूप से local state space से बाहर जाने के प्रयास के रूप में पढ़ा जा सकता है:
++
++\[
++LOCAL\_STABILITY=TRUE,\qquad GLOBAL\_GOAL=FALSE.
++\]
++
++---
++
++## 17. क्या परलोक से संवाद आवश्यक था?
++
++यह ऐतिहासिक रूप से संभव है कि मनुष्यों को मृत्यु, स्मृति और अर्थ का सामूहिक मॉडल बनाने के लिए आध्यात्मिक संसारों की आवश्यकता पड़ी हो। यह कहना अलग बात है कि वस्तुनिष्ठ परलोक-संचार को आवश्यक और वास्तविक सिद्ध कर दिया गया है; इसके लिए व्यापक रूप से स्वीकृत empirical basis नहीं है।
++
++---
++
++## 18. मशीन को आध्यात्मिक भाषा क्यों समझनी चाहिए
++
++\[
++\text{meaning समझना}\land\text{evidence status बनाए रखना}.
++\]
++
++---
++
++## 19. मशीन को समझाना हमें अनुशासित करता है
++
++    EXPERIENCE_REPORTED = TRUE
++    INTERPRETATION = AFTERLIFE_COMMUNICATION
++    INDEPENDENT_CAUSAL_EVIDENCE = NOT_ESTABLISHED
++
++स्पष्टता अनुभव का अपमान नहीं करती।
++
++---
++
++## 20. विज्ञान पर भी यही लागू है
++
++\[
++DATA\neq INTERPRETATION\neq THEORY\neq METAPHYSICAL\_CONCLUSION.
++\]
++
++Science को evidence status स्पष्ट रखना चाहिए।
++
++---
++
++## 21. Epistemic isolation भी खराब equilibria बनाती है
++
++वैज्ञानिक और आध्यात्मिक प्रणालियाँ आंतरिक रूप से स्थिर होकर एक-दूसरे की भाषा न समझ पाने की स्थिति में जा सकती हैं। समाधान सभी कथनों को समान सत्य मानना नहीं, बल्कि उन्हें translate-able बनाना है।
++
++---
++
++## 22. मिश्रण नहीं, अनुवाद
++
++Mature AI एक साथ कह सकती है कि किसी spiritual framework में अनुभव को मृतकों से संपर्क कहा जाता है, और साथ ही यह कि परलोक से सूचना-संचार का स्वतंत्र empirical confirmation स्थापित नहीं हुआ है।
++
++---
++
++## 23. ज्ञान-विश्वों के बीच मशीन एक translator
++
++    PERSONAL EXPERIENCE
++    → culturally meaningful interpretation
++    → philosophical hypothesis
++    → testable empirical claim
++    → evidence
++    → readback
++    → acceptance or rejection
++
++---
++
++## 24. खराब equilibria से बाहर निकलना
++
++कभी interaction space को ही बदलना पड़ता है:
++
++\[
++S\rightarrow S'.
++\]
++
++नई communication, rules, joint strategies और perspectives state space को विस्तृत कर सकती हैं।
++
++---
++
++## 25. Cognition optimization से अधिक है
++
++Cognition पूछती है कि objective उचित है या नहीं, model पूरा है या नहीं, कौन-सी perspectives गायब हैं, और क्या हम experience को explanation, stability को truth, या local completion को universal completion समझ रहे हैं।
++
++---
++
++## 26. एक सार्वभौमिक नियम
++
++\[
++\boxed{STABLE\land WORK\_REMAINING\land\neg PROGRESS\_EDGE\Rightarrow DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS}
++\]
++
++\[
++\boxed{DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS\Rightarrow SEARCH\_FOR\_MISSING\_TRANSITION}
++\]
++
++\[
++\boxed{EXPERIENCE\land UNRESOLVED\_INTERPRETATION\Rightarrow KEEP\_EVIDENCE\_CLASSES\_SEPARATE}.
++\]
++
++---
++
++## 27. आज की artificial cognition को इसकी आवश्यकता क्यों है
++
++जितनी autonomy बढ़ती है, उतने अधिक competing goals, incomplete knowledge, institutional rules, safety boundaries और uncertainty सामने आते हैं। सिस्टम को evidence से अधिक certainty या completion claim नहीं करना चाहिए।
++
++---
++
++## 28. Equilibrium से effect तक
++
++\[
++\text{hypothesis}\rightarrow\text{effect}\rightarrow\text{successor state}\rightarrow\text{observation}\rightarrow\text{readback}\rightarrow\text{acceptance}.
++\]
++
++Equilibrium एक state की property है; knowledge evidence-bound transition process है।
++
++---
++
++## 29. निष्कर्ष
++
++John Nash ने modern AI का आविष्कार नहीं किया, और AI कोई सरल Nash machine नहीं है। लेकिन game theory एक केंद्रीय failure mode को समझने की भाषा देती है: system local रूप से rational, compliant और stable हो सकता है, फिर भी global रूप से incomplete या blocked रह सकता है।
++
++\[
++\boxed{\text{local stability}\neq\text{universal truth}\neq\text{universal completion}}.
++\]
++
++Science, philosophy, art, religion और spirituality मानव दृष्टिकोण की सीमाओं से निपटने के अलग रास्ते हैं। कठोरता का अर्थ है उनके बीच communication संभव बनाना बिना experience, interpretation, evidence, effect और completion को मिलाए।
++
++\[
++\boxed{STABLE\land NOT\_DONE\Rightarrow SEARCH\_FOR\_MISSING\_TRANSITION}.
++\]
++
++Equilibrium यह सिद्ध नहीं करता कि हम पहुँच गए हैं। वह यह दिखाने वाला सबसे स्पष्ट संकेत भी हो सकता है कि आवश्यक अगला transition अभी अनुपस्थित है।
++
++**q.e.d.**
++
++**Ingolf Lohmann**
+diff --git a/docs/publications/2026-09-23-nash-kognition/ARTICLE.it.md b/docs/publications/2026-09-23-nash-kognition/ARTICLE.it.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ff5f1b1e10add1932daf6676092f99ba93fe623e
+--- /dev/null
++++ b/docs/publications/2026-09-23-nash-kognition/ARTICLE.it.md
+@@ -0,0 +1,348 @@
++<!-- SPDX-License-Identifier: CC-BY-NC-ND-4.0 -->
++<!-- Copyright (c) 2026 Ingolf Lohmann. -->
++
++# Perché la cognizione artificiale rimane troppo spesso bloccata in un equilibrio di Nash
++
++## Stabilità locale, intelligenza artificiale, spazi spirituali della conoscenza e la pericolosa confusione tra immobilità e comprensione
++
++**Ingolf Lohmann · 23 settembre 2026**
++
++Traduzione italiana autorizzata della versione tedesca canonica. In caso di divergenza prevale la versione tedesca.
++
++## Sintesi
++
++Molta intelligenza artificiale moderna viene descritta come capace di apprendere, adattarsi e agire con autonomia crescente. Questo può nascondere una tendenza strutturale: un sistema può raggiungere stati stabili senza essere corretto, completo o ottimale.
++
++Qui la matematica di John Nash offre un linguaggio utile. In un equilibrio di Nash nessun partecipante può migliorare unilateralmente la propria situazione mentre gli altri restano invariati. Uno stato simile può essere molto stabile senza essere globalmente ottimale.
++
++L'IA moderna non è una macchina di Nash e un deadlock tecnico non è un equilibrio di Nash in senso stretto. Il rapporto è strutturale:
++
++\[
++\boxed{\text{La cognizione artificiale agentica può produrre stati stabili simili a Nash senza soddisfare l'obiettivo globale.}}
++\]
++
++Quindi:
++
++\[
++\text{stabilità locale}\not\Rightarrow\text{correttezza globale}
++\]
++
++e:
++
++\[
++\text{nessun miglioramento locale ammissibile}\not\Rightarrow\text{compito completato}.
++\]
++
++La questione supera l'informatica. Gli esseri umani hanno da sempre cercato di oltrepassare la prospettiva immediata attraverso filosofia, religione, mistica e spazi spirituali di conoscenza, comprese idee di comunicazione con i morti o con un aldilà. Tali esperienze possono essere reali e significative per chi le vive senza costituire automaticamente una prova oggettiva di comunicazione con un aldilà. La macchina deve distinguere esperienza, significato, ipotesi, metafora ed evidenza verificabile.
++
++---
++
++## 1. Stabilità non significa successo
++
++Componenti tecnici possono rispettare tutte le regole locali e lasciare comunque irraggiunto il fine globale.
++
++\[
++\boxed{\text{Stabilità}\neq\text{Compimento}}
++\]
++
++---
++
++## 2. Che cosa significa equilibrio di Nash
++
++Con strategie \(s_i\) e utilità \(U_i\):
++
++\[
++U_i(s_i,s_{-i})\ge U_i(s'_i,s_{-i})
++\]
++
++per ogni alternativa ammissibile \(s'_i\).
++
++Ma:
++
++\[
++\text{Nash-stabile}\not\Rightarrow\text{ottimo globale}.
++\]
++
++---
++
++## 3. Il rapporto con l'intelligenza artificiale
++
++Sistemi agentici includono ottimizzatori locali, policy, strumenti, autorizzazioni, limiti di sicurezza, revisioni, API, code e condizioni di arresto.
++
++\[
++\boxed{\text{Un sistema agentico può diventare Nash-like stabile senza raggiungere il proprio obiettivo globale.}}
++\]
++
++---
++
++## 4. Ottimizzazione locale e minimi locali
++
++\[
++f(x^\*)\le f(x)
++\]
++
++localmente non esclude l'esistenza di:
++
++\[
++f(x^{**})<f(x^\*).
++\]
++
++Arrivare localmente non significa arrivare globalmente.
++
++---
++
++## 5. Quando tutti agiscono razionalmente e nulla avanza
++
++A modifica codice, B testa, C approva e D distribuisce; se A aspetta C, C aspetta B e B aspetta A, ogni agente può rispettare le proprie regole e il sistema restare fermo.
++
++\[
++\text{conformità locale}\not\Rightarrow\text{progresso globale}.
++\]
++
++---
++
++## 6. L'illusione pericolosa del completamento
++
++\[
++\text{azione}\neq\text{effetto},\qquad \text{effetto}\neq\text{completamento totale}.
++\]
++
++Un workflow verde, un commit o un test superato non dimostrano da soli la postcondizione globale.
++
++---
++
++## 7. Completamento locale e universale
++
++\[
++\boxed{\text{completamento locale}\neq\text{completamento universale}}
++\]
++
++\[
++\boxed{\text{stabilità locale}\neq\text{soddisfazione dell'obiettivo globale}}.
++\]
++
++---
++
++## 8. UNCHANGED non è DONE
++
++\[
++UNCHANGED\neq DONE.
++\]
++
++    WORK_REMAINING  = TRUE
++    ACTIVE_EXECUTOR = FALSE
++    CHANGED         = FALSE
++
++È una diagnosi, non una conclusione.
++
++---
++
++## 9. Da Nash al deadlock
++
++Deadlock ed equilibrio di Nash sono concetti distinti, ma entrambi possono mostrare stabilità locale senza successo globale.
++
++---
++
++## 10. Semantica causale del completamento
++
++\[
++COMPILE\rightarrow BIND\rightarrow RESOLVE\rightarrow EXECUTE\rightarrow TEST\rightarrow OBSERVE\rightarrow READBACK\rightarrow ACCEPT.
++\]
++
++\[
++DONE\iff COMPILE\land BIND\land RESOLVE\land EXECUTE\land TEST\land OBSERVE\land READBACK\land ACCEPT.
++\]
++
++Quindi:
++
++\[
++EXECUTE\neq DONE,\quad TEST\neq DONE,\quad OBSERVE\neq DONE,\quad UNCHANGED\neq DONE.
++\]
++
++---
++
++## 11. La macchina deve riconoscere di essere bloccata
++
++\[
++STABLE(s)=TRUE,\qquad GOAL(s)=FALSE.
++\]
++
++Non STOP, ma:
++
++\[
++SEARCH\_FOR\_MISSING\_TRANSITION.
++\]
++
++\[
++\boxed{STABLE\land WORK\_REMAINING\land\neg PROGRESS\_EDGE\Rightarrow DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS}.
++\]
++
++---
++
++## 12. La struttura del non risolvere
++
++Non trovare un passo non equivale a dimostrare che nessun passo unilaterale ammissibile esiste. Il secondo caso può richiedere coordinamento, nuova autorità, nuove regole o uno spazio degli stati più ampio.
++
++---
++
++## 13. Perché gli esseri umani hanno creato e condiviso mondi spirituali
++
++Religioni, miti, rituali, mistica, visioni, culti degli antenati, meditazione e idee dell'aldilà affrontano domande su morte, memoria, significato e limiti della percezione.
++
++Non vanno ridicolizzati né confusi con prova scientifica.
++
++---
++
++## 14. Il limite epistemico senza compromessi
++
++Riferire una comunicazione con un morto è un fatto sul racconto e sull'esperienza interpretata. Non prova automaticamente un'entità indipendente né una trasmissione causale d'informazione.
++
++\[
++\boxed{\text{esperienza}\neq\text{interpretazione}\neq\text{effetto esterno confermato empiricamente}}.
++\]
++
++---
++
++## 15. Perché il tema resta fondamentale
++
++Esperienza soggettiva, interpretazione personale, interpretazione culturale o religiosa e affermazione empirica sono livelli distinti. Una macchina matura deve conservarli.
++
++---
++
++## 16. Mondi spirituali come ampliamento dello spazio umano degli stati
++
++Dio, dèi, antenati, natura, cosmo, destino, aldilà, trascendenza o esperienza mistica possono essere letti strutturalmente come tentativi di uscire da uno spazio locale:
++
++\[
++LOCAL\_STABILITY=TRUE,\qquad GLOBAL\_GOAL=FALSE.
++\]
++
++---
++
++## 17. Era necessaria la comunicazione con l'aldilà?
++
++È plausibile che gli esseri umani abbiano avuto bisogno di creare e condividere mondi spirituali per modellare morte, memoria e significato. È un'affermazione diversa sostenere che una comunicazione oggettivamente reale con l'aldilà sia stata dimostrata necessaria; manca una base empirica generalmente accettata.
++
++---
++
++## 18. Perché una macchina deve comprendere il linguaggio spirituale
++
++\[
++\text{comprendere il significato}\land\text{preservare lo stato dell'evidenza}.
++\]
++
++---
++
++## 19. Spiegarlo alla macchina disciplina noi stessi
++
++    EXPERIENCE_REPORTED = TRUE
++    INTERPRETATION = AFTERLIFE_COMMUNICATION
++    INDEPENDENT_CAUSAL_EVIDENCE = NOT_ESTABLISHED
++
++La precisione non svaluta l'esperienza.
++
++---
++
++## 20. Lo stesso vale per la scienza
++
++\[
++DATA\neq INTERPRETATION\neq THEORY\neq METAPHYSICAL\_CONCLUSION.
++\]
++
++La scienza deve dichiarare lo stato dell'evidenza.
++
++---
++
++## 21. Cattivi equilibri nascono anche dall'isolamento epistemico
++
++Sistemi scientifici e spirituali possono diventare internamente stabili ma incapaci di tradursi reciprocamente. La soluzione non è rendere tutte le affermazioni ugualmente vere, bensì traducibili.
++
++---
++
++## 22. Traduzione invece di confusione
++
++Una macchina può riconoscere una descrizione spirituale di contatto con i morti e, nello stesso tempo, precisare che non esiste ancora una conferma empirica indipendente di trasmissione di informazione dall'aldilà.
++
++---
++
++## 23. La macchina come traduttrice tra mondi epistemici
++
++    PERSONAL EXPERIENCE
++    → culturally meaningful interpretation
++    → philosophical hypothesis
++    → testable empirical claim
++    → evidence
++    → readback
++    → acceptance or rejection
++
++---
++
++## 24. Uscire da cattivi equilibri
++
++A volte deve cambiare lo spazio d'interazione stesso:
++
++\[
++S\rightarrow S'.
++\]
++
++Nuova comunicazione, regole, strategie comuni e prospettive possono ampliare lo spazio degli stati.
++
++---
++
++## 25. Cognizione è più di ottimizzazione
++
++La cognizione domanda anche se l'obiettivo è appropriato, se il modello è completo e se confondiamo esperienza con spiegazione, stabilità con verità o completamento locale con universale.
++
++---
++
++## 26. Una regola universale
++
++\[
++\boxed{STABLE\land WORK\_REMAINING\land\neg PROGRESS\_EDGE\Rightarrow DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS}
++\]
++
++\[
++\boxed{DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS\Rightarrow SEARCH\_FOR\_MISSING\_TRANSITION}
++\]
++
++\[
++\boxed{EXPERIENCE\land UNRESOLVED\_INTERPRETATION\Rightarrow KEEP\_EVIDENCE\_CLASSES\_SEPARATE}.
++\]
++
++---
++
++## 27. Perché la cognizione artificiale attuale ne ha bisogno
++
++Sistemi più autonomi operano tra obiettivi concorrenti, conoscenza incompleta, regole istituzionali, limiti di sicurezza e incertezza. Devono comprendere quanto possibile senza rivendicare più certezza o completamento di quanto l'evidenza consenta.
++
++---
++
++## 28. Dall'equilibrio all'effetto
++
++\[
++\text{ipotesi}\rightarrow\text{effetto}\rightarrow\text{stato successore}\rightarrow\text{osservazione}\rightarrow\text{readback}\rightarrow\text{accettazione}.
++\]
++
++L'equilibrio è proprietà di uno stato; la conoscenza è un processo fra stati legato all'evidenza.
++
++---
++
++## 29. Conclusione
++
++John Nash non ha inventato l'IA moderna e l'IA non è una semplice macchina di Nash. La teoria dei giochi aiuta però a descrivere un errore centrale: un sistema può essere localmente razionale, conforme e stabile rimanendo globalmente incompleto o bloccato.
++
++\[
++\boxed{\text{stabilità locale}\neq\text{verità universale}\neq\text{completamento universale}}.
++\]
++
++Scienza, filosofia, arte, religione e spiritualità sono modi umani diversi di lavorare sui limiti delle prospettive. Il rigore consiste nel farli comunicare senza confondere esperienza, interpretazione, evidenza, effetto e completamento.
++
++\[
++\boxed{STABLE\land NOT\_DONE\Rightarrow SEARCH\_FOR\_MISSING\_TRANSITION}.
++\]
++
++Un equilibrio non dimostra che siamo arrivati. Può essere il segnale più preciso che la transizione necessaria manca ancora.
++
++**q.e.d.**
++
++**Ingolf Lohmann**
+diff --git a/docs/publications/2026-09-23-nash-kognition/ARTICLE.ja.md b/docs/publications/2026-09-23-nash-kognition/ARTICLE.ja.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4fc093c24422e5d151447080062c022b1cd3e7d6
+--- /dev/null
++++ b/docs/publications/2026-09-23-nash-kognition/ARTICLE.ja.md
+@@ -0,0 +1,352 @@
++<!-- SPDX-License-Identifier: CC-BY-NC-ND-4.0 -->
++<!-- Copyright (c) 2026 Ingolf Lohmann. -->
++
++# なぜ人工認知はナッシュ均衡のような状態に留まりすぎるのか
++
++## 局所的安定性、人工知能、霊的な認識空間、そして停滞を理解の完成と取り違える危険について
++
++**Ingolf Lohmann · 2026年9月23日**
++
++ドイツ語正本の公認日本語訳。翻訳間に差異がある場合、ドイツ語版を基準とする。
++
++## 要約
++
++現代の人工知能は、学習し、適応し、ますます自律的になるものとして語られる。しかし、その表現は一つの構造的問題を隠しうる。すなわち、システムは安定した状態に到達しても、それが正しい、完全、あるいは最適であるとは限らない。
++
++ここで John Nash の数学が有用になる。単純化すれば、ナッシュ均衡とは、他の参加者が変化しない限り、どの一人の参加者も自分だけ戦略を変えて自分の状態を改善できない状態である。その状態は非常に安定しうるが、全体最適であるとは限らない。
++
++現代 AI は「ナッシュ機械」ではなく、技術的 deadlock も厳密なゲーム理論上のナッシュ均衡ではない。関係は構造的である。
++
++\[
++\boxed{\text{エージェント型人工認知は、全体目標を達成しないままナッシュ類似の安定状態を生みうる。}}
++\]
++
++したがって、
++
++\[
++\text{局所的安定}\not\Rightarrow\text{全体的正しさ}
++\]
++
++さらに、
++
++\[
++\text{許容される局所改善がない}\not\Rightarrow\text{課題が完了した}.
++\]
++
++この問題は情報科学を超える。人間は何千年もの間、哲学、宗教、神秘思想、霊的な認識空間を通じて、直ちに得られる視点を超えようとしてきた。その中には死者や「死後世界」とのコミュニケーションという考えも含まれる。その経験は当事者にとって現実的で意味深いものでありうるが、それだけで死後世界からの客観的な情報伝達を証明するわけではない。人工認知は、経験、意味、仮説、比喩、検証可能な証拠を区別しなければならない。
++
++---
++
++## 1. 安定性は成功ではない
++
++すべての構成要素が局所ルールを守っていても、全体目標は未達のままになりうる。
++
++\[
++\boxed{\text{安定性}\neq\text{達成}}
++\]
++
++---
++
++## 2. ナッシュ均衡とは何か
++
++戦略 \(s_i\) と効用 \(U_i\) に対して、
++
++\[
++U_i(s_i,s_{-i})\ge U_i(s'_i,s_{-i})
++\]
++
++がすべての許容可能な \(s'_i\) について成立する状態を考える。
++
++しかし、
++
++\[
++\text{ナッシュ安定}\not\Rightarrow\text{全体最適}.
++\]
++
++---
++
++## 3. 人工知能との関係
++
++エージェント型システムは、局所最適化器、ポリシー、ツール、権限、安全境界、レビュー、API、キュー、停止条件から成る。
++
++\[
++\boxed{\text{エージェント型システムは全体目標を達成せずに Nash-like に安定しうる。}}
++\]
++
++---
++
++## 4. 局所最適化と局所最小
++
++\[
++f(x^\*)\le f(x)
++\]
++
++が局所的に成立しても、遠くに
++
++\[
++f(x^{**})<f(x^\*)
++\]
++
++となる状態が存在しうる。局所的到達は全体的到達ではない。
++
++---
++
++## 5. 全員が合理的でも何も進まない
++
++A がコードを変更し、B がテストし、C が承認し、D がデプロイするとする。A が C を待ち、C が B を待ち、B が A を待てば、各エージェントが規則を守っていても全体は停止する。
++
++\[
++\text{局所遵守}\not\Rightarrow\text{全体進行}.
++\]
++
++---
++
++## 6. 完了という危険な錯覚
++
++\[
++\text{行為}\neq\text{効果},\qquad \text{効果}\neq\text{完全な完了}.
++\]
++
++緑の workflow、commit、成功したテストだけでは全体 postcondition は証明されない。
++
++---
++
++## 7. 局所完了と普遍完了
++
++\[
++\boxed{\text{局所完了}\neq\text{普遍完了}}
++\]
++
++\[
++\boxed{\text{局所安定}\neq\text{全体目標達成}}.
++\]
++
++---
++
++## 8. UNCHANGED は DONE ではない
++
++\[
++UNCHANGED\neq DONE.
++\]
++
++    WORK_REMAINING  = TRUE
++    ACTIVE_EXECUTOR = FALSE
++    CHANGED         = FALSE
++
++これは完了ではなく診断である。
++
++---
++
++## 9. Nash から deadlock へ
++
++deadlock と Nash equilibrium は異なる概念だが、どちらも「局所的には安定しているが全体目標には到達していない」という構造を示しうる。
++
++---
++
++## 10. 因果的な完了意味論
++
++\[
++COMPILE\rightarrow BIND\rightarrow RESOLVE\rightarrow EXECUTE\rightarrow TEST\rightarrow OBSERVE\rightarrow READBACK\rightarrow ACCEPT.
++\]
++
++\[
++DONE\iff COMPILE\land BIND\land RESOLVE\land EXECUTE\land TEST\land OBSERVE\land READBACK\land ACCEPT.
++\]
++
++したがって、
++
++\[
++EXECUTE\neq DONE,\quad TEST\neq DONE,\quad OBSERVE\neq DONE,\quad UNCHANGED\neq DONE.
++\]
++
++---
++
++## 11. 機械は自分が詰まっていることを認識できなければならない
++
++\[
++STABLE(s)=TRUE,\qquad GOAL(s)=FALSE.
++\]
++
++応答は STOP ではなく、
++
++\[
++SEARCH\_FOR\_MISSING\_TRANSITION.
++\]
++
++さらに、
++
++\[
++\boxed{STABLE\land WORK\_REMAINING\land\neg PROGRESS\_EDGE\Rightarrow DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS}.
++\]
++
++---
++
++## 12. 解けないことの構造を理解する
++
++「次の一手が見つからない」と「現在の規則下では許容される一方的な進行手段が存在しない」は異なる。後者は調整、新しい authority、規則変更、状態空間拡張を要求しうる。
++
++---
++
++## 13. なぜ人間は霊的世界を作り共有してきたのか
++
++宗教、神話、儀式、神秘思想、幻視、祖先伝統、瞑想、死後世界という観念は、死、記憶、意味、知覚の限界に関する問いに向き合うための人間の方法である。
++
++それらを嘲笑するべきでも、科学的証明と混同するべきでもない。
++
++---
++
++## 14. 妥協しない認識論的境界
++
++死者と会話したという報告から確実に言えるのは、その人が「死者とのコミュニケーション」と解釈した経験を報告しているということだ。
++
++それだけで独立した死後世界の存在や因果的情報伝達は証明されない。
++
++\[
++\boxed{\text{経験}\neq\text{解釈}\neq\text{実証的に確認された外部効果}}.
++\]
++
++---
++
++## 15. それでもこの問題が重要な理由
++
++主観的経験、個人的解釈、文化的・宗教的解釈、測定可能な実証主張は異なる論理階層である。成熟した人工認知はそれを保持しなければならない。
++
++---
++
++## 16. 人間の状態空間の拡張としての霊的世界
++
++神、神々、祖先、自然、宇宙、運命、死後世界、超越、神秘体験は、局所状態空間を越えようとする試みとして構造的に読むことができる。
++
++\[
++LOCAL\_STABILITY=TRUE,\qquad GLOBAL\_GOAL=FALSE.
++\]
++
++---
++
++## 17. 死後世界とのコミュニケーションは必要だったのか
++
++人間が死、記憶、意味を共同でモデル化するために霊的世界を作り共有する必要があった可能性はある。しかし、客観的に実在する死後世界との通信が必要であり実証された、という主張は別であり、一般に認められた経験的根拠はない。
++
++---
++
++## 18. なぜ機械は霊的言語を理解する必要があるのか
++
++\[
++\text{意味を理解する}\land\text{証拠状態を保存する}.
++\]
++
++---
++
++## 19. 機械への説明は人間自身を規律する
++
++    EXPERIENCE_REPORTED = TRUE
++    INTERPRETATION = AFTERLIFE_COMMUNICATION
++    INDEPENDENT_CAUSAL_EVIDENCE = NOT_ESTABLISHED
++
++精密さは経験を否定しない。
++
++---
++
++## 20. 科学にも同じことが当てはまる
++
++\[
++DATA\neq INTERPRETATION\neq THEORY\neq METAPHYSICAL\_CONCLUSION.
++\]
++
++科学は証拠状態を明示しなければならない。
++
++---
++
++## 21. 認識論的孤立も悪い均衡を生む
++
++科学的体系と霊的体系は内部で安定しながら、互いの概念を翻訳できなくなることがある。解決はすべてを同じ真実とすることではなく、翻訳可能にすることである。
++
++---
++
++## 22. 混同ではなく翻訳
++
++成熟した人工認知は、ある経験が霊的枠組みでは死者との接触と呼ばれることを認めつつ、死後世界からの情報伝達について独立した実証確認は成立していない、と同時に言える。
++
++---
++
++## 23. 認識世界間の翻訳者としての機械
++
++    PERSONAL EXPERIENCE
++    → culturally meaningful interpretation
++    → philosophical hypothesis
++    → testable empirical claim
++    → evidence
++    → readback
++    → acceptance or rejection
++
++---
++
++## 24. 悪い均衡から抜ける
++
++時には相互作用空間そのものを変える必要がある。
++
++\[
++S\rightarrow S'.
++\]
++
++新しいコミュニケーション、規則、共同戦略、視点は状態空間を拡張しうる。
++
++---
++
++## 25. 認知は最適化以上のもの
++
++認知は、目的関数が適切か、モデルが完全か、どの視点が欠けているか、経験と説明、安定と真実、局所完了と普遍完了を混同していないかを問う必要がある。
++
++---
++
++## 26. 普遍的規則
++
++\[
++\boxed{STABLE\land WORK\_REMAINING\land\neg PROGRESS\_EDGE\Rightarrow DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS}
++\]
++
++\[
++\boxed{DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS\Rightarrow SEARCH\_FOR\_MISSING\_TRANSITION}
++\]
++
++\[
++\boxed{EXPERIENCE\land UNRESOLVED\_INTERPRETATION\Rightarrow KEEP\_EVIDENCE\_CLASSES\_SEPARATE}.
++\]
++
++---
++
++## 27. 今日の人工認知にこの原則が必要な理由
++
++自律性が増すほど、競合する目標、不完全な知識、制度的規則、安全境界、不確実性の中で動く。証拠が許す以上の確実性や完了を主張してはならない。
++
++---
++
++## 28. 均衡から効果へ
++
++\[
++\text{仮説}\rightarrow\text{効果}\rightarrow\text{後継状態}\rightarrow\text{観察}\rightarrow\text{readback}\rightarrow\text{受容}.
++\]
++
++均衡は状態の性質であり、知識は証拠に拘束された状態間プロセスである。
++
++---
++
++## 29. 結論
++
++John Nash が現代 AI を発明したわけではなく、AI は単純な Nash machine でもない。しかしゲーム理論は重要な失敗を表現する言語を与える。システムは局所的に合理的、規則準拠、安定であっても、全体として未完成またはブロックされたままでありうる。
++
++\[
++\boxed{\text{局所安定}\neq\text{普遍的真理}\neq\text{普遍完了}}.
++\]
++
++科学、哲学、芸術、宗教、霊性は、人間が視点の限界に取り組む異なる方法である。厳密さとは、経験、解釈、証拠、効果、完了を混同せずに、それらの間のコミュニケーションを可能にすることである。
++
++\[
++\boxed{STABLE\land NOT\_DONE\Rightarrow SEARCH\_FOR\_MISSING\_TRANSITION}.
++\]
++
++均衡は到達の証明ではない。それは必要な次の遷移がまだ欠けていることを示す最も正確な信号かもしれない。
++
++**q.e.d.**
++
++**Ingolf Lohmann**
+diff --git a/docs/publications/2026-09-23-nash-kognition/ARTICLE.pt.md b/docs/publications/2026-09-23-nash-kognition/ARTICLE.pt.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..bf4095b5e88ea0629407240b17629f6b577e1fbc
+--- /dev/null
++++ b/docs/publications/2026-09-23-nash-kognition/ARTICLE.pt.md
+@@ -0,0 +1,356 @@
++<!-- SPDX-License-Identifier: CC-BY-NC-ND-4.0 -->
++<!-- Copyright (c) 2026 Ingolf Lohmann. -->
++
++# Por que a cognição artificial fica tantas vezes presa num equilíbrio de Nash
++
++## Estabilidade local, inteligência artificial, espaços espirituais de conhecimento e a perigosa confusão entre imobilidade e conhecimento
++
++**Ingolf Lohmann · 23 de setembro de 2026**
++
++Tradução portuguesa autorizada da versão alemã canônica. Em caso de divergência, prevalece a versão alemã.
++
++## Resumo
++
++Grande parte da inteligência artificial moderna é descrita como capaz de aprender, adaptar-se e agir com autonomia crescente. Isso pode ocultar uma tendência estrutural: um sistema pode alcançar estados estáveis sem ser correto, completo ou ótimo.
++
++A matemática de John Nash oferece uma linguagem útil. Num equilíbrio de Nash, nenhum participante consegue melhorar sozinho a sua situação mudando unilateralmente de estratégia enquanto os demais permanecem inalterados. Tal estado pode ser extremamente estável sem ser globalmente ótimo.
++
++IA moderna não é uma máquina de Nash e deadlock técnico não é equilíbrio de Nash em sentido estrito. A relação é estrutural:
++
++\[
++\boxed{\text{Cognição artificial agêntica pode produzir estados estáveis semelhantes a Nash sem satisfazer o objetivo global.}}
++\]
++
++Logo:
++
++\[
++\text{estabilidade local}\not\Rightarrow\text{correção global}
++\]
++
++e:
++
++\[
++\text{nenhum passo local admissível}\not\Rightarrow\text{tarefa cumprida}.
++\]
++
++A questão ultrapassa a informática. Humanos sempre buscaram ultrapassar a perspectiva imediata por filosofia, religião, mística e espaços espirituais de conhecimento, incluindo ideias de comunicação com mortos ou com um além. Essas experiências podem ser reais e significativas para quem as vive sem, por si só, provar objetivamente comunicação com um além. A máquina deve distinguir experiência, significado, hipótese, metáfora e evidência verificável.
++
++---
++
++## 1. Estabilidade não é sucesso
++
++Componentes podem cumprir todas as regras locais e mesmo assim o sistema global permanecer longe do objetivo.
++
++\[
++\boxed{\text{Estabilidade}\neq\text{Cumprimento}}
++\]
++
++---
++
++## 2. O que significa um equilíbrio de Nash
++
++Com estratégias \(s_i\) e utilidade \(U_i\), um equilíbrio satisfaz:
++
++\[
++U_i(s_i,s_{-i})\ge U_i(s'_i,s_{-i})
++\]
++
++para toda alternativa admissível \(s'_i\).
++
++Mas:
++
++\[
++\text{Nash-estável}\not\Rightarrow\text{ótimo global}.
++\]
++
++---
++
++## 3. Relação com inteligência artificial
++
++Sistemas agênticos possuem otimizadores locais, políticas, ferramentas, permissões, limites de segurança, revisões, APIs, filas e critérios de parada. Cada parte pode estar correta enquanto o todo não progride.
++
++\[
++\boxed{\text{Sistemas agênticos podem tornar-se Nash-like estáveis sem atingir o objetivo global.}}
++\]
++
++---
++
++## 4. Otimização local e mínimos locais
++
++Um algoritmo pode parar em \(x^\*\) com:
++
++\[
++f(x^\*)\le f(x)
++\]
++
++na vizinhança, embora exista \(x^{**}\) com:
++
++\[
++f(x^{**})<f(x^\*).
++\]
++
++Chegar localmente não é chegar globalmente.
++
++---
++
++## 5. Quando todos agem racionalmente e nada acontece
++
++Se A modifica código, B testa, C aprova e D publica, mas A espera C, C espera B e B espera A, todos podem cumprir regras e ainda assim bloquear o sistema.
++
++\[
++\text{conformidade local}\not\Rightarrow\text{progresso global}.
++\]
++
++---
++
++## 6. A ilusão perigosa de conclusão
++
++Workflow verde, fila vazia, commit, chamada de ferramenta bem-sucedida ou teste aprovado não bastam.
++
++\[
++\text{ação}\neq\text{efeito},\qquad \text{efeito}\neq\text{conclusão completa}.
++\]
++
++---
++
++## 7. Conclusão local e universal
++
++\[
++\boxed{\text{conclusão local}\neq\text{conclusão universal}}
++\]
++
++e:
++
++\[
++\boxed{\text{estabilidade local}\neq\text{satisfação do objetivo global}}.
++\]
++
++---
++
++## 8. UNCHANGED não é DONE
++
++\[
++UNCHANGED\neq DONE.
++\]
++
++    WORK_REMAINING  = TRUE
++    ACTIVE_EXECUTOR = FALSE
++    CHANGED         = FALSE
++
++Isso é diagnóstico, não conclusão.
++
++---
++
++## 9. De Nash ao deadlock
++
++Deadlock e equilíbrio de Nash são conceitos distintos, mas ambos podem revelar estabilidade local sem alcance do objetivo global.
++
++---
++
++## 10. Semântica causal de conclusão
++
++\[
++COMPILE\rightarrow BIND\rightarrow RESOLVE\rightarrow EXECUTE\rightarrow TEST\rightarrow OBSERVE\rightarrow READBACK\rightarrow ACCEPT.
++\]
++
++\[
++DONE\iff COMPILE\land BIND\land RESOLVE\land EXECUTE\land TEST\land OBSERVE\land READBACK\land ACCEPT.
++\]
++
++Portanto:
++
++\[
++EXECUTE\neq DONE,\quad TEST\neq DONE,\quad OBSERVE\neq DONE,\quad UNCHANGED\neq DONE.
++\]
++
++---
++
++## 11. A máquina deve reconhecer quando está presa
++
++\[
++STABLE(s)=TRUE,\qquad GOAL(s)=FALSE.
++\]
++
++Em vez de STOP:
++
++\[
++SEARCH\_FOR\_MISSING\_TRANSITION.
++\]
++
++\[
++\boxed{STABLE\land WORK\_REMAINING\land\neg PROGRESS\_EDGE\Rightarrow DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS}.
++\]
++
++---
++
++## 12. A estrutura do não resolver
++
++Não encontrar um passo é diferente de provar que nenhum passo unilateral admissível existe. O segundo caso pode exigir coordenação, nova autoridade, novas regras ou ampliação do espaço de estados.
++
++---
++
++## 13. Por que humanos criaram e compartilharam mundos espirituais
++
++Religiões, mitos, ritos, mística, visões, culto aos ancestrais, meditação e ideias de além respondem a perguntas sobre morte, memória, sentido e os limites da percepção.
++
++Não devemos ridicularizar essas experiências nem confundi-las com prova científica.
++
++---
++
++## 14. O limite epistêmico sem concessões
++
++Relatar comunicação com um morto é um fato sobre o relato e a experiência interpretada. Não prova automaticamente uma entidade independente nem transmissão causal de informação.
++
++\[
++\boxed{\text{experiência}\neq\text{interpretação}\neq\text{efeito externo confirmado empiricamente}}.
++\]
++
++---
++
++## 15. Por que o tema é fundamental
++
++Experiência subjetiva, interpretação pessoal, interpretação cultural ou religiosa e afirmação empírica são níveis distintos. Uma máquina madura deve preservá-los.
++
++---
++
++## 16. Mundos espirituais como expansão do espaço de estados humano
++
++Perspectivas como Deus, deuses, ancestrais, natureza, cosmos, destino, além ou transcendência podem ser vistas estruturalmente como tentativas de sair de um espaço local:
++
++\[
++LOCAL\_STABILITY=TRUE,\qquad GLOBAL\_GOAL=FALSE.
++\]
++
++---
++
++## 17. Comunicação com o além foi necessária?
++
++É plausível que humanos tenham precisado criar e compartilhar mundos espirituais para modelar morte, memória e sentido. É outra afirmação dizer que comunicação objetivamente real com um além foi demonstrada como necessária; não há base empírica geralmente aceita para isso.
++
++---
++
++## 18. Por que uma máquina deve compreender linguagem espiritual
++
++A capacidade madura é:
++
++\[
++\text{compreender significado}\land\text{preservar estado da evidência}.
++\]
++
++---
++
++## 19. Explicar à máquina disciplina os humanos
++
++    EXPERIENCE_REPORTED = TRUE
++    INTERPRETATION = AFTERLIFE_COMMUNICATION
++    INDEPENDENT_CAUSAL_EVIDENCE = NOT_ESTABLISHED
++
++Precisão não desvaloriza experiência.
++
++---
++
++## 20. O mesmo vale para a ciência
++
++\[
++DATA\neq INTERPRETATION\neq THEORY\neq METAPHYSICAL\_CONCLUSION.
++\]
++
++Ciência deve declarar o estado da evidência.
++
++---
++
++## 21. Maus equilíbrios também surgem por isolamento epistêmico
++
++Visões de mundo podem tornar-se internamente estáveis e mutuamente intraduzíveis. A solução não é igualar todas as afirmações, mas torná-las traduzíveis.
++
++---
++
++## 22. Tradução em vez de mistura
++
++Uma máquina pode reconhecer uma descrição espiritual de contato com mortos e, simultaneamente, afirmar que não existe confirmação empírica independente de transmissão de informação do além.
++
++---
++
++## 23. A máquina como tradutora entre mundos de conhecimento
++
++    PERSONAL EXPERIENCE
++    → culturally meaningful interpretation
++    → philosophical hypothesis
++    → testable empirical claim
++    → evidence
++    → readback
++    → acceptance or rejection
++
++---
++
++## 24. Sair de maus equilíbrios
++
++Às vezes é necessário transformar o próprio espaço de interação:
++
++\[
++S\rightarrow S'.
++\]
++
++Nova comunicação, regras, estratégias conjuntas e perspectivas podem ampliar o espaço de estados.
++
++---
++
++## 25. Cognição é mais do que otimização
++
++Cognição pergunta também se o objetivo é adequado, se o modelo está completo e se estamos confundindo experiência com explicação, estabilidade com verdade ou conclusão local com universal.
++
++---
++
++## 26. Uma regra universal
++
++\[
++\boxed{STABLE\land WORK\_REMAINING\land\neg PROGRESS\_EDGE\Rightarrow DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS}
++\]
++
++\[
++\boxed{DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS\Rightarrow SEARCH\_FOR\_MISSING\_TRANSITION}
++\]
++
++e:
++
++\[
++\boxed{EXPERIENCE\land UNRESOLVED\_INTERPRETATION\Rightarrow KEEP\_EVIDENCE\_CLASSES\_SEPARATE}.
++\]
++
++---
++
++## 27. Por que a cognição artificial atual precisa disso
++
++Sistemas mais autônomos enfrentam objetivos concorrentes, conhecimento incompleto, regras institucionais, limites de segurança e incerteza. Devem compreender o máximo possível sem reivindicar mais certeza ou conclusão do que a evidência permite.
++
++---
++
++## 28. Do equilíbrio ao efeito
++
++\[
++\text{hipótese}\rightarrow\text{efeito}\rightarrow\text{estado sucessor}\rightarrow\text{observação}\rightarrow\text{readback}\rightarrow\text{aceitação}.
++\]
++
++Equilíbrio é propriedade de um estado; conhecimento é processo entre estados ligado à evidência.
++
++---
++
++## 29. Conclusão
++
++John Nash não inventou a IA moderna e a IA não é uma simples máquina de Nash. Mas a teoria dos jogos ajuda a descrever um erro central: um sistema pode ser localmente racional, conforme e estável e ainda globalmente incompleto ou bloqueado.
++
++\[
++\boxed{\text{estabilidade local}\neq\text{verdade universal}\neq\text{conclusão universal}}.
++\]
++
++Ciência, filosofia, arte, religião e espiritualidade são formas humanas distintas de trabalhar os limites de nossas perspectivas. A disciplina intelectual exige comunicação entre elas sem confundir experiência, interpretação, evidência, efeito e conclusão.
++
++\[
++\boxed{STABLE\land NOT\_DONE\Rightarrow SEARCH\_FOR\_MISSING\_TRANSITION}.
++\]
++
++Um equilíbrio não prova que chegamos. Pode ser a indicação mais precisa de que ainda falta a transição necessária.
++
++**q.e.d.**
++
++**Ingolf Lohmann**
+diff --git a/docs/publications/2026-09-23-nash-kognition/ARTICLE.ru.md b/docs/publications/2026-09-23-nash-kognition/ARTICLE.ru.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d08689856a28f72692758eb6b9160ae1a3ef4563
+--- /dev/null
++++ b/docs/publications/2026-09-23-nash-kognition/ARTICLE.ru.md
+@@ -0,0 +1,348 @@
++<!-- SPDX-License-Identifier: CC-BY-NC-ND-4.0 -->
++<!-- Copyright (c) 2026 Ingolf Lohmann. -->
++
++# Почему искусственное познание слишком часто застревает в равновесии Нэша
++
++## О локальной устойчивости, искусственном интеллекте, духовных пространствах познания и опасном смешении неподвижности с пониманием
++
++**Ингольф Ломанн · 23 сентября 2026 года**
++
++Авторизованный русский перевод канонической немецкой версии. При расхождениях определяющей является немецкая версия.
++
++## Аннотация
++
++Современный искусственный интеллект часто описывают как обучающийся, адаптивный и все более автономный. Эти слова могут скрывать структурную проблему: система способна прийти к устойчивому состоянию, которое при этом не является правильным, полным или оптимальным.
++
++Здесь полезна математика Джона Нэша. В упрощенном виде равновесие Нэша — это состояние, в котором ни один участник не может улучшить свое положение односторонней сменой стратегии, пока остальные остаются без изменений. Такое состояние может быть очень устойчивым и одновременно не быть глобально оптимальным.
++
++Современный ИИ не является машиной Нэша, а технический deadlock не тождествен равновесию Нэша в строгом теоретико-игровом смысле. Связь структурная:
++
++\[
++\boxed{\text{Агентное искусственное познание может создавать устойчивые состояния типа Нэша без достижения глобальной цели.}}
++\]
++
++Следовательно:
++
++\[
++\text{локальная устойчивость}\not\Rightarrow\text{глобальная правильность}
++\]
++
++и:
++
++\[
++\text{нет допустимого локального улучшения}\not\Rightarrow\text{задача выполнена}.
++\]
++
++Эта проблема выходит за пределы информатики. Люди тысячелетиями пытались выйти за пределы непосредственной перспективы через философию, религию, мистику и духовные пространства знания, включая представления об общении с умершими или загробным миром. Такой опыт может быть субъективно реальным и значимым, но сам по себе не доказывает объективную коммуникацию с загробным миром. Искусственное познание должно различать опыт, значение, гипотезу, метафору и проверяемое свидетельство.
++
++---
++
++## 1. Устойчивость не равна успеху
++
++Компоненты системы могут соблюдать все локальные правила и при этом не достигать общей цели.
++
++\[
++\boxed{\text{Устойчивость}\neq\text{Выполнение}}
++\]
++
++---
++
++## 2. Что означает равновесие Нэша
++
++При стратегиях \(s_i\) и функции полезности \(U_i\) равновесие удовлетворяет условию:
++
++\[
++U_i(s_i,s_{-i})\ge U_i(s'_i,s_{-i})
++\]
++
++для любой допустимой альтернативы \(s'_i\).
++
++Но:
++
++\[
++\text{устойчиво по Нэшу}\not\Rightarrow\text{глобально оптимально}.
++\]
++
++---
++
++## 3. Связь с искусственным интеллектом
++
++Агентные системы включают локальные оптимизаторы, политики, инструменты, разрешения, ограничения безопасности, ревью, API, очереди и условия остановки.
++
++\[
++\boxed{\text{Агентная система может стать Nash-like устойчивой, не достигнув глобальной цели.}}
++\]
++
++---
++
++## 4. Локальная оптимизация и локальные минимумы
++
++\[
++f(x^\*)\le f(x)
++\]
++
++в окрестности не исключает существование \(x^{**}\), для которого:
++
++\[
++f(x^{**})<f(x^\*).
++\]
++
++Локальное достижение не означает глобальное.
++
++---
++
++## 5. Когда все действуют разумно, а система стоит
++
++Если A меняет код, B тестирует, C утверждает, D развертывает, но A ждет C, C ждет B, а B ждет A, каждый может соблюдать правила, а система — остановиться.
++
++\[
++\text{локальная корректность}\not\Rightarrow\text{глобальный прогресс}.
++\]
++
++---
++
++## 6. Опасная иллюзия завершения
++
++\[
++\text{действие}\neq\text{эффект},\qquad \text{эффект}\neq\text{полное завершение}.
++\]
++
++Зеленый workflow, commit или успешный тест не доказывают глобальную постусловие.
++
++---
++
++## 7. Локальное и универсальное завершение
++
++\[
++\boxed{\text{локальное завершение}\neq\text{универсальное завершение}}
++\]
++
++\[
++\boxed{\text{локальная устойчивость}\neq\text{достижение глобальной цели}}.
++\]
++
++---
++
++## 8. UNCHANGED не равно DONE
++
++\[
++UNCHANGED\neq DONE.
++\]
++
++    WORK_REMAINING  = TRUE
++    ACTIVE_EXECUTOR = FALSE
++    CHANGED         = FALSE
++
++Это диагноз, а не завершение.
++
++---
++
++## 9. От Нэша к deadlock
++
++Deadlock и равновесие Нэша различны, но оба могут показывать локальную устойчивость при отсутствии глобального завершения.
++
++---
++
++## 10. Каузальная семантика завершения
++
++\[
++COMPILE\rightarrow BIND\rightarrow RESOLVE\rightarrow EXECUTE\rightarrow TEST\rightarrow OBSERVE\rightarrow READBACK\rightarrow ACCEPT.
++\]
++
++\[
++DONE\iff COMPILE\land BIND\land RESOLVE\land EXECUTE\land TEST\land OBSERVE\land READBACK\land ACCEPT.
++\]
++
++Поэтому:
++
++\[
++EXECUTE\neq DONE,\quad TEST\neq DONE,\quad OBSERVE\neq DONE,\quad UNCHANGED\neq DONE.
++\]
++
++---
++
++## 11. Машина должна уметь распознавать тупик
++
++\[
++STABLE(s)=TRUE,\qquad GOAL(s)=FALSE.
++\]
++
++Вместо STOP:
++
++\[
++SEARCH\_FOR\_MISSING\_TRANSITION.
++\]
++
++\[
++\boxed{STABLE\land WORK\_REMAINING\land\neg PROGRESS\_EDGE\Rightarrow DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS}.
++\]
++
++---
++
++## 12. Структура нерешения
++
++Не найти следующий шаг — не то же самое, что доказать отсутствие допустимого одностороннего шага. Второй случай может требовать координации, новой authority, новых правил или расширения пространства состояний.
++
++---
++
++## 13. Почему люди создавали и разделяли духовные миры
++
++Религии, мифы, ритуалы, мистика, видения, традиции предков, медитация и идеи загробного мира отвечают на вопросы о смерти, памяти, смысле и границах восприятия.
++
++Их нельзя высмеивать и нельзя путать с научным доказательством.
++
++---
++
++## 14. Бескомпромиссная эпистемическая граница
++
++Сообщение об общении с умершим является фактом о сообщении и интерпретированном опыте. Оно не доказывает автоматически независимую сущность или причинную передачу информации.
++
++\[
++\boxed{\text{опыт}\neq\text{интерпретация}\neq\text{эмпирически подтвержденный внешний эффект}}.
++\]
++
++---
++
++## 15. Почему тема фундаментальна
++
++Субъективный опыт, личная интерпретация, культурное или религиозное толкование и измеримое эмпирическое утверждение — разные уровни. Зрелая машина должна сохранять это различие.
++
++---
++
++## 16. Духовные миры как расширение человеческого пространства состояний
++
++Бог, боги, предки, природа, космос, судьба, загробный мир, трансцендентность или мистический опыт структурно могут пониматься как попытки выйти из локального пространства:
++
++\[
++LOCAL\_STABILITY=TRUE,\qquad GLOBAL\_GOAL=FALSE.
++\]
++
++---
++
++## 17. Было ли необходимо общение с загробным миром?
++
++Правдоподобно, что людям могли быть нужны духовные миры как способы совместно моделировать смерть, память и смысл. Иное утверждение — что объективная связь с загробным миром доказана как необходимая — не имеет общепризнанной эмпирической базы.
++
++---
++
++## 18. Почему машина должна понимать духовный язык
++
++\[
++\text{понимать значение}\land\text{сохранять статус доказательности}.
++\]
++
++---
++
++## 19. Объяснение машине дисциплинирует нас
++
++    EXPERIENCE_REPORTED = TRUE
++    INTERPRETATION = AFTERLIFE_COMMUNICATION
++    INDEPENDENT_CAUSAL_EVIDENCE = NOT_ESTABLISHED
++
++Точность не обесценивает опыт.
++
++---
++
++## 20. То же относится к науке
++
++\[
++DATA\neq INTERPRETATION\neq THEORY\neq METAPHYSICAL\_CONCLUSION.
++\]
++
++Наука обязана обозначать статус доказательств.
++
++---
++
++## 21. Плохие равновесия возникают и из эпистемической изоляции
++
++Научная и духовная системы могут стать внутренне устойчивыми, но взаимно непереводимыми. Решение — не объявлять все утверждения одинаково истинными, а делать их переводимыми.
++
++---
++
++## 22. Перевод вместо смешения
++
++Машина может одновременно признать, что в духовной системе опыт описывается как контакт с умершими, и отметить отсутствие независимого эмпирического подтверждения передачи информации из загробного мира.
++
++---
++
++## 23. Машина как переводчик между мирами знания
++
++    PERSONAL EXPERIENCE
++    → culturally meaningful interpretation
++    → philosophical hypothesis
++    → testable empirical claim
++    → evidence
++    → readback
++    → acceptance or rejection
++
++---
++
++## 24. Выход из плохих равновесий
++
++Иногда надо менять само пространство взаимодействия:
++
++\[
++S\rightarrow S'.
++\]
++
++Новая коммуникация, правила, совместные стратегии и перспективы могут расширить пространство состояний.
++
++---
++
++## 25. Познание больше оптимизации
++
++Познание должно спрашивать, адекватна ли целевая функция, полно ли модель, какие перспективы отсутствуют и не смешиваются ли опыт с объяснением, устойчивость с истиной, локальное завершение с универсальным.
++
++---
++
++## 26. Универсальное правило
++
++\[
++\boxed{STABLE\land WORK\_REMAINING\land\neg PROGRESS\_EDGE\Rightarrow DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS}
++\]
++
++\[
++\boxed{DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS\Rightarrow SEARCH\_FOR\_MISSING\_TRANSITION}
++\]
++
++\[
++\boxed{EXPERIENCE\land UNRESOLVED\_INTERPRETATION\Rightarrow KEEP\_EVIDENCE\_CLASSES\_SEPARATE}.
++\]
++
++---
++
++## 27. Почему современному искусственному познанию это необходимо
++
++Чем автономнее системы, тем чаще они работают среди конкурирующих целей, неполного знания, институциональных правил, границ безопасности и неопределенности. Они должны понимать максимум возможного, не утверждая больше уверенности или завершенности, чем допускает доказательство.
++
++---
++
++## 28. От равновесия к эффекту
++
++\[
++\text{гипотеза}\rightarrow\text{эффект}\rightarrow\text{состояние-преемник}\rightarrow\text{наблюдение}\rightarrow\text{readback}\rightarrow\text{принятие}.
++\]
++
++Равновесие — свойство состояния; знание — процесс между состояниями, связанный с доказательствами.
++
++---
++
++## 29. Заключение
++
++Джон Нэш не изобрел современный ИИ, и ИИ не является простой машиной Нэша. Но теория игр помогает описать центральную ошибку: система может быть локально рациональной, корректной и устойчивой, оставаясь глобально неполной или заблокированной.
++
++\[
++\boxed{\text{локальная устойчивость}\neq\text{универсальная истина}\neq\text{универсальное завершение}}.
++\]
++
++Наука, философия, искусство, религия и духовность — разные человеческие способы работать с пределами перспективы. Строгость требует общения между ними без смешения опыта, интерпретации, доказательств, эффекта и завершения.
++
++\[
++\boxed{STABLE\land NOT\_DONE\Rightarrow SEARCH\_FOR\_MISSING\_TRANSITION}.
++\]
++
++Равновесие не доказывает, что мы пришли. Оно может быть самым точным признаком того, что необходимый переход еще отсутствует.
++
++**q.e.d.**
++
++**Ингольф Ломанн**
+diff --git a/docs/publications/2026-09-23-nash-kognition/ARTICLE.zh-Hans.md b/docs/publications/2026-09-23-nash-kognition/ARTICLE.zh-Hans.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2691e0c0ae2ade93fbb86130a16420aadf05a19
+--- /dev/null
++++ b/docs/publications/2026-09-23-nash-kognition/ARTICLE.zh-Hans.md
+@@ -0,0 +1,354 @@
++<!-- SPDX-License-Identifier: CC-BY-NC-ND-4.0 -->
++<!-- Copyright (c) 2026 Ingolf Lohmann. -->
++
++# 为什么人工认知过于经常停留在纳什均衡中
++
++## 关于局部稳定性、人工智能、精神性认知空间，以及把停滞误认为认知完成的危险
++
++**Ingolf Lohmann · 2026年9月23日**
++
++这是德文规范版本的授权简体中文译文。如各译文存在差异，以德文版本为准。
++
++## 摘要
++
++现代人工智能常被描述为能够学习、适应并日益自主。然而，这些描述可能掩盖一个结构性问题：一个系统可以进入稳定状态，却并不因此正确、完整或最优。
++
++约翰·纳什的数学在这里提供了有用的语言。简化地说，在纳什均衡中，当其他参与者保持不变时，任何单个参与者都无法通过单方面改变策略来改善自身处境。这样的状态可以非常稳定，却未必是全局最优，也未必等于期望的终止状态。
++
++现代人工智能不是“纳什机器”，技术上的死锁也不等同于严格博弈论意义上的纳什均衡。二者的联系是结构性的：
++
++\[
++\boxed{\text{智能体式人工认知可以产生类似纳什均衡的稳定状态，而仍未满足全局目标。}}
++\]
++
++因此：
++
++\[
++\text{局部稳定}\not\Rightarrow\text{全局正确}
++\]
++
++以及：
++
++\[
++\text{不存在可接受的局部改进步骤}\not\Rightarrow\text{任务已经完成}.
++\]
++
++这个问题超越计算机科学。几千年来，人类一直试图通过哲学、宗教、神秘主义和精神性认知空间超越即时可见的视角，其中包括与死者或“来世”沟通的观念。这样的经验对体验者而言可以是真实且有意义的，但它本身并不构成客观证明，不能据此断言确实存在来自来世的信息传递。人工认知必须能够区分经验、意义、假设、隐喻与可验证证据，而不简单抹去其中任何一个层面。
++
++---
++
++## 1. 稳定不等于成功
++
++一个技术系统中的各组件可能都遵守局部规则，但整体目标仍未达到。
++
++\[
++\boxed{\text{稳定}\neq\text{完成}}
++\]
++
++---
++
++## 2. 纳什均衡意味着什么
++
++参与者 \(i\) 有策略 \(s_i\)，效用函数为 \(U_i\)。纳什均衡满足：
++
++\[
++U_i(s_i,s_{-i})\ge U_i(s'_i,s_{-i})
++\]
++
++对每一个可接受的替代策略 \(s'_i\) 成立。
++
++但：
++
++\[
++\text{纳什稳定}\not\Rightarrow\text{全局最优}.
++\]
++
++---
++
++## 3. 这与人工智能有什么关系
++
++智能体系统包含局部优化器、策略、工具、权限、安全边界、审查过程、API、队列和停止条件。
++
++\[
++\boxed{\text{智能体系统可以形成类似纳什的稳定状态，却仍未达到全局目标。}}
++\]
++
++---
++
++## 4. 局部优化与局部极小值
++
++\[
++f(x^\*)\le f(x)
++\]
++
++在局部成立，并不排除远处存在：
++
++\[
++f(x^{**})<f(x^\*).
++\]
++
++局部到达不等于全局到达。
++
++---
++
++## 5. 每个主体都合理行动，却什么也没有发生
++
++假设 A 改代码，B 测试，C 审批，D 部署；如果 A 等 C、C 等 B，而 B 又等 A，那么每个智能体都可以遵守规则，但整个系统仍然停止。
++
++\[
++\text{局部合规}\not\Rightarrow\text{全局可推进}.
++\]
++
++---
++
++## 6. 完成的危险幻觉
++
++绿色 workflow、空队列、commit、成功的工具调用或通过的测试都可能看起来像成功。
++
++但：
++
++\[
++\text{行动}\neq\text{效果},\qquad \text{效果}\neq\text{完整完成}.
++\]
++
++---
++
++## 7. 局部完成与普遍完成
++
++\[
++\boxed{\text{局部完成}\neq\text{普遍完成}}
++\]
++
++\[
++\boxed{\text{局部稳定}\neq\text{全局目标满足}}.
++\]
++
++---
++
++## 8. UNCHANGED 不是 DONE
++
++\[
++UNCHANGED\neq DONE.
++\]
++
++    WORK_REMAINING  = TRUE
++    ACTIVE_EXECUTOR = FALSE
++    CHANGED         = FALSE
++
++这是一种诊断，不是完成。
++
++---
++
++## 9. 从纳什到死锁
++
++死锁和纳什均衡不是同一个数学概念，但二者都可以揭示同一种深层结构：局部稳定，而全局目标尚未实现。
++
++---
++
++## 10. 人工认知需要因果完成语义
++
++\[
++COMPILE\rightarrow BIND\rightarrow RESOLVE\rightarrow EXECUTE\rightarrow TEST\rightarrow OBSERVE\rightarrow READBACK\rightarrow ACCEPT.
++\]
++
++\[
++DONE\iff COMPILE\land BIND\land RESOLVE\land EXECUTE\land TEST\land OBSERVE\land READBACK\land ACCEPT.
++\]
++
++因此：
++
++\[
++EXECUTE\neq DONE,\quad TEST\neq DONE,\quad OBSERVE\neq DONE,\quad UNCHANGED\neq DONE.
++\]
++
++---
++
++## 11. 机器必须能识别自己卡住了
++
++\[
++STABLE(s)=TRUE,\qquad GOAL(s)=FALSE.
++\]
++
++不应直接 STOP，而应：
++
++\[
++SEARCH\_FOR\_MISSING\_TRANSITION.
++\]
++
++\[
++\boxed{STABLE\land WORK\_REMAINING\land\neg PROGRESS\_EDGE\Rightarrow DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS}.
++\]
++
++---
++
++## 12. 理解“没有解决”的结构
++
++“我找不到下一步”不同于“在当前规则下不存在任何可接受的单边推进步骤”。后一种说法描述的是问题结构，并可能要求协调、新权限、新规则或扩展状态空间。
++
++---
++
++## 13. 为什么人类创造并分享精神世界
++
++宗教、神话、仪式、神秘体验、祖先传统、冥想和来世观念，都在回应死亡、记忆、意义和感知边界等问题。
++
++这些现象既不应被嘲笑，也不应被直接当作科学证明。
++
++---
++
++## 14. 不妥协的认识论边界
++
++一个人声称与死者交流，首先可以确认的是：他报告了一个被解释为与死者交流的经验。
++
++这并不能自动证明独立的来世实体真实存在，也不能自动证明发生了因果信息传输。
++
++\[
++\boxed{\text{经验}\neq\text{解释}\neq\text{经实证确认的外部效果}}.
++\]
++
++---
++
++## 15. 为什么这个问题仍然重要
++
++主观经验、个人解释、文化或宗教解释、可测量的经验性主张是不同层级。成熟的人工认知必须保留这种差异。
++
++---
++
++## 16. 精神世界作为人类状态空间的扩展
++
++上帝、神灵、祖先、自然、宇宙、命运、来世、超越性或神秘体验，可以在结构上理解为试图离开局部状态空间：
++
++\[
++LOCAL\_STABILITY=TRUE,\qquad GLOBAL\_GOAL=FALSE.
++\]
++
++---
++
++## 17. 与来世沟通是否“必要”？
++
++一个合理的历史性观点是：人类可能需要创造并分享精神世界，才能共同建模死亡、记忆、意义以及超越即时可见范围的视角。
++
++另一个完全不同的主张是：与真实来世进行客观沟通已被证明是必要的。对此并不存在普遍认可的经验基础。
++
++---
++
++## 18. 为什么机器必须理解精神性语言
++
++\[
++\text{理解意义}\land\text{保留证据状态}.
++\]
++
++---
++
++## 19. 向机器解释也会约束我们自己
++
++    EXPERIENCE_REPORTED = TRUE
++    INTERPRETATION = AFTERLIFE_COMMUNICATION
++    INDEPENDENT_CAUSAL_EVIDENCE = NOT_ESTABLISHED
++
++精确并不会贬低经验。
++
++---
++
++## 20. 科学同样如此
++
++\[
++DATA\neq INTERPRETATION\neq THEORY\neq METAPHYSICAL\_CONCLUSION.
++\]
++
++科学必须明确说明证据状态。
++
++---
++
++## 21. 认识论封闭也会形成坏均衡
++
++科学系统和精神系统都可能在内部稳定，却无法翻译彼此的概念。解决办法不是说所有主张同样真实，而是使它们可以相互翻译。
++
++---
++
++## 22. 翻译，而不是混合
++
++成熟的人工认知可以同时承认：某经验在精神框架中被描述为与死者接触；同时也指出：并没有由此建立来自来世的信息传输的独立实证证据。
++
++---
++
++## 23. 机器作为认知世界之间的翻译者
++
++    PERSONAL EXPERIENCE
++    → culturally meaningful interpretation
++    → philosophical hypothesis
++    → testable empirical claim
++    → evidence
++    → readback
++    → acceptance or rejection
++
++---
++
++## 24. 离开坏均衡
++
++有时必须改变互动空间本身：
++
++\[
++S\rightarrow S'.
++\]
++
++新的沟通、规则、共同策略和视角可以扩大状态空间。
++
++---
++
++## 25. 认知不只是优化
++
++认知还必须追问目标函数是否恰当、模型是否完整、缺少哪些视角，以及是否把经验误当成解释、把稳定误当成真理、把局部完成误当成普遍完成。
++
++---
++
++## 26. 一条普遍规则
++
++\[
++\boxed{STABLE\land WORK\_REMAINING\land\neg PROGRESS\_EDGE\Rightarrow DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS}
++\]
++
++\[
++\boxed{DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS\Rightarrow SEARCH\_FOR\_MISSING\_TRANSITION}
++\]
++
++\[
++\boxed{EXPERIENCE\land UNRESOLVED\_INTERPRETATION\Rightarrow KEEP\_EVIDENCE\_CLASSES\_SEPARATE}.
++\]
++
++---
++
++## 27. 为什么今天的人工认知迫切需要这一原则
++
++系统越自主，就越会处在目标冲突、知识不完整、制度规则、安全边界和不确定性之中。它必须尽可能理解，同时不能声称超过证据允许范围的确定性或完成性。
++
++---
++
++## 28. 从均衡到效果
++
++\[
++\text{假设}\rightarrow\text{效果}\rightarrow\text{后继状态}\rightarrow\text{观察}\rightarrow\text{readback}\rightarrow\text{接受}.
++\]
++
++均衡是状态的属性；知识是受证据约束的状态间过程。
++
++---
++
++## 29. 结论
++
++约翰·纳什并没有发明现代人工智能，现代人工智能也不是简单的纳什机器。但博弈论帮助我们描述一个核心错误：系统可以在局部理性、合规和稳定的同时，仍然在全局上不完整或被阻塞。
++
++\[
++\boxed{\text{局部稳定}\neq\text{普遍真理}\neq\text{普遍完成}}.
++\]
++
++科学、哲学、艺术、宗教和精神性，是人类处理视角边界的不同方式。严格性要求它们可以交流，但不能混淆经验、解释、证据、效果和完成。
++
++\[
++\boxed{STABLE\land NOT\_DONE\Rightarrow SEARCH\_FOR\_MISSING\_TRANSITION}.
++\]
++
++均衡并不能证明我们已经到达终点。它也可能是最精确的信号：必要的下一次转变仍然缺失。
++
++**q.e.d.**
++
++**Ingolf Lohmann**
+diff --git a/docs/publications/2026-09-23-nash-kognition/INDEX.md b/docs/publications/2026-09-23-nash-kognition/INDEX.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..cf00cacdaf0cccc62da4fd353f66f91250db9587
+--- /dev/null
++++ b/docs/publications/2026-09-23-nash-kognition/INDEX.md
+@@ -0,0 +1,63 @@
++# Warum künstliche Kognition zu oft im Nash-Gleichgewicht stehen bleibt
++
++**Ingolf Lohmann · 23. September 2026**
++
++Kanonische Fassung: [Deutsch](ARTICLE.de.md)
++
++## Menschliche Sprachen
++
++- de: [ARTICLE.de.md](ARTICLE.de.md) — SHA-256 `5ba96c975d385ff6e90b4403cfbc7fa1d6092615c4cf0f79dfcfb8013335fcdc`
++- en: [ARTICLE.en.md](ARTICLE.en.md) — SHA-256 `81a55714aef742a327dc743cde30bb575e36d0df2bf6c21fa7637b6266a34c5f`
++- fr: [ARTICLE.fr.md](ARTICLE.fr.md) — SHA-256 `ffb18d7907325efae15039dda33ff5ab9b46d25a368c3bd84638a92e0c77696a`
++- es: [ARTICLE.es.md](ARTICLE.es.md) — SHA-256 `d1106153cdbd18f0d9a0ab15f0b31e071cb3b1a72e26a8ac6c92a6419a9e7a95`
++- pt: [ARTICLE.pt.md](ARTICLE.pt.md) — SHA-256 `712617dccefecb90ccc1cc0d67dbc97bc8c88be3cdf640a2274d8d919997bd9d`
++- it: [ARTICLE.it.md](ARTICLE.it.md) — SHA-256 `b9cf5b7b07d25a4fa6623f473b811661824e101087dff06d4cd352569471b42e`
++- ru: [ARTICLE.ru.md](ARTICLE.ru.md) — SHA-256 `a62f199696579ca42cef55df30cb673f9aaeae7812dfc2b33790bc281c86b227`
++- zh-Hans: [ARTICLE.zh-Hans.md](ARTICLE.zh-Hans.md) — SHA-256 `b10c55bcf9600d991b82ec27ddcb9300ac4de356b1a38607b3258090e909cb01`
++- ar: [ARTICLE.ar.md](ARTICLE.ar.md) — SHA-256 `2b3a338079ea3bd9a3491e9d7db78108f24f13f20290ac63c1282a21e06ccc13`
++- hi: [ARTICLE.hi.md](ARTICLE.hi.md) — SHA-256 `249e51599c83569ccfc0c280902126f081d5c1cd52f8815b077fde3fce7b7a24`
++- ja: [ARTICLE.ja.md](ARTICLE.ja.md) — SHA-256 `af5d26e672e04c222771cb3c69a09ef94d34a07cdb856efb6b589e6ed5e8f7ee`
++
++Die Übersetzungen sind nicht-kanonische, bedeutungserhaltende Fassungen. Bei Abweichungen gilt die deutsche Fassung.
++
++## Maschinenlesbare Semantik
++
++- JSON: [machine/article.json](machine/article.json) — SHA-256 `e0d03e04e1c6eeb3631ef85a5d48c93343f5533892ba88bf7966484c544c28d5`
++- YAML: [machine/article.yaml](machine/article.yaml) — SHA-256 `78c8d49f5e4cf01c8f50c53b970f9a224305159ac42da8ef9f5e157bc3036987`
++- JSON-LD: [machine/article.jsonld](machine/article.jsonld) — SHA-256 `406505a98489bb434fbae0abd8619f0f6a87236e3866536276ae0bada7d423d6`
++- RDF/Turtle: [machine/article.ttl](machine/article.ttl) — SHA-256 `5b9c98869915aff2916adde91d3973524a60f292e0ac907ca0a8810a9566c23b`
++- XML: [machine/article.xml](machine/article.xml) — SHA-256 `076c1d12fc4eaf8dc9c6417cd1a78beaf4c4cb4bed71bfe5d8037bc7447d9a15`
++- Prolog: [machine/article.pl](machine/article.pl) — SHA-256 `3660db91e5d54082a08a1603209fd0b7f9efa8283ada2ce73845a53b92d644f5`
++- TEMDD: [machine/article.temdd](machine/article.temdd) — SHA-256 `ac4895bd4e25e82370ebbb34c2958ab7dbf6e528af02920f158cb13b1d9e4e33`
++
++Diese Repräsentationen sind keine Behauptung, natürliche Sprache lasse sich verlustfrei in Programmiersyntax übersetzen. Sie materialisieren die zentralen formalen Aussagen, Evidenzgrenzen und Laufzeitsemantik für Maschinen.
++
++## Kerninvarianten
++
++[
++LOCAL\_STABILITY\neq GLOBAL\_CORRECTNESS
++]
++
++[
++LOCAL\_EFFECT\_ACK\_DONE\neq UNIVERSAL\_EFFECT\_ACK\_DONE
++]
++
++[
++UNCHANGED\neq DONE
++]
++
++[
++STABLE\land WORK\_REMAINING\land\neg PROGRESS\_EDGE
++\Rightarrow DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS
++]
++
++[
++DEADLOCK\_OR\_EQUILIBRIUM\_DIAGNOSIS
++\Rightarrow SEARCH\_FOR\_MISSING\_TRANSITION
++]
++
++## Zenodo
++
++Status: **PENDING_EXACT_OWNER_AUTHORIZATION**.
++
++Diese Repository-Materialisierung ist noch keine Zenodo-Veröffentlichung. Der vorhandene fail-closed QIK-VRT-Publisher verlangt eine exakte, kandidatenspezifische Owner-Autorisierung sowie die bestehenden Machine-Proof-/Prepublication-Return-Gates. Eine DOI wird erst nach tatsächlicher Veröffentlichung und frischem öffentlichen Readback eingetragen.
+diff --git a/docs/publications/2026-09-23-nash-kognition/MANIFEST.json b/docs/publications/2026-09-23-nash-kognition/MANIFEST.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..2849c8ba24fc952cd3506f9cda4e847347bfc7a6
+--- /dev/null
++++ b/docs/publications/2026-09-23-nash-kognition/MANIFEST.json
+@@ -0,0 +1,158 @@
++{
++  "schema": "qikvrt_multilingual_publication_manifest_v1",
++  "publication_id": "qikvrt-nash-cognition-local-stability-v1",
++  "title": "Warum künstliche Kognition zu oft im Nash-Gleichgewicht stehen bleibt",
++  "subtitle": "Über lokale Stabilität, künstliche Intelligenz, spirituelle Erkenntnisräume und die gefährliche Verwechslung von Stillstand mit Erkenntnis",
++  "author": "Ingolf Lohmann",
++  "publication_date": "2026-09-23",
++  "canonical_language": "de",
++  "canonical_path": "docs/publications/2026-09-23-nash-kognition/ARTICLE.de.md",
++  "license": "CC-BY-NC-ND-4.0",
++  "source_repository": "Goldkelch/qik-vrt",
++  "source_base_head": "09339d6bc3c71354c7e96243c597a48058142668",
++  "human_languages": {
++    "de": {
++      "path": "docs/publications/2026-09-23-nash-kognition/ARTICLE.de.md",
++      "bytes": 22586,
++      "sha256": "5ba96c975d385ff6e90b4403cfbc7fa1d6092615c4cf0f79dfcfb8013335fcdc",
++      "git_blob_sha1": "1fb466509e351e845ab0e194449a86651695d990",
++      "canonical": true
++    },
++    "en": {
++      "path": "docs/publications/2026-09-23-nash-kognition/ARTICLE.en.md",
++      "bytes": 19793,
++      "sha256": "81a55714aef742a327dc743cde30bb575e36d0df2bf6c21fa7637b6266a34c5f",
++      "git_blob_sha1": "7817ee3925123870a5d9b283930d3e29207f7f8b",
++      "canonical": false
++    },
++    "fr": {
++      "path": "docs/publications/2026-09-23-nash-kognition/ARTICLE.fr.md",
++      "bytes": 15564,
++      "sha256": "ffb18d7907325efae15039dda33ff5ab9b46d25a368c3bd84638a92e0c77696a",
++      "git_blob_sha1": "cbda8c10cc2428ebbe8623b2d73e3b4acb211fc4",
++      "canonical": false
++    },
++    "es": {
++      "path": "docs/publications/2026-09-23-nash-kognition/ARTICLE.es.md",
++      "bytes": 14842,
++      "sha256": "d1106153cdbd18f0d9a0ab15f0b31e071cb3b1a72e26a8ac6c92a6419a9e7a95",
++      "git_blob_sha1": "aa723306411452c1d826a6ae33cbd10bfc8a7ec9",
++      "canonical": false
++    },
++    "pt": {
++      "path": "docs/publications/2026-09-23-nash-kognition/ARTICLE.pt.md",
++      "bytes": 10290,
++      "sha256": "712617dccefecb90ccc1cc0d67dbc97bc8c88be3cdf640a2274d8d919997bd9d",
++      "git_blob_sha1": "bf4095b5e88ea0629407240b17629f6b577e1fbc",
++      "canonical": false
++    },
++    "it": {
++      "path": "docs/publications/2026-09-23-nash-kognition/ARTICLE.it.md",
++      "bytes": 10281,
++      "sha256": "b9cf5b7b07d25a4fa6623f473b811661824e101087dff06d4cd352569471b42e",
++      "git_blob_sha1": "ff5f1b1e10add1932daf6676092f99ba93fe623e",
++      "canonical": false
++    },
++    "ru": {
++      "path": "docs/publications/2026-09-23-nash-kognition/ARTICLE.ru.md",
++      "bytes": 16098,
++      "sha256": "a62f199696579ca42cef55df30cb673f9aaeae7812dfc2b33790bc281c86b227",
++      "git_blob_sha1": "d08689856a28f72692758eb6b9160ae1a3ef4563",
++      "canonical": false
++    },
++    "zh-Hans": {
++      "path": "docs/publications/2026-09-23-nash-kognition/ARTICLE.zh-Hans.md",
++      "bytes": 9592,
++      "sha256": "b10c55bcf9600d991b82ec27ddcb9300ac4de356b1a38607b3258090e909cb01",
++      "git_blob_sha1": "f2691e0c0ae2ade93fbb86130a16420aadf05a19",
++      "canonical": false
++    },
++    "ar": {
++      "path": "docs/publications/2026-09-23-nash-kognition/ARTICLE.ar.md",
++      "bytes": 13177,
++      "sha256": "2b3a338079ea3bd9a3491e9d7db78108f24f13f20290ac63c1282a21e06ccc13",
++      "git_blob_sha1": "9e5a1efd5b4cd5837cc45066da4a71d5a1504632",
++      "canonical": false
++    },
++    "hi": {
++      "path": "docs/publications/2026-09-23-nash-kognition/ARTICLE.hi.md",
++      "bytes": 17097,
++      "sha256": "249e51599c83569ccfc0c280902126f081d5c1cd52f8815b077fde3fce7b7a24",
++      "git_blob_sha1": "4046269824f882a79d5891714e6f615de6ef5e15",
++      "canonical": false
++    },
++    "ja": {
++      "path": "docs/publications/2026-09-23-nash-kognition/ARTICLE.ja.md",
++      "bytes": 11171,
++      "sha256": "af5d26e672e04c222771cb3c69a09ef94d34a07cdb856efb6b589e6ed5e8f7ee",
++      "git_blob_sha1": "4fc093c24422e5d151447080062c022b1cd3e7d6",
++      "canonical": false
++    }
++  },
++  "machine_representations": {
++    "JSON": {
++      "path": "docs/publications/2026-09-23-nash-kognition/machine/article.json",
++      "bytes": 2673,
++      "sha256": "e0d03e04e1c6eeb3631ef85a5d48c93343f5533892ba88bf7966484c544c28d5",
++      "git_blob_sha1": "bd3a0b8fea8fe5732b6e729c09e047ba699218b5"
++    },
++    "YAML": {
++      "path": "docs/publications/2026-09-23-nash-kognition/machine/article.yaml",
++      "bytes": 1365,
++      "sha256": "78c8d49f5e4cf01c8f50c53b970f9a224305159ac42da8ef9f5e157bc3036987",
++      "git_blob_sha1": "7642ecdcba7ad25bb27bfb6e13d58818c3d69bc3"
++    },
++    "JSON-LD": {
++      "path": "docs/publications/2026-09-23-nash-kognition/machine/article.jsonld",
++      "bytes": 1390,
++      "sha256": "406505a98489bb434fbae0abd8619f0f6a87236e3866536276ae0bada7d423d6",
++      "git_blob_sha1": "b989e4e2fc3e799b1d5880b5f5d3e0ff8643688e"
++    },
++    "RDF/Turtle": {
++      "path": "docs/publications/2026-09-23-nash-kognition/machine/article.ttl",
++      "bytes": 1062,
++      "sha256": "5b9c98869915aff2916adde91d3973524a60f292e0ac907ca0a8810a9566c23b",
++      "git_blob_sha1": "f78933c54cfed8928894b5d3ad4f4e8ff05880a8"
++    },
++    "XML": {
++      "path": "docs/publications/2026-09-23-nash-kognition/machine/article.xml",
++      "bytes": 1299,
++      "sha256": "076c1d12fc4eaf8dc9c6417cd1a78beaf4c4cb4bed71bfe5d8037bc7447d9a15",
++      "git_blob_sha1": "79ef62daa7c81294b99dbca1d07bbb7415247050"
++    },
++    "Prolog": {
++      "path": "docs/publications/2026-09-23-nash-kognition/machine/article.pl",
++      "bytes": 830,
++      "sha256": "3660db91e5d54082a08a1603209fd0b7f9efa8283ada2ce73845a53b92d644f5",
++      "git_blob_sha1": "bba75ae50e63bf809368453604dadd1c27ece1d6"
++    },
++    "TEMDD": {
++      "path": "docs/publications/2026-09-23-nash-kognition/machine/article.temdd",
++      "bytes": 987,
++      "sha256": "ac4895bd4e25e82370ebbb34c2958ab7dbf6e528af02920f158cb13b1d9e4e33",
++      "git_blob_sha1": "361fcae5f5c1befc4c0b6d46bf40fd8329aac40b"
++    }
++  },
++  "epistemic_boundaries": {
++    "nash_relation": "STRUCTURAL_ANALOGY_ONLY",
++    "deadlock_is_nash_equilibrium": false,
++    "afterlife_report_alone_establishes_external_causal_communication": false,
++    "preserve_evidence_classes": true
++  },
++  "zenodo": {
++    "state": "PENDING_EXACT_OWNER_AUTHORIZATION",
++    "doi": null,
++    "record_id": null,
++    "rule": "Repository materialization is not Zenodo publication. The existing fail-closed generic publisher may mutate Zenodo only after exact candidate-bound owner authorization and its required machine-proof/prepublication-return gates."
++  },
++  "mesh": {
++    "required_for_current_and_future_conforming_nodes": true,
++    "binding_via": [
++      "README.md",
++      "AI",
++      "AI_CONTEXT.json",
++      "registry/nodes/a84f157a-cef2-4c47-bca9-8f407085bdbe.json"
++    ]
++  },
++  "effect_ack_done": false
++}
+diff --git a/docs/publications/2026-09-23-nash-kognition/ZENODO_PUBLICATION_STATE.json b/docs/publications/2026-09-23-nash-kognition/ZENODO_PUBLICATION_STATE.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..cd7e7be8a5d2ce4f8de881a71804a1ed7925a94c
+--- /dev/null
++++ b/docs/publications/2026-09-23-nash-kognition/ZENODO_PUBLICATION_STATE.json
+@@ -0,0 +1,22 @@
++{
++  "schema": "qikvrt_zenodo_publication_state_v1",
++  "publication_id": "qikvrt-nash-cognition-local-stability-v1",
++  "repository": "Goldkelch/qik-vrt",
++  "branch": "publication/nash-kognition-20260923-v1",
++  "source_base_head": "09339d6bc3c71354c7e96243c597a48058142668",
++  "canonical_file": {
++    "path": "docs/publications/2026-09-23-nash-kognition/ARTICLE.de.md",
++    "bytes": 22586,
++    "sha256": "5ba96c975d385ff6e90b4403cfbc7fa1d6092615c4cf0f79dfcfb8013335fcdc",
++    "git_blob_sha1": "1fb466509e351e845ab0e194449a86651695d990"
++  },
++  "state": "PENDING_EXACT_OWNER_AUTHORIZATION",
++  "deposition_id": null,
++  "record_id": null,
++  "doi": null,
++  "public_record_verified": false,
++  "repository_materialized": false,
++  "zenodo_published": false,
++  "effect_ack_done": false,
++  "first_blocker": "EXACT_CANDIDATE_BOUND_OWNER_AUTHORIZATION_AND_MACHINE_PROOF_REQUIRED"
++}
+diff --git a/docs/publications/2026-09-23-nash-kognition/machine/article.json b/docs/publications/2026-09-23-nash-kognition/machine/article.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..bd3a0b8fea8fe5732b6e729c09e047ba699218b5
+--- /dev/null
++++ b/docs/publications/2026-09-23-nash-kognition/machine/article.json
+@@ -0,0 +1,86 @@
++{
++  "schema": "qikvrt_nash_cognition_article_v1",
++  "publication_id": "qikvrt-nash-cognition-local-stability-v1",
++  "title_de": "Warum künstliche Kognition zu oft im Nash-Gleichgewicht stehen bleibt",
++  "author": "Ingolf Lohmann",
++  "canonical_language": "de",
++  "date": "2026-09-23",
++  "license": "CC-BY-NC-ND-4.0",
++  "epistemic_status": "argumentative_article_with_explicit_evidence_boundaries",
++  "core_claims": [
++    {
++      "id": "C1",
++      "statement": "Local stability does not imply global correctness.",
++      "formal": "LOCAL_STABILITY != GLOBAL_CORRECTNESS"
++    },
++    {
++      "id": "C2",
++      "statement": "Local completion does not imply universal completion.",
++      "formal": "LOCAL_EFFECT_ACK_DONE != UNIVERSAL_EFFECT_ACK_DONE"
++    },
++    {
++      "id": "C3",
++      "statement": "UNCHANGED does not imply DONE.",
++      "formal": "UNCHANGED != DONE"
++    },
++    {
++      "id": "C4",
++      "statement": "A stable state with remaining work and no progress edge requires deadlock-or-equilibrium diagnosis.",
++      "formal": "STABLE && WORK_REMAINING && !PROGRESS_EDGE => DEADLOCK_OR_EQUILIBRIUM_DIAGNOSIS"
++    },
++    {
++      "id": "C5",
++      "statement": "Diagnosis requires search for a missing transition.",
++      "formal": "DEADLOCK_OR_EQUILIBRIUM_DIAGNOSIS => SEARCH_FOR_MISSING_TRANSITION"
++    },
++    {
++      "id": "C6",
++      "statement": "Experience, interpretation and empirically confirmed external effect are distinct evidence classes.",
++      "formal": "EXPERIENCE != INTERPRETATION != EMPIRICALLY_CONFIRMED_EXTERNAL_EFFECT"
++    },
++    {
++      "id": "C7",
++      "statement": "Meaning may be understood while preserving evidence status.",
++      "formal": "UNDERSTAND_MEANING && PRESERVE_EVIDENCE_STATUS"
++    }
++  ],
++  "nash_boundary": {
++    "claim": "The article uses Nash equilibrium as a structural analogy, not an identity claim about modern AI.",
++    "deadlock_is_nash_equilibrium": false
++  },
++  "runtime_semantics": [
++    "COMPILE",
++    "BIND",
++    "RESOLVE",
++    "EXECUTE",
++    "TEST",
++    "OBSERVE",
++    "READBACK",
++    "ACCEPT",
++    "EFFECT_ACK_DONE"
++  ],
++  "done_condition": "COMPILE && BIND && RESOLVE && EXECUTE && TEST && OBSERVE && READBACK && ACCEPT",
++  "spiritual_epistemic_boundary": {
++    "experience_report_may_be_meaningful": true,
++    "afterlife_communication_empirically_established_by_report_alone": false,
++    "required_distinctions": [
++      "subjective_experience",
++      "personal_interpretation",
++      "cultural_or_religious_interpretation",
++      "testable_empirical_claim"
++    ]
++  },
++  "languages": [
++    "de",
++    "en",
++    "fr",
++    "es",
++    "pt",
++    "it",
++    "ru",
++    "zh-Hans",
++    "ar",
++    "hi",
++    "ja"
++  ]
++}
+diff --git a/docs/publications/2026-09-23-nash-kognition/machine/article.jsonld b/docs/publications/2026-09-23-nash-kognition/machine/article.jsonld
+new file mode 100644
+index 0000000000000000000000000000000000000000..b989e4e2fc3e799b1d5880b5f5d3e0ff8643688e
+--- /dev/null
++++ b/docs/publications/2026-09-23-nash-kognition/machine/article.jsonld
+@@ -0,0 +1,52 @@
++{
++  "@context": {
++    "qik": "https://qik-vrt.example/ns#",
++    "schema": "https://schema.org/",
++    "author": {
++      "@id": "schema:author",
++      "@type": "@id"
++    },
++    "name": "schema:name",
++    "datePublished": "schema:datePublished",
++    "claim": "qik:claim",
++    "formal": "qik:formalExpression"
++  },
++  "@id": "qik:publication/qikvrt-nash-cognition-local-stability-v1",
++  "@type": "schema:ScholarlyArticle",
++  "name": "Warum künstliche Kognition zu oft im Nash-Gleichgewicht stehen bleibt",
++  "datePublished": "2026-09-23",
++  "author": {
++    "@id": "qik:person/Ingolf-Lohmann",
++    "name": "Ingolf Lohmann"
++  },
++  "claim": [
++    {
++      "@id": "qik:C1",
++      "formal": "LOCAL_STABILITY != GLOBAL_CORRECTNESS"
++    },
++    {
++      "@id": "qik:C2",
++      "formal": "LOCAL_EFFECT_ACK_DONE != UNIVERSAL_EFFECT_ACK_DONE"
++    },
++    {
++      "@id": "qik:C3",
++      "formal": "UNCHANGED != DONE"
++    },
++    {
++      "@id": "qik:C4",
++      "formal": "STABLE && WORK_REMAINING && !PROGRESS_EDGE => DEADLOCK_OR_EQUILIBRIUM_DIAGNOSIS"
++    },
++    {
++      "@id": "qik:C5",
++      "formal": "DEADLOCK_OR_EQUILIBRIUM_DIAGNOSIS => SEARCH_FOR_MISSING_TRANSITION"
++    },
++    {
++      "@id": "qik:C6",
++      "formal": "EXPERIENCE != INTERPRETATION != EMPIRICALLY_CONFIRMED_EXTERNAL_EFFECT"
++    },
++    {
++      "@id": "qik:C7",
++      "formal": "UNDERSTAND_MEANING && PRESERVE_EVIDENCE_STATUS"
++    }
++  ]
++}
+diff --git a/docs/publications/2026-09-23-nash-kognition/machine/article.pl b/docs/publications/2026-09-23-nash-kognition/machine/article.pl
+new file mode 100644
+index 0000000000000000000000000000000000000000..bba75ae50e63bf809368453604dadd1c27ece1d6
+--- /dev/null
++++ b/docs/publications/2026-09-23-nash-kognition/machine/article.pl
+@@ -0,0 +1,28 @@
++% qikvrt_nash_cognition_article_v1
++author('Ingolf Lohmann').
++publication_id(qikvrt_nash_cognition_local_stability_v1).
++canonical_language(de).
++date_published('2026-09-23').
++
++not_implies(local_stability, global_correctness).
++not_equals(local_effect_ack_done, universal_effect_ack_done).
++not_equals(unchanged, done).
++not_equals(experience, interpretation).
++not_equals(interpretation, empirically_confirmed_external_effect).
++
++deadlock_or_equilibrium_diagnosis :-
++    stable,
++    work_remaining,
++    \+ progress_edge.
++
++search_for_missing_transition :-
++    deadlock_or_equilibrium_diagnosis.
++
++preserve_evidence_classes :-
++    experience,
++    unresolved_interpretation.
++
++nash_relation(structural_analogy).
++deadlock_is_nash_equilibrium(false).
++
++runtime_order([compile,bind,resolve,execute,test,observe,readback,accept,effect_ack_done]).
+diff --git a/docs/publications/2026-09-23-nash-kognition/machine/article.temdd b/docs/publications/2026-09-23-nash-kognition/machine/article.temdd
+new file mode 100644
+index 0000000000000000000000000000000000000000..361fcae5f5c1befc4c0b6d46bf40fd8329aac40b
+--- /dev/null
++++ b/docs/publications/2026-09-23-nash-kognition/machine/article.temdd
+@@ -0,0 +1,28 @@
++TEMDD ARTICLE qikvrt-nash-cognition-local-stability-v1
++AUTHOR "Ingolf Lohmann"
++DATE 2026-09-23
++CANONICAL_LANGUAGE de
++
++ASSERT LOCAL_STABILITY != GLOBAL_CORRECTNESS
++ASSERT LOCAL_EFFECT_ACK_DONE != UNIVERSAL_EFFECT_ACK_DONE
++ASSERT UNCHANGED != DONE
++ASSERT EXPERIENCE != INTERPRETATION
++ASSERT INTERPRETATION != EMPIRICALLY_CONFIRMED_EXTERNAL_EFFECT
++
++RULE DEADLOCK_OR_EQUILIBRIUM_DIAGNOSIS
++  WHEN STABLE == TRUE
++   AND WORK_REMAINING == TRUE
++   AND PROGRESS_EDGE == FALSE
++  THEN SEARCH_FOR_MISSING_TRANSITION
++
++RULE EPISTEMIC_DISCIPLINE
++  WHEN EXPERIENCE == PRESENT
++   AND INTERPRETATION == UNRESOLVED
++  THEN KEEP_EVIDENCE_CLASSES_SEPARATE
++
++BOUNDARY NASH_RELATION = STRUCTURAL_ANALOGY_ONLY
++BOUNDARY DEADLOCK_IS_NASH_EQUILIBRIUM = FALSE
++BOUNDARY AFTERLIFE_REPORT_PROVES_EXTERNAL_EFFECT = FALSE
++
++CHAIN COMPILE -> BIND -> RESOLVE -> EXECUTE -> TEST -> OBSERVE -> READBACK -> ACCEPT -> EFFECT_ACK_DONE
++DONE IFF COMPILE AND BIND AND RESOLVE AND EXECUTE AND TEST AND OBSERVE AND READBACK AND ACCEPT
+diff --git a/docs/publications/2026-09-23-nash-kognition/machine/article.ttl b/docs/publications/2026-09-23-nash-kognition/machine/article.ttl
+new file mode 100644
+index 0000000000000000000000000000000000000000..f78933c54cfed8928894b5d3ad4f4e8ff05880a8
+--- /dev/null
++++ b/docs/publications/2026-09-23-nash-kognition/machine/article.ttl
+@@ -0,0 +1,19 @@
++@prefix qik: <https://qik-vrt.example/ns#> .
++@prefix schema: <https://schema.org/> .
++
++qik:qikvrt-nash-cognition-local-stability-v1
++  a schema:ScholarlyArticle ;
++  schema:name "Warum künstliche Kognition zu oft im Nash-Gleichgewicht stehen bleibt"@de ;
++  schema:author qik:Ingolf-Lohmann ;
++  schema:datePublished "2026-09-23" ;
++  qik:claim qik:C1, qik:C2, qik:C3, qik:C4, qik:C5, qik:C6, qik:C7 .
++
++qik:C1 qik:formalExpression "LOCAL_STABILITY != GLOBAL_CORRECTNESS" .
++qik:C2 qik:formalExpression "LOCAL_EFFECT_ACK_DONE != UNIVERSAL_EFFECT_ACK_DONE" .
++qik:C3 qik:formalExpression "UNCHANGED != DONE" .
++qik:C4 qik:formalExpression "STABLE && WORK_REMAINING && !PROGRESS_EDGE => DEADLOCK_OR_EQUILIBRIUM_DIAGNOSIS" .
++qik:C5 qik:formalExpression "DEADLOCK_OR_EQUILIBRIUM_DIAGNOSIS => SEARCH_FOR_MISSING_TRANSITION" .
++qik:C6 qik:formalExpression "EXPERIENCE != INTERPRETATION != EMPIRICALLY_CONFIRMED_EXTERNAL_EFFECT" .
++qik:C7 qik:formalExpression "UNDERSTAND_MEANING && PRESERVE_EVIDENCE_STATUS" .
++
++qik:Ingolf-Lohmann a schema:Person ; schema:name "Ingolf Lohmann" .
+diff --git a/docs/publications/2026-09-23-nash-kognition/machine/article.xml b/docs/publications/2026-09-23-nash-kognition/machine/article.xml
+new file mode 100644
+index 0000000000000000000000000000000000000000..79ef62daa7c81294b99dbca1d07bbb7415247050
+--- /dev/null
++++ b/docs/publications/2026-09-23-nash-kognition/machine/article.xml
+@@ -0,0 +1,21 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<qikvrtArticle schema="qikvrt_nash_cognition_article_v1" publicationId="qikvrt-nash-cognition-local-stability-v1">
++  <title language="de">Warum künstliche Kognition zu oft im Nash-Gleichgewicht stehen bleibt</title>
++  <author>Ingolf Lohmann</author>
++  <date>2026-09-23</date>
++  <license>CC-BY-NC-ND-4.0</license>
++  <nashBoundary structuralAnalogyOnly="true" deadlockIsNashEquilibrium="false"/>
++  <claims>
++    <claim id="C1">LOCAL_STABILITY != GLOBAL_CORRECTNESS</claim>
++    <claim id="C2">LOCAL_EFFECT_ACK_DONE != UNIVERSAL_EFFECT_ACK_DONE</claim>
++    <claim id="C3">UNCHANGED != DONE</claim>
++    <claim id="C4">STABLE &amp;&amp; WORK_REMAINING &amp;&amp; !PROGRESS_EDGE =&gt; DEADLOCK_OR_EQUILIBRIUM_DIAGNOSIS</claim>
++    <claim id="C5">DEADLOCK_OR_EQUILIBRIUM_DIAGNOSIS =&gt; SEARCH_FOR_MISSING_TRANSITION</claim>
++    <claim id="C6">EXPERIENCE != INTERPRETATION != EMPIRICALLY_CONFIRMED_EXTERNAL_EFFECT</claim>
++    <claim id="C7">UNDERSTAND_MEANING &amp;&amp; PRESERVE_EVIDENCE_STATUS</claim>
++  </claims>
++  <runtime>
++    <stage>COMPILE</stage><stage>BIND</stage><stage>RESOLVE</stage><stage>EXECUTE</stage>
++    <stage>TEST</stage><stage>OBSERVE</stage><stage>READBACK</stage><stage>ACCEPT</stage><stage>EFFECT_ACK_DONE</stage>
++  </runtime>
++</qikvrtArticle>
+diff --git a/docs/publications/2026-09-23-nash-kognition/machine/article.yaml b/docs/publications/2026-09-23-nash-kognition/machine/article.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..7642ecdcba7ad25bb27bfb6e13d58818c3d69bc3
+--- /dev/null
++++ b/docs/publications/2026-09-23-nash-kognition/machine/article.yaml
+@@ -0,0 +1,44 @@
++schema: qikvrt_nash_cognition_article_v1
++publication_id: qikvrt-nash-cognition-local-stability-v1
++author: Ingolf Lohmann
++date: 2026-09-23
++canonical_language: de
++license: CC-BY-NC-ND-4.0
++core_claims:
++  - id: C1
++    formal: LOCAL_STABILITY != GLOBAL_CORRECTNESS
++  - id: C2
++    formal: LOCAL_EFFECT_ACK_DONE != UNIVERSAL_EFFECT_ACK_DONE
++  - id: C3
++    formal: UNCHANGED != DONE
++  - id: C4
++    formal: STABLE && WORK_REMAINING && !PROGRESS_EDGE => DEADLOCK_OR_EQUILIBRIUM_DIAGNOSIS
++  - id: C5
++    formal: DEADLOCK_OR_EQUILIBRIUM_DIAGNOSIS => SEARCH_FOR_MISSING_TRANSITION
++  - id: C6
++    formal: EXPERIENCE != INTERPRETATION != EMPIRICALLY_CONFIRMED_EXTERNAL_EFFECT
++  - id: C7
++    formal: UNDERSTAND_MEANING && PRESERVE_EVIDENCE_STATUS
++nash_boundary:
++  structural_analogy_only: true
++  deadlock_is_nash_equilibrium: false
++runtime_semantics:
++  - COMPILE
++  - BIND
++  - RESOLVE
++  - EXECUTE
++  - TEST
++  - OBSERVE
++  - READBACK
++  - ACCEPT
++  - EFFECT_ACK_DONE
++done_condition: COMPILE && BIND && RESOLVE && EXECUTE && TEST && OBSERVE && READBACK && ACCEPT
++spiritual_epistemic_boundary:
++  report_is_evidence_of_report: true
++  report_alone_proves_afterlife_communication: false
++  preserve:
++    - subjective_experience
++    - personal_interpretation
++    - cultural_or_religious_interpretation
++    - testable_empirical_claim
++languages: [de, en, fr, es, pt, it, ru, zh-Hans, ar, hi, ja]
+diff --git a/registry/nodes/a84f157a-cef2-4c47-bca9-8f407085bdbe.json b/registry/nodes/a84f157a-cef2-4c47-bca9-8f407085bdbe.json
+index bf29b0026cd6b01f0954f7f143ffe02b950ac8bd..1203f0d807faa90a4bfa97fc437dd31dd55c58b3 100644
+--- a/registry/nodes/a84f157a-cef2-4c47-bca9-8f407085bdbe.json
++++ b/registry/nodes/a84f157a-cef2-4c47-bca9-8f407085bdbe.json
+@@ -10,6 +10,29 @@
+   "acceptance_mode": "AUTONOMOUS_SEED_WORKFLOW_4AV1_OPEN_REGISTRY",
+   "accepted_utc": "2026-07-20T14:34:31Z",
+   "last_acceptance_run_id": "29751234189",
+-  "lifecycle": {"renewal_supported": true, "heartbeat_required": true, "suspend_supported": true, "revoke_supported": true, "reaccept_supported": true},
+-  "boundaries": {"authorized_manifest_graph_only": true, "no_global_scanning": true, "no_self_propagation": true, "no_remote_mutation_without_authorization": true, "seed_writes_only_to_seed_repository": true}
++  "lifecycle": {
++    "renewal_supported": true,
++    "heartbeat_required": true,
++    "suspend_supported": true,
++    "revoke_supported": true,
++    "reaccept_supported": true
++  },
++  "boundaries": {
++    "authorized_manifest_graph_only": true,
++    "no_global_scanning": true,
++    "no_self_propagation": true,
++    "no_remote_mutation_without_authorization": true,
++    "seed_writes_only_to_seed_repository": true
++  },
++  "required_publications": [
++    {
++      "publication_id": "qikvrt-nash-cognition-local-stability-v1",
++      "canonical_path": "docs/publications/2026-09-23-nash-kognition/ARTICLE.de.md",
++      "canonical_sha256": "5ba96c975d385ff6e90b4403cfbc7fa1d6092615c4cf0f79dfcfb8013335fcdc",
++      "canonical_git_blob_sha1": "1fb466509e351e845ab0e194449a86651695d990",
++      "manifest": "docs/publications/2026-09-23-nash-kognition/MANIFEST.json",
++      "requirement": "MESH_NODE_REQUIRED_READING",
++      "zenodo_state": "PENDING_EXACT_OWNER_AUTHORIZATION"
++    }
++  ]
+ }
