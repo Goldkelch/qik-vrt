@@ -1,0 +1,83 @@
+{
+  "schema": "qikvrt_unicode_data_exchange_v1",
+  "standard_id": "QIKVRT-UTF8-UNICODE-EXCHANGE-V1",
+  "version": 1,
+  "status": "NORMATIVE",
+  "scope": {
+    "applies_to": [
+      "AUTHORITY",
+      "MIRROR",
+      "EVERY_CURRENT_MESH_NODE",
+      "EVERY_FUTURE_MESH_NODE",
+      "AGENT_ADAPTER",
+      "UNIVERSAL_TERMINAL"
+    ],
+    "layer": "TEXTUAL_AND_FORMAL_EXCHANGE",
+    "replaces_existing_json_or_binary_protocols": false
+  },
+  "transport": {
+    "encoding": "UTF-8",
+    "unicode_normalization": "NFC",
+    "line_ending": "LF",
+    "canonical_math_notation": "UNICODE",
+    "renderer_dependency": "NONE",
+    "latex_as_canonical_exchange": false,
+    "silent_ascii_downgrade": "FORBIDDEN"
+  },
+  "canonical_runtime_chain": [
+    "COMPILE",
+    "BIND",
+    "RESOLVE",
+    "EXECUTE",
+    "TEST",
+    "OBSERVE",
+    "READBACK",
+    "ACCEPT",
+    "EFFECT_ACK_DONE"
+  ],
+  "done_condition": [
+    "COMPILE",
+    "BIND",
+    "RESOLVE",
+    "EXECUTE",
+    "TEST",
+    "OBSERVE",
+    "READBACK",
+    "ACCEPT"
+  ],
+  "invariants": [
+    "STABILITÄT ≠ ERFÜLLUNG",
+    "UNCHANGED ≠ DONE",
+    "AKTION ≠ WIRKUNG",
+    "WIRKUNG ≠ VOLLSTÄNDIGER ABSCHLUSS",
+    "LOKALE STABILITÄT ≠ GLOBALE ZIELERFÜLLUNG",
+    "EXECUTE ≠ DONE",
+    "TEST ≠ DONE",
+    "OBSERVE ≠ DONE",
+    "TRANSPORT_ACK ≠ EFFECT_ACK",
+    "PRESENCE ≠ EXECUTION ≠ EFFECT ≠ EFFECT_ACK_DONE"
+  ],
+  "progress_rule": "STABLE ∧ NOT_DONE ⇒ SEARCH_FOR_MISSING_TRANSITION",
+  "diagnostic_rule": "STABLE ∧ WORK_REMAINING ∧ ¬PROGRESS_EDGE ⇒ DEADLOCK_OR_EQUILIBRIUM_DIAGNOSIS",
+  "diagnostic_followup": "DEADLOCK_OR_EQUILIBRIUM_DIAGNOSIS ⇒ SEARCH_FOR_MISSING_TRANSITION",
+  "epistemic_rule": "EXPERIENCE ∧ UNRESOLVED_INTERPRETATION ⇒ KEEP_EVIDENCE_CLASSES_SEPARATE",
+  "state_space": {
+    "proper_extension": "S ⊂ S′",
+    "transition": "S → S′"
+  },
+  "local_minimum": {
+    "expression": "f(x*) ≤ f(x)",
+    "quantification": "for all x in a neighborhood of x*",
+    "possible_global_improvement": "f(x**) < f(x*)"
+  },
+  "canonical_document": "docs/standards/QIKVRT_UNICODE_DATA_EXCHANGE_V1.md",
+  "adoption_state": "state/mesh/QIKVRT_UNICODE_DATA_EXCHANGE_ADOPTION_V1.json",
+  "node_binding": {
+    "required_for_conforming_nodes": true,
+    "required_read_order": true,
+    "required_for_mesh_split_acceptance": true,
+    "historical_snapshots_rewritten": false,
+    "existing_external_nodes_require_successor_ingestion_readback": true
+  },
+  "effect_boundary": "Textual conformance does not establish execution, effect, synchronization, PASS, DONE or EFFECT_ACK_DONE."
+}

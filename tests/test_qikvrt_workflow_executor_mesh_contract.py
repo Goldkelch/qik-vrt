@@ -73,6 +73,7 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
             continuity["connection_order"],
             [
                 "AUTHORITY_CONTRACT_BOUND",
+                "DATA_EXCHANGE_STANDARD_BOUND",
                 "NODE_RECEIPT_DECLARED",
                 "NODE_STRUCTURAL_ACCEPTANCE",
                 "SEED_QUEUE_ACCEPTANCE",

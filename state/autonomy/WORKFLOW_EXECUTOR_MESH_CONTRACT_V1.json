@@ -374,6 +374,7 @@
     ],
     "connection_order": [
       "AUTHORITY_CONTRACT_BOUND",
+      "DATA_EXCHANGE_STANDARD_BOUND",
       "NODE_RECEIPT_DECLARED",
       "NODE_STRUCTURAL_ACCEPTANCE",
       "SEED_QUEUE_ACCEPTANCE",
@@ -385,7 +386,16 @@
       "EFFECT_ACK_DONE",
       "AUTHORITY_MIRROR_EQUALITY",
       "EXTERNAL_EFFECT"
-    ]
+    ],
+    "required_data_exchange_standard": {
+      "standard_id": "QIKVRT-UTF8-UNICODE-EXCHANGE-V1",
+      "required_paths": [
+        "docs/standards/QIKVRT_UNICODE_DATA_EXCHANGE_V1.md",
+        "policy/QIKVRT_UNICODE_DATA_EXCHANGE_V1.json",
+        "state/mesh/QIKVRT_UNICODE_DATA_EXCHANGE_ADOPTION_V1.json"
+      ],
+      "acceptance": "NODE_MUST_BIND_STANDARD_BEFORE_SEED_QUEUE_ACCEPTANCE"
+    }
   },
   "completion_claims": {
     "PASS": false,
@@ -393,5 +403,21 @@
     "EFFECT_ACK_DONE": false,
     "AUTHORITY_MIRROR_EQUALITY": false,
     "EXTERNAL_EFFECT": false
+  },
+  "data_exchange_standard": {
+    "standard_id": "QIKVRT-UTF8-UNICODE-EXCHANGE-V1",
+    "human_contract": "docs/standards/QIKVRT_UNICODE_DATA_EXCHANGE_V1.md",
+    "machine_policy": "policy/QIKVRT_UNICODE_DATA_EXCHANGE_V1.json",
+    "adoption_state": "state/mesh/QIKVRT_UNICODE_DATA_EXCHANGE_ADOPTION_V1.json",
+    "applies_to": [
+      "AUTHORITY",
+      "MIRROR",
+      "EVERY_CURRENT_MESH_NODE",
+      "EVERY_FUTURE_MESH_NODE"
+    ],
+    "required_for_node_acceptance": true,
+    "canonical_text_profile": "UTF-8 + NFC + LF + direct Unicode formal operators",
+    "existing_external_node_update_claim_requires": "SUCCESSOR_INGESTION_AND_FRESH_READBACK",
+    "replaces_schema_specific_wire_formats": false
   }
 }
