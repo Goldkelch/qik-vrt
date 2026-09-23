@@ -1,0 +1,68 @@
+{
+  "_license": {
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt.reference-linux-build-contract.v1",
+  "contract_id": "qikvrt-reference-linux-amd64-v1",
+  "artifact": {
+    "name": "qikvrt-reference-linux-amd64.iso",
+    "architecture": "amd64",
+    "format": "iso-hybrid",
+    "boot_mode": "bios-or-uefi-as-produced-by-live-build"
+  },
+  "source_binding": {
+    "repository": "Goldkelch/qik-vrt",
+    "required_ref_kind": "exact_git_commit",
+    "source_tree_required": true,
+    "source_date_epoch_policy": "exact_source_commit_timestamp"
+  },
+  "distribution": {
+    "family": "Debian",
+    "suite": "trixie",
+    "snapshot": "http://snapshot.debian.org/archive/debian/20260922/",
+    "archive_areas": ["main"],
+    "security_archive_enabled": false,
+    "updates_archive_enabled": false,
+    "apt_signature_verification_required": true,
+    "packages": [
+      "linux-image-amd64",
+      "live-boot",
+      "systemd-sysv",
+      "busybox"
+    ]
+  },
+  "toolchain": {
+    "live_build": {
+      "version": "20250505+deb13u1",
+      "archive": "live-build_20250505+deb13u1_all.deb",
+      "sha256": "58e09779881cbcc631c49ceb703413e0247a87db01823e597b2a1c40a2afd8f4"
+    },
+    "debian_archive_keyring": {
+      "version": "2025.1",
+      "archive": "debian-archive-keyring_2025.1_all.deb",
+      "sha256": "9ea7778e443144ca490668737a8ab22dd3e748bb99e805e22ec055abeb3c7fac"
+    },
+    "runtime_tools_recorded": ["xorriso", "mksquashfs", "debootstrap"]
+  },
+  "reproducibility": {
+    "independent_work_directories": 2,
+    "same_exact_source_required": true,
+    "same_contract_required": true,
+    "same_toolchain_identity_required": true,
+    "byte_identical_iso_required": true,
+    "sha256_match_required": true
+  },
+  "acceptance": {
+    "boot_witness": "QIKVRT_REFERENCE_LINUX_BOOT_OK",
+    "qemu_bios_boot_required": true,
+    "rebuild_receipt_required": true,
+    "fail_closed": true
+  },
+  "scope_boundary": {
+    "included": ["minimal_linux_boot", "exact_subject_binding", "deterministic_rebuild_check"],
+    "excluded": ["atari", "m68000", "transputer", "universal_terminal", "temdd_runtime", "public_release"],
+    "effect_ack_done": false
+  }
+}
