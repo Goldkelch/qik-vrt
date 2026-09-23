@@ -1,0 +1,138 @@
+name: QIKVRT Zenodo successor publish and readback
+
+on:
+  push:
+    paths:
+      - release/temdd-executable-language-runtime-2026-09-23/OWNER_ZENODO_AUTHORIZATION.json
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: qikvrt-temdd-zenodo-successor-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      MANIFEST_PATH: release/temdd-executable-language-runtime-2026-09-23/publish-request.json
+      EVIDENCE_PATH: release/temdd-executable-language-runtime-2026-09-23/zenodo-publication.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact execution subject and reject stale controls
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -B tools/qikvrt_zenodo_successor_guard.py check             --target temdd-executable-language-runtime             --require-publish-request             --require-authorization
+
+      - name: Execute exact authorized publication and public byte readback
+        id: publish
+        continue-on-error: true
+        env:
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set +e
+          python3 -B tools/qikvrt_zenodo_publish.py --manifest "$MANIFEST_PATH"
+          status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Persist publication or recovery evidence
+        id: persist
+        if: always()
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+          TARGET_REF: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if test -f "$EVIDENCE_PATH"; then
+            python3 -B tools/qikvrt_integrity.py generate
+            git config user.name "qik-vrt-zenodo-publication[bot]"
+            git config user.email "qik-vrt-zenodo-publication[bot]@users.noreply.github.com"
+            git add -- "$EVIDENCE_PATH" REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+            if ! git diff --cached --quiet; then
+              remote_head="$(
+                git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+                  awk 'NR == 1 { print $1 }'
+              )"
+              test "$remote_head" = "$EXPECTED_HEAD"
+              git commit -m "zenodo: persist TEMDD successor publication readback"
+              python3 -B tools/qikvrt_integrity.py verify
+              remote_head="$(
+                git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+                  awk 'NR == 1 { print $1 }'
+              )"
+              test "$remote_head" = "$EXPECTED_HEAD"
+              git push origin "HEAD:refs/heads/$TARGET_REF"
+              echo "persisted=true" >> "$GITHUB_OUTPUT"
+              echo "successor_head=$(git rev-parse --verify HEAD^{commit})" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Dispatch exact-head verification for persisted receipt successor
+        if: steps.persist.outputs.persisted == 'true' && github.ref != 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_REF: ${{ github.ref_name }}
+          SUCCESSOR_HEAD: ${{ steps.persist.outputs.successor_head }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          head_label="${GITHUB_REPOSITORY_OWNER}:${TARGET_REF}"
+          prs="$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&head=${head_label}")"
+          count="$(jq 'length' <<<"$prs")"
+          test "$count" -eq 1 || {
+            echo "BLOCK: expected exactly one open PR for persisted publication successor, observed $count" >&2
+            exit 2
+          }
+          pr="$(jq -r '.[0].number' <<<"$prs")"
+          live_head="$(jq -r '.[0].head.sha' <<<"$prs")"
+          base_sha="$(jq -r '.[0].base.sha' <<<"$prs")"
+          test "$live_head" = "$SUCCESSOR_HEAD"
+
+          dispatch_payload="$RUNNER_TEMP/qikvrt-publication-receipt-dispatch.json"
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg pr "$pr" \
+            --arg ref "$TARGET_REF" \
+            --arg head "$SUCCESSOR_HEAD" \
+            --arg base "$base_sha" \
+            '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base,d0:2,causal_state:"REOBSERVE",reason:"PUBLICATION_RECEIPT_SUCCESSOR"}}' \
+            > "$dispatch_payload"
+          dispatched=false
+          dispatch_error="$RUNNER_TEMP/qikvrt-publication-receipt-dispatch.err"
+          for delay in 0 15 45; do
+            if [ "$delay" -gt 0 ]; then sleep "$delay"; fi
+            if gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" \
+              --input "$dispatch_payload" 2>"$dispatch_error"; then
+              dispatched=true
+              break
+            fi
+            if ! grep -Fq "API rate limit exceeded for installation." "$dispatch_error"; then
+              cat "$dispatch_error" >&2
+              exit 1
+            fi
+          done
+          if [ "$dispatched" != true ]; then
+            cat "$dispatch_error" >&2
+            echo "HOLD/D0=1: public receipt persisted; exact-head dispatch deferred to trusted-main scheduled recovery"
+          fi
+
+      - name: Enforce publication result
+        run: |
+          set -euo pipefail
+          test "${{ steps.publish.outputs.status }}" = "0"
+
+      - name: Fresh publication-effect gate
+        run: python3 -B tools/qikvrt_zenodo_successor_guard.py check --target temdd-executable-language-runtime --require-public-effect

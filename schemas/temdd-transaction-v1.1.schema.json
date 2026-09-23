@@ -1,0 +1,227 @@
+{
+  "$id": "https://temdd.org/schema/temdd-transaction-v1.1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TEMDD 1.1 Transaction",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "temddVersion",
+    "transactionId",
+    "subjectId",
+    "idempotencyKey",
+    "principal",
+    "intent",
+    "acceptance",
+    "verificationPolicyId",
+    "state",
+    "createdAt"
+  ],
+  "properties": {
+    "temddVersion": {
+      "const": "1.1"
+    },
+    "transactionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "subjectId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "executionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 1
+    },
+    "principal": {
+      "$ref": "#/$defs/principal"
+    },
+    "intent": {
+      "$ref": "#/$defs/intent"
+    },
+    "acceptance": {
+      "$ref": "#/$defs/acceptanceCriteria"
+    },
+    "verificationPolicyId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "verificationPolicyDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "state": {
+      "$ref": "#/$defs/transactionState"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "executedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "observedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "readbackAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "verifiedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "acceptedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "transactionState": {
+      "type": "string",
+      "enum": [
+        "CREATED",
+        "SENT",
+        "RECEIVED",
+        "EXECUTED",
+        "OBSERVED",
+        "READBACK",
+        "VERIFIED",
+        "ACCEPTED",
+        "EFFECT_ACK_DONE",
+        "FAILED"
+      ]
+    },
+    "principal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "USER",
+            "SERVICE",
+            "DEVICE",
+            "PROCESS",
+            "ROBOT",
+            "AI_AGENT"
+          ]
+        }
+      }
+    },
+    "intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target": true,
+        "parameters": {
+          "type": "object"
+        }
+      }
+    },
+    "acceptanceCriteria": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/exactAcceptance"
+        },
+        {
+          "$ref": "#/$defs/rangeAcceptance"
+        },
+        {
+          "$ref": "#/$defs/semanticAcceptance"
+        },
+        {
+          "$ref": "#/$defs/functionalAcceptance"
+        }
+      ]
+    },
+    "exactAcceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "expected"
+      ],
+      "properties": {
+        "type": {
+          "const": "exact"
+        },
+        "expected": true
+      }
+    },
+    "rangeAcceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "minimum",
+        "maximum"
+      ],
+      "properties": {
+        "type": {
+          "const": "range"
+        },
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        }
+      }
+    },
+    "semanticAcceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "rule"
+      ],
+      "properties": {
+        "type": {
+          "const": "semantic"
+        },
+        "rule": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "functionalAcceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "function"
+      ],
+      "properties": {
+        "type": {
+          "const": "functional"
+        },
+        "function": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

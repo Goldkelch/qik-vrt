@@ -1,0 +1,98 @@
+{
+  "$id": "https://temdd.org/schema/temdd-evidence-v1.1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TEMDD 1.1 Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "temddVersion",
+    "evidenceId",
+    "transactionId",
+    "executionId",
+    "subjectId",
+    "sourceId",
+    "class",
+    "capturedAt",
+    "value"
+  ],
+  "properties": {
+    "temddVersion": {
+      "const": "1.1"
+    },
+    "evidenceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "transactionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "executionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "subjectId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceType": {
+      "type": "string"
+    },
+    "class": {
+      "type": "string",
+      "enum": [
+        "E1",
+        "E2",
+        "E3"
+      ]
+    },
+    "capturedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "value": true,
+    "nonce": {
+      "type": "string"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "signature": {
+      "$ref": "#/$defs/signature"
+    }
+  },
+  "$defs": {
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "keyId",
+        "value"
+      ],
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "enum": [
+            "ed25519",
+            "ecdsa",
+            "rsa-pss"
+          ]
+        },
+        "keyId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

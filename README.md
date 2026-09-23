@@ -28,6 +28,17 @@ or `EFFECT_ACK_DONE`.
 
 <!-- /qikvrt-machine-verifiable-science-charter-binding:v1 -->
 
+<!-- qikvrt-temdd-executable-language-runtime:v1 -->
+## TEMDD: ausführbare Sprache + Effect-Verification-Laufzeit
+
+Kanonische Product-Owner-Erklärung: **Tested Event Model Driven Development ist in QIK-VRT nicht nur eine Entwicklungsmethode, sondern eine ausführbare Sprache mit Entwicklungs-, Debugging-, Test-, Linking- und Effect-Verification-Laufzeit.**
+
+Einstieg: [TEMDD.md](TEMDD.md) · [kanonischer Architekturvertrag](spec/temdd/TEMDD_EXECUTABLE_LANGUAGE_RUNTIME_V1.md) · [maschinenlesbare Policy](policy/QIKVRT_TEMDD_EXECUTABLE_LANGUAGE_RUNTIME_V1.json).
+
+Runtime-Abschluss: `COMPILE → BIND → RESOLVE → EXECUTE → TEST → OBSERVE → READBACK → ACCEPT → EFFECT_ACK_DONE`. Persistenz, Ausführung oder Test allein sind kein `EFFECT_ACK_DONE`.
+<!-- /qikvrt-temdd-executable-language-runtime:v1 -->
+
+
 <!-- qikvrt-self-declaration:v1 -->
 ## Selbsterklärung für natürliche und künstliche kognitive Systeme
 

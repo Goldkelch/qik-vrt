@@ -1,0 +1,74 @@
+{
+  "$id": "https://temdd.org/schema/1.1/audit-record.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TEMDD 1.1 Audit Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "temddVersion",
+    "auditId",
+    "transactionId",
+    "principalId",
+    "operation",
+    "subjectId",
+    "timestamp",
+    "result"
+  ],
+  "properties": {
+    "temddVersion": {
+      "const": "1.1"
+    },
+    "auditId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "transactionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "principalId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "operation": {
+      "type": "string",
+      "enum": [
+        "CREATE",
+        "EXECUTE",
+        "OBSERVE",
+        "READBACK",
+        "VERIFY",
+        "ACCEPT",
+        "CERTIFY",
+        "RETRY"
+      ]
+    },
+    "subjectId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "result": {
+      "type": "string",
+      "enum": [
+        "SUCCESS",
+        "FAILURE",
+        "HOLD",
+        "REOBSERVE",
+        "BLOCK",
+        "ISOLATE"
+      ]
+    },
+    "previousAuditDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "recordDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  }
+}

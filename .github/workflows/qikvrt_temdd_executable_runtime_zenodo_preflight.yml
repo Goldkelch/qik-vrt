@@ -1,0 +1,94 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: TEMDD executable-runtime Zenodo preflight
+
+on:
+  push:
+    branches:
+      - temdd/executable-runtime-20260923-v1
+    paths:
+      - .github/workflows/qikvrt_temdd_executable_runtime_zenodo_preflight.yml
+      - docs/publications/2026-09-23-temdd-executable-language-runtime/**
+      - release/temdd-executable-language-runtime-2026-09-23/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-temdd-executable-runtime-zenodo-preflight
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PROOF_PATH: docs/publications/2026-09-23-temdd-executable-language-runtime/MACHINE_PROOF_BUNDLE.json
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
+          printf 'HEAD=%s\nTREE=%s\n' "$GITHUB_SHA" "$(git rev-parse 'HEAD^{tree}')"
+          test ! -e release/temdd-executable-language-runtime-2026-09-23/zenodo-publication.json
+
+      - name: Validate exact machine-proof upload set
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_zenodo_machine_proof.py \
+            --proof-bundle "$PROOF_PATH" \
+            --upload-path docs/publications/2026-09-23-temdd-executable-language-runtime/CANONICAL_STATEMENT_DE.txt \
+            --upload-path docs/publications/2026-09-23-temdd-executable-language-runtime/CLAIM_MATRIX.json \
+            --upload-path docs/publications/2026-09-23-temdd-executable-language-runtime/SOURCE_EVIDENCE_BINDINGS.json \
+            --upload-path docs/publications/2026-09-23-temdd-executable-language-runtime/BOUNDARY_TEST_REPORT.json \
+            --upload-path docs/publications/2026-09-23-temdd-executable-language-runtime/PREPUBLICATION_RETURN_RECEIPT.json \
+            --upload-path "$PROOF_PATH"
+
+      - name: Validate v2 manifest, owner authorization, and execution binding
+        shell: bash
+        env:
+          MANIFEST_PATH: release/temdd-executable-language-runtime-2026-09-23/publish-request.json
+        run: |
+          set -euo pipefail
+          GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+          GITHUB_SHA="$GITHUB_SHA" \
+          python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = Path.cwd().resolve()
+          manifest_path = root / os.environ["MANIFEST_PATH"]
+          manifest = publish.load_manifest(manifest_path, root)
+          execution_head = publish._validate_repository_source_head(
+              root, manifest_path, manifest
+          )
+          publish._validate_origin_repository(root, manifest["repository"])
+          if execution_head != os.environ["GITHUB_SHA"]:
+              raise SystemExit("BLOCK: normalized execution head differs")
+          if manifest["source_head"] != "a8735da01bacddcf1439027fefdef02fc364d5be":
+              raise SystemExit("BLOCK: frozen source head differs")
+          if len(manifest["files"]) != 6:
+              raise SystemExit("BLOCK: exact Zenodo upload count differs")
+          print("TEMDD_ZENODO_V2_PREFLIGHT=VALID")
+          PY
+
+      - name: Check Zenodo runtime presence
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f tools/qikvrt_zenodo_publish.py
+          test -f tools/qikvrt_zenodo_actions.py
+          test -f policy/zenodo-machine-proof-policy-v2.json
+          test -f runtime/capabilities/ZENODO_PUBLICATION_CAPABILITY.json

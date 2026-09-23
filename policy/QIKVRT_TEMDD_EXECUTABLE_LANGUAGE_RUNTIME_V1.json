@@ -1,0 +1,90 @@
+{
+  "schema": "qikvrt-temdd-executable-language-runtime/1",
+  "id": "qikvrt-temdd-executable-language-runtime-v1",
+  "author": "Ingolf Lohmann",
+  "date": "2026-09-23",
+  "canonical_document": "spec/temdd/TEMDD_EXECUTABLE_LANGUAGE_RUNTIME_V1.md",
+  "declaration": "Ich habe aus Tested Event Model Driven Development nicht nur eine Entwicklungsmethode gemacht, sondern eine ausführbare Sprache mit Entwicklungs-, Debugging-, Test-, Linking- und Effect-Verification-Laufzeit.",
+  "q_e_d_signature": "q.e.d. Ingolf Lohmann",
+  "runtime_chain": [
+    "COMPILE",
+    "BIND",
+    "RESOLVE",
+    "EXECUTE",
+    "TEST",
+    "OBSERVE",
+    "READBACK",
+    "ACCEPT",
+    "EFFECT_ACK_DONE"
+  ],
+  "tooling_projection": [
+    "Compiler",
+    "Linker / Binder",
+    "Dynamic Loader / Resolver",
+    "Runtime",
+    "Debugger / Observer",
+    "Test Runner",
+    "Effect Verifier",
+    "IDE"
+  ],
+  "invariants": {
+    "execute_is_done": false,
+    "test_is_done": false,
+    "observe_is_done": false,
+    "transport_ack_is_effect_ack": false,
+    "done_requires_all_runtime_chain_preconditions": true,
+    "historical_publications_are_rewritten": false
+  },
+  "propagation": {
+    "repository_nodes": [
+      "Goldkelch/qik-vrt",
+      "ingolf-lohmann/qik-vrt"
+    ],
+    "ai_context_required": true,
+    "temdd_spec_required": true,
+    "publication_index_required": true,
+    "zenodo_successor_required": true
+  },
+  "evidence_boundary": "Presence of this declaration establishes the attributed architecture declaration only. Implementation, conformance, release, Zenodo publication and EFFECT_ACK_DONE remain separately evidence-bound.",
+  "atomic_effect_acceptance": {
+    "semantic_scope": "Atomicity applies to the acceptance verdict over one exact bound actual successor; it does not assert CPU, storage, database, transaction, or ACID atomicity of execution.",
+    "actual_successor": "s_(n+1)^actual is the observed state produced by EXECUTE, not the intended state.",
+    "bind_rule": "BIND the actual successor together with subject identity, provenance, artifact identity, and execution identity before acceptance.",
+    "readback_rule": "Acceptance evidence is produced after the effect, bound to the same successor, and must not be derived solely from the executor's own success return.",
+    "acceptance_predicate": "ACCEPTED(b,e,C_scope) := conjunction of every predicate p(b,e) in the explicit acceptance scope C_scope.",
+    "halt_condition": "HALT_TEMDD iff EFFECT_ACK_DONE(b,e,C_scope) iff ACCEPTED(b,e,C_scope).",
+    "partial_success_is_terminal": false,
+    "predecessor_evidence_transfer": false,
+    "continuation_rule": "If acceptance is false, a safely bindable actual successor becomes the next bound subject; otherwise fail closed with BLOCK_OR_ISOLATE.",
+    "public_artifact_readback": "Required only when C_scope requires a public artifact state.",
+    "liveness_separate_from_safety": true,
+    "solves_general_halting_problem": false
+  },
+  "scientific_positioning": {
+    "related_foundations": [
+      {
+        "topic": "Hoare logic and postconditions",
+        "doi": "10.1145/363235.363259"
+      },
+      {
+        "topic": "Linearizability",
+        "doi": "10.1145/78969.78972"
+      },
+      {
+        "topic": "End-to-end arguments",
+        "doi": "10.1145/357401.357402"
+      },
+      {
+        "topic": "Runtime verification",
+        "doi": "10.1016/j.jlap.2008.08.004"
+      },
+      {
+        "topic": "TOCTOU",
+        "reference": "MITRE CWE-367"
+      }
+    ],
+    "research_subject": "Composition of exact-successor binding, provenance-bound evidence, fresh non-self-confirming readback, and an indivisible effect-acceptance verdict as runtime release semantics.",
+    "novelty_or_priority_established": false,
+    "novelty_boundary": "Repository or Zenodo persistence establishes attribution and fixed bytes, not scientific novelty or priority; systematic prior-art review and independent assessment remain required."
+  }
+}

@@ -13,7 +13,8 @@ on:
       - reopened
 
 permissions:
-  contents: read
+  contents: write
+  statuses: write
 
 concurrency:
   group: qikvrt-pr-integrity-projection-${{ github.event.pull_request.number || github.ref_name }}
@@ -29,7 +30,8 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 2
-          persist-credentials: false
+          persist-credentials: true
+
       - name: Bind exact subject
         shell: bash
         env:
@@ -38,12 +40,25 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
           printf 'HEAD=%s\nTREE=%s\n' "$EXPECTED_HEAD" "$(git rev-parse 'HEAD^{tree}')"
+
+      - name: Materialize registered publication successors
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -f tools/qikvrt_zenodo_successor_guard.py &&
+             test -f policy/QIKVRT_ZENODO_SUCCESSOR_TARGETS_V1.json; then
+            python3 -B tools/qikvrt_zenodo_successor_guard.py materialize-all
+            python3 -B tools/qikvrt_zenodo_successor_guard.py check-all
+          fi
+
       - name: Generate and verify deterministic integrity projection
         shell: bash
         run: |
           set -euo pipefail
           python3 tools/qikvrt_integrity.py generate
           python3 tools/qikvrt_integrity.py verify
+
       - name: Preserve exact projection
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -52,5 +67,148 @@ jobs:
             REPOSITORY_FILE_MANIFEST.json
             REPOSITORY_FILE_MANIFEST.json.sha256
             SHA256SUMS.txt
+            release/**/AUTO_SUCCESSOR_CANDIDATE.json
           if-no-files-found: error
           retention-days: 7
+
+      - name: Persist projection and successor candidates atomically
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_REF: ${{ github.event.pull_request.head.ref }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          if [ "$remote_head" != "$EXPECTED_HEAD" ]; then
+            echo "BLOCK: PR head advanced before projection persistence" >&2
+            echo "expected_head=$EXPECTED_HEAD" >&2
+            echo "remote_head=$remote_head" >&2
+            exit 2
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+
+          if test -f policy/QIKVRT_ZENODO_SUCCESSOR_TARGETS_V1.json; then
+            python3 -B - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          value = json.loads(
+              Path("policy/QIKVRT_ZENODO_SUCCESSOR_TARGETS_V1.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          for target in value.get("targets", []):
+              path = target.get("candidate_path")
+              if isinstance(path, str) and path:
+                  subprocess.run(["git", "add", "--", path], check=True)
+          PY
+          fi
+
+          python3 -B - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          allowed = {
+              "REPOSITORY_FILE_MANIFEST.json",
+              "REPOSITORY_FILE_MANIFEST.json.sha256",
+              "SHA256SUMS.txt",
+          }
+          registry = Path("policy/QIKVRT_ZENODO_SUCCESSOR_TARGETS_V1.json")
+          if registry.is_file():
+              value = json.loads(registry.read_text(encoding="utf-8"))
+              for target in value.get("targets", []):
+                  path = target.get("candidate_path")
+                  if isinstance(path, str) and path:
+                      allowed.add(path)
+          staged = set(
+              subprocess.check_output(
+                  ["git", "diff", "--cached", "--name-only", "-z"]
+              ).decode("utf-8").split("\0")
+          )
+          staged.discard("")
+          unexpected = staged - allowed
+          if unexpected:
+              raise SystemExit(
+                  "BLOCK: projection staged unexpected paths: "
+                  + ",".join(sorted(unexpected))
+              )
+          PY
+
+          if git diff --cached --quiet; then
+            echo "Integrity projection and publication candidates are already current."
+            exit 0
+          fi
+
+          git commit -m "ci: persist deterministic integrity and publication successors"
+
+          if test -f tools/qikvrt_zenodo_successor_guard.py &&
+             test -f policy/QIKVRT_ZENODO_SUCCESSOR_TARGETS_V1.json; then
+            python3 -B tools/qikvrt_zenodo_successor_guard.py check-all
+          fi
+          python3 -B tools/qikvrt_integrity.py verify
+
+          remote_head_after_commit="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          if [ "$remote_head_after_commit" != "$EXPECTED_HEAD" ]; then
+            echo "BLOCK: PR head advanced during projection persistence" >&2
+            exit 2
+          fi
+          git push origin "HEAD:refs/heads/$TARGET_REF"
+
+          successor_head="$(git rev-parse --verify HEAD^{commit})"
+          live_successor="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$live_successor" = "$successor_head"
+
+          dispatch_payload="$RUNNER_TEMP/qikvrt-projection-successor-dispatch.json"
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg pr "$PR_NUMBER" \
+            --arg ref "$TARGET_REF" \
+            --arg head "$successor_head" \
+            --arg source "$EXPECTED_HEAD" \
+            --arg base "$BASE_SHA" \
+            '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,source_head_sha:$source,base_sha:$base,d0:2,causal_state:"REOBSERVE",reason:"PROJECTION_SUCCESSOR"}}' \
+            > "$dispatch_payload"
+
+          dispatched=false
+          dispatch_error="$RUNNER_TEMP/qikvrt-projection-successor-dispatch.err"
+          for delay in 0 15 45; do
+            if [ "$delay" -gt 0 ]; then
+              echo "QIKVRT_GITHUB_INSTALLATION_RATE_LIMIT_BACKOFF_SECONDS=$delay"
+              sleep "$delay"
+            fi
+            if gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" \
+              --input "$dispatch_payload" 2>"$dispatch_error"; then
+              dispatched=true
+              break
+            fi
+            if ! grep -Fq "API rate limit exceeded for installation." "$dispatch_error"; then
+              cat "$dispatch_error" >&2
+              exit 1
+            fi
+          done
+
+          if [ "$dispatched" != true ]; then
+            cat "$dispatch_error" >&2
+            echo "HOLD/D0=1: successor persisted; exact-head dispatch deferred to trusted-main scheduled recovery"
+            exit 0
+          fi
+          echo "REOBSERVE/D0=2 dispatched for deterministic successor $successor_head"

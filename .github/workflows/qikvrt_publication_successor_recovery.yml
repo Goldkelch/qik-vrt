@@ -1,0 +1,129 @@
+name: QIKVRT publication successor scheduled recovery
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_run:
+    workflows:
+      - "QIKVRT PR integrity projection"
+      - "QIKVRT Zenodo successor closure guard"
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: qikvrt-publication-successor-scheduled-recovery-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  reobserve-one:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Select one stalled exact publication successor and dispatch verifier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gh_retry() {
+            local out err delay
+            out="$(mktemp)"
+            err="$(mktemp)"
+            for delay in 0 15 45; do
+              if [ "$delay" -gt 0 ]; then
+                echo "QIKVRT_GITHUB_INSTALLATION_RATE_LIMIT_BACKOFF_SECONDS=$delay"
+                sleep "$delay"
+              fi
+              if gh api "$@" >"$out" 2>"$err"; then
+                cat "$out"
+                rm -f "$out" "$err"
+                return 0
+              fi
+              if ! grep -Fq "API rate limit exceeded for installation." "$err"; then
+                cat "$err" >&2
+                rm -f "$out" "$err"
+                return 1
+              fi
+            done
+            cat "$err" >&2
+            rm -f "$out" "$err"
+            return 75
+          }
+
+          if ! open_prs="$(gh_retry "repos/${GITHUB_REPOSITORY}/pulls?state=open&sort=updated&direction=desc&per_page=30")"; then
+            rc=$?
+            [ "$rc" -eq 75 ] && { echo "HOLD/D0=1: installation quota exhausted"; exit 0; }
+            exit "$rc"
+          fi
+
+          selected=""
+          while IFS= read -r pr; do
+            number="$(jq -r '.number' <<<"$pr")"
+            head="$(jq -r '.head.sha' <<<"$pr")"
+            ref="$(jq -r '.head.ref' <<<"$pr")"
+            base="$(jq -r '.base.sha' <<<"$pr")"
+            head_repo="$(jq -r '.head.repo.full_name // empty' <<<"$pr")"
+            [ "$head_repo" = "$GITHUB_REPOSITORY" ] || continue
+
+            if ! runs="$(gh_retry "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${head}&per_page=100")"; then
+              rc=$?
+              [ "$rc" -eq 75 ] && { echo "HOLD/D0=1: installation quota exhausted"; exit 0; }
+              exit "$rc"
+            fi
+            if ! jq -e '
+              .workflow_runs
+              | any(
+                  (.name == "QIKVRT PR integrity projection" or
+                   .name == "QIKVRT Zenodo successor closure guard")
+                  and (.conclusion == "action_required" or
+                       .conclusion == "failure" or
+                       .conclusion == "cancelled" or
+                       .conclusion == "timed_out")
+                )
+            ' <<<"$runs" >/dev/null; then
+              continue
+            fi
+
+            if ! status="$(gh_retry "repos/${GITHUB_REPOSITORY}/commits/${head}/status")"; then
+              rc=$?
+              [ "$rc" -eq 75 ] && { echo "HOLD/D0=1: installation quota exhausted"; exit 0; }
+              exit "$rc"
+            fi
+            exact="$(jq -r '[.statuses[] | select(.context == "QIKVRT autonomous exact-head verification")][0].state // "missing"' <<<"$status")"
+            case "$exact" in
+              success|pending) continue ;;
+            esac
+
+            selected="$(jq -nc --arg number "$number" --arg head "$head" --arg ref "$ref" --arg base "$base" '{number:($number|tonumber),head:$head,ref:$ref,base:$base}')"
+            break
+          done < <(jq -c '.[]' <<<"$open_prs")
+
+          [ -n "$selected" ] || { echo "NOOP/D0=0: no stalled publication successor"; exit 0; }
+
+          number="$(jq -r '.number' <<<"$selected")"
+          head="$(jq -r '.head' <<<"$selected")"
+          ref="$(jq -r '.ref' <<<"$selected")"
+          base="$(jq -r '.base' <<<"$selected")"
+
+          payload="$RUNNER_TEMP/qikvrt-publication-successor-recovery.json"
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg number "$number" \
+            --arg ref "$ref" \
+            --arg head "$head" \
+            --arg base "$base" \
+            '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repository,pull_request:($number|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base,d0:2,causal_state:"REOBSERVE",reason:"PUBLICATION_SUCCESSOR_SCHEDULED_RECOVERY"}}' \
+            > "$payload"
+
+          if ! gh_retry --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input "$payload" >/dev/null; then
+            rc=$?
+            [ "$rc" -eq 75 ] && { echo "HOLD/D0=1: dispatch deferred by installation quota"; exit 0; }
+            exit "$rc"
+          fi
+          echo "REOBSERVE/D0=2 dispatched for PR #$number exact head $head"

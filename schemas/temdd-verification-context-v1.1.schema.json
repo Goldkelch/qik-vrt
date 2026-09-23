@@ -1,0 +1,78 @@
+{
+  "$id": "https://temdd.org/schema/temdd-verification-context-v1.1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TEMDD 1.1 Verification Context",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "temddVersion",
+    "transactionId",
+    "executionId",
+    "policyId",
+    "policyDigest",
+    "evaluationTime",
+    "trustRootSetId",
+    "trustRootSetDigest",
+    "algorithmProfile",
+    "canonicalizationProfile",
+    "acceptanceEvaluatorIds"
+  ],
+  "properties": {
+    "temddVersion": {
+      "const": "1.1"
+    },
+    "transactionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "executionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "policyId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "policyDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "evaluationTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "timeSourceId": {
+      "type": "string"
+    },
+    "trustRootSetId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "trustRootSetDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "algorithmProfile": {
+      "type": "string",
+      "minLength": 1
+    },
+    "canonicalizationProfile": {
+      "const": "RFC8785-JCS"
+    },
+    "acceptanceEvaluatorIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "challengeId": {
+      "type": "string"
+    },
+    "nonce": {
+      "type": "string"
+    }
+  }
+}

@@ -1,0 +1,181 @@
+{
+  "schema": "qikvrt_temdd_verification_policy_test_vectors_v1_1",
+  "temddVersion": "1.1",
+  "evaluationOrder": [
+    "FRESHNESS",
+    "TRUST",
+    "BINDING",
+    "QUORUM",
+    "DOMAIN_VERIFICATION",
+    "ACCEPTANCE"
+  ],
+  "vectors": [
+    {
+      "id": "VP-001",
+      "description": "fresh trusted exactly bound single evidence",
+      "inputs": {
+        "fresh": true,
+        "trusted": true,
+        "subjectMatch": true,
+        "transactionMatch": true,
+        "executionMatch": true,
+        "nonceMatch": true,
+        "quorum": true,
+        "domainVerification": true,
+        "acceptance": true
+      },
+      "expected": {
+        "verified": true,
+        "failedPredicates": []
+      }
+    },
+    {
+      "id": "VP-002",
+      "description": "stale evidence fails freshness",
+      "inputs": {
+        "fresh": false,
+        "trusted": true,
+        "subjectMatch": true,
+        "transactionMatch": true,
+        "executionMatch": true,
+        "nonceMatch": true,
+        "quorum": true,
+        "domainVerification": true,
+        "acceptance": true
+      },
+      "expected": {
+        "verified": false,
+        "failedPredicates": [
+          "FRESHNESS"
+        ]
+      }
+    },
+    {
+      "id": "VP-003",
+      "description": "untrusted source fails trust",
+      "inputs": {
+        "fresh": true,
+        "trusted": false,
+        "subjectMatch": true,
+        "transactionMatch": true,
+        "executionMatch": true,
+        "nonceMatch": true,
+        "quorum": true,
+        "domainVerification": true,
+        "acceptance": true
+      },
+      "expected": {
+        "verified": false,
+        "failedPredicates": [
+          "TRUST"
+        ]
+      }
+    },
+    {
+      "id": "VP-004",
+      "description": "subject mismatch fails binding",
+      "inputs": {
+        "fresh": true,
+        "trusted": true,
+        "subjectMatch": false,
+        "transactionMatch": true,
+        "executionMatch": true,
+        "nonceMatch": true,
+        "quorum": true,
+        "domainVerification": true,
+        "acceptance": true
+      },
+      "expected": {
+        "verified": false,
+        "failedPredicates": [
+          "BINDING"
+        ]
+      }
+    },
+    {
+      "id": "VP-005",
+      "description": "execution mismatch prevents predecessor evidence transfer",
+      "inputs": {
+        "fresh": true,
+        "trusted": true,
+        "subjectMatch": true,
+        "transactionMatch": true,
+        "executionMatch": false,
+        "nonceMatch": true,
+        "quorum": true,
+        "domainVerification": true,
+        "acceptance": true
+      },
+      "expected": {
+        "verified": false,
+        "failedPredicates": [
+          "BINDING"
+        ]
+      }
+    },
+    {
+      "id": "VP-006",
+      "description": "required quorum not satisfied",
+      "inputs": {
+        "fresh": true,
+        "trusted": true,
+        "subjectMatch": true,
+        "transactionMatch": true,
+        "executionMatch": true,
+        "nonceMatch": true,
+        "quorum": false,
+        "domainVerification": true,
+        "acceptance": true
+      },
+      "expected": {
+        "verified": false,
+        "failedPredicates": [
+          "QUORUM"
+        ]
+      }
+    },
+    {
+      "id": "VP-007",
+      "description": "transport success cannot substitute domain verification",
+      "inputs": {
+        "fresh": true,
+        "trusted": true,
+        "subjectMatch": true,
+        "transactionMatch": true,
+        "executionMatch": true,
+        "nonceMatch": true,
+        "quorum": true,
+        "domainVerification": false,
+        "acceptance": true,
+        "transportAck": true
+      },
+      "expected": {
+        "verified": false,
+        "failedPredicates": [
+          "DOMAIN_VERIFICATION"
+        ]
+      }
+    },
+    {
+      "id": "VP-008",
+      "description": "verification without acceptance is non-terminal",
+      "inputs": {
+        "fresh": true,
+        "trusted": true,
+        "subjectMatch": true,
+        "transactionMatch": true,
+        "executionMatch": true,
+        "nonceMatch": true,
+        "quorum": true,
+        "domainVerification": true,
+        "acceptance": false
+      },
+      "expected": {
+        "verified": false,
+        "failedPredicates": [
+          "ACCEPTANCE"
+        ]
+      }
+    }
+  ]
+}
