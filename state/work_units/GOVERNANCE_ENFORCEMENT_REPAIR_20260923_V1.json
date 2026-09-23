@@ -8,7 +8,7 @@
     "ruleset_name": "QIK-VRT main protection",
     "target_ref": "refs/heads/main"
   },
-  "observed_blocker": "RULESET_ADMIN_AUTHORITY_NOT_INJECTED",
+  "observed_blocker": "AUTHORITY_RULESET_ADMIN_CREDENTIAL_NOT_INJECTED",
   "observed_drift": {
     "required_approving_review_count": 0,
     "require_code_owner_review": false,
@@ -53,8 +53,8 @@
     "readback_required": true,
     "effect_ack_done_claimed": false
   },
-  "state": "EXTERNAL_TRANSITION_REQUIRED",
-  "next_action": "MATERIALIZE_QIKVRT_RULESET_ADMIN_TOKEN_WITH_ADMINISTRATION_WRITE",
+  "state": "INTERNAL_TRANSITION_REQUIRED",
+  "next_action": "DISPATCH_MIRROR_GOLDKELCH_RULESET_AUTHORITY_EFFECT",
   "runtime_evidence": {
     "writer_run_id": 35868717813,
     "attempts_observed": [
@@ -67,13 +67,21 @@
     "ruleset_put_attempted": false
   },
   "deadlock_policy": {
-    "predicate": "STABLE_AND_NOT_DONE_AND_NO_INTERNAL_PROGRESS",
-    "state": "EXTERNAL_TRANSITION_REQUIRED",
+    "prior_classification": "EXTERNAL_TRANSITION_REQUIRED",
+    "prior_classification_superseded": true,
+    "superseding_reason": "Mesh-native alternative authority workflow discovered",
+    "state": "INTERNAL_TRANSITION_REQUIRED",
     "retry_permitted_without_material_change": false,
-    "required_external_effect": {
-      "credential": "QIKVRT_RULESET_ADMIN_TOKEN",
-      "minimum_permission": "Administration: write"
-    },
-    "wake_condition": "QIKVRT_RULESET_ADMIN_TOKEN_AVAILABLE_AND_AUTHORIZED"
+    "selected_transition": "DISPATCH_MIRROR_GOLDKELCH_RULESET_AUTHORITY_EFFECT",
+    "external_transition_only_if": "MIRROR_AUTHORITY_PREFLIGHT_HAS_NO_VALID_ROUTE"
+  },
+  "alternative_capability": {
+    "id": "MIRROR_GOLDKELCH_RULESET_AUTHORITY_EFFECT",
+    "repository": "ingolf-lohmann/qik-vrt",
+    "path": ".github/workflows/qikvrt_goldkelch_ruleset_authority_effect.yml",
+    "target_repository": "Goldkelch/qik-vrt",
+    "target_ruleset_id": 19344903,
+    "administration_write_capable": true,
+    "runtime_preflight_required": true
   }
 }
