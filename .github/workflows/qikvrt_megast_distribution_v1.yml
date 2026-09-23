@@ -293,7 +293,8 @@ jobs:
       QIKVRT_EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       QIKVRT_EXACT_TREE: ${{ needs.build.outputs.source_tree }}
       QIKVRT_MANIFEST_SHA256: ${{ needs.build.outputs.manifest_sha256 }}
-      QIKVRT_TEMDD_PR: ${{ github.event.pull_request.number || vars.QIKVRT_TEMDD_PR }}
+      QIKVRT_TEMDD_PR: ${{ github.event.pull_request.number || '' }}
+      QIKVRT_TEMDD_REF: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'main' || '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -369,16 +370,28 @@ jobs:
       - name: Load public Docker archive and execute exact runtime
         run: |
           set -euo pipefail
-          case "${QIKVRT_TEMDD_PR:-}" in
-            ''|*[!0-9]*|0*) echo 'BLOCK: explicit positive TEMDD PR is required' >&2; exit 64 ;;
-          esac
+          subject_env=()
+          if [ -n "${QIKVRT_TEMDD_PR:-}" ] && [ -n "${QIKVRT_TEMDD_REF:-}" ]; then
+            echo 'BLOCK: conflicting TEMDD subject selectors' >&2
+            exit 64
+          elif [ -n "${QIKVRT_TEMDD_PR:-}" ]; then
+            case "$QIKVRT_TEMDD_PR" in
+              *[!0-9]*|0*) echo 'BLOCK: explicit positive TEMDD PR is required' >&2; exit 64 ;;
+            esac
+            subject_env=(-e "QIKVRT_TEMDD_PR=$QIKVRT_TEMDD_PR")
+          elif [ "${QIKVRT_TEMDD_REF:-}" = main ]; then
+            subject_env=(-e QIKVRT_TEMDD_REF=main)
+          else
+            echo 'BLOCK: exact runtime requires PR or main TEMDD selector' >&2
+            exit 64
+          fi
           image="qikvrt/universal-terminal:${QIKVRT_EXACT_SHA}"
           docker load --input /tmp/qikvrt-public-readback/qikvrt-universal-terminal-amd64.docker.tar
           test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")" = "$QIKVRT_EXACT_SHA"
           test "$(docker image inspect --format '{{index .Config.Labels "io.qikvrt.source.tree"}}' "$image")" = "$QIKVRT_EXACT_TREE"
           cid=$(docker run -d --shm-size=256m -e QIKVRT_SERVICE_MODE=cloud \
             -e QIKVRT_EXACT_HEAD="$QIKVRT_EXACT_SHA" -e QIKVRT_EXACT_TREE="$QIKVRT_EXACT_TREE" \
-            -e QIKVRT_TEMDD_PR="$QIKVRT_TEMDD_PR" \
+            "${subject_env[@]}" \
             -p 127.0.0.1:18080:8080 "$image")
           cleanup_container() {
             result=$?
@@ -403,8 +416,14 @@ jobs:
           curl -fsS http://127.0.0.1:18080/api/temdd/subject > /tmp/qikvrt-public-readback/qikvrt-public-temdd-subject.json
           python3 - <<'PYCODE'
           import json,os
-          expected={'repository':os.environ['GITHUB_REPOSITORY'],'pr':int(os.environ['QIKVRT_TEMDD_PR']),
+          expected={'repository':os.environ['GITHUB_REPOSITORY'],
                     'head':os.environ['QIKVRT_EXACT_SHA'],'tree':os.environ['QIKVRT_EXACT_TREE']}
+          if os.environ.get('QIKVRT_TEMDD_PR'):
+              expected['pr']=int(os.environ['QIKVRT_TEMDD_PR'])
+          elif os.environ.get('QIKVRT_TEMDD_REF') == 'main':
+              expected['ref']='main'
+          else:
+              raise SystemExit('TEMDD_SUBJECT_SELECTOR_MISSING')
           observed=json.load(open('/tmp/qikvrt-public-readback/qikvrt-public-temdd-subject.json'))
           if observed.get('subject') != expected:
               raise SystemExit('PUBLIC_TEMDD_SUBJECT_MISMATCH')
