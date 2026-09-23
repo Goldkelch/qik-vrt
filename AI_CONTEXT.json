@@ -37,7 +37,10 @@
     "implementation": "tools/ai_runtime_bootloader.py",
     "network_required": false,
     "writes_repository": false,
-    "accepted_states": ["PASS", "CONTINUE"],
+    "accepted_states": [
+      "PASS",
+      "CONTINUE"
+    ],
     "blocking_state": "BLOCK",
     "reused_authorities": [
       "tools/ai_handoff.py",
@@ -47,6 +50,7 @@
     ],
     "lifecycle": [
       "Read AI and AI_CONTEXT.json.",
+      "Load and validate the machine-verifiable-science charter identity, policy and adoption state.",
       "Load the personal-origin and contribution-attribution contract.",
       "Load and validate the supplied bootstrap knowledge corpus and its epistemic boundaries.",
       "Load and validate the adaptive human-machine interface policy and evaluation matrix.",
@@ -104,7 +108,10 @@
     "responsible_human": "Ingolf Lohmann",
     "canonicality": {
       "mode": "symmetric-canonical",
-      "repositories": ["Goldkelch/qik-vrt", "ingolf-lohmann/qik-vrt"],
+      "repositories": [
+        "Goldkelch/qik-vrt",
+        "ingolf-lohmann/qik-vrt"
+      ],
       "equivalence_rule": "Symmetric canonicality is valid only for the scope whose exact bytes and declared state have been verified equivalent.",
       "chat_memory_authority": false,
       "repository_evidence_overrides_conversation": true
@@ -113,6 +120,9 @@
   "required_read_order": [
     "AI",
     "AI_CONTEXT.json",
+    "docs/CHARTA_MASCHINENPRUEFBARE_WISSENSCHAFT.md",
+    "policy/QIKVRT_MACHINE_VERIFIABLE_SCIENCE_CHARTER_V1.json",
+    "state/charter/CHARTER_ADOPTION_V1.json",
     "AI_ADAPTERS.json",
     "AGENTS.md",
     "next/AI",
@@ -167,10 +177,49 @@
     ]
   },
   "licensing_policy": {
-    "architecture": {"intent": "freely available specification and interoperability layer", "license_source": "per-file and repository license authorities"},
-    "implementation": {"intent": "commercially protectable and not automatically open source", "includes": ["concrete source code", "optimizations", "runtime machinery", "build and deployment implementation", "commercial adapters and integrations", "non-public know-how"]},
+    "architecture": {
+      "intent": "freely available specification and interoperability layer",
+      "license_source": "per-file and repository license authorities"
+    },
+    "implementation": {
+      "intent": "commercially protectable and not automatically open source",
+      "includes": [
+        "concrete source code",
+        "optimizations",
+        "runtime machinery",
+        "build and deployment implementation",
+        "commercial adapters and integrations",
+        "non-public know-how"
+      ]
+    },
     "rule": "Publication or openness of the architecture does not relicense the implementation. No rights are inferred beyond explicit license texts."
   },
-  "verification_boundary": {"ordinary_release_state": "EFFECT_ACK_DONE", "default_when_incomplete": "EFFECT_ACK_CONTINUE", "blocking_state": "EFFECT_ACK_BLOCK", "transport_ack_is_effect_ack": false},
-  "machine_entrypoint": {"repository_path": "AI", "adapter_registry": "AI_ADAPTERS.json", "command": "python3 -B tools/ai_runtime_bootloader.py --profile all", "handoff_command": "python3 -B tools/ai_handoff.py", "runtime_verification": "python3 -B tools/qikvrt_tool_cache.py verify", "network_required": false, "writes_repository": false}
+  "verification_boundary": {
+    "ordinary_release_state": "EFFECT_ACK_DONE",
+    "default_when_incomplete": "EFFECT_ACK_CONTINUE",
+    "blocking_state": "EFFECT_ACK_BLOCK",
+    "transport_ack_is_effect_ack": false
+  },
+  "machine_entrypoint": {
+    "repository_path": "AI",
+    "adapter_registry": "AI_ADAPTERS.json",
+    "command": "python3 -B tools/ai_runtime_bootloader.py --profile all",
+    "handoff_command": "python3 -B tools/ai_handoff.py",
+    "runtime_verification": "python3 -B tools/qikvrt_tool_cache.py verify",
+    "network_required": false,
+    "writes_repository": false
+  },
+  "machine_verifiable_science_charter": {
+    "canonical_document": "docs/CHARTA_MASCHINENPRUEFBARE_WISSENSCHAFT.md",
+    "bytes": 10127,
+    "sha256": "7fb4e5c369b079e93ce409e9ca4f6830476a1b6dbd42543273d85164e111a631",
+    "git_blob_sha1": "d6533d9be451f8ac922ef7c11cbf04900fa3066f",
+    "zenodo_doi": "10.5281/zenodo.21515074",
+    "zenodo_record_id": 21515074,
+    "machine_policy": "policy/QIKVRT_MACHINE_VERIFIABLE_SCIENCE_CHARTER_V1.json",
+    "adoption_state": "state/charter/CHARTER_ADOPTION_V1.json",
+    "required_for_conforming_nodes": true,
+    "mesh_propagation": "Every current or future QIK-VRT node, mesh instance, agent adapter or runtime claiming charter conformance resolves the exact charter through required_read_order; historical snapshots remain immutable.",
+    "rule": "Separate evidence forms; preserve provenance and reproducibility; revise status without erasing history; never claim PASS, DONE, publication, equality or EFFECT_ACK_DONE without verifying the evidence required for that exact claim."
+  }
 }

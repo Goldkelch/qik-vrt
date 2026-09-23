@@ -12,6 +12,22 @@ Use this checkout's actual owner/repository for a Mirror or fork. Choose a new o
 
 <!-- /qikvrt-roundtrip-first:v1 -->
 
+<!-- qikvrt-machine-verifiable-science-charter-binding:v1 -->
+## Charta einer maschinenprüfbaren Wissenschaft
+
+This QIK-VRT node adopts the canonical [Charta einer maschinenprüfbaren Wissenschaft](docs/CHARTA_MASCHINENPRUEFBARE_WISSENSCHAFT.md)
+as an epistemic and repository-governance contract. Canonical identity:
+`7fb4e5c369b079e93ce409e9ca4f6830476a1b6dbd42543273d85164e111a631` (SHA-256, 10127 bytes); public archive:
+[DOI 10.5281/zenodo.21515074](https://doi.org/10.5281/zenodo.21515074). Machine-readable adoption:
+[`policy/QIKVRT_MACHINE_VERIFIABLE_SCIENCE_CHARTER_V1.json`](policy/QIKVRT_MACHINE_VERIFIABLE_SCIENCE_CHARTER_V1.json) and [`state/charter/CHARTER_ADOPTION_V1.json`](state/charter/CHARTER_ADOPTION_V1.json).
+
+All conforming mesh/agent entrypoints inherit the binding through
+`AI_CONTEXT.json.required_read_order`. Presence or publication of the charter
+does not by itself establish scientific validation, implementation completion,
+or `EFFECT_ACK_DONE`.
+
+<!-- /qikvrt-machine-verifiable-science-charter-binding:v1 -->
+
 <!-- qikvrt-self-declaration:v1 -->
 ## Selbsterklärung für natürliche und künstliche kognitive Systeme
 
