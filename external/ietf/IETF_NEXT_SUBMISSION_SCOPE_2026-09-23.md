@@ -67,6 +67,31 @@ It can define transport-neutral integration patterns, threat models,
 interoperability expectations, and worked mappings without claiming that
 non-IETF protocols are standardized by the IETF.
 
+## Evidence-scope threat model
+
+The next protocol work should explicitly test at least these failure classes:
+
+- **CLAIM_ELEVATION:** byte identity or schema validity is reused as evidence for
+  a stronger predicate such as implementation, acceptance, end-to-end
+  validation, or completed downstream effect.
+- **SUBJECT_SUBSTITUTION:** valid evidence for one subject hash, media type,
+  revision, or execution is attached to another subject.
+- **PREDICATE_CONFUSION:** an evidence kind is syntactically accepted for a
+  predicate it is not semantically authorized to satisfy.
+- **REPLAY_OR_STALE_EVIDENCE:** an otherwise valid earlier receipt is reused
+  after the bound subject, policy, execution, or target state has changed.
+- **DOWNGRADE_OR_OMISSION:** a peer omits claim-scope information or falls back
+  to a representation in which the distinction between verified and
+  unverified predicates is lost.
+- **PARTIAL_EVIDENCE_COMPLETION:** a subset of required receipts is treated as
+  sufficient for a conjunctive release predicate.
+
+Receivers should fail closed for these cases and should expose a diagnostic
+that identifies the rejected evidence item, its claimed scope, the predicate
+being evaluated, and the current subject binding. This is a protocol-safety
+requirement; it is distinct from whether any particular implementation has
+already passed acceptance testing.
+
 ## Submission quality gate
 
 Before any Datatracker mutation:
