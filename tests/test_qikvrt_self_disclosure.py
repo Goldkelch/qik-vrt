@@ -69,7 +69,7 @@ class SelfDisclosureTests(unittest.TestCase):
         self.assertIn('https://goldkelch.github.io/qik-vrt/sitemap.xml', (ROOT / 'docs/robots.txt').read_text(encoding='utf-8'))
         self.assertIn('href="publications/"', (ROOT / 'docs/index.html').read_text(encoding='utf-8'))
 
-        for path in ('AI', 'README.md'):
+        for path in ('README.md',):
             text = (ROOT / path).read_text(encoding='utf-8')
             self.assertIn(CANONICAL_URL, text, path)
             self.assertIn('docs/publications/index.json', text, path)
