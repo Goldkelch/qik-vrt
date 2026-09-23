@@ -53,3 +53,7 @@ immediately rebound and dispatched for exact-head repository verification.
 
 These recovery edges do not create or transfer owner authorization and do not
 turn a pending or failed publication into `EFFECT_ACK_DONE`.
+
+## Mesh enforcement
+
+The successor-freshness and public-effect guard runs on every repository node that carries the registry. Only the Authority node may execute the production Zenodo mutation. Mirror nodes independently enforce the same source/candidate/public-receipt identity and therefore cannot silently treat an Authority predecessor receipt as current after local semantic drift.

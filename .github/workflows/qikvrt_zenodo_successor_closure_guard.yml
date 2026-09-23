@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   candidate-freshness:
-    if: github.repository == 'Goldkelch/qik-vrt' && github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -36,7 +36,7 @@ jobs:
         run: python3 -B tools/qikvrt_zenodo_successor_guard.py check-all
 
   publication-effect:
-    if: github.repository == 'Goldkelch/qik-vrt' && github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -49,7 +49,7 @@ jobs:
         run: python3 -B tools/qikvrt_zenodo_successor_guard.py check-all --require-public-effect
 
   main-public-effect:
-    if: github.repository == 'Goldkelch/qik-vrt' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
