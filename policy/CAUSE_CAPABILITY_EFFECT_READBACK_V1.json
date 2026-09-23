@@ -1,0 +1,42 @@
+{
+  "schema": "qikvrt_cause_capability_effect_readback_v1",
+  "version": "1.0.0",
+  "principle": "CAUSE -> CAPABILITY -> EFFECT -> READBACK",
+  "invariants": {
+    "failure_is_new_state_information": true,
+    "first_causal_blocker_has_precedence": true,
+    "identical_retry_without_material_change_is_progress": false,
+    "internal_alternative_must_be_considered_before_external_deadlock": true,
+    "transport_ack_is_effect_ack": false,
+    "observation_is_effect": false,
+    "predecessor_evidence_transfer": false
+  },
+  "algorithm": [
+    "CLASSIFY_CAUSE",
+    "ENUMERATE_ADMISSIBLE_CAPABILITIES",
+    "SELECT_SMALLEST_CAUSAL_TRANSITION",
+    "EXECUTE",
+    "TEST",
+    "OBSERVE",
+    "READBACK",
+    "ACCEPT_OR_RECLASSIFY"
+  ],
+  "internal_transition": {
+    "state": "INTERNAL_TRANSITION_REQUIRED",
+    "identical_retry_permitted": false
+  },
+  "external_transition": {
+    "state": "EXTERNAL_TRANSITION_REQUIRED",
+    "deadlock": true,
+    "retry_permitted": false,
+    "identical_retry_permitted": false
+  },
+  "terminal_failure": {
+    "state": "FAIL_CLOSED"
+  },
+  "bootstrap_binding": {
+    "human_contract": "docs/CAUSE_CAPABILITY_EFFECT_READBACK.md",
+    "executable_resolver": "tools/qikvrt_failure_transition.py",
+    "adoption_state": "state/transition/CAUSE_CAPABILITY_EFFECT_READBACK_ADOPTION_V1.json"
+  }
+}
