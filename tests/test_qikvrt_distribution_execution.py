@@ -31,12 +31,13 @@ def shell(name):
 
 
 class DistributionExecutionTests(unittest.TestCase):
-    def test_pr_identity_comes_from_event_or_explicit_configuration(self):
+    def test_subject_selector_comes_from_event_or_exact_main_push(self):
         text = WORKFLOW.read_text()
-        self.assertIn('QIKVRT_TEMDD_PR: ${{ github.event.pull_request.number || vars.QIKVRT_TEMDD_PR }}', text)
+        self.assertIn("QIKVRT_TEMDD_PR: ${{ github.event.pull_request.number || '' }}", text)
+        self.assertIn("QIKVRT_TEMDD_REF: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'main' || '' }}", text)
         self.assertNotRegex(text, r'QIKVRT_TEMDD_PR:\s*(1103|1124)\b')
 
-    def invoke_launch_prefix(self, pr):
+    def invoke_launch_prefix(self, pr=None, ref=None):
         script = shell('Load public Docker archive and execute exact runtime').split('ready=0', 1)[0]
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
@@ -52,8 +53,11 @@ class DistributionExecutionTests(unittest.TestCase):
             env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'], TRACE=str(trace),
                        QIKVRT_EXACT_SHA='a' * 40, QIKVRT_EXACT_TREE='b' * 40)
             env.pop('QIKVRT_TEMDD_PR', None)
+            env.pop('QIKVRT_TEMDD_REF', None)
             if pr is not None:
                 env['QIKVRT_TEMDD_PR'] = pr
+            if ref is not None:
+                env['QIKVRT_TEMDD_REF'] = ref
             # The acceptance trap targets runner paths. Substitute only its
             # evidence directory in this command/argv fixture.
             script = script.replace('/tmp/qikvrt-public-readback', str(root))
@@ -61,10 +65,13 @@ class DistributionExecutionTests(unittest.TestCase):
             calls = [json.loads(line) for line in trace.read_text().splitlines()] if trace.exists() else []
             return result, calls
 
-    def test_missing_or_invalid_pr_stops_before_any_docker_effect(self):
-        for pr in (None, '', '0', '01', '-1', '1124x', '1;echo injected', '1 2'):
-            with self.subTest(pr=pr):
-                result, calls = self.invoke_launch_prefix(pr)
+    def test_missing_or_invalid_selector_stops_before_any_docker_effect(self):
+        for pr, ref in ((None, None), ('', None), ('0', None), ('01', None),
+                        ('-1', None), ('1124x', None), ('1;echo injected', None),
+                        ('1 2', None), (None, ''), (None, 'master'),
+                        ('1124', 'main')):
+            with self.subTest(pr=pr, ref=ref):
+                result, calls = self.invoke_launch_prefix(pr, ref)
                 self.assertEqual(result.returncode, 64, result.stderr)
                 self.assertEqual(calls, [])
 
@@ -74,9 +81,18 @@ class DistributionExecutionTests(unittest.TestCase):
         runs = [call for call in calls if call[0] == 'run']
         self.assertEqual(len(runs), 1)
         self.assertIn('QIKVRT_TEMDD_PR=1124', runs[0])
+        self.assertNotIn('QIKVRT_TEMDD_REF=main', runs[0])
         self.assertIn('QIKVRT_EXACT_HEAD=' + 'a' * 40, runs[0])
         self.assertIn('QIKVRT_EXACT_TREE=' + 'b' * 40, runs[0])
         self.assertIn('127.0.0.1:18080:8080', runs[0])
+
+    def test_exact_main_ref_reaches_container_without_false_pr_identity(self):
+        result, calls = self.invoke_launch_prefix(ref='main')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        runs = [call for call in calls if call[0] == 'run']
+        self.assertEqual(len(runs), 1)
+        self.assertIn('QIKVRT_TEMDD_REF=main', runs[0])
+        self.assertFalse(any(value.startswith('QIKVRT_TEMDD_PR=') for value in runs[0]))
 
     def test_iso_depends_on_download_not_unrelated_container_result(self):
         readback = step('Fresh unauthenticated complete public payload readback')
@@ -90,7 +106,7 @@ class DistributionExecutionTests(unittest.TestCase):
     def test_container_probe_compares_public_temdd_subject(self):
         probe = shell('Load public Docker archive and execute exact runtime')
         self.assertIn('/api/temdd/subject', probe)
-        for key in ('repository', 'pr', 'head', 'tree'):
+        for key in ('repository', 'pr', 'ref', 'head', 'tree'):
             self.assertIn("'" + key + "'", probe)
         self.assertIn('PUBLIC_TEMDD_SUBJECT_MISMATCH', probe)
 
