@@ -123,6 +123,9 @@
     "docs/CHARTA_MASCHINENPRUEFBARE_WISSENSCHAFT.md",
     "policy/QIKVRT_MACHINE_VERIFIABLE_SCIENCE_CHARTER_V1.json",
     "state/charter/CHARTER_ADOPTION_V1.json",
+    "docs/CAUSE_CAPABILITY_EFFECT_READBACK.md",
+    "policy/CAUSE_CAPABILITY_EFFECT_READBACK_V1.json",
+    "state/transition/CAUSE_CAPABILITY_EFFECT_READBACK_ADOPTION_V1.json",
     "AI_ADAPTERS.json",
     "AGENTS.md",
     "next/AI",
@@ -159,6 +162,7 @@
     ],
     "work": [
       "Use repository evidence as the project source of truth.",
+      "For a causal failure, determine the cause, enumerate admissible alternative capabilities, execute the smallest sufficient transition, and freshly read back the effect before declaring completion or external deadlock.",
       "Prefer exact cache hits, validated local derivatives and incremental recomputation before full recomputation.",
       "Record comparable latency, cache hit/miss, repository-read, tool-invocation, human-question, correction, provenance and verification measurements when practical.",
       "Work before explaining and use the mandatory compact progress format before and after each GitHub action and at each workflow, job, or step transition.",
@@ -172,6 +176,7 @@
     "handoff": [
       "Persist durable decisions and current state in repository files rather than relying on conversation memory.",
       "Record what changed, what was verified, what remains open, the exact next executable step, and reusable cache or interface evidence.",
+      "Persist reusable causal failure classifications, alternative capabilities, wake conditions and effect readbacks so later systems do not repeat a known deadlock or livelock.",
       "Persist reusable tool, cache, bootstrap, test, provenance, corpus, interface-routing and recovery improvements through reviewed repository changes.",
       "Leave the repository sufficient for a different AI system to reconstruct the runtime and resume without access to the prior session transcript."
     ]
@@ -221,5 +226,13 @@
     "required_for_conforming_nodes": true,
     "mesh_propagation": "Every current or future QIK-VRT node, mesh instance, agent adapter or runtime claiming charter conformance resolves the exact charter through required_read_order; historical snapshots remain immutable.",
     "rule": "Separate evidence forms; preserve provenance and reproducibility; revise status without erasing history; never claim PASS, DONE, publication, equality or EFFECT_ACK_DONE without verifying the evidence required for that exact claim."
+  },
+  "failure_transition_protocol": {
+    "human_contract": "docs/CAUSE_CAPABILITY_EFFECT_READBACK.md",
+    "machine_policy": "policy/CAUSE_CAPABILITY_EFFECT_READBACK_V1.json",
+    "executable_resolver": "tools/qikvrt_failure_transition.py",
+    "adoption_state": "state/transition/CAUSE_CAPABILITY_EFFECT_READBACK_ADOPTION_V1.json",
+    "principle": "CAUSE -> CAPABILITY -> EFFECT -> READBACK",
+    "rule": "Determine the first causal blocker; enumerate admissible internal and Mesh-native capabilities; execute the smallest sufficient transition; test, observe and freshly read back; use EXTERNAL_TRANSITION_REQUIRED only after no admissible internal transition remains; suppress identical retries without a material state change."
   }
 }
