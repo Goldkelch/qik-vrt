@@ -2,6 +2,13 @@
 
 Tested Event Model Driven Development is specified here as an executable QIK-VRT metaprogramming language.
 
+Canonical Product-Owner runtime declaration: [`TEMDD_EXECUTABLE_LANGUAGE_RUNTIME_V1.md`](TEMDD_EXECUTABLE_LANGUAGE_RUNTIME_V1.md).
+
+> Ich habe aus Tested Event Model Driven Development nicht nur eine Entwicklungsmethode gemacht, sondern eine ausführbare Sprache mit Entwicklungs-, Debugging-, Test-, Linking- und Effect-Verification-Laufzeit.
+>
+> q.e.d. — Ingolf Lohmann
+
+
 Entry points:
 - `TEMDD_LANGUAGE_SPEC_V0_1.md` — normative bootstrap semantics.
 - `TEMDD_Syntax_V0_1.ebnf` — grammar.
