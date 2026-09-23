@@ -4,17 +4,16 @@ This successor changes the publication candidate after the earlier TEMDD runtime
 
 ## Material semantic delta
 
-The successor adds and makes explicit:
+TEMDD-SEM-002
+Reason: The successor adds one indivisible acceptance verdict over one exact bound actual successor, with explicit actual-successor binding and fresh non-self-confirming readback.
 
-- the actual-successor rule: bind the state that actually resulted from execution, not the intended state;
-- one indivisible acceptance verdict over one exact bound successor;
-- fresh readback that is not inferred solely from the executor's own success return;
-- non-transferability of predecessor evidence to a changed successor;
-- continuation from a safely bindable successor when the full conjunction is false;
-- fail-closed BLOCK/ISOLATE when the successor cannot be bound safely;
-- scope-dependent public artifact readback;
-- the explicit boundary that this domain-specific semantics does not solve the general Halting Problem;
-- scientific positioning against established foundations without claiming novelty or priority as already proved.
+TEMDD-SEM-003
+Reason: The successor makes partial success, predecessor evidence, workflow success, transport acknowledgement and artifact creation explicitly non-terminal.
+
+TEMDD-BOUND-004
+Reason: The successor makes the Halting-Problem boundary and the scientific novelty/priority evidence boundary explicit.
+
+The resulting runtime semantics additionally requires fail-closed BLOCK/ISOLATE when a successor cannot be bound safely, and makes public artifact readback scope-dependent rather than universal.
 
 ## Publication consequence
 
