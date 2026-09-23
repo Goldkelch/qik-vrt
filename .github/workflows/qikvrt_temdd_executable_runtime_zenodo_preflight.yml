@@ -55,6 +55,35 @@ jobs:
             --upload-path docs/publications/2026-09-23-temdd-executable-language-runtime/PREPUBLICATION_RETURN_RECEIPT.json \
             --upload-path "$PROOF_PATH"
 
+      - name: Validate v2 manifest, owner authorization, and execution binding
+        shell: bash
+        env:
+          MANIFEST_PATH: release/temdd-executable-language-runtime-2026-09-23/publish-request.json
+        run: |
+          set -euo pipefail
+          GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+          GITHUB_SHA="$GITHUB_SHA" \
+          python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = Path.cwd().resolve()
+          manifest_path = root / os.environ["MANIFEST_PATH"]
+          manifest = publish.load_manifest(manifest_path, root)
+          execution_head = publish._validate_repository_source_head(
+              root, manifest_path, manifest
+          )
+          publish._validate_origin_repository(root, manifest["repository"])
+          if execution_head != os.environ["GITHUB_SHA"]:
+              raise SystemExit("BLOCK: normalized execution head differs")
+          if manifest["source_head"] != "a8735da01bacddcf1439027fefdef02fc364d5be":
+              raise SystemExit("BLOCK: frozen source head differs")
+          if len(manifest["files"]) != 6:
+              raise SystemExit("BLOCK: exact Zenodo upload count differs")
+          print("TEMDD_ZENODO_V2_PREFLIGHT=VALID")
+          PY
+
       - name: Check Zenodo runtime presence
         shell: bash
         run: |
