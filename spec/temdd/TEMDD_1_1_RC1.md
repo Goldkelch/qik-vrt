@@ -1,10 +1,11 @@
 # TEMDD 1.1-rc1
-## Transactional Effect-Measured Deterministic Delivery
+## Tested Event Model Driven Development
 
 **Version:** 1.1-rc1  
 **Status:** Repair Candidate – normative closure, semantik-erhaltend gegenüber TEMDD 1.1 Draft  
 **Sprache:** Deutsch  
-**Normative Schlüsselwörter:** MUST, SHALL, SHOULD, MAY gemäß RFC 2119
+**Kanonische Auflösung des Akronyms:** Tested Event Model Driven Development  
+**Normative Schlüsselwörter:** MUST, SHALL, SHOULD, MAY gemäß BCP 14 (RFC 2119 und RFC 8174), wenn sie in Großbuchstaben verwendet werden
 
 ---
 
@@ -1304,33 +1305,20 @@ Ein manipuliertes oder veraltetes Readback wird durch Wiederholung nicht automat
 
 —
 
-# 26.10 Evidenz-Konsens
+# 26.10 Evidenz-Quorum
 
-Werden mehrere Evidenzquellen verwendet:
+Evidenzklasse und Quorum sind getrennte Eigenschaften. Aus `E1`, `E2` oder `E3`
+folgt kein implizites Mehrheits- oder Fehlertoleranzmodell.
 
-```text
-E1
-E2
-E3
-```
+Ein Quorum DARF nur ausgewertet werden, wenn vor `EXECUTE` eine Quorum-Policy an
+die Transaktion gebunden wurde. Diese MUSS mindestens die zulässigen Mitglieder,
+den Schwellenwert und die erforderliche Unabhängigkeit benennen.
 
-darf ein einzelner Fehler toleriert werden.
+Mehrfachzählung derselben Quelle ist unzulässig. Jede gezählte Evidenz MUSS an
+dieselbe Transaktion, dasselbe Subject, dieselbe Execution Identity und – falls
+gefordert – dieselbe Challenge/Nonce gebunden sein.
 
-Beispiel:
-
-```text
-Sensor A = verfügbar
-Sensor B = verfügbar
-Sensor C = Timeout
-```
-
-Konsens:
-
-```math
-2/3 = valid
-```
-
-Transaktion DARF fortgesetzt werden.
+Ohne gebundene Quorum-Policy gilt kein implizites `2/3`-Quorum.
 
 —
 
@@ -1538,7 +1526,7 @@ Authentizität prüfen
 Verifizierbarkeit prüfen
 ```
 
-Eine Transaktion MUSS fehlschlagen, wenn Evidenz diese Bedingungen nicht erfüllt.
+Die Verifikation MUSS fail-closed ablehnen oder HOLD/REOBSERVE liefern, wenn Evidenz diese Bedingungen nicht erfüllt. Ein terminales `FAILED` entsteht nur gemäß der gebundenen Fehler- und Retry-Policy.
 
 —
 
@@ -1917,3 +1905,348 @@ R11  JSON-Beispiele syntaktisch maschinenlesbar normalisiert
 ```
 
 Kein Repair-Punkt darf als Nachweis einer konkreten Systemwirkung verstanden werden. Konformität und `EFFECT_ACK_DONE` entstehen ausschließlich durch die in dieser Spezifikation geforderte Ausführung, Beobachtung, frische Rücklesung, Verifikation und Akzeptanz.
+
+
+---
+
+# 35. Interoperabilität
+
+## 35.1 Ziel
+
+Unterschiedliche TEMDD-1.1-Implementierungen MÜSSEN semantisch interoperabel
+sein. Mindestens folgende Artefakte MÜSSEN austauschbar und versioniert sein:
+
+```text
+Transaction
+Evidence
+Readback
+Audit Record
+Effect Certificate
+Verification Policy
+Verification Context
+```
+
+Interoperabilität bedeutet nicht nur syntaktische Lesbarkeit. Eine
+Implementierung DARF Status, Evidenzklasse, Äquivalenzrelation,
+Terminalität oder Fehlerkategorie beim Übersetzen nicht umdeuten.
+
+## 35.2 Kanonische Serialisierung
+
+Für kryptographische Identität und Hash-Bindung MUSS TEMDD 1.1 mindestens JSON
+Canonicalization Scheme (JCS, RFC 8785) unterstützen.
+
+Deterministische CBOR-Codierung gemäß RFC 8949 DARF als binäres Profil
+unterstützt werden.
+
+Protocol Buffers oder andere Adapterformate DÜRFEN für Transport verwendet
+werden, gelten aber ohne separat spezifiziertes kanonisches Profil NICHT als
+kanonische Hash-Repräsentation.
+
+## 35.3 Version Negotiation
+
+Jede versionierte Nachricht MUSS `temddVersion` oder eine äquivalente
+protokollgebundene Versionsangabe tragen. Vor Beginn einer Transaktion MÜSSEN
+Version, Schema-Identität, Policy-Version und relevante Algorithmusprofile
+feststehen.
+
+Ein Major-Version-Mismatch MUSS fail-closed abgelehnt werden.
+
+## 35.4 Deterministische Verifikation
+
+Zwei Implementierungen MÜSSEN bei identischen vollständigen
+Verifikationseingaben zum selben normativen Ergebnis kommen. "Identisch"
+umfasst mindestens:
+
+```text
+Transaction bytes
+Evidence bytes
+Verification Policy bytes
+Verification Context
+Evaluation Time
+Trust-root set
+Algorithm profile
+Canonicalization profile
+Acceptance evaluator identities
+```
+
+Gleiche Policy allein ist nicht hinreichend, wenn Kontext oder Trust Roots
+abweichen.
+
+---
+
+# 36. Zeitmodell
+
+## 36.1 Zeitfelder
+
+Eine Transaktion SOLLTE, soweit die jeweilige Phase erreicht wurde, mindestens
+folgende RFC-3339-Zeitpunkte führen:
+
+```text
+createdAt
+executedAt
+observedAt
+readbackAt
+verifiedAt
+acceptedAt
+issuedAt
+```
+
+## 36.2 Zeitquelle
+
+Die Verification Policy MUSS eine Zeitbasis und die maximal zulässige
+Uhrabweichung definieren. Implementierungen SOLLTEN für erhöhte
+Assurance-Profile synchronisierte und vertrauenswürdige Zeitquellen verwenden,
+z. B. NTP, PTP, GNSS/GPS oder eine attestierte Hardware-Zeitquelle.
+
+## 36.3 Freshness
+
+Die Freshness-Prüfung MUSS gegen einen explizit gebundenen
+`evaluationTime` erfolgen und DARF nicht von einem impliziten lokalen
+`now` abhängen.
+
+Für `maxAge` gilt:
+
+```text
+evaluationTime - capturedAt(E) <= maxAge
+```
+
+Falls `requireAfterExecution=true`, MUSS die Evidenz unter Berücksichtigung
+des gebundenen `maxClockSkew` mit der Ausführung vereinbar sein.
+
+Zeitstempel allein erzeugen keine Kausalität. Kausalität MUSS zusätzlich durch
+Transaction-, Execution- und Subject-Bindung belegt sein.
+
+---
+
+# 37. Formales Zertifikatsmodell
+
+## 37.1 Effect Certificate
+
+Ein Effect Certificate DARF nur ausgestellt werden, wenn
+`State(TX)=EFFECT_ACK_DONE`.
+
+Es MUSS mindestens binden:
+
+```text
+certificateId
+transactionId
+subjectId
+result
+policyId + policyDigest
+transactionDigest
+evidenceSetDigest
+acceptanceScopeDigest
+evaluationContextDigest
+issuedAt
+canonicalization
+hashAlgorithm
+signerId
+keyId
+signature
+```
+
+## 37.2 Certificate Hash
+
+Der Zertifikathash MUSS über eine kanonische, selbstreferenzfreie Payload
+gebildet werden:
+
+```text
+certificateHash =
+SHA-256(JCS(CertificatePayloadWithoutHashAndSignature))
+```
+
+Die Signatur MUSS genau diese gebundene Payload oder deren normativ definierten
+Digest schützen.
+
+## 37.3 Offline Verification
+
+Ein Zertifikat MUSS offline prüfbar sein, sofern die gebundenen Policy-Bytes,
+Trust Roots, Algorithmusprofile und die zur Prüfung erforderlichen
+Evidenz-/Digestobjekte lokal vorliegen.
+
+"Offline prüfbar" bedeutet nicht, dass externe Realität ohne die zugehörige
+Evidenz erneut beobachtet wird.
+
+---
+
+# 38. Quorum- und Konsensmodell
+
+Das geforderte Quorum MUSS vor `EXECUTE` definiert und an die Transaktion
+gebunden werden.
+
+Zulässige Grundformen sind:
+
+```text
+SINGLE       = 1 von 1
+K_OF_N       = k von N
+MAJORITY     = floor(N/2) + 1
+TWO_THIRDS   = ceil(2*N/3)
+ALL          = N von N
+```
+
+Gezählte Evidenzquellen MÜSSEN eindeutig identifiziert sein. Eine Quelle DARF
+nicht mehrfach zählen. Eine Quorum-Policy SOLLTE zusätzlich
+Unabhängigkeitsbedingungen für Principals, Geräte oder Trust Domains
+definieren.
+
+Ein `2/3`-Ergebnis ist nur dann gültig, wenn die gebundene Policy genau dieses
+Quorum fordert und alle gezählten Evidenzen die übrigen Freshness-, Trust-,
+Binding- und Verification-Anforderungen erfüllen.
+
+Evidenzklasse (`E1/E2/E3`) und Quorum sind orthogonal: eine höhere
+Evidenzklasse ersetzt kein fehlendes Quorum und ein Quorum erhöht nicht
+automatisch die Evidenzklasse.
+
+---
+
+# 39. Referenz-Metamodell
+
+TEMDD 1.1 verwendet folgende Kernobjekte:
+
+```text
+Principal
+Intent
+Action
+Subject
+Evidence
+Verification
+Acceptance
+Certificate
+```
+
+Normative Beziehungen:
+
+```text
+Principal --authorizes/initiates--> Intent
+Intent    --targets-------------> Subject
+Action    --executes intent on--> Subject
+Evidence  --observes successor--> Subject
+Verification --evaluates-------> Evidence + Policy + Context
+Acceptance   --decides---------> Verification + Criteria
+Certificate  --attests---------> terminal accepted transaction
+```
+
+Das Metamodell DARF in UML, SysML, OWL, JSON Schema oder OpenAPI projiziert
+werden. Eine Projektion DARF die normativen Beziehungen nicht abschwächen.
+
+---
+
+# 40. Assurance-Profile
+
+Assurance-Profile sind additive Konformitätsprofile und keine bloßen
+Marketingbezeichnungen.
+
+## Level 1 — TEMDD Core
+
+MUSS mindestens enthalten:
+
+```text
+Authentication
+Authorization
+Exact Subject Binding
+Readback
+Verification
+Acceptance
+Audit
+Policy-bound evaluation
+```
+
+## Level 2 — TEMDD Enhanced
+
+Zusätzlich zu Level 1:
+
+```text
+Digital Signatures
+Retry Framework
+Challenge/Response
+Evidence Classification
+Effect Certificates
+```
+
+## Level 3 — TEMDD High Assurance
+
+Zusätzlich zu Level 2:
+
+```text
+Independent Evidence
+Separation of Duties
+Hardware Root of Trust or equivalent
+Secure/attested Time Source
+Hardware Attestation where applicable
+```
+
+## Level 4 — TEMDD Critical Systems
+
+Zusätzlich zu Level 3:
+
+```text
+Multi-Evidence Quorum
+Formal Verification of declared critical invariants
+Cryptographic Audit Chain
+Explicit Trust-Root Governance
+Fail-closed Algorithm/Profile Registry
+```
+
+Eine Implementierung DARF ein Level nur beanspruchen, wenn die zugehörige
+Conformance Suite auf dem exakt gebundenen Implementierungs-Subject bestanden
+wurde.
+
+---
+
+# 41. TEMDD-Hauptsatz
+
+Es gibt genau eine normative Erfolgsdefinition. Die Kurzform ist:
+
+```text
+State(TX) = EFFECT_ACK_DONE
+iff
+TEMDD_SUCCESS(TX, VerificationContext)
+```
+
+Dabei gilt:
+
+```text
+TEMDD_SUCCESS
+iff
+Authenticated
+AND Authorized
+AND ExactSubjectBound
+AND PolicyBound
+AND Executed
+AND Observed
+AND ReadBack
+AND FreshEvidence
+AND TrustedEvidence
+AND EvidenceBoundToTransactionAndExecution
+AND CausalBindingEstablished
+AND VerificationPassed
+AND AcceptancePassed
+AND RequiredQuorumSatisfied
+```
+
+`RequiredQuorumSatisfied` ist für Policies ohne Quorum-Anforderung trivial
+wahr.
+
+Daraus folgt:
+
+```text
+TRANSPORT_ACK  does not imply EFFECT_ACK_DONE
+EXEC_ACK       does not imply EFFECT_ACK_DONE
+EFFECT_ACK     does not imply EFFECT_ACK_DONE
+EFFECT_ACK_DONE implies an accepted effect under the exact bound scope
+```
+
+Die letzte Aussage ist scope-relativ. Sie bedeutet nicht "absolute Wahrheit",
+sondern: Die im vorab gebundenen Acceptance Scope geforderte Wirkung wurde mit
+der dort vorgeschriebenen Evidenz und Policy erfolgreich nachgewiesen.
+
+## 41.1 Policy-Meta-Axiom
+
+```text
+Verification SHALL be policy-driven, not implementation-defined.
+```
+
+JSON Schema serialisiert die Struktur der Policy. Dynamische Prädikate wie
+Signaturprüfung, Zeitrelationen, Trust-Root-Auflösung, Quorum und
+domänenspezifische Acceptance werden durch den normativen Policy-Evaluator
+ausgeführt; JSON Schema allein beweist diese Laufzeiteigenschaften nicht.
