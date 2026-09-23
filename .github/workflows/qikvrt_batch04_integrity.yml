@@ -19,6 +19,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: write
   contents: write
 
 concurrency:
@@ -365,3 +366,37 @@ jobs:
             exit 2
           fi
           git push origin "HEAD:$TARGET_REF"
+
+      - name: Re-dispatch exact-head gates after repository evidence persistence
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          local_head="$(git rev-parse --verify HEAD^{commit})"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          if [ "$remote_head" != "$local_head" ]; then
+            echo "BLOCK: target ref drifted before exact-head gate dispatch" >&2
+            echo "local_head=$local_head" >&2
+            echo "remote_head=$remote_head" >&2
+            exit 2
+          fi
+
+          workflows=(
+            qikvrt_batch04_integrity.yml
+            qikvrt_ci.yml
+            qikvrt_collective_review.yml
+          )
+          if [ "$GITHUB_REPOSITORY" = "ingolf-lohmann/qik-vrt" ]; then
+            workflows+=(qikvrt_global_completion.yml)
+          fi
+          for workflow in "${workflows[@]}"; do
+            gh api \
+              --method POST \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/dispatches" \
+              -f "ref=$TARGET_REF"
+          done
