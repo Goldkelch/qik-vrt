@@ -1,5 +1,5 @@
 {
-  "$id": "https://temdd.org/schema/1.1/evidence.json",
+  "$id": "https://temdd.org/schema/temdd-evidence-v1.1.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "TEMDD 1.1 Evidence",
   "type": "object",
@@ -8,10 +8,10 @@
     "temddVersion",
     "evidenceId",
     "transactionId",
-    "subjectId",
     "executionId",
+    "subjectId",
     "sourceId",
-    "evidenceClass",
+    "class",
     "capturedAt",
     "value"
   ],
@@ -27,11 +27,11 @@
       "type": "string",
       "minLength": 1
     },
-    "subjectId": {
+    "executionId": {
       "type": "string",
       "minLength": 1
     },
-    "executionId": {
+    "subjectId": {
       "type": "string",
       "minLength": 1
     },
@@ -42,7 +42,7 @@
     "sourceType": {
       "type": "string"
     },
-    "evidenceClass": {
+    "class": {
       "type": "string",
       "enum": [
         "E1",
@@ -54,42 +54,13 @@
       "type": "string",
       "format": "date-time"
     },
-    "challengeNonce": {
-      "type": "string",
-      "minLength": 1
+    "value": true,
+    "nonce": {
+      "type": "string"
     },
-    "value": {},
     "digest": {
       "type": "string",
       "pattern": "^sha256:[0-9a-f]{64}$"
-    },
-    "trustDomain": {
-      "type": "string"
-    },
-    "principalId": {
-      "type": "string"
-    },
-    "deviceId": {
-      "type": "string"
-    },
-    "measurement": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "unit": {
-          "type": "string"
-        },
-        "uncertainty": {
-          "type": "number",
-          "minimum": 0
-        },
-        "calibration": {
-          "type": "string"
-        },
-        "provenance": {
-          "type": "string"
-        }
-      }
     },
     "signature": {
       "$ref": "#/$defs/signature"

@@ -2250,3 +2250,27 @@ JSON Schema serialisiert die Struktur der Policy. Dynamische Prädikate wie
 Signaturprüfung, Zeitrelationen, Trust-Root-Auflösung, Quorum und
 domänenspezifische Acceptance werden durch den normativen Policy-Evaluator
 ausgeführt; JSON Schema allein beweist diese Laufzeiteigenschaften nicht.
+
+
+---
+
+# 42. Maschinenlesbare normative Artefakte
+
+TEMDD 1.1-rc1 bindet die abstrakte Normativsemantik zusätzlich an maschinenlesbare Referenzartefakte:
+
+```text
+schemas/temdd-transaction-v1.1.schema.json
+schemas/temdd-evidence-v1.1.schema.json
+schemas/temdd-readback-v1.1.schema.json
+schemas/temdd-effect-certificate-v1.1.schema.json
+schemas/temdd-error-v1.1.schema.json
+schemas/temdd-verification-policy-v1.1.schema.json
+schemas/temdd-verification-context-v1.1.schema.json
+spec/temdd/api/TEMDD_OPENAPI_1_1.yaml
+spec/temdd/api/TEMDD_ASYNCAPI_1_1.yaml
+spec/temdd/TEMDD_SECURITY_PROFILES_V1_1.md
+spec/temdd/TEMDD_VERIFICATION_POLICY_V1_1.md
+spec/temdd/conformance/TEMDD_VERIFICATION_POLICY_TEST_VECTORS_V1_1.json
+```
+
+JSON Schema validiert Struktur und statische Constraints. Freshness, Signaturprüfung, Trust-Root-Auflösung, Kausalbindung, Quorum und domänenspezifische Acceptance bleiben Laufzeitprädikate des normativen Policy-Evaluators. Eine Implementierung DARF Schema-Validität nicht als Wirkungsnachweis oder `EFFECT_ACK_DONE` behandeln.

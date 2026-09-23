@@ -1,10 +1,9 @@
 {
-  "$id": "https://temdd.org/schema/1.1/effect-certificate.json",
+  "$id": "https://temdd.org/schema/temdd-effect-certificate-v1.1.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "TEMDD 1.1 Effect Certificate",
   "type": "object",
   "additionalProperties": false,
-  "$comment": "certificateHash is SHA-256 over the RFC 8785 JCS canonical CertificatePayload with certificateHash and signature excluded.",
   "required": [
     "temddVersion",
     "certificateId",
@@ -20,9 +19,9 @@
     "issuedAt",
     "canonicalization",
     "hashAlgorithm",
-    "certificateHash",
     "signerId",
     "keyId",
+    "certificateHash",
     "signature"
   ],
   "properties": {
@@ -73,14 +72,10 @@
       "format": "date-time"
     },
     "canonicalization": {
-      "const": "JCS-RFC8785"
+      "const": "RFC8785-JCS"
     },
     "hashAlgorithm": {
       "const": "SHA-256"
-    },
-    "certificateHash": {
-      "type": "string",
-      "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "signerId": {
       "type": "string",
@@ -89,6 +84,10 @@
     "keyId": {
       "type": "string",
       "minLength": 1
+    },
+    "certificateHash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "signature": {
       "type": "string",

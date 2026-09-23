@@ -1,5 +1,5 @@
 {
-  "$id": "https://temdd.org/schema/1.1/readback.json",
+  "$id": "https://temdd.org/schema/temdd-readback-v1.1.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "TEMDD 1.1 Readback",
   "type": "object",
@@ -8,9 +8,9 @@
     "temddVersion",
     "readbackId",
     "transactionId",
-    "subjectId",
     "executionId",
-    "sourceId",
+    "subjectId",
+    "source",
     "timestamp",
     "value"
   ],
@@ -26,15 +26,15 @@
       "type": "string",
       "minLength": 1
     },
-    "subjectId": {
-      "type": "string",
-      "minLength": 1
-    },
     "executionId": {
       "type": "string",
       "minLength": 1
     },
-    "sourceId": {
+    "subjectId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source": {
       "type": "string",
       "minLength": 1
     },
@@ -42,20 +42,17 @@
       "type": "string",
       "format": "date-time"
     },
-    "challengeNonce": {
-      "type": "string",
-      "minLength": 1
+    "challengeId": {
+      "type": "string"
     },
-    "value": {},
+    "nonce": {
+      "type": "string"
+    },
+    "value": true,
     "digest": {
       "type": "string",
       "pattern": "^sha256:[0-9a-f]{64}$"
     },
-    "signature": {
-      "$ref": "#/$defs/signature"
-    }
-  },
-  "$defs": {
     "signature": {
       "type": "object",
       "additionalProperties": false,

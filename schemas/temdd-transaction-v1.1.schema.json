@@ -1,5 +1,5 @@
 {
-  "$id": "https://temdd.org/schema/1.1/transaction.json",
+  "$id": "https://temdd.org/schema/temdd-transaction-v1.1.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "TEMDD 1.1 Transaction",
   "type": "object",
@@ -7,8 +7,8 @@
   "required": [
     "temddVersion",
     "transactionId",
-    "idempotencyKey",
     "subjectId",
+    "idempotencyKey",
     "principal",
     "intent",
     "acceptance",
@@ -24,10 +24,6 @@
       "type": "string",
       "minLength": 1
     },
-    "idempotencyKey": {
-      "type": "string",
-      "minLength": 1
-    },
     "subjectId": {
       "type": "string",
       "minLength": 1
@@ -36,7 +32,7 @@
       "type": "string",
       "minLength": 1
     },
-    "challengeNonce": {
+    "idempotencyKey": {
       "type": "string",
       "minLength": 1
     },
@@ -128,7 +124,7 @@
     },
     "intent": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": false,
       "required": [
         "action"
       ],
@@ -137,7 +133,7 @@
           "type": "string",
           "minLength": 1
         },
-        "target": {},
+        "target": true,
         "parameters": {
           "type": "object"
         }
@@ -164,17 +160,13 @@
       "additionalProperties": false,
       "required": [
         "type",
-        "relation",
         "expected"
       ],
       "properties": {
         "type": {
           "const": "exact"
         },
-        "relation": {
-          "const": "EXACT_EQUALITY"
-        },
-        "expected": {}
+        "expected": true
       }
     },
     "rangeAcceptance": {
@@ -182,16 +174,12 @@
       "additionalProperties": false,
       "required": [
         "type",
-        "relation",
         "minimum",
         "maximum"
       ],
       "properties": {
         "type": {
           "const": "range"
-        },
-        "relation": {
-          "const": "TOLERANCE_EQUALITY"
         },
         "minimum": {
           "type": "number"
@@ -206,15 +194,11 @@
       "additionalProperties": false,
       "required": [
         "type",
-        "relation",
         "rule"
       ],
       "properties": {
         "type": {
           "const": "semantic"
-        },
-        "relation": {
-          "const": "SEMANTIC_EQUALITY"
         },
         "rule": {
           "type": "string",
@@ -227,15 +211,11 @@
       "additionalProperties": false,
       "required": [
         "type",
-        "relation",
         "function"
       ],
       "properties": {
         "type": {
           "const": "functional"
-        },
-        "relation": {
-          "const": "FUNCTIONAL_EQUALITY"
         },
         "function": {
           "type": "string",
