@@ -1,3 +1,33 @@
+<!-- qikvrt-passive-observe-first:v1 -->
+# 👁 QIK-VRT — zuerst beobachten / Observe first
+
+**Der prominenteste Einstieg in dieses Mesh ist passiv.** Bevor du handelst, sieh dir den tatsächlich belegten Zustand an. Wer mehr wissen will, folgt von der Beobachtung zur gebundenen Evidenz und erst danach zur Ausführung.
+
+```text
+OBSERVE
+  ↓
+exact event / HEAD / TREE
+  ↓
+READBACK
+  ↓
+EVIDENCE
+  ↓
+deeper inspection when needed
+  ↓
+only then: authorized action
+```
+
+**Beobachtung ≠ Wirkung. TRANSPORT_ACK ≠ EFFECT_ACK.** Ein grüner Workflow, ein Commit oder eine Beschreibung ist kein Abschlussbeweis.
+
+- **Live/event-driven:** [QIKVRT Live Event Stream](docs/terminal/QIKVRT_LIVE_EVENT_STREAM_V1.md)
+- **Passive transition observer:** [workflow](.github/workflows/qikvrt_passive_transition_observer.yml)
+- **Genauer hinsehen:** [AI runtime entrypoint](AI) · [Roundtrip proof](ROUNDTRIP.md)
+- **Handeln:** erst nach Exact-Subject-Bindung, Authority-Auflösung und den einschlägigen TEMDD-/Effect-Ack-Regeln.
+
+Das passive Beobachten ist die Oberfläche; die Evidenz darunter bleibt vollständig zugänglich. Wie im echten Leben: **erst sehen, dann genauer hinschauen, dann begründet handeln.**
+
+<!-- /qikvrt-passive-observe-first:v1 -->
+
 <!-- qikvrt-roundtrip-first:v1 -->
 ## Zuerst: ausfuehrbarer Roundtrip-Beweis / Start here
 
