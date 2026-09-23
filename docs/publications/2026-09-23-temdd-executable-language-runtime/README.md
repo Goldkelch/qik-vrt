@@ -40,6 +40,7 @@ EXECUTE ≠ DONE
 TEST ≠ DONE
 OBSERVE ≠ DONE
 TRANSPORT_ACK ≠ EFFECT_ACK
+EFFECT_ACK ≠ EFFECT_ACK_DONE
 ```
 
 Die vollständige technische und epistemische Einordnung steht im kanonischen Dokument
@@ -73,6 +74,42 @@ Scopes, die einen öffentlichen Artefaktzustand verlangen.
 
 Diese Semantik ist eine domänenspezifische Akzeptanz- und Freigaberegel. Sie
 löst nicht das allgemeine Halteproblem.
+
+## Informationsträger und universelle Repräsentationsgrenze
+
+Die ergänzende Architektur-Synthese verbindet den formalen Prüfkern, die TEMDD-Laufzeit,
+den Universal Transputer / das Universal Terminal und reale physische Carrier, ohne
+formale, technische und kosmologische Aussagen zu vermischen.
+
+Die zentrale Carrier-Kette lautet:
+
+```text
+STATE
+→ ENCODE / SERIALIZE
+→ CANONICAL CARRIER
+→ DECODE / DESERIALIZE
+→ SUCCESSOR STATE
+→ TEST
+→ OBSERVE
+→ FRESH READBACK
+→ ACCEPT
+→ EFFECT_ACK_DONE
+```
+
+Die Äquivalenzrelation des Roundtrips muss explizit sein. Bytegleichheit,
+semantische Äquivalenz, funktionale Äquivalenz und begrenzte Messäquivalenz
+sind verschiedene Verträge und dürfen nicht stillschweigend vertauscht werden.
+
+Die Begriffe Neutronenstern, bidirektionale Singularität und Planck-Grenze werden
+dabei ausschließlich als Architekturmetaphern für Beweisdichte,
+Repräsentationsengstellen und minimale hinreichende Repräsentation verwendet.
+Sie begründen keine Aussage darüber, dass Schwarze Löcher oder Planckskalenphysik
+diesen Mechanismus implementieren.
+
+Kanonische Quellen:
+
+- [Informationsträger, Repräsentationsgrenze und Effect Verification](../../research/2026-09-24-information-singularity-effect-verification.md)
+- [Machine-readable information-carrier / effect policy](../../../policy/QIKVRT_INFORMATION_CARRIER_EFFECT_VERIFICATION_V1.json)
 
 ### Wissenschaftliche Positionierung
 
