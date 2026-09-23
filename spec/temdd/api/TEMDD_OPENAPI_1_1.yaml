@@ -1,0 +1,245 @@
+openapi: 3.1.0
+info:
+  title: TEMDD API
+  version: 1.1.0-rc1
+  summary: Tested Event Model Driven Development reference API
+  description: >
+    TEMDD 1.1-rc1 reference API. Transport or execution acknowledgement
+    never implies EFFECT_ACK_DONE. Terminal success requires policy-bound,
+    fresh, trusted, transaction-bound evidence, verification and acceptance.
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+servers:
+  - url: https://api.example.com/temdd/v1
+    description: Example production endpoint
+security:
+  - bearerAuth: []
+  - mutualTLS: []
+tags:
+  - name: Transactions
+  - name: Observations
+  - name: Readbacks
+  - name: Verification
+  - name: Acceptance
+  - name: Certificates
+paths:
+  /transactions:
+    post:
+      tags: [Transactions]
+      operationId: createTransaction
+      summary: Create a TEMDD transaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [temddVersion, subjectId, idempotencyKey, principal, intent, acceptance, verificationPolicyId]
+              properties:
+                temddVersion: { const: "1.1" }
+                subjectId: { type: string, minLength: 1 }
+                idempotencyKey: { type: string, minLength: 1 }
+                principal:
+                  $ref: "../../../schemas/temdd-transaction-v1.1.schema.json#/$defs/principal"
+                intent:
+                  $ref: "../../../schemas/temdd-transaction-v1.1.schema.json#/$defs/intent"
+                acceptance:
+                  $ref: "../../../schemas/temdd-transaction-v1.1.schema.json#/$defs/acceptanceCriteria"
+                verificationPolicyId: { type: string, minLength: 1 }
+                verificationPolicyDigest:
+                  type: string
+                  pattern: "^sha256:[0-9a-f]{64}$"
+      responses:
+        "201":
+          description: Transaction created
+          content:
+            application/json:
+              schema:
+                $ref: "../../../schemas/temdd-transaction-v1.1.schema.json"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /transactions/{transactionId}:
+    get:
+      tags: [Transactions]
+      operationId: getTransaction
+      parameters:
+        - $ref: "#/components/parameters/TransactionId"
+      responses:
+        "200":
+          description: Current transaction
+          content:
+            application/json:
+              schema:
+                $ref: "../../../schemas/temdd-transaction-v1.1.schema.json"
+        "404": { $ref: "#/components/responses/NotFound" }
+  /transactions/{transactionId}/execute:
+    post:
+      tags: [Transactions]
+      operationId: executeTransaction
+      parameters:
+        - $ref: "#/components/parameters/TransactionId"
+      responses:
+        "202":
+          description: Execution attempt accepted; this is not effect completion
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TransactionStateResponse" }
+  /transactions/{transactionId}/observation:
+    post:
+      tags: [Observations]
+      operationId: submitObservation
+      parameters:
+        - $ref: "#/components/parameters/TransactionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../../../schemas/temdd-evidence-v1.1.schema.json"
+      responses:
+        "202":
+          description: Observation accepted as evidence candidate
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TransactionStateResponse" }
+  /transactions/{transactionId}/readback:
+    post:
+      tags: [Readbacks]
+      operationId: submitReadback
+      parameters:
+        - $ref: "#/components/parameters/TransactionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../../../schemas/temdd-readback-v1.1.schema.json"
+      responses:
+        "202":
+          description: Readback accepted as verification input
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TransactionStateResponse" }
+  /transactions/{transactionId}/verify:
+    post:
+      tags: [Verification]
+      operationId: verifyTransaction
+      parameters:
+        - $ref: "#/components/parameters/TransactionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../../../schemas/temdd-verification-context-v1.1.schema.json"
+      responses:
+        "200":
+          description: Policy evaluation completed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VerificationResult" }
+  /transactions/{transactionId}/accept:
+    post:
+      tags: [Acceptance]
+      operationId: acceptTransaction
+      parameters:
+        - $ref: "#/components/parameters/TransactionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [verificationId, decision]
+              properties:
+                verificationId: { type: string, minLength: 1 }
+                decision: { const: ACCEPT }
+      responses:
+        "200":
+          description: Acceptance decision persisted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TransactionStateResponse" }
+        "409":
+          description: Acceptance is not permitted for the current bound state
+          content:
+            application/json:
+              schema: { $ref: "../../../schemas/temdd-error-v1.1.schema.json" }
+  /transactions/{transactionId}/certificate:
+    get:
+      tags: [Certificates]
+      operationId: getEffectCertificate
+      parameters:
+        - $ref: "#/components/parameters/TransactionId"
+      responses:
+        "200":
+          description: Effect certificate; only available for EFFECT_ACK_DONE
+          content:
+            application/json:
+              schema:
+                $ref: "../../../schemas/temdd-effect-certificate-v1.1.schema.json"
+        "404": { $ref: "#/components/responses/NotFound" }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    mutualTLS:
+      type: mutualTLS
+  parameters:
+    TransactionId:
+      name: transactionId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+  schemas:
+    TransactionStateResponse:
+      type: object
+      additionalProperties: false
+      required: [transactionId, state]
+      properties:
+        transactionId: { type: string }
+        state:
+          $ref: "../../../schemas/temdd-transaction-v1.1.schema.json#/$defs/transactionState"
+    VerificationResult:
+      type: object
+      additionalProperties: false
+      required: [transactionId, verificationId, verification, state, evaluationContextDigest]
+      properties:
+        transactionId: { type: string }
+        verificationId: { type: string }
+        verification: { type: boolean }
+        state:
+          $ref: "../../../schemas/temdd-transaction-v1.1.schema.json#/$defs/transactionState"
+        evaluationContextDigest:
+          type: string
+          pattern: "^sha256:[0-9a-f]{64}$"
+        result: { type: string }
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema: { $ref: "../../../schemas/temdd-error-v1.1.schema.json" }
+    Unauthorized:
+      description: Authentication failed
+      content:
+        application/json:
+          schema: { $ref: "../../../schemas/temdd-error-v1.1.schema.json" }
+    Forbidden:
+      description: Authorization failed
+      content:
+        application/json:
+          schema: { $ref: "../../../schemas/temdd-error-v1.1.schema.json" }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: "../../../schemas/temdd-error-v1.1.schema.json" }
+x-temdd-invariants:
+  - "TRANSPORT_ACK != EFFECT_ACK"
+  - "EFFECT_ACK != EFFECT_ACK_DONE"
+  - "Verification SHALL be policy-driven, not implementation-defined."

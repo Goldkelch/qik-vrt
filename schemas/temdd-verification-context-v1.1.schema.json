@@ -1,0 +1,53 @@
+{
+  "$id": "https://temdd.org/schema/1.1/verification-context.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TEMDD 1.1 Verification Context",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "evaluationTime",
+    "trustRoots",
+    "canonicalizationProfile",
+    "hashAlgorithm",
+    "algorithmProfile",
+    "acceptanceEvaluatorIds"
+  ],
+  "properties": {
+    "evaluationTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "trustRoots": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "canonicalizationProfile": {
+      "type": "string",
+      "enum": [
+        "JCS-RFC8785",
+        "DETERMINISTIC-CBOR-RFC8949"
+      ]
+    },
+    "hashAlgorithm": {
+      "const": "SHA-256"
+    },
+    "algorithmProfile": {
+      "type": "string",
+      "minLength": 1
+    },
+    "acceptanceEvaluatorIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

@@ -1,0 +1,196 @@
+{
+  "$id": "https://temdd.org/schema/1.1/verification-policy.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TEMDD 1.1 Verification Policy",
+  "type": "object",
+  "additionalProperties": false,
+  "$comment": "JSON Schema validates policy structure. Runtime predicates are evaluated by the normative TEMDD policy evaluator with an explicit Verification Context.",
+  "required": [
+    "policyId",
+    "version",
+    "freshness",
+    "trust",
+    "binding",
+    "quorum",
+    "canonicalizationProfile",
+    "hashAlgorithm",
+    "acceptanceEvaluatorIds"
+  ],
+  "properties": {
+    "policyId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "freshness": {
+      "$ref": "#/$defs/freshnessPolicy"
+    },
+    "trust": {
+      "$ref": "#/$defs/trustPolicy"
+    },
+    "binding": {
+      "$ref": "#/$defs/bindingPolicy"
+    },
+    "quorum": {
+      "$ref": "#/$defs/quorumPolicy"
+    },
+    "canonicalizationProfile": {
+      "type": "string",
+      "enum": [
+        "JCS-RFC8785",
+        "DETERMINISTIC-CBOR-RFC8949"
+      ]
+    },
+    "hashAlgorithm": {
+      "const": "SHA-256"
+    },
+    "acceptanceEvaluatorIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "evaluatorSemantics": {
+      "const": "POLICY_DRIVEN_NOT_IMPLEMENTATION_DEFINED"
+    }
+  },
+  "$defs": {
+    "freshnessPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxAgeSeconds",
+        "requireAfterExecution",
+        "maxClockSkewSeconds"
+      ],
+      "properties": {
+        "maxAgeSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "requireAfterExecution": {
+          "type": "boolean"
+        },
+        "maxClockSkewSeconds": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "trustPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minimumEvidenceClass",
+        "requireSignature"
+      ],
+      "properties": {
+        "minimumEvidenceClass": {
+          "type": "string",
+          "enum": [
+            "E1",
+            "E2",
+            "E3"
+          ]
+        },
+        "requireSignature": {
+          "type": "boolean"
+        },
+        "allowedAlgorithms": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "ed25519",
+              "ecdsa",
+              "rsa-pss"
+            ]
+          }
+        },
+        "trustedSources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "bindingPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requireSubjectMatch",
+        "requireTransactionMatch",
+        "requireExecutionMatch",
+        "requireNonceBinding"
+      ],
+      "properties": {
+        "requireSubjectMatch": {
+          "type": "boolean"
+        },
+        "requireTransactionMatch": {
+          "type": "boolean"
+        },
+        "requireExecutionMatch": {
+          "type": "boolean"
+        },
+        "requireNonceBinding": {
+          "type": "boolean"
+        }
+      }
+    },
+    "quorumPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "SINGLE",
+            "K_OF_N",
+            "MAJORITY",
+            "TWO_THIRDS",
+            "ALL"
+          ]
+        },
+        "k": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "members": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "independenceDimensions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "SOURCE",
+              "PRINCIPAL",
+              "DEVICE",
+              "TRUST_DOMAIN"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

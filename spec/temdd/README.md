@@ -10,6 +10,18 @@ Canonical Product-Owner runtime declaration: [`TEMDD_EXECUTABLE_LANGUAGE_RUNTIME
 
 
 Entry points:
+- `TEMDD_1_1_RC1.md` — TEMDD 1.1-rc1 normative candidate.
+- `api/TEMDD_OPENAPI_1_1.yaml` — OpenAPI 3.1 reference profile.
+- `api/TEMDD_ASYNCAPI_1_1.yaml` — AsyncAPI 3.0 EVENT_ACK / EFFECT_ACK_DONE profile.
+- `TEMDD_SECURITY_PROFILES_V1_1.md` — Core/Enhanced/High-Assurance/Critical security profiles.
+- `../../schemas/temdd-transaction-v1.1.schema.json` — transaction model.
+- `../../schemas/temdd-evidence-v1.1.schema.json` — evidence model.
+- `../../schemas/temdd-readback-v1.1.schema.json` — readback model.
+- `../../schemas/temdd-effect-certificate-v1.1.schema.json` — terminal effect certificate.
+- `../../schemas/temdd-verification-policy-v1.1.schema.json` — serializable verification policy.
+- `../../schemas/temdd-verification-context-v1.1.schema.json` — deterministic evaluation context.
+- `../../schemas/temdd-audit-record-v1.1.schema.json` — audit record.
+- `../../schemas/temdd-error-v1.1.schema.json` — normative error object.
 - `TEMDD_LANGUAGE_SPEC_V0_1.md` — normative bootstrap semantics.
 - `TEMDD_Syntax_V0_1.ebnf` — grammar.
 - `../../schemas/temdd-ir-v0.1.schema.json` — canonical IR contract.

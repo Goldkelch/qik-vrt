@@ -1,0 +1,77 @@
+{
+  "$id": "https://temdd.org/schema/1.1/error.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TEMDD 1.1 Error",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "code",
+    "category",
+    "retryAllowed"
+  ],
+  "properties": {
+    "code": {
+      "type": "string",
+      "enum": [
+        "AUTH_REQUIRED",
+        "AUTH_INVALID",
+        "AUTH_EXPIRED",
+        "AUTH_REVOKED",
+        "ACCESS_DENIED",
+        "ROLE_REQUIRED",
+        "INSUFFICIENT_PRIVILEGES",
+        "POLICY_VIOLATION",
+        "INVALID_SUBJECT",
+        "SUBJECT_NOT_FOUND",
+        "SUBJECT_UNAVAILABLE",
+        "SUBJECT_LOCKED",
+        "INVALID_INTENT",
+        "INTENT_NOT_SUPPORTED",
+        "INTENT_CONFLICT",
+        "EXECUTION_FAILED",
+        "EXECUTION_TIMEOUT",
+        "EXECUTION_REJECTED",
+        "EXECUTION_ABORTED",
+        "EVIDENCE_MISSING",
+        "EVIDENCE_EXPIRED",
+        "EVIDENCE_TAMPERED",
+        "EVIDENCE_UNTRUSTED",
+        "EVIDENCE_INVALID_SIGNATURE",
+        "READBACK_FAILED",
+        "READBACK_TIMEOUT",
+        "READBACK_SOURCE_UNAVAILABLE",
+        "READBACK_STALE",
+        "READBACK_INCONSISTENT",
+        "VERIFICATION_FAILED",
+        "VERIFICATION_TIMEOUT",
+        "VERIFICATION_ERROR",
+        "ACCEPTANCE_FAILED",
+        "ACCEPTANCE_TIMEOUT",
+        "NETWORK_ERROR",
+        "RATE_LIMITED",
+        "RESOURCE_EXHAUSTED",
+        "DEPENDENCY_UNAVAILABLE",
+        "SYSTEM_OVERLOADED",
+        "INTERNAL_ERROR"
+      ]
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "RETRYABLE",
+        "NON_RETRYABLE",
+        "TERMINAL"
+      ]
+    },
+    "retryAllowed": {
+      "type": "boolean"
+    },
+    "retryAfterSeconds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "message": {
+      "type": "string"
+    }
+  }
+}

@@ -137,3 +137,10 @@ Die Erklärung ist als gemeinsamer Successor für folgende QIK-VRT-Nodes vorgese
 - `ingolf-lohmann/qik-vrt`
 
 Historische Veröffentlichungen bleiben unverändert.
+
+
+## TEMDD 1.1-rc1 machine-readable candidate
+
+The repository now carries the normative TEMDD 1.1-rc1 text together with OpenAPI 3.1, AsyncAPI 3.0 and JSON Schema Draft 2020-12 reference artifacts. These bytes are publication-candidate material only until the exact successor is freshly validated, candidate-specifically authorized for Zenodo, published, and independently read back from the public record.
+
+Canonical entry point: [TEMDD_1_1_RC1.md](../../../spec/temdd/TEMDD_1_1_RC1.md).
