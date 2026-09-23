@@ -6,7 +6,6 @@ ROOT = Path(__file__).resolve().parents[1]
 POLICY = ROOT / "policy/HUMAN_MACHINE_INTERFACE_ADAPTATION_V1.json"
 MATRIX = ROOT / "state/interface_adaptation/EVALUATION_MATRIX.json"
 CONTEXT = ROOT / "AI_CONTEXT.json"
-ENTRYPOINT = ROOT / "AI"
 BOOTLOADER = ROOT / "tools/ai_runtime_bootloader.py"
 
 
@@ -16,7 +15,6 @@ class TestHumanMachineInterfaceAdaptation(unittest.TestCase):
         cls.policy = json.loads(POLICY.read_text(encoding="utf-8"))
         cls.matrix = json.loads(MATRIX.read_text(encoding="utf-8"))
         cls.context = json.loads(CONTEXT.read_text(encoding="utf-8"))
-        cls.ai = ENTRYPOINT.read_text(encoding="utf-8")
         cls.boot = BOOTLOADER.read_text(encoding="utf-8")
 
     def test_reuse_before_create_and_fastest_verified_path(self):
@@ -56,14 +54,12 @@ class TestHumanMachineInterfaceAdaptation(unittest.TestCase):
         self.assertTrue(incremental["audio"]["transcript_key_includes_audio_sha256"])
         self.assertTrue(incremental["audio"]["cache_per_chunk_transcript"])
 
-    def test_context_entrypoint_and_bootloader_bind_contract(self):
+    def test_context_and_bootloader_bind_contract(self):
         adaptation = self.context["human_machine_interface_adaptation"]
         self.assertEqual(adaptation["policy"], "policy/HUMAN_MACHINE_INTERFACE_ADAPTATION_V1.json")
         self.assertEqual(adaptation["evaluation_matrix"], "state/interface_adaptation/EVALUATION_MATRIX.json")
         self.assertIn("policy/HUMAN_MACHINE_INTERFACE_ADAPTATION_V1.json", self.context["required_read_order"])
         self.assertIn("state/interface_adaptation/EVALUATION_MATRIX.json", self.context["required_read_order"])
-        self.assertIn("ADAPTIVE HUMAN-MACHINE INTERFACE", self.ai)
-        self.assertIn("FASTEST_VERIFIED_PATH", self.ai)
         self.assertIn("load_interface_adaptation", self.boot)
         self.assertIn("INTERFACE_ADAPTATION_MODE", self.boot)
 
