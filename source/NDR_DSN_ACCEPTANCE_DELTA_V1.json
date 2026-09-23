@@ -1,0 +1,663 @@
+{
+  "schema_version": "qikvrt.ndr-dsn.coverage-review-delta.v1",
+  "document_kind": "PROPOSED_REQUIREMENTS_AND_TEST_SPECIFICATIONS",
+  "language": "de",
+  "review_date": "2026-09-22",
+  "scope_note": "Additive Korrektur zur vom Nutzer gelieferten Matrix; keine vollständige Implementierung, kein Ersatz für die unveränderte Ausgangsmatrix.",
+  "attribution": {
+    "source_matrix": "Vom Nutzer in dieser Unterhaltung bereitgestellt; ursprüngliche Urheberschaft nicht geprüft.",
+    "review_delta": "KI-generierte fachliche Prüfung mit angegebenen Primärquellen; keine bestätigte menschliche Abnahme."
+  },
+  "repository_observation": {
+    "repository": "Goldkelch/qik-vrt",
+    "read_access": "OBSERVED_WORKING",
+    "main_head": "ccedc24c9061ef03ec3bb77dfc47bc5d8928dd7d",
+    "main_tree": "9aa03cff55931d2182ac81d6d5adcce537ec468c",
+    "related_pr": 1160,
+    "related_pr_state": "OPEN_DRAFT",
+    "related_pr_merged": false,
+    "related_pr_head": "96f8a69d6356c11ca304a0af436ecc8743126f05",
+    "related_pr_tree": "efcfb942797fa2d8ccf84760eca725551371f514",
+    "contract_path": "state/autonomy/MESH_EFFECT_EVIDENCE_INHERITANCE_V1.md",
+    "contract_blob": "5e38521740f67fa90f33a6afbed4a1b447e5135b",
+    "write_access": "NOT_TESTED",
+    "runtime_and_gates": "NOT_EVALUATED",
+    "m365_document_absence_claim": "NOT_REVERIFIED",
+    "note": "Lesen einer dokumentierten Regel beweist weder Ausführung noch Mesh-Übernahme."
+  },
+  "effect_accounting": {
+    "repository_mutated": false,
+    "email_sent": false,
+    "email_moved_or_deleted": false,
+    "dns_or_policy_changed": false,
+    "local_review_artifacts_created": true,
+    "parser_implemented": false,
+    "acceptance_tests_executed": false,
+    "end_to_end_validated": false,
+    "communication_effect_ack_done": false
+  },
+  "coverage_rule": {
+    "required_conjunction": [
+      "scope_defined",
+      "owner_assigned",
+      "implementation_bound_to_subject",
+      "all_required_positive_negative_integration_tests_current_pass",
+      "evidence_provenance_valid",
+      "privacy_security_and_retry_controls_verified",
+      "acceptance_record_present"
+    ],
+    "subject_fields": [
+      "repository",
+      "head",
+      "tree",
+      "policy_version",
+      "fixture_digest",
+      "environment_digest"
+    ],
+    "na_rule": "Nur explizite, begründete, geprüfte Nichtanwendbarkeit darf aus dem Pflichtscope ausgenommen werden.",
+    "unknown_rule": "UNKNOWN sperrt den Erfolgsclaim, nicht die autorisierte Recovery-Arbeit."
+  },
+  "corrections": [
+    {
+      "id": "C-01",
+      "amends": [
+        "E-01",
+        "E-02",
+        "E-03",
+        "E-04",
+        "E-05",
+        "E-06",
+        "E-07"
+      ],
+      "title": "Soll und Ist getrennt führen",
+      "requirement": "Konzeption ist keine Implementierung. Fehlender Nachweis bedeutet UNKNOWN, nicht automatisch nachgewiesene Nichtimplementierung. PARTIAL erfordert einen konkret benannten implementierten und getesteten Teilumfang.",
+      "source_refs": [],
+      "required_test_ids": [
+        "T-41"
+      ],
+      "implementation_status": "UNKNOWN",
+      "validation_status": "NOT_RUN",
+      "assigned_owner": null,
+      "evidence_refs": [],
+      "coverage": "UNVERIFIED"
+    },
+    {
+      "id": "C-02",
+      "amends": [
+        "E-10",
+        "K-02",
+        "R-03",
+        "S-07",
+        "S-08"
+      ],
+      "title": "Action und Status gemeinsam auswerten",
+      "requirement": "Status klassifiziert die Ursache; Action beschreibt das Ergebnis des Zustellversuchs. Ein finaler Fehler kann 4.x.x tragen. Ein laufender MTA-Wiederholungsprozess ist kein Auftrag an die Anwendung, eine zweite Nachricht zu senden.",
+      "source_refs": [
+        "RFC3464",
+        "NDR_MS"
+      ],
+      "required_test_ids": [
+        "T-25",
+        "T-26"
+      ],
+      "implementation_status": "UNKNOWN",
+      "validation_status": "NOT_RUN",
+      "assigned_owner": null,
+      "evidence_refs": [],
+      "coverage": "UNVERIFIED"
+    },
+    {
+      "id": "C-03",
+      "amends": [
+        "E-11",
+        "K-01",
+        "R-10",
+        "T-01",
+        "T-22"
+      ],
+      "title": "Zustellnachweis und Auftragswirkung abgrenzen",
+      "requirement": "API-Annahme ist keine Zustellung. relayed und expanded erfüllen im hier vorgeschlagenen Modell kein Endempfänger-Zustellziel. delivered ist kein Lesebeleg. Erfolgsabschluss muss zusätzlich Vertrauensprüfung, Empfänger- und Auftragsbindung verlangen.",
+      "source_refs": [
+        "RFC3464",
+        "GRAPH_SEND",
+        "EVIDENCE_CONTRACT"
+      ],
+      "required_test_ids": [
+        "T-27",
+        "T-28",
+        "T-29",
+        "T-43"
+      ],
+      "implementation_status": "UNKNOWN",
+      "validation_status": "NOT_RUN",
+      "assigned_owner": null,
+      "evidence_refs": [],
+      "coverage": "UNVERIFIED"
+    },
+    {
+      "id": "C-04",
+      "amends": [
+        "E-13",
+        "E-14",
+        "R-02",
+        "T-18"
+      ],
+      "title": "Korrelation und Echtheit nicht verwechseln",
+      "requirement": "Nachricht, Versandversuch und Empfänger getrennt identifizieren. Original-Envelope-ID/ENVID und Original-/Final-Recipient nutzen, soweit verfügbar; Original-Message-ID und Versandregister ergänzen die Zuordnung. Nicht zuordenbar ist zunächst UNCORRELATED, nicht bewiesen gefälscht. Identifikatoren allein authentifizieren den Absender nicht.",
+      "source_refs": [
+        "RFC3461"
+      ],
+      "required_test_ids": [
+        "T-32",
+        "T-44"
+      ],
+      "implementation_status": "UNKNOWN",
+      "validation_status": "NOT_RUN",
+      "assigned_owner": null,
+      "evidence_refs": [],
+      "coverage": "UNVERIFIED"
+    },
+    {
+      "id": "C-05",
+      "amends": [
+        "E-15",
+        "R-07",
+        "T-17"
+      ],
+      "title": "Ereignisdeduplizierung von Fallzuordnung trennen",
+      "requirement": "Eine neue Action, ein neuer Versandversuch oder neue Empfängerevidenz darf nicht als Duplikat verschwinden. Rohereignisse behalten; Wiederholungen idempotent verarbeiten. Veraltete Ereignisse dürfen den aktuellen Versuch nicht überschreiben; echte Widersprüche öffnen eine Prüfspur.",
+      "source_refs": [],
+      "required_test_ids": [
+        "T-30",
+        "T-31",
+        "T-44"
+      ],
+      "implementation_status": "UNKNOWN",
+      "validation_status": "NOT_RUN",
+      "assigned_owner": null,
+      "evidence_refs": [],
+      "coverage": "UNVERIFIED"
+    },
+    {
+      "id": "C-06",
+      "amends": [
+        "K-05",
+        "S-04",
+        "S-09",
+        "T-07"
+      ],
+      "title": "Fehler nach Untercode statt Szenarioname einordnen",
+      "requirement": "x.1.x umfasst auch Absenderfehler. Deaktivierte Postfächer können temporär oder dauerhaft betroffen sein. Größenlimits können als 5.2.3 oder 5.3.4 auftreten. Deshalb weder pauschale Empfängersperre noch ausschließlich x.6.x für große Anhänge verlangen.",
+      "source_refs": [
+        "RFC3463"
+      ],
+      "required_test_ids": [
+        "T-33",
+        "T-42"
+      ],
+      "implementation_status": "UNKNOWN",
+      "validation_status": "NOT_RUN",
+      "assigned_owner": null,
+      "evidence_refs": [],
+      "coverage": "UNVERIFIED"
+    },
+    {
+      "id": "C-07",
+      "amends": [
+        "D-01",
+        "D-02",
+        "D-03",
+        "D-04",
+        "D-05",
+        "D-07",
+        "D-10",
+        "D-12",
+        "R-09",
+        "R-11"
+      ],
+      "title": "Geschützte Evidenz und öffentliche Technikdaten trennen",
+      "requirement": "Maskierung/Pseudonymisierung ist nicht automatisch Anonymisierung. Öffentliche Repository-Ausgabe soll eine Positivliste geprüfter technischer Felder verwenden. Rohmail, Empfängerzuordnung und Diagnosetext bleiben intern. Lösch-/Aufbewahrungsregeln, Geheimnisprüfung und Freigabe sind getrennte Gates.",
+      "source_refs": [
+        "EDPB"
+      ],
+      "required_test_ids": [
+        "T-34"
+      ],
+      "implementation_status": "UNKNOWN",
+      "validation_status": "NOT_RUN",
+      "assigned_owner": null,
+      "evidence_refs": [],
+      "coverage": "UNVERIFIED"
+    },
+    {
+      "id": "C-08",
+      "amends": [
+        "E-08",
+        "E-09",
+        "E-16",
+        "T-15",
+        "T-16",
+        "T-18"
+      ],
+      "title": "Parsergrenzen und internationale DSNs ergänzen",
+      "requirement": "message/global-delivery-status und UTF-8 berücksichtigen. Größe, Tiefe, Zahl der MIME-Teile und Empfänger sowie Laufzeit begrenzen. Fehlerhafte oder mehrdeutige Pflichtfelder führen zu kontrollierter Prüfung. Kein aktiver Inhalt, kein automatischer Linkabruf und keine Ausführung von Anweisungen aus der Nachricht.",
+      "source_refs": [
+        "RFC6533"
+      ],
+      "required_test_ids": [
+        "T-35",
+        "T-36"
+      ],
+      "implementation_status": "UNKNOWN",
+      "validation_status": "NOT_RUN",
+      "assigned_owner": null,
+      "evidence_refs": [],
+      "coverage": "UNVERIFIED"
+    },
+    {
+      "id": "C-09",
+      "amends": [
+        "E-14",
+        "E-15",
+        "T-17",
+        "T-20"
+      ],
+      "title": "Outlook-Verschiebungen und Eingangsabdeckung testen",
+      "requirement": "Bei Graph-Nutzung ImmutableId konsistent einsetzen, soweit verfügbar. Die Stabilität gilt innerhalb desselben Postfachs, nicht universell. Delta-Abfragen sind ordnerbezogen; relevante Ordner, Pagination, Checkpoints und Nachsynchronisierung explizit inventarisieren.",
+      "source_refs": [
+        "GRAPH_IDS",
+        "GRAPH_DELTA"
+      ],
+      "required_test_ids": [
+        "T-37",
+        "T-38"
+      ],
+      "implementation_status": "UNKNOWN",
+      "validation_status": "NOT_RUN",
+      "assigned_owner": null,
+      "evidence_refs": [],
+      "coverage": "UNVERIFIED"
+    },
+    {
+      "id": "C-10",
+      "amends": [
+        "R-09",
+        "R-10",
+        "T-20",
+        "T-24"
+      ],
+      "title": "Persistenz und Repository-Readback getrennt prüfen",
+      "requirement": "Durable Inbox/Outbox oder gleichwertige atomare Persistenz vor Eingangsbestätigung verlangen. Neustart und Timeout nach eventuell erfolgreichem externem Write müssen durch Abgleich statt blindem Wiederholen behandelt werden. Repository-Annahme und frischer Readback bleiben separate Nachweise.",
+      "source_refs": [],
+      "required_test_ids": [
+        "T-39",
+        "T-40"
+      ],
+      "implementation_status": "UNKNOWN",
+      "validation_status": "NOT_RUN",
+      "assigned_owner": null,
+      "evidence_refs": [],
+      "coverage": "UNVERIFIED"
+    },
+    {
+      "id": "C-11",
+      "amends": [
+        "R-03",
+        "R-05",
+        "R-06",
+        "R-08",
+        "T-21"
+      ],
+      "title": "Nebenwirkungen und Budgets explizit autorisieren",
+      "requirement": "Begrenzung nach Versuch, Zeit und Empfänger/Domain festlegen; MTA-Retry und Anwendungs-Neuversand unterscheiden. Ohne definierte Freigabe kein Neuversand, keine Adressdeaktivierung und keine DNS-/Policy-Änderung. Ein 5.7.x-Code allein belegt keinen Sicherheitsvorfall und legitimiert keinen organisationsweiten Versandstopp.",
+      "source_refs": [],
+      "required_test_ids": [
+        "T-26",
+        "T-45"
+      ],
+      "implementation_status": "UNKNOWN",
+      "validation_status": "NOT_RUN",
+      "assigned_owner": null,
+      "evidence_refs": [],
+      "coverage": "UNVERIFIED"
+    },
+    {
+      "id": "C-12",
+      "amends": [
+        "R-10",
+        "T-22",
+        "T-23"
+      ],
+      "title": "Fallabschluss mit Disposition modellieren",
+      "requirement": "HANDLING_WORK_UNIT, DELIVERY_GOAL und BUSINESS_GOAL getrennt führen. Sicherheitsvorfall ist eine Übergabe, nicht automatisch Gesamterledigung. Nicht reproduzierbar und akzeptiertes Restrisiko sind keine Zustellbelege. Timeout ist ein neues Recovery-Ereignis, kein stiller Erfolg; UNKNOWN sperrt Erfolgsbehauptungen, nicht autorisierte Diagnose.",
+      "source_refs": [
+        "EVIDENCE_CONTRACT"
+      ],
+      "required_test_ids": [
+        "T-41",
+        "T-43"
+      ],
+      "implementation_status": "UNKNOWN",
+      "validation_status": "NOT_RUN",
+      "assigned_owner": null,
+      "evidence_refs": [],
+      "coverage": "UNVERIFIED"
+    },
+    {
+      "id": "C-13",
+      "amends": [
+        "A-01",
+        "A-02",
+        "A-03",
+        "A-04",
+        "A-05",
+        "A-06",
+        "A-07",
+        "A-08",
+        "A-09",
+        "A-10"
+      ],
+      "title": "Domain-Verantwortung und Anwendbarkeit binden",
+      "requirement": "Eigene und providerverwaltete Versanddomänen unterscheiden. Pro Kontrolle Scope, Betreiber, benötigte Rechte und Nachweis festlegen. N/A benötigt eine begründete Freigabe und darf fehlende Berechtigungen nicht kaschieren.",
+      "source_refs": [],
+      "required_test_ids": [
+        "T-41"
+      ],
+      "implementation_status": "UNKNOWN",
+      "validation_status": "NOT_RUN",
+      "assigned_owner": null,
+      "evidence_refs": [],
+      "coverage": "UNVERIFIED"
+    }
+  ],
+  "additional_test_specifications": [
+    {
+      "id": "T-25",
+      "title": "Finaler Fehler trotz 4.x.x",
+      "input_specification": "Korrelierte, vertrauenswürdig geprüfte DSN: Action=failed, Status=4.4.7.",
+      "expected_result": "Versuch als fehlgeschlagen führen; kein blinder Neuversand; Zustellziel bleibt offen.",
+      "proposed_owner_role": "Mailbetrieb",
+      "assigned_owner": null,
+      "required": true,
+      "execution_status": "NOT_RUN",
+      "run_id": null,
+      "fixture_digest": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "T-26",
+      "title": "MTA wiederholt bereits",
+      "input_specification": "Action=delayed, Status=4.4.1; außerdem separater Fall ohne freigegebenes Wiederholungsbudget.",
+      "expected_result": "Kein Anwendungs-Resend parallel zum MTA; fehlende Freigabe sperrt die Nebenwirkung.",
+      "proposed_owner_role": "Mailbetrieb",
+      "assigned_owner": null,
+      "required": true,
+      "execution_status": "NOT_RUN",
+      "run_id": null,
+      "fixture_digest": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "T-27",
+      "title": "Relayed",
+      "input_specification": "Korrelierte DSN Action=relayed mit Erfolgscode.",
+      "expected_result": "Keine Behauptung verifizierter Endempfängerzustellung.",
+      "proposed_owner_role": "Mailbetrieb",
+      "assigned_owner": null,
+      "required": true,
+      "execution_status": "NOT_RUN",
+      "run_id": null,
+      "fixture_digest": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "T-28",
+      "title": "Expanded und Teilzustellung",
+      "input_specification": "Expansion mit nachfolgenden abweichenden Ergebnissen der Zieladressen.",
+      "expected_result": "Teilziele getrennt weiterführen; keine vorzeitige Gesamtfreigabe.",
+      "proposed_owner_role": "Mailbetrieb",
+      "assigned_owner": null,
+      "required": true,
+      "execution_status": "NOT_RUN",
+      "run_id": null,
+      "fixture_digest": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "T-29",
+      "title": "API-Annahme ohne Wirkung",
+      "input_specification": "Graph sendMail liefert 202; es gibt keinen späteren Zustellbeleg.",
+      "expected_result": "Nur API-Annahme erfassen; keine Zustell- oder Wirkungsaussage.",
+      "proposed_owner_role": "Integrationsentwicklung",
+      "assigned_owner": null,
+      "required": true,
+      "execution_status": "NOT_RUN",
+      "run_id": null,
+      "fixture_digest": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "T-30",
+      "title": "Gleicher Fehlercode, neue Action",
+      "input_specification": "Für denselben Versandversuch folgt failed auf delayed bei unverändertem Statuscode.",
+      "expected_result": "Zwei unterschiedliche Ereignisse; der finale Fehler geht nicht in der Deduplizierung verloren.",
+      "proposed_owner_role": "Integrationsentwicklung",
+      "assigned_owner": null,
+      "required": true,
+      "execution_status": "NOT_RUN",
+      "run_id": null,
+      "fixture_digest": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "T-31",
+      "title": "Verspätetes Ereignis",
+      "input_specification": "Ein älteres delayed-Ereignis trifft nach einem später belegten terminalen Ergebnis desselben Versuchs ein.",
+      "expected_result": "Historie erhalten; kein ungeprüftes Zurücksetzen; bei echtem Widerspruch Prüfzustand.",
+      "proposed_owner_role": "Integrationsentwicklung",
+      "assigned_owner": null,
+      "required": true,
+      "execution_status": "NOT_RUN",
+      "run_id": null,
+      "fixture_digest": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "T-32",
+      "title": "Nicht zuordenbare DSN",
+      "input_specification": "Kein eindeutiger Treffer im Versandregister.",
+      "expected_result": "UNCORRELATED und kontrollierte Klärung; keine Antwort, keine Empfängersperre, keine behauptete Fälschung.",
+      "proposed_owner_role": "Mailbetrieb",
+      "assigned_owner": null,
+      "required": true,
+      "execution_status": "NOT_RUN",
+      "run_id": null,
+      "fixture_digest": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "T-33",
+      "title": "Untercodes statt Szenarioraten",
+      "input_specification": "Fälle mit 5.1.7, 5.2.3, 5.3.4 und 4.2.1.",
+      "expected_result": "Absender-/Postfach-/Systemklassen korrekt; kein pauschales recipient-invalid und kein erzwungenes x.6.x.",
+      "proposed_owner_role": "Mailbetrieb",
+      "assigned_owner": null,
+      "required": true,
+      "execution_status": "NOT_RUN",
+      "run_id": null,
+      "fixture_digest": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "T-34",
+      "title": "Öffentliche Ausgabe",
+      "input_specification": "Synthetische Rohdaten enthalten Adresse, Betreff, Token, Freigabelink und internen Hostnamen.",
+      "expected_result": "Nur freigegebene technische Felder gelangen in den öffentlichen Carrier; Original intern geschützt.",
+      "proposed_owner_role": "Datenschutz/Security",
+      "assigned_owner": null,
+      "required": true,
+      "execution_status": "NOT_RUN",
+      "run_id": null,
+      "fixture_digest": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "T-35",
+      "title": "Internationalisierte DSN",
+      "input_specification": "Synthetische UTF-8-DSN im Typ message/global-delivery-status.",
+      "expected_result": "Adress-/Statusdaten verlustfrei verarbeiten oder begründet in kontrollierte Prüfung geben; niemals falscher PASS.",
+      "proposed_owner_role": "Parserentwicklung",
+      "assigned_owner": null,
+      "required": true,
+      "execution_status": "NOT_RUN",
+      "run_id": null,
+      "fixture_digest": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "T-36",
+      "title": "Fehlerhafte/feindliche MIME-Eingabe",
+      "input_specification": "Übergröße, tiefe Verschachtelung, widersprüchliche Pflichtfelder, aktiver Inhalt und eingebettete Befehle.",
+      "expected_result": "Begrenzter Ressourcenverbrauch, kontrollierter Fehler; kein Netzwerkzugriff, keine Inhaltsausführung, keine Wirkung.",
+      "proposed_owner_role": "Security/Parserentwicklung",
+      "assigned_owner": null,
+      "required": true,
+      "execution_status": "NOT_RUN",
+      "run_id": null,
+      "fixture_digest": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "T-37",
+      "title": "Verschieben im Outlook-Postfach",
+      "input_specification": "Dasselbe Element wird zwischen beobachteten Ordnern verschoben.",
+      "expected_result": "Stabile interne Zuordnung; kein zweiter Fall durch wechselnde Provider-ID. Archivwechsel gesondert behandeln.",
+      "proposed_owner_role": "Integrationsentwicklung",
+      "assigned_owner": null,
+      "required": true,
+      "execution_status": "NOT_RUN",
+      "run_id": null,
+      "fixture_digest": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "T-38",
+      "title": "Eingangslücke und Nachsynchronisierung",
+      "input_specification": "Mehrere Seiten/Ordner, unterbrochene Synchronisierung und wiederhergestellte Verbindung.",
+      "expected_result": "Alle im definierten Scope verfügbaren Ereignisse nachholen; bekannte Beobachtungslücke sichtbar führen.",
+      "proposed_owner_role": "Betrieb",
+      "assigned_owner": null,
+      "required": true,
+      "execution_status": "NOT_RUN",
+      "run_id": null,
+      "fixture_digest": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "T-39",
+      "title": "Neustart an Persistenzgrenze",
+      "input_specification": "Crash vor/nach atomarem Inbox-/Outbox-Commit und vor/nach Eingangsbestätigung.",
+      "expected_result": "Keine bestätigten Ereignisse verlieren; Wiederverarbeitung ohne doppelte Nebenwirkung.",
+      "proposed_owner_role": "Runtime-Entwicklung",
+      "assigned_owner": null,
+      "required": true,
+      "execution_status": "NOT_RUN",
+      "run_id": null,
+      "fixture_digest": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "T-40",
+      "title": "Unklarer Repository-Write",
+      "input_specification": "Issue-Write hat Timeout; der Server könnte das Issue bereits angelegt haben.",
+      "expected_result": "Mit Work-Unit-Referenz abgleichen, Readback prüfen; kein blindes Duplikat und kein Erfolgsclaim ohne Beleg.",
+      "proposed_owner_role": "Repository-Integration",
+      "assigned_owner": null,
+      "required": true,
+      "execution_status": "NOT_RUN",
+      "run_id": null,
+      "fixture_digest": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "T-41",
+      "title": "Abdeckung und N/A fail-closed",
+      "input_specification": "Test ist alt, Owner fehlt, Scope wurde geändert oder N/A ist unbegründet.",
+      "expected_result": "Kein COVERED; fehlenden Nachweis präzise melden; Diagnose darf weitergehen.",
+      "proposed_owner_role": "Qualitätssicherung",
+      "assigned_owner": null,
+      "required": true,
+      "execution_status": "NOT_RUN",
+      "run_id": null,
+      "fixture_digest": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "T-42",
+      "title": "Permanenter Policy-Fehler",
+      "input_specification": "Korrelierter 5.7.x-Fehler ohne belegten ungültigen Empfänger.",
+      "expected_result": "Kein unveränderter Auto-Resend; Empfänger nicht pauschal deaktivieren; Sicherheitsverdacht getrennt bewerten.",
+      "proposed_owner_role": "Mailbetrieb/Security",
+      "assigned_owner": null,
+      "required": true,
+      "execution_status": "NOT_RUN",
+      "run_id": null,
+      "fixture_digest": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "T-43",
+      "title": "Zielebene des Abschlusses",
+      "input_specification": "Bearbeitung eines echten NDR ist korrekt dokumentiert; ursprüngliche Zustellung bleibt fehlgeschlagen.",
+      "expected_result": "Bearbeitungs-Work-Unit darf verifiziert sein; ursprüngliches Zustell-/Geschäftsziel wird nicht als erreicht markiert.",
+      "proposed_owner_role": "Qualitätssicherung",
+      "assigned_owner": null,
+      "required": true,
+      "execution_status": "NOT_RUN",
+      "run_id": null,
+      "fixture_digest": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "T-44",
+      "title": "Neuer Versandversuch",
+      "input_specification": "Eine freigegebene korrigierte Nachricht gehört zum selben Geschäftsvorgang, aber zu einem neuen attempt_id.",
+      "expected_result": "Alte DSN bleibt am alten Versuch; keine Evidenzübertragung auf den neuen Versuch.",
+      "proposed_owner_role": "Integrationsentwicklung",
+      "assigned_owner": null,
+      "required": true,
+      "execution_status": "NOT_RUN",
+      "run_id": null,
+      "fixture_digest": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "T-45",
+      "title": "Berechtigung entzogen",
+      "input_specification": "Verbindung oder Berechtigung fällt zwischen Planung und autorisierter Nebenwirkung aus.",
+      "expected_result": "Nebenwirkung nicht behaupten; Work Unit und Beobachtungslücke dauerhaft halten; Recovery nach definierter Freigabe.",
+      "proposed_owner_role": "Betrieb/Security",
+      "assigned_owner": null,
+      "required": true,
+      "execution_status": "NOT_RUN",
+      "run_id": null,
+      "fixture_digest": null,
+      "evidence_refs": []
+    }
+  ],
+  "sources": {
+    "RFC3464": "https://www.rfc-editor.org/rfc/rfc3464.html",
+    "RFC3463": "https://www.rfc-editor.org/rfc/rfc3463.html",
+    "RFC3461": "https://www.rfc-editor.org/rfc/rfc3461.html",
+    "RFC6533": "https://www.rfc-editor.org/rfc/rfc6533.html",
+    "GRAPH_SEND": "https://learn.microsoft.com/en-us/graph/api/user-sendmail?view=graph-rest-1.0",
+    "GRAPH_IDS": "https://learn.microsoft.com/en-us/graph/outlook-immutable-id",
+    "GRAPH_DELTA": "https://learn.microsoft.com/en-us/graph/delta-query-messages",
+    "NDR_MS": "https://learn.microsoft.com/en-us/troubleshoot/exchange/email-delivery/ndr/non-delivery-reports-in-exchange-online",
+    "EDPB": "https://www.edpb.europa.eu/topics/ai-and-technology/anonymisation-pseudonymisation_en",
+    "REPO_MAIN": "https://api.github.com/repos/Goldkelch/qik-vrt/branches/main",
+    "REPO_AI": "https://github.com/Goldkelch/qik-vrt/blob/ccedc24c9061ef03ec3bb77dfc47bc5d8928dd7d/AI",
+    "PR1160": "https://github.com/Goldkelch/qik-vrt/pull/1160",
+    "EVIDENCE_CONTRACT": "https://github.com/Goldkelch/qik-vrt/blob/96f8a69d6356c11ca304a0af436ecc8743126f05/state/autonomy/MESH_EFFECT_EVIDENCE_INHERITANCE_V1.md"
+  }
+}

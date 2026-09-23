@@ -1,0 +1,37 @@
+{
+  "schema_version": "qikvrt.requirements-carrier-status.v1",
+  "document_kind": "requirements_carrier_identity_status",
+  "observed_at": "2026-09-23T03:16:00+02:00",
+  "carrier": {
+    "library_object_resolved": true,
+    "document_byte_identity": "VERIFIED",
+    "size_bytes": 25361,
+    "sha256": "936686c7b6c1e249e8b31215d5111b76a78e494d0ea822a505bd309f946e278e",
+    "requirements_carrier_present": true
+  },
+  "verification_state": {
+    "implementation_verified": false,
+    "acceptance_tests_executed": false,
+    "end_to_end_validated": false,
+    "effect_ack_done": false
+  },
+  "non_implications": [
+    "DOCUMENT_BYTE_IDENTITY_VERIFIED does not imply IMPLEMENTATION_VERIFIED",
+    "REQUIREMENTS_CARRIER_PRESENT does not imply ACCEPTANCE_TESTS_EXECUTED",
+    "SCHEMA_OR_SEMANTIC_VALIDATION_PASS does not imply ACCEPTANCE_STATUS_PASS",
+    "ACCEPTANCE_TESTS_EXECUTED does not imply END_TO_END_VALIDATED",
+    "END_TO_END_VALIDATED does not imply EFFECT_ACK_DONE"
+  ],
+  "required_transition_order": [
+    "VERIFIED_REQUIREMENTS_CARRIER",
+    "BIND_EXECUTABLE_ASSERTIONS",
+    "IMPLEMENTATION_VERIFIED",
+    "FRESH_ACCEPTANCE_TESTS_EXECUTED",
+    "EVALUATE_RESULTS_AGAINST_SAME_REQUIREMENTS_STATE",
+    "END_TO_END_VALIDATED",
+    "FRESH_TARGET_EFFECT_READBACK",
+    "EFFECT_ACK_DONE"
+  ],
+  "current_halt_point": "REQUIREMENTS_CARRIER_PRESENT",
+  "provenance_rule": "This receipt establishes byte identity and requirements-carrier presence only. It MUST NOT be used as evidence for implementation, acceptance, end-to-end validation, or effect acknowledgment."
+}
