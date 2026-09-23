@@ -1,0 +1,485 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: Publish QIK scientific revision to Zenodo
+
+on:
+  push:
+    branches:
+      - publication/qik-scientific-revision-zenodo-20260923
+    paths:
+      - .github/workflows/qikvrt_qik_scientific_revision_zenodo_publish.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qik-scientific-revision-zenodo-20260923
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    environment: zenodo-production
+    env:
+      EXPECTED_BRANCH: publication/qik-scientific-revision-zenodo-20260923
+      SOURCE_HEAD: a87afa44a324968523ac0fd4524307302ed2567f
+      SOURCE_TREE: a56e80f5952c0cf5a59e929aa0bba732771dc174
+      MIRROR_MAIN: 6c9e1082b9835dcb90cb432dd4de17dfb9a1f4a1
+      PUBLICATION_ROOT: docs/publications/2026-09-23-qik-scientific-revision
+      EXPECTED_ARCHIVE_SHA256: a83d7b10db2065735ac033d39092f13d8f38ab311d6e1a3080236e473b51f02a
+      EXPECTED_ARTICLE_SHA256: 1c70cbe19edd5a34dc764ad6527cf14761b78b85bc4a157d8aed3f5853b8a020
+      EXPECTED_REPORT_SHA256: e4be998ce2ef43f0575fa91b2974d72325f8bf820a72410cfbf697e38fc03bb1
+      ARTICLE_NAME: QIK_Publikationsfassung_revidiert.docx
+      REPORT_NAME: QIK_Wissenschaftlicher_Revisionsbericht.docx
+      RECEIPT_PATH: docs/publications/2026-09-23-qik-scientific-revision/ZENODO_RECEIPT.json
+      ZENODO_API_BASE: https://zenodo.org/api
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONNOUSERSITE: '1'
+
+    steps:
+      - name: Check out exact publication controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify one-shot controller and settled repository nodes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = push
+          test "$GITHUB_REPOSITORY" = Goldkelch/qik-vrt
+          test "$GITHUB_REF" = "refs/heads/$EXPECTED_BRANCH"
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
+          test "$(git show -s --format=%P HEAD)" = "$SOURCE_HEAD"
+          test "$(git rev-parse "$SOURCE_HEAD^{tree}")" = "$SOURCE_TREE"
+
+          remote_branch="$(git ls-remote --heads origin "refs/heads/$EXPECTED_BRANCH" | awk 'NR == 1 {print $1}')"
+          remote_main="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 {print $1}')"
+          mirror_main="$(git ls-remote --heads https://github.com/ingolf-lohmann/qik-vrt.git refs/heads/main | awk 'NR == 1 {print $1}')"
+          test "$remote_branch" = "$GITHUB_SHA"
+          test "$remote_main" = "$SOURCE_HEAD"
+          test "$mirror_main" = "$MIRROR_MAIN"
+
+          expected_delta=$'.github/workflows/qikvrt_qik_scientific_revision_zenodo_publish.yml'
+          observed_delta="$(git diff --name-only "$SOURCE_HEAD" "$GITHUB_SHA" --)"
+          test "$observed_delta" = "$expected_delta"
+
+          python3 -B - <<'PY'
+          import json, os
+          from pathlib import Path
+          event=json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
+          if event.get("forced") is not False:
+              raise SystemExit("BLOCK: controller push was forced")
+          if event.get("before") != os.environ["SOURCE_HEAD"]:
+              raise SystemExit("BLOCK: controller parent differs from settled Authority main")
+          if event.get("after") != os.environ["GITHUB_SHA"]:
+              raise SystemExit("BLOCK: controller after SHA differs")
+          PY
+
+      - name: Prepare exact settled Authority source
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/qik-scientific-revision-source"
+          git worktree add --detach "$target" "$SOURCE_HEAD"
+          test "$(git -C "$target" rev-parse HEAD)" = "$SOURCE_HEAD"
+          test "$(git -C "$target" rev-parse HEAD^{tree})" = "$SOURCE_TREE"
+          python3 -B "$target/tools/qikvrt_integrity.py" verify
+          printf 'path=%s\n' "$target" >> "$GITHUB_OUTPUT"
+
+      - name: Reconstruct and verify exact publication bytes
+        id: exact
+        shell: bash
+        env:
+          TARGET: ${{ steps.source.outputs.path }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/qik-scientific-revision-upload"
+          mkdir -p "$out"
+          cat "$TARGET/$PUBLICATION_ROOT"/archive/QIK_scientific_revision_exact_artifacts.zip.b64.part-* |
+            base64 -d > "$out/QIK_scientific_revision_exact_artifacts.zip"
+          test "$(sha256sum "$out/QIK_scientific_revision_exact_artifacts.zip" | awk '{print $1}')" = "$EXPECTED_ARCHIVE_SHA256"
+
+          unzip -q "$out/QIK_scientific_revision_exact_artifacts.zip" -d "$out/exact"
+          mapfile -t names < <(cd "$out/exact" && find . -maxdepth 1 -type f -printf '%f\n' | sort)
+          expected_names="$(printf '%s\n' "$ARTICLE_NAME" "$REPORT_NAME" | sort)"
+          observed_names="$(printf '%s\n' "${names[@]}")"
+          test "$observed_names" = "$expected_names"
+
+          test "$(sha256sum "$out/exact/$ARTICLE_NAME" | awk '{print $1}')" = "$EXPECTED_ARTICLE_SHA256"
+          test "$(sha256sum "$out/exact/$REPORT_NAME" | awk '{print $1}')" = "$EXPECTED_REPORT_SHA256"
+
+          cp "$TARGET/$PUBLICATION_ROOT/README.md" "$out/README.md"
+          cp "$TARGET/$PUBLICATION_ROOT/PROVENANCE.json" "$out/PROVENANCE.json"
+          cp "$TARGET/$PUBLICATION_ROOT/SHA256SUMS" "$out/SHA256SUMS"
+          cp "$TARGET/$PUBLICATION_ROOT/ZENODO_METADATA.json" "$out/ZENODO_METADATA.json"
+          cp "$TARGET/$PUBLICATION_ROOT/ZENODO_PUBLISH_REQUEST.json" "$out/ZENODO_PUBLISH_REQUEST.json"
+
+          printf 'path=%s\n' "$out" >> "$GITHUB_OUTPUT"
+
+      - name: Run exact-source repository gate immediately before effect
+        shell: bash
+        env:
+          TARGET: ${{ steps.source.outputs.path }}
+        run: |
+          set -euo pipefail
+          make -C "$TARGET" test
+          python3 -B "$TARGET/tools/qikvrt_integrity.py" verify
+          test -z "$(git -C "$TARGET" status --porcelain=v1 --untracked-files=all)"
+
+      - name: Build fail-closed Zenodo effect metadata
+        shell: bash
+        env:
+          OUT: ${{ steps.exact.outputs.path }}
+          TARGET: ${{ steps.source.outputs.path }}
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json, os
+          from pathlib import Path
+          root=Path(os.environ["TARGET"]) / os.environ["PUBLICATION_ROOT"]
+          out=Path(os.environ["OUT"])
+          source=json.loads((root/"ZENODO_METADATA.json").read_text(encoding="utf-8"))
+          if source.get("rights",{}).get("status") != "not_assigned_in_this_revision_task":
+              raise SystemExit("BLOCK: rights status changed")
+          metadata={
+              "title": source["title"],
+              "upload_type": "publication",
+              "publication_type": "workingpaper",
+              "publication_date": source["publication_date"],
+              "creators": source["creators"],
+              "description": source["description"],
+              "version": "2026-09-23-qik-scientific-revision",
+              "access_right": "open",
+              "license": "other-open",
+              "language": source["language"],
+              "keywords": source["keywords"],
+              "notes": (
+                  source["notes"]
+                  + " Zenodo vocabulary value 'other-open' is used to represent an "
+                    "open-access record without inferring or granting a standardized "
+                    "license in this revision task; rights remain as stated in the "
+                    "repository provenance."
+              ),
+          }
+          (out/"ZENODO_EFFECT_METADATA.json").write_text(
+              json.dumps(metadata, ensure_ascii=False, indent=2, sort_keys=True)+"\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Recheck immutable Authority and Mirror heads before live effect
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          remote_branch="$(git ls-remote --heads origin "refs/heads/$EXPECTED_BRANCH" | awk 'NR == 1 {print $1}')"
+          remote_main="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 {print $1}')"
+          mirror_main="$(git ls-remote --heads https://github.com/ingolf-lohmann/qik-vrt.git refs/heads/main | awk 'NR == 1 {print $1}')"
+          test "$remote_branch" = "$GITHUB_SHA"
+          test "$remote_main" = "$SOURCE_HEAD"
+          test "$mirror_main" = "$MIRROR_MAIN"
+
+      - name: Publish exact artifact set and verify anonymous public readback
+        id: zenodo
+        shell: bash
+        env:
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+          OUT: ${{ steps.exact.outputs.path }}
+          TARGET: ${{ steps.source.outputs.path }}
+        run: |
+          set -euo pipefail
+          test -n "${ZENODO_ACCESS_TOKEN:-}"
+          python3 -B - <<'PY'
+          import hashlib, json, os, time, urllib.parse, urllib.request
+          from pathlib import Path
+
+          api=os.environ["ZENODO_API_BASE"].rstrip("/")
+          token=os.environ["ZENODO_ACCESS_TOKEN"]
+          out=Path(os.environ["OUT"])
+          target=Path(os.environ["TARGET"])
+          pubroot=target/os.environ["PUBLICATION_ROOT"]
+          metadata=json.loads((out/"ZENODO_EFFECT_METADATA.json").read_text(encoding="utf-8"))
+          expected={
+              os.environ["ARTICLE_NAME"]: os.environ["EXPECTED_ARTICLE_SHA256"],
+              os.environ["REPORT_NAME"]: os.environ["EXPECTED_REPORT_SHA256"],
+          }
+
+          def req(method,url,data=None,auth=True,content_type="application/json"):
+              headers={"User-Agent":"qikvrt-qik-scientific-revision-zenodo/1"}
+              if auth:
+                  headers["Authorization"]=f"Bearer {token}"
+              if data is not None:
+                  headers["Content-Type"]=content_type
+              request=urllib.request.Request(url,data=data,headers=headers,method=method)
+              with urllib.request.urlopen(request,timeout=120) as response:
+                  raw=response.read()
+                  ctype=response.headers.get("Content-Type","")
+                  if "json" in ctype:
+                      return json.loads(raw.decode("utf-8"))
+                  return raw
+
+          # Idempotence: reuse an exact already-published record if a prior attempt
+          # reached Zenodo but repository receipt persistence was interrupted.
+          matches=[]
+          for page in range(1,11):
+              url=f"{api}/deposit/depositions?status=published&size=100&page={page}"
+              values=req("GET",url)
+              if not isinstance(values,list) or not values:
+                  break
+              for value in values:
+                  md=value.get("metadata") or {}
+                  if md.get("title")==metadata["title"] and md.get("version")==metadata["version"]:
+                      matches.append(value)
+              if len(values)<100:
+                  break
+          if len(matches)>1:
+              raise SystemExit("BLOCK: multiple matching published Zenodo records")
+          uploads=[]
+          if matches:
+              published=matches[0]
+              record_id=published.get("record_id") or published.get("id")
+              doi=published.get("doi") or (published.get("metadata") or {}).get("doi")
+              conceptdoi=published.get("conceptdoi")
+          else:
+              deposition=req("POST",f"{api}/deposit/depositions",b"{}")
+              dep_id=deposition["id"]
+              try:
+                  deposition=req(
+                      "PUT",f"{api}/deposit/depositions/{dep_id}",
+                      json.dumps({"metadata":metadata},ensure_ascii=False,sort_keys=True).encode("utf-8")
+                  )
+                  bucket=deposition["links"]["bucket"]
+                  files=[
+                      (os.environ["ARTICLE_NAME"], out/"exact"/os.environ["ARTICLE_NAME"]),
+                      (os.environ["REPORT_NAME"], out/"exact"/os.environ["REPORT_NAME"]),
+                      ("README.md",out/"README.md"),
+                      ("PROVENANCE.json",out/"PROVENANCE.json"),
+                      ("SHA256SUMS",out/"SHA256SUMS"),
+                      ("ZENODO_METADATA.json",out/"ZENODO_METADATA.json"),
+                      ("ZENODO_PUBLISH_REQUEST.json",out/"ZENODO_PUBLISH_REQUEST.json"),
+                      ("ZENODO_EFFECT_METADATA.json",out/"ZENODO_EFFECT_METADATA.json"),
+                  ]
+                  for name,path in files:
+                      payload=path.read_bytes()
+                      uploaded=req(
+                          "PUT",f"{bucket}/{urllib.parse.quote(name)}",
+                          payload,content_type="application/octet-stream"
+                      )
+                      uploads.append({
+                          "name":name,
+                          "bytes":len(payload),
+                          "sha256":hashlib.sha256(payload).hexdigest(),
+                          "zenodo":uploaded,
+                      })
+                  published=req("POST",f"{api}/deposit/depositions/{dep_id}/actions/publish",b"{}")
+                  record_id=published.get("record_id") or published.get("id")
+                  doi=published.get("doi") or (published.get("metadata") or {}).get("doi")
+                  conceptdoi=published.get("conceptdoi")
+              except Exception:
+                  # A failed metadata/upload stage must not leave an accidental draft
+                  # when the record has not been published.
+                  try:
+                      req("DELETE",f"{api}/deposit/depositions/{dep_id}",None)
+                  except Exception:
+                      pass
+                  raise
+
+          if not record_id or not doi:
+              raise SystemExit("BLOCK: Zenodo publish did not return record id and DOI")
+
+          record=None
+          for _ in range(12):
+              try:
+                  record=req("GET",f"{api}/records/{record_id}",auth=False)
+                  break
+              except Exception:
+                  time.sleep(5)
+          if not isinstance(record,dict):
+              raise SystemExit("BLOCK: public record readback unavailable")
+          public_files={}
+          for item in record.get("files") or []:
+              key=item.get("key") or item.get("filename")
+              if key:
+                  public_files[key]=item
+
+          verified=[]
+          for name,expected_sha in expected.items():
+              item=public_files.get(name)
+              if not item:
+                  raise SystemExit(f"BLOCK: public record missing exact artifact {name}")
+              links=item.get("links") or {}
+              url=links.get("self") or links.get("download")
+              if not url:
+                  raise SystemExit(f"BLOCK: public record has no file URL for {name}")
+              payload=req("GET",url,auth=False)
+              if not isinstance(payload,(bytes,bytearray)):
+                  raise SystemExit(f"BLOCK: public download was not bytes for {name}")
+              observed=hashlib.sha256(payload).hexdigest()
+              if observed != expected_sha:
+                  raise SystemExit(f"BLOCK: public SHA-256 mismatch for {name}")
+              verified.append({
+                  "name":name,
+                  "bytes":len(payload),
+                  "sha256_expected":expected_sha,
+                  "sha256_observed":observed,
+                  "public_url":url,
+                  "verified":True,
+              })
+
+          receipt={
+              "schema":"qikvrt_qik_scientific_revision_zenodo_receipt_v1",
+              "state":"published_public_readback_verified",
+              "publication_id":"2026-09-23-qik-scientific-revision",
+              "repository":"Goldkelch/qik-vrt",
+              "source_authority_main":os.environ["SOURCE_HEAD"],
+              "source_authority_tree":os.environ["SOURCE_TREE"],
+              "source_mirror_main":os.environ["MIRROR_MAIN"],
+              "record_id":record_id,
+              "doi":doi,
+              "conceptdoi":conceptdoi,
+              "doi_url":f"https://doi.org/{doi}",
+              "record_url":f"https://zenodo.org/records/{record_id}",
+              "metadata":metadata,
+              "public_readback":{
+                  "verified":True,
+                  "files":verified,
+              },
+              "uploaded_files":uploads,
+              "scientific_boundaries":{
+                  "peer_reviewed":False,
+                  "independent_empirical_confirmation":False,
+                  "scientific_consensus":False,
+                  "completed_quantum_gravity":False,
+                  "fundamental_discreteness_proven":False,
+                  "zenodo_persistence_is_not_scientific_confirmation":True,
+              },
+              "EFFECT_ACK_DONE":True,
+              "effect_scope":"exact Zenodo persistence and anonymous public byte readback of the two bound DOCX artifacts",
+          }
+          receipt_path=target/os.environ["RECEIPT_PATH"]
+          receipt_path.write_text(
+              json.dumps(receipt,ensure_ascii=False,indent=2,sort_keys=True)+"\n",
+              encoding="utf-8"
+          )
+          print(f"ZENODO_RECORD_ID={record_id}")
+          print(f"ZENODO_DOI={doi}")
+          print("ZENODO_PUBLIC_READBACK=VERIFIED")
+          PY
+          doi="$(python3 -c 'import json,os;print(json.load(open(os.path.join(os.environ["TARGET"],os.environ["RECEIPT_PATH"])))["doi"])')"
+          record_id="$(python3 -c 'import json,os;print(json.load(open(os.path.join(os.environ["TARGET"],os.environ["RECEIPT_PATH"])))["record_id"])')"
+          printf 'doi=%s\n' "$doi" >> "$GITHUB_OUTPUT"
+          printf 'record_id=%s\n' "$record_id" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare repository receipt successor and updated publication indexes
+        id: receipt
+        shell: bash
+        env:
+          TARGET: ${{ steps.source.outputs.path }}
+          DOI: ${{ steps.zenodo.outputs.doi }}
+          RECORD_ID: ${{ steps.zenodo.outputs.record_id }}
+        run: |
+          set -euo pipefail
+          cd "$TARGET"
+          branch="receipt/qik-scientific-revision-zenodo-${GITHUB_RUN_ID}"
+          git switch -c "$branch"
+          python3 -B - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          root=Path.cwd()
+          doi=os.environ["DOI"]
+          record_id=int(os.environ["RECORD_ID"])
+          receipt=json.loads((root/os.environ["RECEIPT_PATH"]).read_text(encoding="utf-8"))
+
+          idx_path=root/"docs/publications/index.json"
+          idx=json.loads(idx_path.read_text(encoding="utf-8"))
+          found=False
+          for item in idx.get("publication_bundles",[]):
+              if item.get("id")=="2026-09-23-qik-scientific-revision":
+                  item.update({
+                      "state":"repository_and_zenodo_published",
+                      "repository_commit":os.environ["SOURCE_HEAD"],
+                      "doi":doi,
+                      "doi_url":f"https://doi.org/{doi}",
+                      "zenodo_record_id":record_id,
+                      "receipt_path":os.environ["RECEIPT_PATH"],
+                  })
+                  found=True
+                  break
+          if not found:
+              raise SystemExit("BLOCK: publication index entry missing")
+
+          zenodo_id="qik-scientific-revision-20260923"
+          if not any(x.get("id")==zenodo_id for x in idx.get("zenodo_records",[])):
+              idx.setdefault("zenodo_records",[]).append({
+                  "id":zenodo_id,
+                  "title":receipt["metadata"]["title"],
+                  "version":receipt["metadata"]["version"],
+                  "record_id":record_id,
+                  "doi":doi,
+                  "doi_url":f"https://doi.org/{doi}",
+                  "concept_doi":receipt.get("conceptdoi"),
+                  "receipt_path":os.environ["RECEIPT_PATH"],
+                  "repository_commit":os.environ["SOURCE_HEAD"],
+                  "file_count":len(receipt["public_readback"]["files"]),
+                  "state":"published_receipt",
+              })
+          idx_path.write_text(json.dumps(idx,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+
+          html_path=root/"docs/publications/index.html"
+          html=html_path.read_text(encoding="utf-8")
+          if doi not in html:
+              start=html.index('<section class="section" id="zenodo">')
+              end=html.index('<section class="section" id="ietf">',start)
+              pos=html.rfind('      </div>',start,end)
+              if pos<0:
+                  raise SystemExit("BLOCK: Zenodo record-grid insertion point missing")
+              card=(
+                  f'        <a class="record-card featured-record" href="https://doi.org/{doi}">'
+                  '<span class="record-type">Working Paper · wissenschaftliche Revision</span>'
+                  '<strong>Quantität–Information–Kausalität (QIK): operationales Rahmenmodell</strong>'
+                  f'<code>{doi}</code></a>\n'
+              )
+              html=html[:pos]+card+html[pos:]
+              html_path.write_text(html,encoding="utf-8")
+          PY
+
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+
+          git config user.name 'qik-vrt-zenodo-publication[bot]'
+          git config user.email 'qik-vrt-zenodo-publication[bot]@users.noreply.github.com'
+          git add --             "$RECEIPT_PATH"             docs/publications/index.json             docs/publications/index.html             REPOSITORY_FILE_MANIFEST.json             REPOSITORY_FILE_MANIFEST.json.sha256             SHA256SUMS.txt
+          git diff --cached --check
+          test -n "$(git diff --cached --name-only)"
+          git commit -m "zenodo: persist QIK scientific revision publication receipt"
+
+          remote_main="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 {print $1}')"
+          test "$remote_main" = "$SOURCE_HEAD"
+          git push origin "HEAD:refs/heads/$branch"
+          printf 'branch=%s\n' "$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Preserve exact Zenodo receipt as workflow artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qik-scientific-revision-zenodo-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.source.outputs.path }}/${{ env.RECEIPT_PATH }}
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Report effect and receipt branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "ZENODO_DOI=${{ steps.zenodo.outputs.doi }}"
+          echo "ZENODO_RECORD_ID=${{ steps.zenodo.outputs.record_id }}"
+          echo "RECEIPT_BRANCH=${{ steps.receipt.outputs.branch }}"
