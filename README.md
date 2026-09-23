@@ -28,6 +28,25 @@ or `EFFECT_ACK_DONE`.
 
 <!-- /qikvrt-machine-verifiable-science-charter-binding:v1 -->
 
+<!-- qikvrt-unicode-data-exchange-standard:v1 -->
+## Standard-Datenaustauschformat: Unicode
+
+QIK-VRT verwendet für rendererunabhängige textuelle und formale Interoperabilität
+das normative Profil [QIKVRT-UTF8-UNICODE-EXCHANGE-V1](docs/standards/QIKVRT_UNICODE_DATA_EXCHANGE_V1.md):
+UTF-8, NFC, LF und direkte Unicode-Operatoren ohne erforderlichen LaTeX-Renderer.
+Die maschinenlesbare Policy liegt unter
+[`policy/QIKVRT_UNICODE_DATA_EXCHANGE_V1.json`](policy/QIKVRT_UNICODE_DATA_EXCHANGE_V1.json);
+die Mesh-Adoption unter
+[`state/mesh/QIKVRT_UNICODE_DATA_EXCHANGE_ADOPTION_V1.json`](state/mesh/QIKVRT_UNICODE_DATA_EXCHANGE_ADOPTION_V1.json).
+
+Das Profil ersetzt keine bestehenden JSON-/Binär-/Kryptographie-Wire-Formate.
+Für konforme Nodes gilt insbesondere:
+`STABLE ∧ NOT_DONE ⇒ SEARCH_FOR_MISSING_TRANSITION`.
+Ein existierender externer Node gilt erst nach Successor-Ingestion und frischem
+Readback als aktualisiert.
+
+<!-- /qikvrt-unicode-data-exchange-standard:v1 -->
+
 <!-- qikvrt-self-declaration:v1 -->
 ## Selbsterklärung für natürliche und künstliche kognitive Systeme
 
