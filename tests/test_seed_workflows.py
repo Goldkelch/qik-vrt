@@ -133,6 +133,14 @@ class SeedWorkflowTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
+        repository_root = Path(__file__).resolve().parents[1]
+        # Copy the charter contract into the synthetic repository because
+        # run_maintenance validates the repository-local policy/charter pair.
+        for relative in (MESH_CHARTER_PATH, MESH_CHARTER_POLICY_PATH):
+            source = repository_root / relative
+            target = self.root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(source.read_bytes())
         (self.root / "registry/node_request_queue").mkdir(parents=True)
         (self.root / "registry/KNOWN_NODE_REQUESTS.tsv").write_text(
             "# guid\tsource_repo\tseed_repo\trequest_url\tnode_branch\theartbeat_ttl_minutes\tlifecycle_policy\n"
