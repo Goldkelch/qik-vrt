@@ -9,6 +9,32 @@ published 2026-08-02 with intended status Experimental. It remains an
 individual Internet-Draft, not an RFC, not an IETF standard, and not IETF
 consensus.
 
+## Delta assessment against revision -03
+
+Revision -03 already establishes several boundaries that this planning note must
+not present as new protocol inventions:
+
+- an evidence digest identifies content but is not evidence validation;
+- policy-defined evidence validators are required for DONE;
+- absence, retrieval failure, digest mismatch, or validator failure prevent
+  DONE;
+- typed claims may remain external evidence-profile objects without changing
+  the closed version-1 wire record;
+- security considerations already include evidence omission, digest confusion,
+  stale-DONE replay, and downgrade to weaker semantics.
+
+Therefore a revision -04 MUST NOT be submitted merely to repeat the
+requirements-carrier observation in different words. A -04 is justified only
+if it adds a real normative protocol delta, for example a standardized
+machine-checkable evidence-scope relation or a backward-compatible extension
+mechanism that is not already expressible through the policy descriptor and
+its validator.
+
+If no such normative delta survives conformance review, the 25,361-byte
+requirements carrier and its negative completion state should instead become a
+machine-readable conformance vector/profile, while broad deployment mappings
+belong in a separate applicability/profile Internet-Draft.
+
 ## Candidate revision -04: narrow protocol delta
 
 A revision `draft-lohmann-qikvrt-effect-ack-04` should be prepared only if it
