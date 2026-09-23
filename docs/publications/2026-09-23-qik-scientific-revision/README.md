@@ -7,11 +7,17 @@ Dieses Bündel persistiert die wissenschaftliche Gesamtrevision des Ausgangsdoku
 
 ## Primärartefakte
 
-- `QIK_Publikationsfassung_revidiert.docx` — wissenschaftlich revidierte Fachfassung: *Quantität–Information–Kausalität (QIK): Ein operationales Rahmenmodell für Ereignisstruktur, Kausalordnung und emergente Raumzeit*.
-- `QIK_Wissenschaftlicher_Revisionsbericht.docx` — Gesamtrevision, logische und physikalische Konsistenzprüfung, Redundanzanalyse und Formalisierung.
-- `SHA256SUMS` — Bytebindung der beiden Primärartefakte.
+- `QIK_Publikationsfassung_revidiert.md` — diff-freundliche Repository-Fassung des wissenschaftlich revidierten Fachartikels.
+- `QIK_Wissenschaftlicher_Revisionsbericht.md` — diff-freundliche Repository-Fassung des Revisionsberichts.
+- `archive/QIK_scientific_revision_exact_artifacts.zip.b64.part-*` — transportkodiertes, exakt rekonstruierbares ZIP mit den beiden identitätsführenden DOCX-Dateien.
+- `ARCHIVE_RECONSTRUCT.md` und `ARCHIVE_SHA256SUMS` — Rekonstruktionsanweisung und SHA-256-Bindung des ZIP-Archivs.
+- `SHA256SUMS` — SHA-256-Bindung der beiden extrahierten DOCX-Primärartefakte.
 - `PROVENANCE.json` — Quellen-, Beitrags- und Evidenzgrenzen.
-- `ZENODO_METADATA.json` — für eine Zenodo-Deposition vorbereitete Metadaten; eine lokale Datei ist kein Publikationsbeleg.
+- `ZENODO_METADATA.json` und `ZENODO_PUBLISH_REQUEST.json` — Zenodo-Metadaten und explizit autorisierter Publikationsauftrag; erst ein Live-Record/DOI mit öffentlichem Hash-Readback ist Publikationsbeleg.
+
+## Exakte Byte-Bindung
+
+`QIK_scientific_revision_exact_artifacts.zip` muss nach Rekonstruktion SHA-256 `a83d7b10db2065735ac033d39092f13d8f38ab311d6e1a3080236e473b51f02a` ergeben. Anschließend bindet `SHA256SUMS` die beiden DOCX-Dateien an ihre jeweiligen Digests. Repository- oder Workflow-Erfolg ersetzt keinen öffentlichen Zenodo-Readback.
 
 ## Wissenschaftliche Statusgrenze
 
