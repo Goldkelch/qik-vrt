@@ -13,7 +13,7 @@ on:
       - reopened
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: qikvrt-pr-integrity-projection-${{ github.event.pull_request.number || github.ref_name }}
@@ -29,7 +29,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 2
-          persist-credentials: false
+          persist-credentials: true
       - name: Bind exact subject
         shell: bash
         env:
@@ -54,3 +54,40 @@ jobs:
             SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 7
+
+      - name: Persist exact projection on same-repository PR head
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        shell: bash
+        env:
+          TARGET_REF: ${{ github.event.pull_request.head.ref }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          if [ "$remote_head" != "$EXPECTED_HEAD" ]; then
+            echo "BLOCK: PR head advanced before integrity persistence" >&2
+            echo "expected_head=$EXPECTED_HEAD" >&2
+            echo "remote_head=$remote_head" >&2
+            exit 2
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          if git diff --cached --quiet; then
+            echo "Integrity projection is already current."
+            exit 0
+          fi
+          git commit -m "ci: persist deterministic PR integrity projection"
+          remote_head_after_commit="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          if [ "$remote_head_after_commit" != "$EXPECTED_HEAD" ]; then
+            echo "BLOCK: PR head advanced during integrity persistence" >&2
+            exit 2
+          fi
+          git push origin "HEAD:refs/heads/$TARGET_REF"
