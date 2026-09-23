@@ -7,7 +7,6 @@ import pathlib
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-AI_PATH = ROOT / "AI"
 CONTEXT_PATH = ROOT / "AI_CONTEXT.json"
 CONTRACT_PATH = ROOT / "docs/AI_PERSONAL_WORKING_MEMORY_ORIGIN_AND_ATTRIBUTION.md"
 POLICY_PATH = ROOT / "policy/AI_PERSONAL_WORKING_MEMORY_ORIGIN_AND_ATTRIBUTION_V1.json"
@@ -23,7 +22,6 @@ def load_json(path: pathlib.Path) -> dict[str, object]:
 class PersonalWorkingMemoryOriginAndAttributionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.ai = AI_PATH.read_text(encoding="utf-8")
         cls.context = load_json(CONTEXT_PATH)
         cls.contract = CONTRACT_PATH.read_text(encoding="utf-8")
         cls.policy = load_json(POLICY_PATH)
@@ -52,8 +50,6 @@ class PersonalWorkingMemoryOriginAndAttributionTests(unittest.TestCase):
     def test_canonical_ai_entrypoint_and_required_read_order_bind_contract(self) -> None:
         human_contract = self.policy["human_contract"]
         machine_policy = "policy/AI_PERSONAL_WORKING_MEMORY_ORIGIN_AND_ATTRIBUTION_V1.json"
-        self.assertIn(human_contract, self.ai)
-        self.assertIn(machine_policy, self.ai)
         read_order = self.context["required_read_order"]
         self.assertIn(human_contract, read_order)
         self.assertIn(machine_policy, read_order)

@@ -5,14 +5,12 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-AI = ROOT / "AI"
 DELEGATION = ROOT / "state/authorization/delegations/OWNER_AI_ENTRYPOINT_CONTINUOUS_OPTIMIZATION_V1.json"
 
 
 class TestAIEntrypointContinuousOptimization(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.ai = AI.read_text(encoding="utf-8")
         cls.delegation = json.loads(DELEGATION.read_text(encoding="utf-8"))
 
     def test_delegation_is_active_and_product_owner_bound(self) -> None:
@@ -31,10 +29,17 @@ class TestAIEntrypointContinuousOptimization(unittest.TestCase):
         self.assertIn("conforming AI client", trigger["conforming_ai_client_rule"])
 
     def test_each_conforming_bootstrap_runs_one_bounded_pass(self) -> None:
-        self.assertIn("Every conforming artificial-cognitive client", self.ai)
-        self.assertIn("one bounded repository-internal optimization pass", self.ai)
-        self.assertIn("qikvrt_autonomous_pre_effect_controller.py check", self.ai)
-        self.assertIn("qikvrt_autonomous_pre_effect_controller.py apply", self.ai)
+        trigger = self.delegation["trigger_semantics"]
+        policy = self.delegation["execution_policy"]
+        self.assertIn("one optimization pass", trigger["conforming_ai_client_rule"])
+        self.assertEqual(
+            policy["check_command"],
+            "python3 -B tools/qikvrt_autonomous_pre_effect_controller.py check",
+        )
+        self.assertEqual(
+            policy["apply_command"],
+            "python3 -B tools/qikvrt_autonomous_pre_effect_controller.py apply",
+        )
 
     def test_noop_and_review_isolation_are_mandatory(self) -> None:
         policy = self.delegation["execution_policy"]

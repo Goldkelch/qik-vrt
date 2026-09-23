@@ -11,7 +11,7 @@ from pathlib import Path
 import re
 
 ROOT = Path(__file__).resolve().parents[1]
-PATHS = ("README.md", "AI", "AGENTS.md", "next/README.md", "next/AI")
+PATHS = ("README.md", "AGENTS.md", "next/README.md", "next/AI")
 START = b"<!-- qikvrt-roundtrip-first:v1 -->\n"
 END = b"<!-- /qikvrt-roundtrip-first:v1 -->\n\n"
 DECLARATION_PATH = "docs/WENN_BEOBACHTUNG_ALS_HANDELN_AUSGEGEBEN_WIRD.md"

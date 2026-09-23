@@ -16,14 +16,22 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class AIRuntimeBootloaderContractTests(unittest.TestCase):
-    def test_root_entrypoint_names_executable_bootloader(self) -> None:
+    def test_root_entrypoint_forwards_to_runtime_context(self) -> None:
         entry = (ROOT / "AI").read_text(encoding="utf-8")
-        self.assertIn("QIK-VRT AI RUNTIME ENTRYPOINT", entry)
-        self.assertIn("python3 -B tools/ai_runtime_bootloader.py --profile all", entry)
-        self.assertIn("It performs no network access", entry)
-        self.assertIn(
-            "Installation, task execution, commits, merges, releases, and publication remain separate authorized effects",
+        context = json.loads((ROOT / "AI_CONTEXT.json").read_text(encoding="utf-8"))
+        self.assertEqual(
             entry,
+            "QIKVRT UNIVERSAL TERMINAL FORWARDER V1\n"
+            "PATTERN=QIKVRT_FIREFOX_TERMINAL_PROXY_V1\n"
+            "DOWNSTREAM=UNKNOWN\n",
+        )
+        self.assertEqual(
+            context["entrypoint_forwarding"]["pattern"],
+            "QIKVRT_FIREFOX_TERMINAL_PROXY_V1",
+        )
+        self.assertEqual(
+            context["runtime_bootloader"]["command"],
+            "python3 -B tools/ai_runtime_bootloader.py --profile all",
         )
 
     def test_context_binds_complete_runtime_lifecycle(self) -> None:
