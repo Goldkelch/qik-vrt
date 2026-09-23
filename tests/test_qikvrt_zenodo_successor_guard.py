@@ -128,22 +128,18 @@ class ZenodoSuccessorWorkflowContractTest(unittest.TestCase):
         self.assertIn('reason:"PROJECTION_SUCCESSOR"', workflow)
         self.assertIn("qikvrt_autonomous_exact_head_verify", workflow)
         self.assertIn("API rate limit exceeded for installation.", workflow)
-        self.assertIn("trusted-main scheduled recovery", workflow)
-        self.assertLess(
-            workflow.index('git push origin "HEAD:refs/heads/$TARGET_REF"'),
-            workflow.index('reason:"PROJECTION_SUCCESSOR"'),
-        )
 
-    def test_zero_job_fallback_watches_publication_closure(self):
-        workflow = self._read(".github/workflows/qikvrt_zero_job_self_dispatch.yml")
-        self.assertIn('"QIKVRT PR integrity projection"', workflow)
-        self.assertIn('"QIKVRT Zenodo successor closure guard"', workflow)
-
-    def test_global_reobserve_is_periodic_and_watches_publication_closure(self):
+    def test_generic_pr_head_continuation_remains_event_driven(self):
         workflow = self._read(".github/workflows/qikvrt_autonomous_pr_head_continuation.yml")
-        self.assertIn('cron: "*/5 * * * *"', workflow)
+        self.assertNotIn("schedule:", workflow)
         self.assertIn('"QIKVRT PR integrity projection"', workflow)
         self.assertIn('"QIKVRT Zenodo successor closure guard"', workflow)
+
+    def test_separate_trusted_main_recovery_is_periodic(self):
+        workflow = self._read(".github/workflows/qikvrt_publication_successor_recovery.yml")
+        self.assertIn('cron: "*/5 * * * *"', workflow)
+        self.assertIn("qikvrt_autonomous_exact_head_verify", workflow)
+        self.assertIn('reason:"PUBLICATION_SUCCESSOR_SCHEDULED_RECOVERY"', workflow)
 
     def test_publication_receipt_successor_is_reverified(self):
         workflow = self._read(".github/workflows/qikvrt_zenodo_successor_publish.yml")

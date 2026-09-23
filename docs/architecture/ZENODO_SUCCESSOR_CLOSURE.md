@@ -65,8 +65,6 @@ for the dispatch effect. A bounded 0/15/45-second backoff handles transient
 installation quota exhaustion. Exhausting that bound is a non-terminal
 `HOLD/D0=1`, not an accepted successor and not a workflow-completion claim.
 
-Trusted-main PR-head continuation is also scheduled every five minutes. It
-reobserves exact open PR heads and can re-expose the D0=2 verification edge
-after GitHub's installation quota becomes available again. Thus temporary API
+A separate trusted-main publication-successor recovery workflow is scheduled every five minutes. It reobserves exact open PR heads and can re-expose the D0=2 verification edge after GitHub's installation quota becomes available again. The generic PR-head continuation remains event-driven. Thus temporary API
 quota exhaustion cannot convert a persisted bot successor into a silent
 terminal state.
