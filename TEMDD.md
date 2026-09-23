@@ -17,3 +17,28 @@ Canonical Product-Owner declaration:
 Runtime completion remains evidence-bound:
 
 `COMPILE → BIND → RESOLVE → EXECUTE → TEST → OBSERVE → READBACK → ACCEPT → EFFECT_ACK_DONE`
+
+## Atomare Haltebedingung
+
+Die Laufzeitkette ist keine inkrementell abschließbare Checkliste. Der
+terminale Zustand wird als **ein Akzeptanzurteil über genau einen gebundenen
+tatsächlichen Successor** ausgewertet:
+
+```text
+HALT_TEMDD
+⇔ EFFECT_ACK_DONE(actual_successor, fresh_independent_readback, acceptance_scope)
+```
+
+`atomic` bezeichnet die Unteilbarkeit dieses Urteils, nicht ACID-, Speicher-
+oder CPU-Atomarität. Einzelne erfolgreiche Tests, Workflows, Transporte oder
+Artefakterzeugungen sind keine Ersatzbeweise. Ist die Konjunktion nicht
+erfüllt, wird der bindbare tatsächliche Folgezustand zum nächsten Subject;
+andernfalls gilt fail-closed BLOCK/ISOLATE.
+
+Ein öffentlicher Artefakt-Readback ist nur dann Teil der Konjunktion, wenn der
+konkrete Acceptance-Scope einen öffentlichen Artefaktzustand verlangt. Die
+Semantik löst nicht das allgemeine Halteproblem.
+
+Die vollständige Definition und wissenschaftliche Einordnung stehen in
+[der kanonischen TEMDD-Laufzeitspezifikation](spec/temdd/TEMDD_EXECUTABLE_LANGUAGE_RUNTIME_V1.md).
+
