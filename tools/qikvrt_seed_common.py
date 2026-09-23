@@ -45,6 +45,11 @@ BRANCH_RE = re.compile(r"[A-Za-z0-9._~/-]+\Z")
 RUN_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 POLICY_STATES = frozenset({"ACTIVE", "SUSPENDED", "REVOKED"})
 EFFECTIVE_STATES = frozenset({"ACTIVE", "STALE", "SUSPENDED", "REVOKED", "UNKNOWN"})
+MESH_RANKS = frozenset({"PEER", "SUBORDINATE", "NOT_APPLICABLE"})
+CHARTER_CONFORMANCE_STATES = frozenset({"FULL_CONFORMANT", "SUBORDINATE", "NOT_APPLICABLE"})
+MESH_CHARTER_PATH = "docs/CHARTA_MASCHINENPRUEFBARE_WISSENSCHAFT.md"
+MESH_CHARTER_POLICY_PATH = "policy/QIKVRT_MESH_CHARTER_CONFORMANCE_V1.json"
+MESH_CHARTER_POLICY_SCHEMA = "qikvrt_mesh_charter_conformance_v1"
 BOUNDARY_KEYS = (
     "no_global_scanning",
     "no_self_propagation",
@@ -687,6 +692,84 @@ def _raw_node_url(node: NodeRecord, filename: str) -> str:
     )
 
 
+def _raw_repository_url(node: NodeRecord, path: str) -> str:
+    branch = urllib.parse.quote(node.node_branch, safe="/-._~")
+    relative = path.lstrip("/")
+    if not relative or ".." in relative.split("/"):
+        raise SeedError("invalid repository-relative path")
+    return f"https://raw.githubusercontent.com/{node.source_repository}/{branch}/{relative}"
+
+
+def _load_local_charter_policy(root: Path) -> dict[str, Any]:
+    policy = read_json(root / MESH_CHARTER_POLICY_PATH, "local mesh charter policy")
+    _require_exact(policy, "schema", MESH_CHARTER_POLICY_SCHEMA, "local mesh charter policy")
+    actual_charter_sha256 = hashlib.sha256(
+        _read_bytes_limited(root / MESH_CHARTER_PATH)
+    ).hexdigest()
+    _require_exact(
+        policy,
+        "charter_sha256",
+        actual_charter_sha256,
+        "local mesh charter policy",
+    )
+    _require_exact(
+        policy,
+        "nonconformance_default_rank",
+        "SUBORDINATE",
+        "local mesh charter policy",
+    )
+    _require_exact(
+        policy,
+        "nonconformance_automatically_revokes_membership",
+        False,
+        "local mesh charter policy",
+    )
+    _require_exact(
+        policy,
+        "scientific_truth_is_not_determined_by_mesh_rank",
+        True,
+        "local mesh charter policy",
+    )
+    return policy
+
+
+def _validate_mesh_charter_conformance(
+    policy_document: Mapping[str, Any],
+    ai_context: Mapping[str, Any],
+    expected_policy: Mapping[str, Any],
+    node: NodeRecord,
+) -> None:
+    label = f"mesh charter conformance for {node.guid}"
+    for key in (
+        "schema",
+        "policy_id",
+        "charter_path",
+        "charter_sha256",
+        "required_read_order_paths",
+        "membership_and_rank_are_separate",
+        "ranks",
+        "nonconformance_default_rank",
+        "nonconformance_automatically_revokes_membership",
+        "promotion_rule",
+        "demotion_rule",
+        "predecessor_evidence_transfer",
+        "scientific_truth_is_not_determined_by_mesh_rank",
+        "revocation_or_suspension_requires_separate_policy_evidence",
+    ):
+        if key not in expected_policy:
+            raise SeedError(f"local mesh charter policy is missing {key}")
+        _require_exact(policy_document, key, expected_policy[key], label)
+
+    read_order = ai_context.get("required_read_order")
+    if not isinstance(read_order, list) or not all(
+        isinstance(item, str) and item for item in read_order
+    ):
+        raise SeedError(f"{label}: AI_CONTEXT required_read_order must be a string list")
+    for path in expected_policy["required_read_order_paths"]:
+        if path not in read_order:
+            raise SeedError(f"{label}: required_read_order does not include {path}")
+
+
 def _validate_health(document: Mapping[str, Any], node: NodeRecord, now: dt.datetime) -> tuple[str, str, str]:
     label = f"health record for {node.guid}"
     _require_exact(document, "qikvrt_event", "NODE_HEALTH_HEARTBEAT", label)
@@ -769,6 +852,7 @@ def run_maintenance(
     now = now or _utc_now()
     run_id, utc = _run_metadata(run_id, now)
     nodes, policies = load_nodes(root, seed_repository)
+    charter_policy = _load_local_charter_policy(root)
     index_nodes: list[dict[str, Any]] = []
     status_nodes: list[dict[str, Any]] = []
     error_count = 0
@@ -788,10 +872,17 @@ def run_maintenance(
             "health_sha256": None,
             "ack_sha256": None,
             "renewal_sha256": None,
+            "charter_policy_sha256": None,
+            "ai_context_sha256": None,
         }
         health_url = _raw_node_url(node, "NODE_HEALTH.json")
         ack_url = _raw_node_url(node, "SEED_ACCEPTANCE_STATUS.json")
         renewal_url = _raw_node_url(node, "NODE_REGISTRATION_RENEWAL.json")
+        charter_policy_url = _raw_repository_url(node, MESH_CHARTER_POLICY_PATH)
+        ai_context_url = _raw_repository_url(node, "AI_CONTEXT.json")
+        mesh_rank = "NOT_APPLICABLE"
+        charter_conformance_status = "NOT_APPLICABLE"
+        charter_conformance_findings: list[str] = []
         if policy.status == "ACTIVE" and registry_status == "ACCEPTED":
             try:
                 health = fetch(health_url)
@@ -815,6 +906,24 @@ def run_maintenance(
             except SeedError as exc:
                 errors.append({"source": "renewal", "error": str(exc)})
 
+            mesh_rank = "SUBORDINATE"
+            charter_conformance_status = "SUBORDINATE"
+            try:
+                remote_charter_policy = fetch(charter_policy_url)
+                remote_ai_context = fetch(ai_context_url)
+                _validate_mesh_charter_conformance(
+                    remote_charter_policy.value,
+                    remote_ai_context.value,
+                    charter_policy,
+                    node,
+                )
+                mesh_rank = "PEER"
+                charter_conformance_status = "FULL_CONFORMANT"
+                evidence["charter_policy_sha256"] = remote_charter_policy.sha256
+                evidence["ai_context_sha256"] = remote_ai_context.sha256
+            except SeedError as exc:
+                charter_conformance_findings.append(str(exc))
+
         if policy.status == "SUSPENDED":
             effective_status = "SUSPENDED"
         elif policy.status == "REVOKED":
@@ -834,6 +943,9 @@ def run_maintenance(
             "registry_status": registry_status,
             "policy_status": policy.status,
             "effective_status": effective_status,
+            "mesh_rank": mesh_rank,
+            "charter_conformance_status": charter_conformance_status,
+            "charter_conformance_findings": charter_conformance_findings,
             "heartbeat_ttl_minutes": node.heartbeat_ttl_minutes,
             "errors": errors,
         }
@@ -846,6 +958,8 @@ def run_maintenance(
                 "node_health_url": health_url,
                 "node_ack_url": ack_url,
                 "node_renewal_url": renewal_url,
+                "charter_policy_url": charter_policy_url,
+                "ai_context_url": ai_context_url,
                 "remote_evidence": evidence,
             }
         )
@@ -863,8 +977,20 @@ def run_maintenance(
         )
 
     counts = {state.lower() + "_count": 0 for state in EFFECTIVE_STATES}
+    rank_counts = {
+        "peer_count": 0,
+        "subordinate_count": 0,
+        "rank_not_applicable_count": 0,
+    }
     for node_status in status_nodes:
         counts[str(node_status["effective_status"]).lower() + "_count"] += 1
+        rank = str(node_status["mesh_rank"])
+        if rank == "PEER":
+            rank_counts["peer_count"] += 1
+        elif rank == "SUBORDINATE":
+            rank_counts["subordinate_count"] += 1
+        else:
+            rank_counts["rank_not_applicable_count"] += 1
     operation_status = "PASS" if error_count == 0 else "CONTINUE"
     base = {
         "generated_utc": utc,
@@ -873,6 +999,7 @@ def run_maintenance(
         "fixed_node_count": False,
         "node_count": len(status_nodes),
         **counts,
+        **rank_counts,
         "error_count": error_count,
         "status": operation_status,
     }
@@ -938,6 +1065,8 @@ def validate_aggregate_pair(root: Path, seed_repository: str = DEFAULT_SEED_REPO
         _int_field(document, "error_count", label)
         for state in EFFECTIVE_STATES:
             _int_field(document, state.lower() + "_count", label)
+        for key in ("peer_count", "subordinate_count", "rank_not_applicable_count"):
+            _int_field(document, key, label)
     if index["run_id"] != status["run_id"] or index["generated_utc"] != status["generated_utc"]:
         raise SeedError("mesh index and status were not produced by the same run")
     index_by_guid: dict[str, Mapping[str, Any]] = {}
@@ -957,6 +1086,12 @@ def validate_aggregate_pair(root: Path, seed_repository: str = DEFAULT_SEED_REPO
                 raise SeedError(f"{label}: duplicate node GUID {guid}")
             if entry.get("effective_status") not in EFFECTIVE_STATES:
                 raise SeedError(f"{label}: invalid effective status for {guid}")
+            if entry.get("mesh_rank") not in MESH_RANKS:
+                raise SeedError(f"{label}: invalid mesh rank for {guid}")
+            if entry.get("charter_conformance_status") not in CHARTER_CONFORMANCE_STATES:
+                raise SeedError(f"{label}: invalid charter conformance status for {guid}")
+            if not isinstance(entry.get("charter_conformance_findings"), list):
+                raise SeedError(f"{label}: charter conformance findings must be an array for {guid}")
             if entry.get("policy_status") not in POLICY_STATES:
                 raise SeedError(f"{label}: invalid policy status for {guid}")
             if not isinstance(entry.get("errors"), list):
@@ -967,16 +1102,31 @@ def validate_aggregate_pair(root: Path, seed_repository: str = DEFAULT_SEED_REPO
     for guid in sorted(status_by_guid):
         left = index_by_guid[guid]
         right = status_by_guid[guid]
-        for key in ("repository", "registry_status", "policy_status", "effective_status"):
+        for key in ("repository", "registry_status", "policy_status", "effective_status", "mesh_rank", "charter_conformance_status"):
             if left.get(key) != right.get(key):
                 raise SeedError(f"mesh index/status mismatch for {guid}: {key}")
     actual_counts = {state.lower() + "_count": 0 for state in EFFECTIVE_STATES}
+    actual_rank_counts = {
+        "peer_count": 0,
+        "subordinate_count": 0,
+        "rank_not_applicable_count": 0,
+    }
     actual_errors = 0
     for entry in status_by_guid.values():
         actual_counts[str(entry["effective_status"]).lower() + "_count"] += 1
+        rank = str(entry["mesh_rank"])
+        if rank == "PEER":
+            actual_rank_counts["peer_count"] += 1
+        elif rank == "SUBORDINATE":
+            actual_rank_counts["subordinate_count"] += 1
+        else:
+            actual_rank_counts["rank_not_applicable_count"] += 1
         actual_errors += len(entry["errors"])
     for document, label in ((index, "mesh index"), (status, "mesh status")):
         for key, expected in actual_counts.items():
+            if document[key] != expected:
+                raise SeedError(f"{label}: {key} does not match node data")
+        for key, expected in actual_rank_counts.items():
             if document[key] != expected:
                 raise SeedError(f"{label}: {key} does not match node data")
         if document["error_count"] != actual_errors:
@@ -1020,6 +1170,12 @@ def run_revalidation(
         "node_count": source_status["node_count"],
         "accepted_count": accepted_count,
         "active_count": source_status["active_count"],
+        "peer_count": source_status["peer_count"],
+        "subordinate_count": source_status["subordinate_count"],
+        "rank_not_applicable_count": source_status["rank_not_applicable_count"],
+        "peer_equivalence_available": (
+            source_status["peer_count"] > 0 and source_status["subordinate_count"] == 0
+        ),
         "stale_count": stale,
         "suspended_count": source_status["suspended_count"],
         "revoked_count": source_status["revoked_count"],
@@ -1051,6 +1207,9 @@ def validate_revalidation(root: Path, source_status: Mapping[str, Any], seed_rep
     for key in (
         "node_count",
         "active_count",
+        "peer_count",
+        "subordinate_count",
+        "rank_not_applicable_count",
         "stale_count",
         "suspended_count",
         "revoked_count",

@@ -15,6 +15,8 @@ from tools import qikvrt_workflow_executor as workflow_executor
 from tools.qikvrt_seed_common import (
     FetchedJson,
     MAX_INPUT_BYTES,
+    MESH_CHARTER_PATH,
+    MESH_CHARTER_POLICY_PATH,
     SeedError,
     canonical_json_bytes,
     load_nodes,
@@ -82,6 +84,9 @@ def request_document() -> dict[str, object]:
 
 def remote_documents() -> dict[str, dict[str, object]]:
     prefix = f"https://raw.githubusercontent.com/{SOURCE}/main/qikvrt/runtime/onboarding/"
+    repository_prefix = f"https://raw.githubusercontent.com/{SOURCE}/main/"
+    repository_root = Path(__file__).resolve().parents[1]
+    charter_policy = read_json(repository_root / MESH_CHARTER_POLICY_PATH)
     boundaries = {
         "no_global_scanning": True,
         "no_self_propagation": True,
@@ -89,6 +94,10 @@ def remote_documents() -> dict[str, dict[str, object]]:
     }
     return {
         REQUEST_URL: request_document(),
+        repository_prefix + "AI_CONTEXT.json": {
+            "required_read_order": charter_policy["required_read_order_paths"],
+        },
+        repository_prefix + MESH_CHARTER_POLICY_PATH: charter_policy,
         prefix + "NODE_HEALTH.json": {
             "qikvrt_event": "NODE_HEALTH_HEARTBEAT",
             "guid": GUID,
@@ -294,7 +303,11 @@ class SeedWorkflowTests(unittest.TestCase):
         )
         self.assertEqual("PASS", result["status"])
         self.assertEqual(1, result["active_count"])
+        self.assertEqual(1, result["peer_count"])
+        self.assertEqual(0, result["subordinate_count"])
         node = result["nodes"][0]
+        self.assertEqual("PEER", node["mesh_rank"])
+        self.assertEqual("FULL_CONFORMANT", node["charter_conformance_status"])
         self.assertEqual("FRESH", node["heartbeat_status"])
         # Claimed expiry is capped by the allowlisted 1500-minute TTL.
         self.assertEqual("2026-07-21T12:00:00Z", node["effective_expires_utc"])
@@ -318,6 +331,61 @@ class SeedWorkflowTests(unittest.TestCase):
         self.assertEqual(1, result["error_count"])
         revalidation = run_revalidation(self.root, "revalidate-blocked", now=NOW)
         self.assertEqual("CONTINUE", revalidation["status"])
+
+    def test_charter_nonconformance_demotes_without_revoking_membership_and_can_recover(self) -> None:
+        self.accept()
+        documents = remote_documents()
+        policy_url = (
+            f"https://raw.githubusercontent.com/{SOURCE}/main/"
+            + MESH_CHARTER_POLICY_PATH
+        )
+        del documents[policy_url]
+        subordinate = run_maintenance(
+            self.root,
+            "maint-subordinate",
+            FakeFetcher(documents),
+            now=NOW,
+        )
+        self.assertEqual("PASS", subordinate["status"])
+        self.assertEqual(1, subordinate["active_count"])
+        self.assertEqual(0, subordinate["peer_count"])
+        self.assertEqual(1, subordinate["subordinate_count"])
+        self.assertEqual(0, subordinate["error_count"])
+        node = subordinate["nodes"][0]
+        self.assertEqual("ACCEPTED", node["registry_status"])
+        self.assertEqual("ACTIVE", node["policy_status"])
+        self.assertEqual("ACTIVE", node["effective_status"])
+        self.assertEqual("SUBORDINATE", node["mesh_rank"])
+        self.assertEqual("SUBORDINATE", node["charter_conformance_status"])
+        self.assertTrue(node["charter_conformance_findings"])
+
+        revalidation = run_revalidation(
+            self.root,
+            "revalidate-subordinate",
+            now=NOW,
+        )
+        self.assertEqual("PASS", revalidation["status"])
+        self.assertEqual(0, revalidation["peer_count"])
+        self.assertEqual(1, revalidation["subordinate_count"])
+        self.assertFalse(revalidation["peer_equivalence_available"])
+
+        recovered = run_maintenance(
+            self.root,
+            "maint-recovered",
+            FakeFetcher(remote_documents()),
+            now=NOW,
+        )
+        self.assertEqual(1, recovered["peer_count"])
+        self.assertEqual(0, recovered["subordinate_count"])
+        self.assertEqual("PEER", recovered["nodes"][0]["mesh_rank"])
+
+    def test_local_charter_policy_hash_matches_charter_bytes(self) -> None:
+        repository_root = Path(__file__).resolve().parents[1]
+        policy = read_json(repository_root / MESH_CHARTER_POLICY_PATH)
+        charter_sha256 = hashlib.sha256(
+            (repository_root / MESH_CHARTER_PATH).read_bytes()
+        ).hexdigest()
+        self.assertEqual(charter_sha256, policy["charter_sha256"])
 
     def test_revalidation_detects_counter_tampering(self) -> None:
         self.accept()
