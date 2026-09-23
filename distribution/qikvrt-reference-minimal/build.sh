@@ -36,6 +36,7 @@ PY
 rm -rf "$WORK"
 mkdir -p "$WORK/config/package-lists" \
          "$WORK/config/includes.chroot/etc/qikvrt" \
+         "$WORK/config/hooks/live" \
          "$WORK/config/includes.chroot/usr/local/sbin" \
          "$WORK/config/includes.chroot/etc/systemd/system/multi-user.target.wants" \
          "$OUT"
@@ -46,6 +47,14 @@ contract=json.load(open(sys.argv[1], encoding='utf-8'))
 print(' '.join(contract['distribution']['packages']))
 PY
 cp "$CONTRACT" "$WORK/config/includes.chroot/etc/qikvrt/BUILD_CONTRACT.json"
+cat > "$WORK/config/hooks/live/9999-qikvrt-reproducible-apt-cache.hook.chroot" <<'EOF2'
+#!/bin/sh
+set -eu
+printf '%s\n' 'Dir::Cache::pkgcache "";' > /etc/apt/apt.conf.d/99qikvrt-reproducible-cache
+rm -f /var/cache/apt/pkgcache.bin
+EOF2
+chmod 0755 "$WORK/config/hooks/live/9999-qikvrt-reproducible-apt-cache.hook.chroot"
+
 cat > "$WORK/config/includes.chroot/etc/qikvrt/reference-subject.json" <<EOF2
 {"schema":"qikvrt.reference-linux-subject.v1","source_sha":"$SHA","source_tree":"$TREE","source_date_epoch":$SOURCE_DATE_EPOCH,"contract_sha256":"$CONTRACT_SHA"}
 EOF2

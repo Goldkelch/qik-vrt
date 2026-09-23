@@ -36,6 +36,8 @@ class ReferenceMinimalContract(unittest.TestCase):
         self.assertIn("Acquire::Check-Valid-Until=false", text)
         self.assertIn("--security false", text)
         self.assertIn("--updates false", text)
+        self.assertIn('Dir::Cache::pkgcache "";', text)
+        self.assertIn("rm -f /var/cache/apt/pkgcache.bin", text)
         self.assertIn("QIKVRT_REFERENCE_LINUX_BOOT_OK", text)
         self.assertIn('"effect_ack_done": false', text)
 
