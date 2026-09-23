@@ -51,6 +51,7 @@
     "lifecycle": [
       "Read AI and AI_CONTEXT.json.",
       "Load and validate the machine-verifiable-science charter identity, policy and adoption state.",
+      "Load and validate the Unicode data-exchange standard, machine policy and mesh adoption state.",
       "Load the personal-origin and contribution-attribution contract.",
       "Load and validate the supplied bootstrap knowledge corpus and its epistemic boundaries.",
       "Load and validate the adaptive human-machine interface policy and evaluation matrix.",
@@ -123,6 +124,9 @@
     "docs/CHARTA_MASCHINENPRUEFBARE_WISSENSCHAFT.md",
     "policy/QIKVRT_MACHINE_VERIFIABLE_SCIENCE_CHARTER_V1.json",
     "state/charter/CHARTER_ADOPTION_V1.json",
+    "docs/standards/QIKVRT_UNICODE_DATA_EXCHANGE_V1.md",
+    "policy/QIKVRT_UNICODE_DATA_EXCHANGE_V1.json",
+    "state/mesh/QIKVRT_UNICODE_DATA_EXCHANGE_ADOPTION_V1.json",
     "AI_ADAPTERS.json",
     "AGENTS.md",
     "next/AI",
@@ -221,5 +225,19 @@
     "required_for_conforming_nodes": true,
     "mesh_propagation": "Every current or future QIK-VRT node, mesh instance, agent adapter or runtime claiming charter conformance resolves the exact charter through required_read_order; historical snapshots remain immutable.",
     "rule": "Separate evidence forms; preserve provenance and reproducibility; revise status without erasing history; never claim PASS, DONE, publication, equality or EFFECT_ACK_DONE without verifying the evidence required for that exact claim."
+  },
+  "unicode_data_exchange_standard": {
+    "standard_id": "QIKVRT-UTF8-UNICODE-EXCHANGE-V1",
+    "human_contract": "docs/standards/QIKVRT_UNICODE_DATA_EXCHANGE_V1.md",
+    "machine_policy": "policy/QIKVRT_UNICODE_DATA_EXCHANGE_V1.json",
+    "adoption_state": "state/mesh/QIKVRT_UNICODE_DATA_EXCHANGE_ADOPTION_V1.json",
+    "encoding": "UTF-8",
+    "unicode_normalization": "NFC",
+    "line_ending": "LF",
+    "renderer_dependency": "NONE",
+    "required_for_conforming_nodes": true,
+    "mesh_propagation": "AUTHORITY, MIRROR, every current Mesh node and every future Mesh node load the standard through required_read_order; future node split acceptance additionally binds it. Existing external nodes require successor ingestion plus fresh readback before update is claimed.",
+    "compatibility_rule": "This textual/formal profile does not replace existing JSON schemas, binary protocols, cryptographic byte identities or application-specific wire formats.",
+    "effect_boundary": "Textual conformance or transport does not establish execution, effect, synchronization, DONE or EFFECT_ACK_DONE."
   }
 }
