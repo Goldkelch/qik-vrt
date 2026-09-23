@@ -1,0 +1,116 @@
+name: QIKVRT passive transition observer
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review, review_requested, review_request_removed, closed]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  workflow_run:
+    workflows:
+      - "QIKVRT immediate request ingress"
+      - "QIKVRT workflow executor"
+      - "QIKVRT repository evidence materialization"
+      - "QIKVRT CI"
+      - "QIKVRT Collective Proposal Review"
+      - "QIKVRT requested review executor"
+      - "QIKVRT required code-owner review"
+      - "QIKVRT autonomous ruleset effect loop"
+      - "QIKVRT ruleset effect dispatch bridge"
+    types: [requested, in_progress, completed]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: qikvrt-passive-observer-${{ github.event.workflow_run.id || github.event.pull_request.number || github.event.review.id || github.run_id }}-${{ github.event.action }}
+  cancel-in-progress: false
+
+jobs:
+  observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Normalize exact transition without repository mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          event="$GITHUB_EVENT_PATH"
+          event_name="$GITHUB_EVENT_NAME"
+          action="$(jq -r '.action // "observe"' "$event")"
+          pr=''
+          head=''
+          source_type="$event_name"
+          source_id="$GITHUB_RUN_ID"
+          source_attempt="$GITHUB_RUN_ATTEMPT"
+          workflow=''
+          status=''
+          conclusion=''
+          event_time=''
+
+          case "$event_name" in
+            pull_request)
+              pr="$(jq -r '.pull_request.number' "$event")"
+              head="$(jq -r '.pull_request.head.sha' "$event")"
+              source_id="$(jq -r '.pull_request.id' "$event")"
+              event_time="$(jq -r '.pull_request.updated_at' "$event")"
+              ;;
+            pull_request_review)
+              pr="$(jq -r '.pull_request.number' "$event")"
+              head="$(jq -r '.review.commit_id' "$event")"
+              source_id="$(jq -r '.review.id' "$event")"
+              status="$(jq -r '.review.state' "$event")"
+              event_time="$(jq -r '.review.submitted_at // .review.updated_at' "$event")"
+              ;;
+            workflow_run)
+              pr="$(jq -r '.workflow_run.pull_requests[0].number // empty' "$event")"
+              head="$(jq -r '.workflow_run.head_sha' "$event")"
+              source_id="$(jq -r '.workflow_run.id' "$event")"
+              source_attempt="$(jq -r '.workflow_run.run_attempt // 1' "$event")"
+              workflow="$(jq -r '.workflow_run.name' "$event")"
+              status="$(jq -r '.workflow_run.status' "$event")"
+              conclusion="$(jq -r '.workflow_run.conclusion // empty' "$event")"
+              event_time="$(jq -r '.workflow_run.updated_at // .workflow_run.created_at' "$event")"
+              ;;
+            *) exit 0 ;;
+          esac
+
+          test -n "$head"
+          [[ "$head" =~ ^[0-9a-f]{40}$ ]]
+          tree="$(gh api "repos/$REPOSITORY/git/commits/$head" --jq '.tree.sha')"
+          [[ "$tree" =~ ^[0-9a-f]{40}$ ]]
+          observed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          event_id="${event_name}:${source_id}:${source_attempt}:${action}:${status}:${conclusion}"
+
+          jq -n             --arg schema qikvrt_passive_transition_v1             --arg repository "$REPOSITORY"             --arg event_id "$event_id"             --arg event_name "$event_name"             --arg action "$action"             --arg pr "$pr"             --arg head "$head"             --arg tree "$tree"             --arg workflow "$workflow"             --arg status "$status"             --arg conclusion "$conclusion"             --arg event_time "$event_time"             --arg observed_at "$observed_at"             --arg source_id "$source_id"             --arg source_attempt "$source_attempt"             '{
+              schema:$schema,
+              repository:$repository,
+              event_id:$event_id,
+              event_name:$event_name,
+              action:$action,
+              pr_number:(if $pr=="" then null else ($pr|tonumber) end),
+              exact_subject:{head:$head,tree:$tree},
+              workflow:(if $workflow=="" then null else $workflow end),
+              status:(if $status=="" then null else $status end),
+              conclusion:(if $conclusion=="" then null else $conclusion end),
+              event_time:$event_time,
+              observation_time:$observed_at,
+              source:{id:$source_id,attempt:($source_attempt|tonumber)},
+              predecessor_evidence_transfer:false,
+              repository_mutation:false,
+              effect_ack_done:false
+            }' > "$RUNNER_TEMP/transition.json"
+
+          cat "$RUNNER_TEMP/transition.json"
+
+      - name: Preserve passive transition receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-passive-transition-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/transition.json
+          if-no-files-found: error
+          retention-days: 30
