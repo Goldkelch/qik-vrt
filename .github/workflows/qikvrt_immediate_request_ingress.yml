@@ -1,0 +1,74 @@
+name: QIKVRT immediate request ingress
+
+on:
+  repository_dispatch:
+    types: [qikvrt_request]
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: Immutable request identifier
+        required: true
+        type: string
+      subject:
+        description: Requested subject
+        required: true
+        type: string
+      expected_effect:
+        description: Requested postcondition
+        required: true
+        type: string
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: qikvrt-request-${{ github.event.client_payload.request_id || inputs.request_id }}
+  cancel-in-progress: false
+
+jobs:
+  request-to-executor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Bind authenticated request
+        id: bind
+        shell: bash
+        env:
+          DISPATCH_ID: ${{ github.event.client_payload.request_id || inputs.request_id }}
+          DISPATCH_SUBJECT: ${{ github.event.client_payload.subject || inputs.subject }}
+          DISPATCH_EFFECT: ${{ github.event.client_payload.expected_effect || inputs.expected_effect }}
+        run: |
+          set -euo pipefail
+          test -n "$DISPATCH_ID"
+          test -n "$DISPATCH_SUBJECT"
+          test -n "$DISPATCH_EFFECT"
+          printf '%s' "$DISPATCH_ID" | grep -Eq '^[A-Za-z0-9._:-]{1,160}$'
+          printf 'request_id=%s\nsubject=%s\nexpected_effect=%s\n' "$DISPATCH_ID" "$DISPATCH_SUBJECT" "$DISPATCH_EFFECT" > "$RUNNER_TEMP/request-binding.txt"
+
+      - name: Start repository-native executor immediately
+        id: start
+        shell: bash
+        run: |
+          set -euo pipefail
+          before="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          gh workflow run qikvrt_workflow_executor.yml --repo "$GITHUB_REPOSITORY" --ref main
+          run_id=""
+          for _ in $(seq 1 12); do
+            run_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_workflow_executor.yml/runs?event=workflow_dispatch&branch=main&per_page=20" --jq --arg before "$before" '[.workflow_runs[] | select(.created_at >= $before)][0].id // empty')"
+            test -n "$run_id" && break
+            sleep 5
+          done
+          test -n "$run_id"
+          echo "executor_run_id=$run_id" >> "$GITHUB_OUTPUT"
+          printf 'REQUEST -> EXECUTOR_STARTED\nexecutor_run_id=%s\n' "$run_id" >> "$RUNNER_TEMP/request-binding.txt"
+
+      - name: Preserve request-to-executor receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-request-ingress-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/request-binding.txt
+          if-no-files-found: error
+          retention-days: 30
