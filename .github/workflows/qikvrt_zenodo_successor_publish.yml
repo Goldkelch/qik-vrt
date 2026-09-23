@@ -101,12 +101,7 @@ jobs:
           base_sha="$(jq -r '.[0].base.sha' <<<"$prs")"
           test "$live_head" = "$SUCCESSOR_HEAD"
 
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${SUCCESSOR_HEAD}" \
-            -f state=pending \
-            -f context='QIKVRT autonomous exact-head verification' \
-            -f description='Publication receipt successor dispatched for exact-head verification' \
-            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-
+          dispatch_payload="$RUNNER_TEMP/qikvrt-publication-receipt-dispatch.json"
           jq -n \
             --arg repository "$GITHUB_REPOSITORY" \
             --arg pr "$pr" \
@@ -114,7 +109,25 @@ jobs:
             --arg head "$SUCCESSOR_HEAD" \
             --arg base "$base_sha" \
             '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base,d0:2,causal_state:"REOBSERVE",reason:"PUBLICATION_RECEIPT_SUCCESSOR"}}' \
-            | gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input -
+            > "$dispatch_payload"
+          dispatched=false
+          dispatch_error="$RUNNER_TEMP/qikvrt-publication-receipt-dispatch.err"
+          for delay in 0 15 45; do
+            if [ "$delay" -gt 0 ]; then sleep "$delay"; fi
+            if gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" \
+              --input "$dispatch_payload" 2>"$dispatch_error"; then
+              dispatched=true
+              break
+            fi
+            if ! grep -Fq "API rate limit exceeded for installation." "$dispatch_error"; then
+              cat "$dispatch_error" >&2
+              exit 1
+            fi
+          done
+          if [ "$dispatched" != true ]; then
+            cat "$dispatch_error" >&2
+            echo "HOLD/D0=1: public receipt persisted; exact-head dispatch deferred to trusted-main scheduled recovery"
+          fi
 
       - name: Enforce publication result
         run: |

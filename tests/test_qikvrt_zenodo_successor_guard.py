@@ -116,6 +116,7 @@ class ZenodoSuccessorGuardTest(unittest.TestCase):
             guard.target(self.root, "x")
 
 
+
 class ZenodoSuccessorWorkflowContractTest(unittest.TestCase):
     ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -124,8 +125,10 @@ class ZenodoSuccessorWorkflowContractTest(unittest.TestCase):
 
     def test_projection_successor_is_immediately_reverified(self):
         workflow = self._read(".github/workflows/qikvrt_pr_integrity_projection.yml")
-        self.assertIn("reason:\"PROJECTION_SUCCESSOR\"", workflow)
+        self.assertIn('reason:"PROJECTION_SUCCESSOR"', workflow)
         self.assertIn("qikvrt_autonomous_exact_head_verify", workflow)
+        self.assertIn("API rate limit exceeded for installation.", workflow)
+        self.assertIn("trusted-main scheduled recovery", workflow)
         self.assertLess(
             workflow.index('git push origin "HEAD:refs/heads/$TARGET_REF"'),
             workflow.index('reason:"PROJECTION_SUCCESSOR"'),
@@ -136,14 +139,24 @@ class ZenodoSuccessorWorkflowContractTest(unittest.TestCase):
         self.assertIn('"QIKVRT PR integrity projection"', workflow)
         self.assertIn('"QIKVRT Zenodo successor closure guard"', workflow)
 
-    def test_global_reobserve_watches_publication_closure(self):
+    def test_global_reobserve_is_periodic_and_watches_publication_closure(self):
         workflow = self._read(".github/workflows/qikvrt_autonomous_pr_head_continuation.yml")
+        self.assertIn('cron: "*/5 * * * *"', workflow)
         self.assertIn('"QIKVRT PR integrity projection"', workflow)
         self.assertIn('"QIKVRT Zenodo successor closure guard"', workflow)
 
     def test_publication_receipt_successor_is_reverified(self):
         workflow = self._read(".github/workflows/qikvrt_zenodo_successor_publish.yml")
-        self.assertIn("reason:\"PUBLICATION_RECEIPT_SUCCESSOR\"", workflow)
+        self.assertIn('reason:"PUBLICATION_RECEIPT_SUCCESSOR"', workflow)
         self.assertIn("qikvrt_autonomous_exact_head_verify", workflow)
+        self.assertIn("API rate limit exceeded for installation.", workflow)
 
+    def test_closure_guard_is_mesh_wide_but_publisher_is_authority_only(self):
+        guard_workflow = self._read(".github/workflows/qikvrt_zenodo_successor_closure_guard.yml")
+        publisher = self._read(".github/workflows/qikvrt_zenodo_successor_publish.yml")
+        self.assertNotIn("github.repository == 'Goldkelch/qik-vrt'", guard_workflow)
+        self.assertIn("github.repository == 'Goldkelch/qik-vrt'", publisher)
+
+
+if __name__ == "__main__":
     unittest.main()

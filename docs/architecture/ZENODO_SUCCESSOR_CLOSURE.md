@@ -57,3 +57,16 @@ turn a pending or failed publication into `EFFECT_ACK_DONE`.
 ## Mesh enforcement
 
 The successor-freshness and public-effect guard runs on every repository node that carries the registry. Only the Authority node may execute the production Zenodo mutation. Mirror nodes independently enforce the same source/candidate/public-receipt identity and therefore cannot silently treat an Authority predecessor receipt as current after local semantic drift.
+
+## Rate-limit resilience
+
+The immediate exact-head dispatch uses the repository installation token only
+for the dispatch effect. A bounded 0/15/45-second backoff handles transient
+installation quota exhaustion. Exhausting that bound is a non-terminal
+`HOLD/D0=1`, not an accepted successor and not a workflow-completion claim.
+
+Trusted-main PR-head continuation is also scheduled every five minutes. It
+reobserves exact open PR heads and can re-expose the D0=2 verification edge
+after GitHub's installation quota becomes available again. Thus temporary API
+quota exhaustion cannot convert a persisted bot successor into a silent
+terminal state.

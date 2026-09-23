@@ -177,12 +177,7 @@ jobs:
           )"
           test "$live_successor" = "$successor_head"
 
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${successor_head}" \
-            -f state=pending \
-            -f context='QIKVRT autonomous exact-head verification' \
-            -f description='Projection successor dispatched for exact-head verification' \
-            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-
+          dispatch_payload="$RUNNER_TEMP/qikvrt-projection-successor-dispatch.json"
           jq -n \
             --arg repository "$GITHUB_REPOSITORY" \
             --arg pr "$PR_NUMBER" \
@@ -191,6 +186,29 @@ jobs:
             --arg source "$EXPECTED_HEAD" \
             --arg base "$BASE_SHA" \
             '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,source_head_sha:$source,base_sha:$base,d0:2,causal_state:"REOBSERVE",reason:"PROJECTION_SUCCESSOR"}}' \
-            | gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input -
+            > "$dispatch_payload"
 
+          dispatched=false
+          dispatch_error="$RUNNER_TEMP/qikvrt-projection-successor-dispatch.err"
+          for delay in 0 15 45; do
+            if [ "$delay" -gt 0 ]; then
+              echo "QIKVRT_GITHUB_INSTALLATION_RATE_LIMIT_BACKOFF_SECONDS=$delay"
+              sleep "$delay"
+            fi
+            if gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" \
+              --input "$dispatch_payload" 2>"$dispatch_error"; then
+              dispatched=true
+              break
+            fi
+            if ! grep -Fq "API rate limit exceeded for installation." "$dispatch_error"; then
+              cat "$dispatch_error" >&2
+              exit 1
+            fi
+          done
+
+          if [ "$dispatched" != true ]; then
+            cat "$dispatch_error" >&2
+            echo "HOLD/D0=1: successor persisted; exact-head dispatch deferred to trusted-main scheduled recovery"
+            exit 0
+          fi
           echo "REOBSERVE/D0=2 dispatched for deterministic successor $successor_head"
