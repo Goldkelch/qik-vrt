@@ -1,0 +1,72 @@
+name: QIKVRT Zenodo successor publish and readback
+on:
+  push:
+    paths:
+      - release/temdd-executable-language-runtime-2026-09-23/AUTO_SUCCESSOR_CANDIDATE.json
+      - release/temdd-executable-language-runtime-2026-09-23/publish-request.json
+      - release/temdd-executable-language-runtime-2026-09-23/OWNER_ZENODO_AUTHORIZATION.json
+      - docs/publications/2026-09-23-temdd-executable-language-runtime/MACHINE_PROOF_BUNDLE.json
+      - docs/publications/2026-09-23-temdd-executable-language-runtime/PREPUBLICATION_RETURN_RECEIPT.json
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: qikvrt-temdd-zenodo-successor-publication
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      MANIFEST_PATH: release/temdd-executable-language-runtime-2026-09-23/publish-request.json
+      EVIDENCE_PATH: release/temdd-executable-language-runtime-2026-09-23/zenodo-publication.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Reject stale publication controls before network effect
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -B tools/qikvrt_zenodo_successor_guard.py check --target temdd-executable-language-runtime --require-publish-request
+      - name: Execute exact authorized publication
+        id: publish
+        continue-on-error: true
+        env:
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set +e
+          python3 -B tools/qikvrt_zenodo_publish.py --manifest "$MANIFEST_PATH"
+          status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Persist publication or recovery evidence
+        if: always()
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+          TARGET_REF: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if test -f "$EVIDENCE_PATH"; then
+            python3 -B tools/qikvrt_integrity.py generate
+            git config user.name "qik-vrt-zenodo-publication[bot]"
+            git config user.email "qik-vrt-zenodo-publication[bot]@users.noreply.github.com"
+            git add -- "$EVIDENCE_PATH" REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+            if ! git diff --cached --quiet; then
+              remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR==1 {print $1}')"
+              test "$remote_head" = "$EXPECTED_HEAD"
+              git commit -m "zenodo: persist TEMDD successor publication readback"
+              remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR==1 {print $1}')"
+              test "$remote_head" = "$EXPECTED_HEAD"
+              git push origin "HEAD:refs/heads/$TARGET_REF"
+            fi
+          fi
+      - name: Enforce publication result
+        run: |
+          set -euo pipefail
+          test "${{ steps.publish.outputs.status }}" = "0"
+      - name: Fresh publication-effect gate
+        run: python3 -B tools/qikvrt_zenodo_successor_guard.py check --target temdd-executable-language-runtime --require-public-effect

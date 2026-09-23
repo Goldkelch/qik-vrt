@@ -1,0 +1,66 @@
+name: QIKVRT Zenodo successor closure guard
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: qikvrt-zenodo-successor-closure-${{ github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: false
+jobs:
+  materialize:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+          persist-credentials: true
+      - name: Bind exact incoming PR subject
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+      - name: Materialize fresh registered successor candidate
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_zenodo_successor_guard.py materialize --target temdd-executable-language-runtime
+          python3 -B tools/qikvrt_integrity.py generate
+      - name: Persist materialized successor if needed
+        env:
+          TARGET_REF: ${{ github.event.pull_request.head.ref }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- release/temdd-executable-language-runtime-2026-09-23/AUTO_SUCCESSOR_CANDIDATE.json REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          if git diff --cached --quiet; then exit 0; fi
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR==1 {print $1}')"
+          test "$remote_head" = "$EXPECTED_HEAD"
+          git commit -m "publication: materialize fresh Zenodo successor candidate"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR==1 {print $1}')"
+          test "$remote_head" = "$EXPECTED_HEAD"
+          git push origin "HEAD:refs/heads/$TARGET_REF"
+      - name: Verify candidate freshness
+        run: python3 -B tools/qikvrt_zenodo_successor_guard.py check --target temdd-executable-language-runtime
+  main-public-effect:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Fail closed on an unclosed publication successor
+        run: python3 -B tools/qikvrt_zenodo_successor_guard.py check --target temdd-executable-language-runtime --require-public-effect

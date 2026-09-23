@@ -1,0 +1,37 @@
+{
+  "schema": "qikvrt_zenodo_successor_closure_policy_v1",
+  "version": "1.0.0",
+  "purpose": "Prevent a semantic repository successor from remaining silently associated with a stale Zenodo candidate or predecessor publication evidence.",
+  "invariants": [
+    "SOURCE_MUTATION_REQUIRES_FRESH_SUCCESSOR_CANDIDATE",
+    "PREDECESSOR_PUBLICATION_EVIDENCE_IS_NOT_TRANSFERABLE",
+    "STALE_CANDIDATE_IS_MACHINE_VISIBLE_AND_FAIL_CLOSED",
+    "OWNER_AUTHORIZATION_REMAINS_CANDIDATE_SPECIFIC",
+    "POST_AUTHORIZATION_PUBLICATION_AND_PUBLIC_READBACK_ARE_AUTOMATIC",
+    "NO_PUBLIC_BYTE_EXACT_READBACK_NO_PUBLICATION_EFFECT_ACK"
+  ],
+  "automation": {
+    "candidate_materialization": "AUTOMATIC_ON_SAME_REPOSITORY_PULL_REQUEST",
+    "main_staleness_detection": "AUTOMATIC_FAIL_CLOSED",
+    "owner_authorization": "EXACT_CANDIDATE_SPECIFIC_HUMAN_BOUNDARY",
+    "production_publication_after_valid_authorization": "AUTOMATIC",
+    "public_record_and_fileset_readback": "MANDATORY",
+    "receipt_persistence": "MANDATORY"
+  },
+  "human_authority_boundary": {
+    "standing_blanket_authorization": false,
+    "candidate_specific_authorization_required": true,
+    "automation_may_fabricate_owner_authorization": false,
+    "rationale": "Sustainable closure must remove silent gaps without weakening the existing exact-candidate owner authorization boundary."
+  },
+  "state_machine": [
+    "SOURCE_CHANGED",
+    "CANDIDATE_MATERIALIZED",
+    "AWAITING_EXACT_OWNER_AUTHORIZATION",
+    "AUTHORIZED",
+    "PUBLISHING",
+    "PUBLIC_READBACK_VERIFIED",
+    "PUBLICATION_EFFECT_ACK_DONE"
+  ],
+  "target_registry": "policy/QIKVRT_ZENODO_SUCCESSOR_TARGETS_V1.json"
+}
