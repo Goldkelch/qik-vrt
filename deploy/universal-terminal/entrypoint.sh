@@ -15,19 +15,31 @@ START_URL="${QIKVRT_START_URL:-about:blank}"
 
 # BEGIN TEMDD deployment subject binding
 # Exact deployments must not silently inherit the language carrier's PR 1103.
+# A deployed subject is either one positive PR number or the exact main ref.
 # Unsealed standalone/reference launches retain their existing compatibility.
 set --
-if [ -n "${QIKVRT_EXACT_HEAD:-}${QIKVRT_EXACT_TREE:-}" ]; then
-  : "${QIKVRT_TEMDD_PR:?BLOCK: QIKVRT_TEMDD_PR is required for an exact deployment}"
+if [ -n "${QIKVRT_TEMDD_PR:-}" ] && [ -n "${QIKVRT_TEMDD_REF:-}" ]; then
+  echo "BLOCK: choose exactly one TEMDD subject selector" >&2
+  exit 64
 fi
-if [ "${QIKVRT_TEMDD_PR+x}" = x ]; then
+if [ -n "${QIKVRT_EXACT_HEAD:-}${QIKVRT_EXACT_TREE:-}" ] &&    [ -z "${QIKVRT_TEMDD_PR:-}${QIKVRT_TEMDD_REF:-}" ]; then
+  echo "BLOCK: exact deployment requires QIKVRT_TEMDD_PR or QIKVRT_TEMDD_REF" >&2
+  exit 64
+fi
+if [ "${QIKVRT_TEMDD_PR+x}" = x ] && [ -n "${QIKVRT_TEMDD_PR:-}" ]; then
   case "$QIKVRT_TEMDD_PR" in
-    ''|*[!0-9]*|0*)
+    *[!0-9]*|0*)
       echo "BLOCK: QIKVRT_TEMDD_PR must be a positive canonical PR number" >&2
       exit 64
       ;;
   esac
   set -- --pr "$QIKVRT_TEMDD_PR"
+elif [ "${QIKVRT_TEMDD_REF+x}" = x ] && [ -n "${QIKVRT_TEMDD_REF:-}" ]; then
+  if [ "$QIKVRT_TEMDD_REF" != main ]; then
+    echo "BLOCK: QIKVRT_TEMDD_REF must be main" >&2
+    exit 64
+  fi
+  set -- --ref main
 fi
 # END TEMDD deployment subject binding
 
