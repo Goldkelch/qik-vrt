@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: write
+  statuses: write
 
 concurrency:
   group: qikvrt-pr-integrity-projection-${{ github.event.pull_request.number || github.ref_name }}
@@ -74,8 +75,11 @@ jobs:
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           TARGET_REF: ${{ github.event.pull_request.head.ref }}
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
@@ -165,3 +169,28 @@ jobs:
             exit 2
           fi
           git push origin "HEAD:refs/heads/$TARGET_REF"
+
+          successor_head="$(git rev-parse --verify HEAD^{commit})"
+          live_successor="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$live_successor" = "$successor_head"
+
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${successor_head}" \
+            -f state=pending \
+            -f context='QIKVRT autonomous exact-head verification' \
+            -f description='Projection successor dispatched for exact-head verification' \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg pr "$PR_NUMBER" \
+            --arg ref "$TARGET_REF" \
+            --arg head "$successor_head" \
+            --arg source "$EXPECTED_HEAD" \
+            --arg base "$BASE_SHA" \
+            '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,source_head_sha:$source,base_sha:$base,d0:2,causal_state:"REOBSERVE",reason:"PROJECTION_SUCCESSOR"}}' \
+            | gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input -
+
+          echo "REOBSERVE/D0=2 dispatched for deterministic successor $successor_head"

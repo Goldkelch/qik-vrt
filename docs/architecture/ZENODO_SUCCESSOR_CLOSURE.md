@@ -27,3 +27,29 @@ candidate.git_blob(p)
 ```
 
 Any mismatch is non-terminal and machine-visible. New publication families must be registered in `policy/QIKVRT_ZENODO_SUCCESSOR_TARGETS_V1.json`.
+
+## Bot-successor recovery invariant
+
+GitHub deliberately suppresses recursive ordinary workflow execution after a
+workflow pushes with `GITHUB_TOKEN`. Therefore a workflow-generated successor
+must never rely on a new ordinary `pull_request` run to verify itself.
+
+The deterministic integrity/publication projection performs candidate
+materialization and integrity regeneration in one commit. If that commit
+creates a new PR head, the same admitted run immediately emits the trusted
+`qikvrt_autonomous_exact_head_verify` repository-dispatch for the exact new
+SHA. The default-branch verifier then executes the full repository gates against
+that successor.
+
+A second independent recovery edge remains active: zero-job
+`action_required` observations for the projection or successor-closure guard
+are classified by trusted-main automation and dispatch the same exact-head
+REOBSERVE path. Thus a workflow-created head cannot become a silent terminal
+state merely because GitHub suppresses recursive PR workflow admission.
+
+Publication-receipt persistence applies the same rule: after a successful
+Zenodo effect and persisted fresh public readback, a non-main PR successor is
+immediately rebound and dispatched for exact-head repository verification.
+
+These recovery edges do not create or transfer owner authorization and do not
+turn a pending or failed publication into `EFFECT_ACK_DONE`.
