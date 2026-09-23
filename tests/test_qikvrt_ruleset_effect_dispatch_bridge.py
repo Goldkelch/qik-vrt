@@ -40,7 +40,8 @@ class RulesetEffectDispatchBridgeContractTest(unittest.TestCase):
         self.assertNotIn("target_url", self.text)
 
     def test_bridge_uses_read_credential_only_to_reach_single_effect_writer(self):
-        self.assertIn("GH_TOKEN: ${{ github.token }}", self.text)\n        self.assertNotIn("GH_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}", self.text)
+        self.assertIn("GH_TOKEN: ${{ github.token }}", self.text)
+        self.assertNotIn("GH_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}", self.text)
         self.assertIn("test -n \"${GH_TOKEN:-}\"", self.text)
         self.assertIn("qikvrt_autonomous_ruleset_effect_loop.yml/dispatches", self.text)
         self.assertIn("expected_head:$head", self.text)
