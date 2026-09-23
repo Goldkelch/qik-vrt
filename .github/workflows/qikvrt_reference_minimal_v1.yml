@@ -140,9 +140,9 @@ jobs:
             root_a='${{ runner.temp }}/qikvrt-squash-a'
             root_b='${{ runner.temp }}/qikvrt-squash-b'
             rm -rf "$root_a" "$root_b"
-            unsquashfs -quiet -d "$root_a" "$sq_a"
-            unsquashfs -quiet -d "$root_b" "$sq_b"
-            python3 - "$root_a" "$root_b" <<'PY'
+            sudo unsquashfs -quiet -d "$root_a" "$sq_a"
+            sudo unsquashfs -quiet -d "$root_b" "$sq_b"
+            sudo python3 - "$root_a" "$root_b" <<'PY'
           import hashlib
           import os
           import pathlib
