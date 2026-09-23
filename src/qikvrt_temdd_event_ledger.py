@@ -59,7 +59,7 @@ def utc():
     return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
 
-def subject(root, repository, pr):
+def subject(root, repository, pr=None, ref=None):
     """Observe one clean immutable checkout, without a floating tree lookup."""
     def git(*args):
         return subprocess.check_output(['git', '-C', str(root), *args],
@@ -76,9 +76,20 @@ def subject(root, repository, pr):
         raise Hold('EXACT_SUBJECT_UNOBSERVABLE_OR_DIRTY') from exc
     if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository):
         raise Hold('REPOSITORY_REQUIRED')
-    if type(pr) is not int or pr < 1:
-        raise Hold('PR_REQUIRED')
-    return {'repository': repository, 'pr': pr, 'head': head, 'tree': tree}
+    if pr is not None and ref is not None:
+        raise Hold('SUBJECT_SELECTOR_CONFLICT')
+    if pr is None and ref is None:
+        raise Hold('SUBJECT_SELECTOR_REQUIRED')
+    exact = {'repository': repository, 'head': head, 'tree': tree}
+    if pr is not None:
+        if type(pr) is not int or pr < 1:
+            raise Hold('PR_REQUIRED')
+        exact['pr'] = pr
+    else:
+        if ref != 'main':
+            raise Hold('MAIN_REF_REQUIRED')
+        exact['ref'] = 'main'
+    return exact
 
 
 class Ledger:
@@ -253,16 +264,16 @@ class Ledger:
 
 
 class Runtime:
-    def __init__(self, root, state_dir, repository, pr):
+    def __init__(self, root, state_dir, repository, pr=None, ref=None):
         self.root = Path(root).resolve()
-        self.repository, self.pr = repository, pr
-        self.subject = subject(self.root, repository, pr)
+        self.repository, self.pr, self.ref = repository, pr, ref
+        self.subject = subject(self.root, repository, pr, ref)
         self.ledger = Ledger(state_dir, self.subject)
         self.subscribers = threading.BoundedSemaphore(32)
 
     def ensure_subject(self):
         try:
-            if subject(self.root, self.repository, self.pr) != self.subject:
+            if subject(self.root, self.repository, self.pr, self.ref) != self.subject:
                 raise Hold('EXACT_SUBJECT_CHANGED_RESTART_REQUIRED')
             if self.ledger.stopped:
                 raise Hold(self.ledger.reason)
@@ -419,8 +430,12 @@ def main():
     parser.add_argument('--port', type=int, default=8771)
     parser.add_argument('--root', default=str(Path(__file__).resolve().parents[1]))
     parser.add_argument('--repository', default='Goldkelch/qik-vrt')
-    parser.add_argument('--pr', type=int, default=1103)
+    selector = parser.add_mutually_exclusive_group()
+    selector.add_argument('--pr', type=int)
+    selector.add_argument('--ref')
     args = parser.parse_args()
+    if args.pr is None and args.ref is None:
+        args.pr = 1103
     try:
         if args.operation == 'append':
             raw = sys.stdin.buffer.read(MAX_EVENT + 1)
@@ -430,7 +445,7 @@ def main():
             return 0
         if args.host != '127.0.0.1':
             raise Hold('LOOPBACK_ONLY')
-        runtime = Runtime(args.root, args.state_dir, args.repository, args.pr)
+        runtime = Runtime(args.root, args.state_dir, args.repository, args.pr, args.ref)
         http = terminal.ThreadingHTTPServer((args.host, args.port), make_handler(runtime))
         ingress = make_ingress(runtime)
         thread = threading.Thread(target=ingress.serve_forever, daemon=True)
