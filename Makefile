@@ -136,3 +136,9 @@ test: cloud-carrier-live-sse-test
 test: temdd-event-ledger-test
 temdd-event-ledger-test:
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tests/test_temdd_event_ledger.py
+
+.PHONY: machine-verifiable-science-charter-test
+machine-verifiable-science-charter-test:
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tests/test_machine_verifiable_science_charter.py
+
+test: machine-verifiable-science-charter-test
