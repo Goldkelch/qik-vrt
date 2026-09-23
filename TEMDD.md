@@ -5,6 +5,8 @@ Canonical runtime declaration:
 - [TEMDD — ausführbare Sprache und Effect-Verification-Laufzeit](spec/temdd/TEMDD_EXECUTABLE_LANGUAGE_RUNTIME_V1.md)
 - [TEMDD specification entrypoint](spec/temdd/README.md)
 - [Machine-readable runtime policy](policy/QIKVRT_TEMDD_EXECUTABLE_LANGUAGE_RUNTIME_V1.json)
+- [Informationsträger, Repräsentationsgrenze und Effect Verification](docs/research/2026-09-24-information-singularity-effect-verification.md)
+- [Machine-readable information-carrier / effect policy](policy/QIKVRT_INFORMATION_CARRIER_EFFECT_VERIFICATION_V1.json)
 - [Publication bundle](docs/publications/2026-09-23-temdd-executable-language-runtime/README.md)
 
 Canonical Product-Owner declaration:
@@ -42,3 +44,5 @@ Semantik löst nicht das allgemeine Halteproblem.
 Die vollständige Definition und wissenschaftliche Einordnung stehen in
 [der kanonischen TEMDD-Laufzeitspezifikation](spec/temdd/TEMDD_EXECUTABLE_LANGUAGE_RUNTIME_V1.md).
 
+Die physikalisch anschlussfähige Repräsentations- und Carrier-Synthese steht in
+[Informationsträger, Repräsentationsgrenze und Effect Verification](docs/research/2026-09-24-information-singularity-effect-verification.md).
