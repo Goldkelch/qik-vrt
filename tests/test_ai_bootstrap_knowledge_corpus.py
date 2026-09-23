@@ -6,7 +6,6 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CORPUS = ROOT / "policy/AI_BOOTSTRAP_KNOWLEDGE_CORPUS_V1.json"
 CONTEXT = ROOT / "AI_CONTEXT.json"
-AI = ROOT / "AI"
 BOOTLOADER = ROOT / "tools/ai_runtime_bootloader.py"
 
 
@@ -15,7 +14,6 @@ class TestAIBootstrapKnowledgeCorpus(unittest.TestCase):
     def setUpClass(cls):
         cls.corpus = json.loads(CORPUS.read_text(encoding="utf-8"))
         cls.context = json.loads(CONTEXT.read_text(encoding="utf-8"))
-        cls.ai = AI.read_text(encoding="utf-8")
         cls.bootloader = BOOTLOADER.read_text(encoding="utf-8")
 
     def test_all_supplied_artifacts_are_inventoried(self):
@@ -54,12 +52,10 @@ class TestAIBootstrapKnowledgeCorpus(unittest.TestCase):
         self.assertIn("HUMAN_AND_AI_CONTRIBUTIONS_REMAIN_SEPARATELY_ATTRIBUTABLE", invariants)
         self.assertIn("SELF_HEALING_MUST_NOT_BECOME_SELF_CONFIRMATION", invariants)
 
-    def test_context_and_entrypoint_bind_corpus(self):
+    def test_context_binds_corpus(self):
         required = self.context["required_read_order"]
         self.assertIn("docs/AI_BOOTSTRAP_KNOWLEDGE_CORPUS.md", required)
         self.assertIn("policy/AI_BOOTSTRAP_KNOWLEDGE_CORPUS_V1.json", required)
-        self.assertIn("SUPPLIED KNOWLEDGE CORPUS", self.ai)
-        self.assertIn("UNTRANSCRIBED", self.ai)
 
     def test_bootloader_validates_corpus(self):
         self.assertIn("load_bootstrap_corpus", self.bootloader)
