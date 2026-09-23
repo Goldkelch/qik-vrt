@@ -317,21 +317,45 @@ class GitHubAPI:
         return {"applied": True, "action": dict(action)}
 
 
+def scan_window(
+    prs: Sequence[Mapping[str, Any]],
+    max_scan: int,
+    run_number: Any,
+) -> tuple[list[Mapping[str, Any]], int]:
+    """Return a deterministic bounded rotating window over the open PR queue."""
+    if not prs:
+        return [], 0
+    try:
+        serial = int(run_number or 1)
+    except (TypeError, ValueError):
+        serial = 1
+    serial = max(serial, 1)
+    offset = ((serial - 1) * max_scan) % len(prs)
+    ordered = list(prs[offset:]) + list(prs[:offset])
+    return ordered[:max_scan], offset
+
+
 def execute(api: GitHubAPI, policy: Mapping[str, Any], *, apply: bool) -> dict[str, Any]:
     config = validate_policy(policy, api.repository)
     current_main = api.current_main()
     prs = api.open_prs()
+    window, scan_offset = scan_window(
+        prs,
+        config["max_scan"],
+        os.environ.get("GITHUB_RUN_NUMBER"),
+    )
     receipt: dict[str, Any] = {
         "schema": "qikvrt_pr_closure_run_receipt_v1",
         "repository": api.repository,
         "current_main_sha": current_main,
         "open_pr_count": len(prs),
+        "scan_offset": scan_offset,
         "scanned": [],
         "selected_action": None,
         "mutation_applied": False,
         "completion_claims": {"PASS": False, "FINAL_PASS": False, "EFFECT_ACK_DONE": False},
     }
-    for summary in prs[: config["max_scan"]]:
+    for summary in window:
         pr = api.request("GET", api.repo_path(f"/pulls/{summary['number']}"))
         if not isinstance(pr, Mapping):
             raise ClosureBlock("pull-request detail response is not an object")
