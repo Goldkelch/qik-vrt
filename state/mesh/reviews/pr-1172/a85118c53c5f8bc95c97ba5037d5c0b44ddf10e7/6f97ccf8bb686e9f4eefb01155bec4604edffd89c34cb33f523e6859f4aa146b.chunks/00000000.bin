@@ -1,0 +1,804 @@
+diff --git a/.github/workflows/qikvrt_batch04_integrity.yml b/.github/workflows/qikvrt_batch04_integrity.yml
+index 9e1dd5f05697b3b974351f4e73622c9658ca108f..bb6bdc23ae0eb3f42d98672ea88342d61ad70ba0 100644
+--- a/.github/workflows/qikvrt_batch04_integrity.yml
++++ b/.github/workflows/qikvrt_batch04_integrity.yml
+@@ -19,6 +19,7 @@ on:
+   workflow_dispatch:
+ 
+ permissions:
++  actions: write
+   contents: write
+ 
+ concurrency:
+@@ -292,7 +293,6 @@ jobs:
+           make test
+           python3 tools/qikvrt_integrity.py verify
+       - name: Commit materialized repository evidence
+-        if: github.event_name != 'pull_request'
+         shell: bash
+         run: |
+           set -euo pipefail
+@@ -366,3 +366,37 @@ jobs:
+             exit 2
+           fi
+           git push origin "HEAD:$TARGET_REF"
++
++      - name: Re-dispatch exact-head gates after repository evidence persistence
++        if: github.event_name == 'pull_request'
++        env:
++          GH_TOKEN: ${{ github.token }}
++        shell: bash
++        run: |
++          set -euo pipefail
++          local_head="$(git rev-parse --verify HEAD^{commit})"
++          remote_head="$(
++            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
++              awk 'NR == 1 { print $1 }'
++          )"
++          if [ "$remote_head" != "$local_head" ]; then
++            echo "BLOCK: target ref drifted before exact-head gate dispatch" >&2
++            echo "local_head=$local_head" >&2
++            echo "remote_head=$remote_head" >&2
++            exit 2
++          fi
++
++          workflows=(
++            qikvrt_batch04_integrity.yml
++            qikvrt_ci.yml
++            qikvrt_collective_review.yml
++          )
++          if [ "$GITHUB_REPOSITORY" = "ingolf-lohmann/qik-vrt" ]; then
++            workflows+=(qikvrt_global_completion.yml)
++          fi
++          for workflow in "${workflows[@]}"; do
++            gh api \
++              --method POST \
++              "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/dispatches" \
++              -f "ref=$TARGET_REF"
++          done
+diff --git a/.github/workflows/qikvrt_pr_closure_engine.yml b/.github/workflows/qikvrt_pr_closure_engine.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..c186592297c7992dcc117167918324d66ad9c426
+--- /dev/null
++++ b/.github/workflows/qikvrt_pr_closure_engine.yml
+@@ -0,0 +1,101 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++name: QIKVRT PR closure engine
++
++on:
++  workflow_dispatch:
++  schedule:
++    - cron: "*/5 * * * *"
++  push:
++    branches: [main]
++  workflow_run:
++    workflows:
++      - "QIKVRT CI"
++      - "QIKVRT repository evidence materialization"
++      - "QIKVRT requested review executor"
++      - "QIKVRT required code-owner review"
++    types: [completed]
++  pull_request:
++    paths:
++      - ".github/workflows/qikvrt_pr_closure_engine.yml"
++      - "tools/qikvrt_pr_closure_engine.py"
++      - "tests/test_qikvrt_pr_closure_engine.py"
++      - "state/autonomy/AUTONOMOUS_PR_CLOSURE_POLICY_V1.json"
++      - "state/authorization/delegations/OWNER_AUTONOMOUS_REPOSITORY_CLOSURE_V1.json"
++
++permissions:
++  contents: read
++
++concurrency:
++  group: qikvrt-pr-closure-${{ github.repository }}
++  cancel-in-progress: false
++
++jobs:
++  validate:
++    if: github.event_name == 'pull_request'
++    runs-on: ubuntu-24.04
++    timeout-minutes: 5
++    steps:
++      - name: Check out exact pull-request head
++        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
++        with:
++          ref: ${{ github.event.pull_request.head.sha }}
++          fetch-depth: 0
++          persist-credentials: false
++      - name: Set up Python
++        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
++        with:
++          python-version: "3.12"
++      - name: Validate closure policy and decision core
++        shell: bash
++        run: |
++          set -euo pipefail
++          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B tools/qikvrt_pr_closure_engine.py validate-policy
++          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v tests.test_qikvrt_pr_closure_engine
++
++  close-open-pr-queue:
++    if: github.event_name != 'pull_request'
++    permissions:
++      actions: read
++      checks: read
++      contents: write
++      issues: write
++      pull-requests: write
++      statuses: read
++    runs-on: ubuntu-24.04
++    timeout-minutes: 15
++    steps:
++      - name: Check out trusted current main
++        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
++        with:
++          ref: main
++          fetch-depth: 0
++          persist-credentials: false
++      - name: Set up Python
++        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
++        with:
++          python-version: "3.12"
++      - name: Validate trusted closure engine
++        shell: bash
++        run: |
++          set -euo pipefail
++          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B tools/qikvrt_pr_closure_engine.py validate-policy --repository "$GITHUB_REPOSITORY"
++          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v tests.test_qikvrt_pr_closure_engine
++      - name: Execute one bounded closure mutation
++        env:
++          GH_TOKEN: ${{ github.token }}
++        shell: bash
++        run: |
++          set -euo pipefail
++          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B tools/qikvrt_pr_closure_engine.py run \
++            --repository "$GITHUB_REPOSITORY" \
++            --apply \
++            --output /tmp/qikvrt-pr-closure-receipt.json
++      - name: Preserve closure receipt
++        if: always()
++        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
++        with:
++          name: qikvrt-pr-closure-receipt-${{ github.run_id }}-${{ github.run_attempt }}
++          path: /tmp/qikvrt-pr-closure-receipt.json
++          if-no-files-found: warn
++          retention-days: 30
+diff --git a/state/authorization/delegations/OWNER_AUTONOMOUS_REPOSITORY_CLOSURE_V1.json b/state/authorization/delegations/OWNER_AUTONOMOUS_REPOSITORY_CLOSURE_V1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..652a18ada8ec3a44962d698e260fab4cc4bba3a7
+--- /dev/null
++++ b/state/authorization/delegations/OWNER_AUTONOMOUS_REPOSITORY_CLOSURE_V1.json
+@@ -0,0 +1,47 @@
++{
++  "schema": "qikvrt_owner_autonomous_repository_closure_v1",
++  "delegation_id": "OWNER-AUTONOMOUS-REPOSITORY-CLOSURE-V1",
++  "status": "ACTIVE",
++  "owner": {
++    "name": "Ingolf Lohmann",
++    "role": "Product Owner"
++  },
++  "effective_at": "2026-09-23T10:14:00+02:00",
++  "source_instruction": "Na dann ist jetzt der Zeitpunkt, genau das zu ändern Freigabe erteilt.",
++  "authorized_scope": [
++    "reobserve_current_main_and_open_pull_requests",
++    "close_open_pull_requests_only_when_their_diff_is_already_contained_in_current_main",
++    "mark_only_trusted_repository_generated_self_heal_drafts_ready_for_review",
++    "update_same_repository_pull_request_branches_to_current_main_without_force",
++    "request_the_configured_independent_reviewer_for_the_current_exact_head",
++    "merge_authority_pull_requests_only_after_current_exact_head_required_checks_current_technical_review_current_independent_approval_and_active_strict_native_ruleset_are_reobserved",
++    "promote_mirror_pull_requests_only_by_non_force_fast_forward_of_current_main_to_the_exact_approved_head",
++    "continue_scanning_when_a_pull_request_is_waiting_on_a_non_mutable_gate_or_requires_semantic_conflict_repair"
++  ],
++  "mandatory_invariants": [
++    "TRANSPORT_ACK_NE_EFFECT_ACK",
++    "PREDECESSOR_EVIDENCE_TRANSFER_FALSE",
++    "NO_SELF_REVIEW_AS_INDEPENDENT_REVIEW",
++    "NO_FORCE_PUSH_TO_MAIN",
++    "EXACT_HEAD_REOBSERVATION_BEFORE_MUTATION",
++    "CURRENT_MAIN_REOBSERVATION_BEFORE_PROMOTION",
++    "AT_MOST_ONE_REPOSITORY_MUTATION_PER_EXECUTOR_RUN",
++    "NO_EXTERNAL_EFFECT_FROM_CLOSURE_ENGINE"
++  ],
++  "not_authorized": [
++    "zenodo_publication",
++    "ietf_submission",
++    "doi_creation",
++    "public_release",
++    "credential_escalation",
++    "fabricated_review",
++    "force_push",
++    "scientific_confirmation",
++    "EFFECT_ACK_DONE_without_fresh_effect_readback"
++  ],
++  "completion_claims": {
++    "PASS": false,
++    "FINAL_PASS": false,
++    "EFFECT_ACK_DONE": false
++  }
++}
+diff --git a/state/autonomy/AUTONOMOUS_PR_CLOSURE_POLICY_V1.json b/state/autonomy/AUTONOMOUS_PR_CLOSURE_POLICY_V1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..e64b5f7668a792291776f3e865beb8c6822772cc
+--- /dev/null
++++ b/state/autonomy/AUTONOMOUS_PR_CLOSURE_POLICY_V1.json
+@@ -0,0 +1,63 @@
++{
++  "schema": "qikvrt_autonomous_pr_closure_policy_v1",
++  "policy_id": "AUTONOMOUS-PR-CLOSURE-POLICY-V1",
++  "status": "ACTIVE",
++  "purpose": "Drain repository pull-request work through bounded repository-native progress rather than stable observation-only states.",
++  "owner_delegation": "state/authorization/delegations/OWNER_AUTONOMOUS_REPOSITORY_CLOSURE_V1.json",
++  "max_scan_per_run": 8,
++  "max_mutations_per_run": 1,
++  "required_independent_reviewer": "Goldkelch",
++  "required_check": {
++    "name": "test",
++    "integration_id": 15368
++  },
++  "required_technical_review_context": "QIKVRT requested review execution",
++  "repositories": {
++    "Goldkelch/qik-vrt": {
++      "role": "AUTHORITY",
++      "base_branch": "main",
++      "promotion_mode": "NATIVE_PR_MERGE",
++      "ruleset_id": 19344903,
++      "role_local_head_required": true
++    },
++    "ingolf-lohmann/qik-vrt": {
++      "role": "MIRROR",
++      "base_branch": "main",
++      "promotion_mode": "FAST_FORWARD_CAS",
++      "role_local_head_required": true
++    }
++  },
++  "action_order": [
++    "CLOSE_ALREADY_CONTAINED",
++    "MARK_READY_TRUSTED_AUTOMATION",
++    "UPDATE_BRANCH_TO_CURRENT_MAIN",
++    "REQUEST_CURRENT_INDEPENDENT_REVIEW",
++    "MERGE_AFTER_FRESH_GATES_AND_REVIEW"
++  ],
++  "hard_boundaries": {
++    "predecessor_evidence_transfer": false,
++    "independent_review_fabrication": false,
++    "self_review_counts_as_independent": false,
++    "force_push_main": false,
++    "force_ref_update": false,
++    "external_effects": false,
++    "zenodo_mutation": false,
++    "ietf_mutation": false,
++    "release_mutation": false,
++    "effect_ack_done_claim": false
++  },
++  "closure_semantics": {
++    "observation_only_is_terminal": false,
++    "already_contained_pr_may_close_without_merge": true,
++    "merge_conflict_is_explicit_repair_required": true,
++    "one_repository_mutation_per_run": true,
++    "fresh_final_fence_before_merge": true,
++    "authority_relies_on_active_strict_native_ruleset": true,
++    "mirror_uses_non_force_fast_forward_as_base_cas": true
++  },
++  "completion_claims": {
++    "PASS": false,
++    "FINAL_PASS": false,
++    "EFFECT_ACK_DONE": false
++  }
++}
+diff --git a/tests/test_qikvrt_pr_closure_engine.py b/tests/test_qikvrt_pr_closure_engine.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6c050bd2a8584724e231e1dab70eacbafd564414
+--- /dev/null
++++ b/tests/test_qikvrt_pr_closure_engine.py
+@@ -0,0 +1,109 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++from __future__ import annotations
++import importlib.util
++import pathlib
++import sys
++import unittest
++
++ROOT = pathlib.Path(__file__).resolve().parents[1]
++SPEC = importlib.util.spec_from_file_location("qikvrt_pr_closure_engine", ROOT / "tools/qikvrt_pr_closure_engine.py")
++assert SPEC and SPEC.loader
++M = importlib.util.module_from_spec(SPEC)
++sys.modules[SPEC.name] = M
++SPEC.loader.exec_module(M)
++
++
++class ClosureEngineTests(unittest.TestCase):
++    def policy(self, mode="NATIVE_PR_MERGE"):
++        return {
++            "schema": "qikvrt_autonomous_pr_closure_policy_v1",
++            "status": "ACTIVE",
++            "required_independent_reviewer": "Goldkelch",
++            "max_scan_per_run": 8,
++            "max_mutations_per_run": 1,
++            "required_check": {"name": "test", "integration_id": 15368},
++            "repositories": {
++                "example/qik-vrt": {"base_branch": "main", "promotion_mode": mode, "role_local_head_required": True, "ruleset_id": 19344903}
++            },
++        }
++
++    def pr(self, **kw):
++        value = {
++            "number": 7, "state": "open", "draft": False, "changed_files": 2,
++            "mergeable": True, "mergeable_state": "clean", "body": "",
++            "user": {"login": "author"}, "node_id": "PR_node",
++            "base": {"ref": "main", "sha": "a" * 40},
++            "head": {"ref": "feature", "sha": "b" * 40, "repo": {"full_name": "example/qik-vrt"}},
++        }
++        value.update(kw)
++        return value
++
++    def obs(self, **kw):
++        value = {
++            "current_main_sha": "a" * 40,
++            "compare_status": "ahead",
++            "check_runs": [{"id": 1, "name": "test", "status": "completed", "conclusion": "success", "completed_at": "2026-09-23T08:00:00Z", "app": {"id": 15368}}],
++            "statuses": [{"id": 2, "context": M.TECHNICAL_REVIEW_CONTEXT, "state": "success", "updated_at": "2026-09-23T08:01:00Z"}],
++            "reviews": [{"state": "APPROVED", "commit_id": "b" * 40, "submitted_at": "2026-09-23T08:02:00Z", "user": {"login": "Goldkelch"}}],
++            "requested_reviewers": [],
++        }
++        value.update(kw)
++        return value
++
++    def cfg(self, mode="NATIVE_PR_MERGE"):
++        return M.validate_policy(self.policy(mode), "example/qik-vrt")
++
++    def test_green_exact_head_is_mergeable(self):
++        d = M.classify_pr(self.pr(), self.obs(), self.cfg(), "example/qik-vrt")
++        self.assertEqual((d["action"], d["head_sha"], d["main_sha"]), ("MERGE", "b" * 40, "a" * 40))
++
++    def test_no_exact_head_review_requests_reviewer(self):
++        d = M.classify_pr(self.pr(), self.obs(reviews=[]), self.cfg(), "example/qik-vrt")
++        self.assertEqual(d["action"], "REQUEST_REVIEW")
++
++    def test_stale_review_does_not_authorize_merge(self):
++        d = M.classify_pr(self.pr(), self.obs(reviews=[{"state": "APPROVED", "commit_id": "c" * 40, "submitted_at": "x", "user": {"login": "Goldkelch"}}]), self.cfg(), "example/qik-vrt")
++        self.assertEqual(d["action"], "REQUEST_REVIEW")
++
++    def test_self_review_never_counts(self):
++        pr = self.pr(user={"login": "Goldkelch"})
++        d = M.classify_pr(pr, self.obs(), self.cfg(), "example/qik-vrt")
++        self.assertEqual(d["action"], "REQUEST_REVIEW")
++
++    def test_non_green_gate_waits(self):
++        d = M.classify_pr(self.pr(), self.obs(check_runs=[]), self.cfg(), "example/qik-vrt")
++        self.assertEqual(d["action"], "WAIT_REQUIRED_CHECK")
++
++    def test_technical_review_is_independent_gate(self):
++        d = M.classify_pr(self.pr(), self.obs(statuses=[]), self.cfg(), "example/qik-vrt")
++        self.assertEqual(d["action"], "WAIT_TECHNICAL_REVIEW")
++
++    def test_diverged_clean_branch_is_updated_before_any_review(self):
++        d = M.classify_pr(self.pr(), self.obs(compare_status="diverged"), self.cfg(), "example/qik-vrt")
++        self.assertEqual(d["action"], "UPDATE_BRANCH")
++
++    def test_conflict_is_explicit_and_does_not_invent_repair(self):
++        d = M.classify_pr(self.pr(mergeable=False, mergeable_state="dirty"), self.obs(compare_status="diverged"), self.cfg(), "example/qik-vrt")
++        self.assertEqual((d["action"], d["reason"]), ("BLOCK_REPAIR_REQUIRED", "MERGE_CONFLICT"))
++
++    def test_already_contained_closes_without_merge(self):
++        d = M.classify_pr(self.pr(changed_files=0), self.obs(compare_status="identical"), self.cfg(), "example/qik-vrt")
++        self.assertEqual(d["action"], "CLOSE_ALREADY_CONTAINED")
++
++    def test_only_trusted_self_heal_draft_can_be_ready(self):
++        trusted = self.pr(draft=True, user={"login": "github-actions[bot]"}, body=M.AUTO_READY_MARKER, head={"ref": "automation/self-heal-abc", "sha": "b" * 40, "repo": {"full_name": "example/qik-vrt"}})
++        self.assertEqual(M.classify_pr(trusted, self.obs(), self.cfg(), "example/qik-vrt")["action"], "MARK_READY")
++        self.assertEqual(M.classify_pr(self.pr(draft=True), self.obs(), self.cfg(), "example/qik-vrt")["action"], "BLOCK_DRAFT_REQUIRES_OWNER")
++
++    def test_foreign_head_is_never_mutated(self):
++        foreign = self.pr(head={"ref": "feature", "sha": "b" * 40, "repo": {"full_name": "other/fork"}})
++        self.assertEqual(M.classify_pr(foreign, self.obs(), self.cfg(), "example/qik-vrt")["action"], "BLOCK_NON_ROLE_LOCAL_HEAD")
++
++    def test_mirror_uses_fast_forward_cas_mode(self):
++        d = M.classify_pr(self.pr(), self.obs(), self.cfg("FAST_FORWARD_CAS"), "example/qik-vrt")
++        self.assertEqual(d["promotion_mode"], "FAST_FORWARD_CAS")
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tools/qikvrt_pr_closure_engine.py b/tools/qikvrt_pr_closure_engine.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..08cbb9232e57921b2d791cb95526114dfd5583e6
+--- /dev/null
++++ b/tools/qikvrt_pr_closure_engine.py
+@@ -0,0 +1,396 @@
++#!/usr/bin/env python3
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++"""Repository-native pull-request closure engine.
++
++The engine turns observed open PR work into one bounded repository mutation per
++run. It never fabricates review, never bypasses required native rules, and never
++crosses an external-effect boundary. Authority merges use GitHub's native PR
++merge endpoint only after the configured strict ruleset, exact-head gates and an
++exact-head independent approval have all been reobserved. Mirror promotion uses
++an unforced fast-forward ref update, which acts as an exact-base CAS: if main
++moves to a non-ancestor before the write, GitHub rejects the update.
++"""
++from __future__ import annotations
++
++import argparse
++import json
++import os
++import pathlib
++import sys
++import urllib.error
++import urllib.parse
++import urllib.request
++from dataclasses import dataclass
++from typing import Any, Iterable, Mapping, Sequence
++
++AUTO_READY_MARKER = "<!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->"
++TECHNICAL_REVIEW_CONTEXT = "QIKVRT requested review execution"
++
++
++class ClosureBlock(ValueError):
++    """Raised for invalid policy or repository observations."""
++
++
++def _sha(value: Any, label: str) -> str:
++    if not isinstance(value, str) or len(value) != 40 or any(c not in "0123456789abcdef" for c in value):
++        raise ClosureBlock(f"{label} is not a lowercase Git SHA-1")
++    return value
++
++
++def _string(value: Any, label: str) -> str:
++    if not isinstance(value, str) or not value:
++        raise ClosureBlock(f"{label} must be a non-empty string")
++    return value
++
++
++def validate_policy(policy: Mapping[str, Any], repository: str) -> dict[str, Any]:
++    if policy.get("schema") != "qikvrt_autonomous_pr_closure_policy_v1":
++        raise ClosureBlock("closure policy schema mismatch")
++    if policy.get("status") != "ACTIVE":
++        raise ClosureBlock("closure policy is not active")
++    repos = policy.get("repositories")
++    if not isinstance(repos, Mapping) or repository not in repos:
++        raise ClosureBlock("repository is not authorized by closure policy")
++    repo_policy = repos[repository]
++    if not isinstance(repo_policy, Mapping):
++        raise ClosureBlock("repository policy must be an object")
++    reviewer = _string(policy.get("required_independent_reviewer"), "required_independent_reviewer")
++    max_scan = policy.get("max_scan_per_run")
++    max_mutations = policy.get("max_mutations_per_run")
++    if isinstance(max_scan, bool) or not isinstance(max_scan, int) or not 1 <= max_scan <= 32:
++        raise ClosureBlock("max_scan_per_run must be in [1, 32]")
++    if max_mutations != 1:
++        raise ClosureBlock("max_mutations_per_run must be exactly 1")
++    check = policy.get("required_check")
++    if not isinstance(check, Mapping):
++        raise ClosureBlock("required_check must be an object")
++    _string(check.get("name"), "required_check.name")
++    app_id = check.get("integration_id")
++    if isinstance(app_id, bool) or not isinstance(app_id, int) or app_id < 1:
++        raise ClosureBlock("required_check.integration_id must be positive")
++    mode = repo_policy.get("promotion_mode")
++    if mode not in {"NATIVE_PR_MERGE", "FAST_FORWARD_CAS"}:
++        raise ClosureBlock("unsupported promotion_mode")
++    if repo_policy.get("base_branch") != "main":
++        raise ClosureBlock("only main-base closure is authorized")
++    if repo_policy.get("role_local_head_required") is not True:
++        raise ClosureBlock("role-local head requirement may not be disabled")
++    return {
++        "reviewer": reviewer,
++        "max_scan": max_scan,
++        "required_check": dict(check),
++        "repo": dict(repo_policy),
++    }
++
++
++def exact_head_approval(reviews: Iterable[Mapping[str, Any]], reviewer: str, head_sha: str, author: str) -> bool:
++    latest: Mapping[str, Any] | None = None
++    for review in reviews:
++        if not isinstance(review, Mapping):
++            continue
++        user = review.get("user")
++        login = user.get("login") if isinstance(user, Mapping) else None
++        if login != reviewer or login == author or review.get("commit_id") != head_sha:
++            continue
++        if latest is None or (review.get("submitted_at") or "") > (latest.get("submitted_at") or ""):
++            latest = review
++    return bool(latest and latest.get("state") == "APPROVED")
++
++
++def required_check_green(check_runs: Iterable[Mapping[str, Any]], name: str, integration_id: int) -> bool:
++    matches = []
++    for run in check_runs:
++        if not isinstance(run, Mapping) or run.get("name") != name:
++            continue
++        app = run.get("app")
++        app_id = app.get("id") if isinstance(app, Mapping) else None
++        if app_id == integration_id:
++            matches.append(run)
++    if not matches:
++        return False
++    latest = max(matches, key=lambda x: (x.get("completed_at") or x.get("started_at") or "", x.get("id") or 0))
++    return latest.get("status") == "completed" and latest.get("conclusion") == "success"
++
++
++def technical_review_green(statuses: Iterable[Mapping[str, Any]], context: str = TECHNICAL_REVIEW_CONTEXT) -> bool:
++    matches = [s for s in statuses if isinstance(s, Mapping) and s.get("context") == context]
++    if not matches:
++        return False
++    latest = max(matches, key=lambda x: (x.get("updated_at") or x.get("created_at") or "", x.get("id") or 0))
++    return latest.get("state") == "success"
++
++
++def classify_pr(pr: Mapping[str, Any], observed: Mapping[str, Any], config: Mapping[str, Any], repository: str) -> dict[str, Any]:
++    number = pr.get("number")
++    if isinstance(number, bool) or not isinstance(number, int) or number < 1:
++        raise ClosureBlock("pull request number is invalid")
++    if pr.get("state") != "open":
++        return {"pr": number, "action": "SKIP_CLOSED"}
++    base = pr.get("base")
++    head = pr.get("head")
++    if not isinstance(base, Mapping) or not isinstance(head, Mapping):
++        raise ClosureBlock("pull request lacks Git bindings")
++    if base.get("ref") != config["repo"]["base_branch"]:
++        return {"pr": number, "action": "BLOCK_UNSUPPORTED_BASE"}
++    head_repo = head.get("repo")
++    if not isinstance(head_repo, Mapping) or head_repo.get("full_name") != repository:
++        return {"pr": number, "action": "BLOCK_NON_ROLE_LOCAL_HEAD"}
++
++    head_sha = _sha(head.get("sha"), "pull request head")
++    current_main = _sha(observed.get("current_main_sha"), "current main")
++    compare_status = observed.get("compare_status")
++    changed_files = pr.get("changed_files")
++    if changed_files == 0 or compare_status == "identical":
++        return {"pr": number, "action": "CLOSE_ALREADY_CONTAINED", "head_sha": head_sha}
++
++    if pr.get("draft") is True:
++        author = ((pr.get("user") or {}).get("login") if isinstance(pr.get("user"), Mapping) else None)
++        body = pr.get("body") or ""
++        head_ref = head.get("ref") or ""
++        if (
++            author == "github-actions[bot]"
++            and isinstance(body, str)
++            and AUTO_READY_MARKER in body
++            and isinstance(head_ref, str)
++            and head_ref.startswith("automation/self-heal-")
++        ):
++            return {"pr": number, "action": "MARK_READY", "head_sha": head_sha, "node_id": pr.get("node_id")}
++        return {"pr": number, "action": "BLOCK_DRAFT_REQUIRES_OWNER"}
++
++    if compare_status != "ahead":
++        mergeable_state = pr.get("mergeable_state")
++        if pr.get("mergeable") is False or mergeable_state == "dirty":
++            return {"pr": number, "action": "BLOCK_REPAIR_REQUIRED", "reason": "MERGE_CONFLICT"}
++        return {"pr": number, "action": "UPDATE_BRANCH", "head_sha": head_sha}
++
++    check = config["required_check"]
++    if not required_check_green(observed.get("check_runs", []), check["name"], check["integration_id"]):
++        return {"pr": number, "action": "WAIT_REQUIRED_CHECK", "head_sha": head_sha}
++
++    author = ((pr.get("user") or {}).get("login") if isinstance(pr.get("user"), Mapping) else "") or ""
++    reviewer = config["reviewer"]
++    reviews = observed.get("reviews", [])
++    approved = exact_head_approval(reviews, reviewer, head_sha, author)
++    requested = set(observed.get("requested_reviewers", []))
++    if not approved:
++        if reviewer not in requested:
++            return {"pr": number, "action": "REQUEST_REVIEW", "head_sha": head_sha, "reviewer": reviewer}
++        return {"pr": number, "action": "WAIT_INDEPENDENT_REVIEW", "head_sha": head_sha}
++
++    if not technical_review_green(observed.get("statuses", [])):
++        return {"pr": number, "action": "WAIT_TECHNICAL_REVIEW", "head_sha": head_sha}
++
++    if base.get("sha") != current_main:
++        return {"pr": number, "action": "REOBSERVE_BASE_DRIFT", "head_sha": head_sha}
++
++    return {
++        "pr": number,
++        "action": "MERGE",
++        "head_sha": head_sha,
++        "main_sha": current_main,
++        "promotion_mode": config["repo"]["promotion_mode"],
++    }
++
++
++@dataclass
++class GitHubAPI:
++    repository: str
++    token: str
++    api_url: str = "https://api.github.com"
++
++    def request(self, method: str, path: str, payload: Mapping[str, Any] | None = None) -> Any:
++        url = path if path.startswith("http") else self.api_url.rstrip("/") + path
++        data = None if payload is None else json.dumps(payload).encode("utf-8")
++        req = urllib.request.Request(url, data=data, method=method)
++        req.add_header("Accept", "application/vnd.github+json")
++        req.add_header("X-GitHub-Api-Version", "2022-11-28")
++        req.add_header("Authorization", f"Bearer {self.token}")
++        if data is not None:
++            req.add_header("Content-Type", "application/json")
++        try:
++            with urllib.request.urlopen(req, timeout=30) as response:
++                raw = response.read()
++        except urllib.error.HTTPError as exc:
++            body = exc.read().decode("utf-8", errors="replace")
++            raise ClosureBlock(f"GitHub API {method} {path} failed: HTTP {exc.code}: {body[:500]}") from exc
++        return json.loads(raw.decode("utf-8")) if raw else None
++
++    def repo_path(self, suffix: str) -> str:
++        return f"/repos/{self.repository}{suffix}"
++
++    def open_prs(self) -> list[dict[str, Any]]:
++        rows: list[dict[str, Any]] = []
++        for page in range(1, 6):
++            batch = self.request("GET", self.repo_path(f"/pulls?state=open&per_page=100&page={page}"))
++            if not isinstance(batch, list):
++                raise ClosureBlock("open pull-request response is not a list")
++            rows.extend(batch)
++            if len(batch) < 100:
++                break
++        rows.sort(key=lambda pr: (pr.get("created_at") or "", pr.get("number") or 0))
++        return rows
++
++    def current_main(self) -> str:
++        value = self.request("GET", self.repo_path("/branches/main"))
++        return _sha(((value or {}).get("commit") or {}).get("sha"), "current main")
++
++    def inspect(self, pr: Mapping[str, Any], current_main: str) -> dict[str, Any]:
++        number = pr["number"]
++        head_sha = pr["head"]["sha"]
++        compare = self.request("GET", self.repo_path(f"/compare/{current_main}...{head_sha}"))
++        check_runs = self.request("GET", self.repo_path(f"/commits/{head_sha}/check-runs?per_page=100"))
++        statuses = self.request("GET", self.repo_path(f"/commits/{head_sha}/status"))
++        reviews = self.request("GET", self.repo_path(f"/pulls/{number}/reviews?per_page=100"))
++        requested = self.request("GET", self.repo_path(f"/pulls/{number}/requested_reviewers"))
++        return {
++            "current_main_sha": current_main,
++            "compare_status": (compare or {}).get("status"),
++            "check_runs": (check_runs or {}).get("check_runs", []),
++            "statuses": (statuses or {}).get("statuses", []),
++            "reviews": reviews if isinstance(reviews, list) else [],
++            "requested_reviewers": [u.get("login") for u in (requested or {}).get("users", []) if isinstance(u, Mapping)],
++        }
++
++    def assert_authority_ruleset(self, config: Mapping[str, Any]) -> None:
++        ruleset_id = config["repo"].get("ruleset_id")
++        if not isinstance(ruleset_id, int):
++            raise ClosureBlock("authority promotion requires ruleset_id")
++        ruleset = self.request("GET", self.repo_path(f"/rulesets/{ruleset_id}"))
++        if not isinstance(ruleset, Mapping) or ruleset.get("enforcement") != "active":
++            raise ClosureBlock("authority ruleset is not active")
++        strict = False
++        required_check = config["required_check"]
++        has_pull_request_rule = False
++        for rule in ruleset.get("rules", []):
++            if not isinstance(rule, Mapping):
++                continue
++            if rule.get("type") == "pull_request":
++                has_pull_request_rule = True
++            if rule.get("type") == "required_status_checks":
++                params = rule.get("parameters") or {}
++                if params.get("strict_required_status_checks_policy") is True:
++                    for check in params.get("required_status_checks", []):
++                        if (
++                            isinstance(check, Mapping)
++                            and check.get("context") == required_check["name"]
++                            and check.get("integration_id") == required_check["integration_id"]
++                        ):
++                            strict = True
++        if not has_pull_request_rule or not strict:
++            raise ClosureBlock("authority ruleset lacks strict required PR/check protection")
++
++    def apply(self, action: Mapping[str, Any], config: Mapping[str, Any]) -> dict[str, Any]:
++        number = action["pr"]
++        kind = action["action"]
++        if kind == "CLOSE_ALREADY_CONTAINED":
++            marker = "<!-- qikvrt-pr-closure-engine:v1 disposition=ALREADY_CONTAINED -->"
++            self.request("POST", self.repo_path(f"/issues/{number}/comments"), {"body": marker + "\n\nCurrent main already contains the PR diff. Closing without merge; no predecessor evidence is transferred."})
++            self.request("PATCH", self.repo_path(f"/pulls/{number}"), {"state": "closed"})
++        elif kind == "MARK_READY":
++            node_id = _string(action.get("node_id"), "pull request node_id")
++            query = "mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){pullRequest{number isDraft}}}"
++            self.request("POST", "/graphql", {"query": query, "variables": {"id": node_id}})
++        elif kind == "UPDATE_BRANCH":
++            self.request("PUT", self.repo_path(f"/pulls/{number}/update-branch"), {"expected_head_sha": action["head_sha"]})
++        elif kind == "REQUEST_REVIEW":
++            self.request("POST", self.repo_path(f"/pulls/{number}/requested_reviewers"), {"reviewers": [action["reviewer"]]})
++        elif kind == "MERGE":
++            pr = self.request("GET", self.repo_path(f"/pulls/{number}"))
++            current_main = self.current_main()
++            observed = self.inspect(pr, current_main)
++            fresh = classify_pr(pr, observed, config, self.repository)
++            if fresh.get("action") != "MERGE" or fresh.get("head_sha") != action.get("head_sha"):
++                raise ClosureBlock(f"final closure fence changed: {fresh}")
++            mode = fresh["promotion_mode"]
++            if mode == "NATIVE_PR_MERGE":
++                self.assert_authority_ruleset(config)
++                result = self.request("PUT", self.repo_path(f"/pulls/{number}/merge"), {"merge_method": "merge", "sha": fresh["head_sha"]})
++                if not isinstance(result, Mapping) or result.get("merged") is not True:
++                    raise ClosureBlock(f"native merge was not confirmed: {result}")
++            elif mode == "FAST_FORWARD_CAS":
++                self.request("PATCH", self.repo_path("/git/refs/heads/main"), {"sha": fresh["head_sha"], "force": False})
++            else:
++                raise ClosureBlock("unsupported promotion mode at apply fence")
++        else:
++            raise ClosureBlock(f"action {kind!r} is not mutable")
++        return {"applied": True, "action": dict(action)}
++
++
++def execute(api: GitHubAPI, policy: Mapping[str, Any], *, apply: bool) -> dict[str, Any]:
++    config = validate_policy(policy, api.repository)
++    current_main = api.current_main()
++    prs = api.open_prs()
++    receipt: dict[str, Any] = {
++        "schema": "qikvrt_pr_closure_run_receipt_v1",
++        "repository": api.repository,
++        "current_main_sha": current_main,
++        "open_pr_count": len(prs),
++        "scanned": [],
++        "selected_action": None,
++        "mutation_applied": False,
++        "completion_claims": {"PASS": False, "FINAL_PASS": False, "EFFECT_ACK_DONE": False},
++    }
++    for summary in prs[: config["max_scan"]]:
++        pr = api.request("GET", api.repo_path(f"/pulls/{summary['number']}"))
++        if not isinstance(pr, Mapping):
++            raise ClosureBlock("pull-request detail response is not an object")
++        observed = api.inspect(pr, current_main)
++        decision = classify_pr(pr, observed, config, api.repository)
++        receipt["scanned"].append(decision)
++        if decision["action"] in {"CLOSE_ALREADY_CONTAINED", "MARK_READY", "UPDATE_BRANCH", "REQUEST_REVIEW", "MERGE"}:
++            receipt["selected_action"] = decision
++            if apply:
++                api.apply(decision, config)
++                receipt["mutation_applied"] = True
++            break
++    return receipt
++
++
++def _load_json(path: str) -> Any:
++    return json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
++
++
++def main(argv: Sequence[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("command", choices=("validate-policy", "run"))
++    parser.add_argument("--policy", default="state/autonomy/AUTONOMOUS_PR_CLOSURE_POLICY_V1.json")
++    parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", ""))
++    parser.add_argument("--token", default=os.environ.get("GH_TOKEN", ""))
++    parser.add_argument("--api-url", default=os.environ.get("GITHUB_API_URL", "https://api.github.com"))
++    parser.add_argument("--apply", action="store_true")
++    parser.add_argument("--output")
++    args = parser.parse_args(argv)
++    try:
++        policy = _load_json(args.policy)
++        if args.command == "validate-policy":
++            if args.repository:
++                result = validate_policy(policy, args.repository)
++            else:
++                for repository in policy.get("repositories", {}):
++                    validate_policy(policy, repository)
++                result = {"state": "VALID"}
++        else:
++            repository = _string(args.repository, "repository")
++            token = _string(args.token, "token")
++            result = execute(GitHubAPI(repository, token, args.api_url), policy, apply=args.apply)
++    except (OSError, json.JSONDecodeError, ClosureBlock) as exc:
++        result = {
++            "schema": "qikvrt_pr_closure_run_receipt_v1",
++            "state": "BLOCK",
++            "first_blocker": str(exc),
++            "mutation_applied": False,
++            "completion_claims": {"PASS": False, "FINAL_PASS": False, "EFFECT_ACK_DONE": False},
++        }
++        code = 2
++    else:
++        code = 0
++    rendered = json.dumps(result, sort_keys=True, indent=2)
++    print(rendered)
++    if args.output:
++        pathlib.Path(args.output).write_text(rendered + "\n", encoding="utf-8")
++    return code
++
++
++if __name__ == "__main__":
++    raise SystemExit(main(sys.argv[1:]))
