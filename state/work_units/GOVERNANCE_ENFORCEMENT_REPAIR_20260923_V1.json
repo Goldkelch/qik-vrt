@@ -1,0 +1,57 @@
+{
+  "schema": "qikvrt_governance_enforcement_repair_carrier_v1",
+  "repository": "Goldkelch/qik-vrt",
+  "created_from_main": "09339d6bc3c71354c7e96243c597a48058142668",
+  "subject": {
+    "kind": "github_repository_ruleset",
+    "ruleset_id": 19344903,
+    "ruleset_name": "QIK-VRT main protection",
+    "target_ref": "refs/heads/main"
+  },
+  "observed_blocker": "CODE_OWNER_RULE_NOT_ENFORCED",
+  "observed_drift": {
+    "required_approving_review_count": 0,
+    "require_code_owner_review": false,
+    "dismiss_stale_reviews_on_push": false,
+    "require_last_push_approval": false,
+    "required_status_checks": [
+      {
+        "context": "test",
+        "integration_id": 15368
+      }
+    ]
+  },
+  "desired_policy": {
+    "path": "policy/GITHUB_MAIN_RULESET_V1.json",
+    "git_blob": "0d89056d4d745a2c77e7de1f9b9e512dbc43a1e3",
+    "required_approving_review_count": 1,
+    "require_code_owner_review": true,
+    "dismiss_stale_reviews_on_push": true,
+    "require_last_push_approval": true,
+    "required_status_checks": [
+      {
+        "context": "QIKVRT required code-owner review",
+        "integration_id": 15368
+      },
+      {
+        "context": "test",
+        "integration_id": 15368
+      }
+    ]
+  },
+  "scope": {
+    "native_rule_enforcement": true,
+    "review_status_separation": false,
+    "charter_bytes_mutation": false,
+    "postmerge_evidence_mutation": false,
+    "predecessor_evidence_transfer": false
+  },
+  "effect_path": {
+    "reconciler": "tools/qikvrt_ruleset_reconcile.py",
+    "workflow": ".github/workflows/qikvrt_autonomous_ruleset_effect_loop.yml",
+    "readback_required": true,
+    "effect_ack_done_claimed": false
+  },
+  "state": "REQUEST_AUTHORITY",
+  "next_action": "RECONCILE_RULESET_19344903_AND_REOBSERVE_EXACT_STATE"
+}
