@@ -104,6 +104,15 @@ class ClosureEngineTests(unittest.TestCase):
         d = M.classify_pr(self.pr(), self.obs(), self.cfg("FAST_FORWARD_CAS"), "example/qik-vrt")
         self.assertEqual(d["promotion_mode"], "FAST_FORWARD_CAS")
 
+    def test_scan_window_rotates_past_permanent_front_blockers(self):
+        rows = [{"number": n} for n in range(1, 25)]
+        first, first_offset = M.scan_window(rows, 8, 1)
+        second, second_offset = M.scan_window(rows, 8, 2)
+        third, third_offset = M.scan_window(rows, 8, 3)
+        self.assertEqual(([x["number"] for x in first], first_offset), (list(range(1, 9)), 0))
+        self.assertEqual(([x["number"] for x in second], second_offset), (list(range(9, 17)), 8))
+        self.assertEqual(([x["number"] for x in third], third_offset), (list(range(17, 25)), 16))
+
 
 if __name__ == "__main__":
     unittest.main()
