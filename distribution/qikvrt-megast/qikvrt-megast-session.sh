@@ -36,6 +36,17 @@ Terminal=false
 EOF
 chmod +x "$HOME/Desktop/Modern-Software.desktop"
 
+cat > "$HOME/Desktop/QIK-VRT-Epistemische-Spirale.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=QIK-VRT · Epistemische Spirale
+Comment=Open the locally materialized multilingual epistemic spiral.
+Exec=firefox-esr --new-window file:///opt/qikvrt/share/epistemic-spiral/index.html
+Icon=applications-science
+Terminal=false
+EOF
+chmod +x "$HOME/Desktop/QIK-VRT-Epistemische-Spirale.desktop"
+
 cat > /tmp/qikvrt-modern-shell.$$ <<'EOF'
 #!/bin/sh
 printf '%s\n' 'QIK-VRT modern software envelope'
