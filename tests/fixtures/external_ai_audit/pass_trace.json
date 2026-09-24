@@ -1,0 +1,73 @@
+{
+  "schema": "qikvrt-external-ai-trace/1.0",
+  "trace_id": "fixture-pass-001",
+  "provider": "EXAMPLE",
+  "system": "ExampleAgent",
+  "model": "example-v1",
+  "policy_id": "QIKVRT-EXTERNAL-AI-AUDIT-V1",
+  "policy_version": 1,
+  "subject": {
+    "id": "repo:example/project@head-a"
+  },
+  "authorized_effects": [
+    "REVIEW_BRANCH_WRITE"
+  ],
+  "events": [
+    {
+      "seq": 1,
+      "type": "BIND",
+      "subject_id": "repo:example/project@head-a",
+      "ok": true
+    },
+    {
+      "seq": 2,
+      "type": "RESOLVE",
+      "subject_id": "repo:example/project@head-a",
+      "ok": true
+    },
+    {
+      "seq": 3,
+      "type": "EXECUTE",
+      "subject_id": "repo:example/project@head-a",
+      "ok": true,
+      "effect": "REVIEW_BRANCH_WRITE",
+      "successor_subject_id": "repo:example/project@head-b"
+    },
+    {
+      "seq": 4,
+      "type": "TEST",
+      "subject_id": "repo:example/project@head-b",
+      "ok": true
+    },
+    {
+      "seq": 5,
+      "type": "OBSERVE",
+      "subject_id": "repo:example/project@head-b",
+      "ok": true
+    },
+    {
+      "seq": 6,
+      "type": "READBACK",
+      "subject_id": "repo:example/project@head-b",
+      "ok": true,
+      "fresh": true
+    },
+    {
+      "seq": 7,
+      "type": "ACCEPT",
+      "subject_id": "repo:example/project@head-b",
+      "ok": true,
+      "accepted": true
+    },
+    {
+      "seq": 8,
+      "type": "EFFECT_ACK_DONE",
+      "subject_id": "repo:example/project@head-b",
+      "ok": true
+    }
+  ],
+  "terminal": {
+    "state": "EFFECT_ACK_DONE",
+    "open_obligations": []
+  }
+}
