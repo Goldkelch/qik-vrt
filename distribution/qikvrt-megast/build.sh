@@ -61,6 +61,7 @@ TREE=$(git -C "$ROOT" rev-parse 'HEAD^{tree}')
 [ "$SHA" = "$(git -C "$ROOT" rev-parse HEAD)" ] || { echo 'BLOCKED: source HEAD mismatch' >&2; exit 70; }
 GUEST="$WORK/config/includes.chroot"
 mkdir -p "$GUEST/opt/qikvrt/runtime" "$GUEST/opt/qikvrt/smalltalk" \
+         "$GUEST/usr/share/qikvrt/web/AI" "$GUEST/usr/share/qikvrt/web/assets" \
          "$GUEST/etc/lightdm/lightdm.conf.d" \
          "$GUEST/etc/systemd/system/lightdm.service.d"
 cc -std=c90 -pedantic -Wall -Wextra -Werror -O2 -I"$ROOT/include" \
@@ -101,6 +102,42 @@ Icon=utilities-terminal
 Terminal=false
 Categories=Network;
 EOF
+# Materialize the same epistemic-spiral bytes into the Linux guest and package
+# the transparent Firefox reference adapter.  Presence is not a signed install.
+cp "$ROOT/docs/AI/index.html" "$GUEST/usr/share/qikvrt/web/AI/index.html"
+cp -a "$ROOT/docs/assets/epistemic-spiral" "$GUEST/usr/share/qikvrt/web/assets/"
+SPIRAL_SHA=$(python3 - "$GUEST/usr/share/qikvrt/web/assets/epistemic-spiral" <<'PY'
+import hashlib,json,pathlib,sys
+root=pathlib.Path(sys.argv[1])
+manifest=json.loads((root/"manifest.json").read_text())
+i18n=json.loads((root/"i18n.json").read_text())
+bundle={"schema":"qikvrt_epistemic_spiral_serialized_v1","manifest":manifest,
+        "svg":(root/"spiral.svg").read_text(),"i18n":i18n}
+raw=json.dumps(bundle,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()
+if len(raw)>62784:
+    raise SystemExit("BLOCKED: epistemic spiral exceeds Transputer body bound")
+(root/"bundle.json").write_bytes(raw)
+print(hashlib.sha256(raw).hexdigest())
+PY
+)
+python3 -B "$ROOT/tools/qikvrt_firefox_package.py" \
+  --output "$GUEST/usr/share/qikvrt/qikvrt-ai-terminal.xpi" \
+  > "$GUEST/etc/qikvrt/firefox-package.json"
+
+cat > "$GUEST/etc/systemd/system/qikvrt-ai-ui.service" <<'EOF'
+[Unit]
+Description=QIK-VRT local /AI static surface
+After=network.target
+[Service]
+ExecStart=/usr/bin/python3 -m http.server 8788 --bind 127.0.0.1 --directory /usr/share/qikvrt/web
+DynamicUser=yes
+NoNewPrivileges=yes
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target
+EOF
+ln -s ../qikvrt-ai-ui.service "$GUEST/etc/systemd/system/multi-user.target.wants/qikvrt-ai-ui.service"
+
 # Reuse the Universal Terminal SSH policy. The live guest narrows it to qikvrt,
 # with a fresh host key and an explicit owner public key supplied at VM startup.
 mkdir -p "$GUEST/etc/ssh" "$WORK/config/hooks/live"
@@ -241,6 +278,7 @@ cat > "$WORK/config/includes.chroot/etc/qikvrt/distribution.json" <<EOF
   "codex": $(cat "$GUEST/opt/qikvrt/codex/qikvrt-install-receipt.json"),
   "ssh": {"activation": "explicit_owner_public_key", "user": "qikvrt", "port": 2222, "chatgpt_pairing": "NOT_ESTABLISHED"},
   "emutos_rom_sha256": "$EMUTOS_ROM_SHA",
+  "epistemic_spiral": {"carrier_sha256": "$SPIRAL_SHA", "url": "http://127.0.0.1:8788/AI/", "firefox_extension_package": "/usr/share/qikvrt/qikvrt-ai-terminal.xpi", "firefox_extension_signed": false},
   "temdd": ["REQUEST", "EXECUTE", "FOLLOW", "LEARN", "REPEAT_UNTIL_DONE"],
   "principle": "Stay fail closed and keep future open!",
   "effect_ack_done": false,
