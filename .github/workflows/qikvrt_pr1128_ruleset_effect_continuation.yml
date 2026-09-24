@@ -1,0 +1,42 @@
+name: QIKVRT PR1128 ruleset effect continuation
+
+on:
+  push:
+    branches:
+      - repair/pr1128-main-integration-20260924
+    paths:
+      - .github/workflows/qikvrt_pr1128_ruleset_effect_continuation.yml
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      PR_NUMBER: "1128"
+      EXPECTED_HEAD: "1284555610b50372be0fdba7e4450e357282dc0b"
+    steps:
+      - name: Reobserve exact gate blocker
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)" = "$EXPECTED_HEAD"
+          state="$(gh api "repos/${REPOSITORY}/commits/${EXPECTED_HEAD}/status" --jq '[.statuses[] | select(.context=="QIKVRT required code-owner review")][0].state')"
+          test "$state" = failure
+
+      - name: Dispatch exact ruleset effect loop
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -n --arg pr "$PR_NUMBER" --arg head "$EXPECTED_HEAD" \
+            '{ref:"main",inputs:{pr:$pr,expected_head:$head}}' |
+            gh api --method POST \
+              "repos/${REPOSITORY}/actions/workflows/qikvrt_autonomous_ruleset_effect_loop.yml/dispatches" \
+              --input -
+          printf 'PR=%s\nHEAD=%s\nPREDECESSOR_EVIDENCE_TRANSFER=false\nEFFECT_ACK_DONE=false\n' \
+            "$PR_NUMBER" "$EXPECTED_HEAD"
