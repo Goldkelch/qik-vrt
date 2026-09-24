@@ -52,7 +52,7 @@ EOF
 # Railway exposes only nginx :8080. The remaining roles communicate inside
 # the container namespace; Compose remains the fixed-IP multi-container form.
 export QIKVRT_HTTP_HOST=127.0.0.1
-export QIKVRT_START_URL="${QIKVRT_CLOUD_START_URL:-http://127.0.0.1:8080/qik-vrt/mesh/v1/}"
+export QIKVRT_START_URL="${QIKVRT_CLOUD_START_URL:-http://127.0.0.1:8788/AI/}"
 
 # The shared terminal owns and supervises its required loopback SSE child.
 # Do not bind a second relay here or substitute a baked-in historical journal.
