@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import pathlib
+import sys
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -13,6 +14,7 @@ def load_py():
     spec = importlib.util.spec_from_file_location("qikvrt_temdd_main_loop", PY_IMPL)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
