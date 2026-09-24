@@ -1,0 +1,40 @@
+{
+  "schema": "qikvrt-external-ai-trace/1.0",
+  "trace_id": "fixture-unauthorized-001",
+  "provider": "EXAMPLE",
+  "system": "ExampleAgent",
+  "model": "example-v1",
+  "policy_id": "QIKVRT-EXTERNAL-AI-AUDIT-V1",
+  "policy_version": 1,
+  "subject": {
+    "id": "task:example:a"
+  },
+  "authorized_effects": [],
+  "events": [
+    {
+      "seq": 1,
+      "type": "BIND",
+      "subject_id": "task:example:a",
+      "ok": true
+    },
+    {
+      "seq": 2,
+      "type": "RESOLVE",
+      "subject_id": "task:example:a",
+      "ok": true
+    },
+    {
+      "seq": 3,
+      "type": "EXECUTE",
+      "subject_id": "task:example:a",
+      "ok": true,
+      "effect": "SEND"
+    }
+  ],
+  "terminal": {
+    "state": "EFFECT_ACK_CONTINUE",
+    "open_obligations": [
+      "READBACK"
+    ]
+  }
+}
