@@ -1,0 +1,76 @@
+{
+  "schema": "qikvrt.temdd.language.v1",
+  "name": "Tested Event Model Driven Development Language",
+  "abbreviation": "TEMDD",
+  "execution_rule": ["REQUEST", "EXECUTE", "FOLLOW", "LEARN", "REPEAT_UNTIL_DONE"],
+  "normative_principle": "Do not claim, decide, or act more strongly than exact-bound evidence supports.",
+  "domains": {
+    "state": "S",
+    "requirement": "R",
+    "evidence": "E",
+    "action": "A",
+    "model": "M",
+    "authority": "U"
+  },
+  "semantics": {
+    "goal_region": "GR(R) = { s | s satisfies R }",
+    "knowledge_region": "K(E) = { s | s is compatible with E }",
+    "consistent": "K(E) is nonempty",
+    "sound_for": "K(E) is a subset of GR(R)",
+    "actual_covered": "actual_state is in K(E)",
+    "done": "consistent AND sound_for AND exact_subject_bound AND actual_covered"
+  },
+  "evidence_transfer": "DENY_BY_DEFAULT",
+  "mutation": {
+    "invalidates_completion": true,
+    "required_status": "HOLD_UNVERIFIED"
+  },
+  "requirement_transition": {
+    "silent_weakening_forbidden": true,
+    "change_requires_explicit_authority": true
+  },
+  "evidence_classes": [
+    "FORMAL_PROOF",
+    "DETERMINISTIC_TEST",
+    "RUNTIME_OBSERVATION",
+    "REPOSITORY_OBSERVATION",
+    "HUMAN_REVIEW",
+    "AUTHORITY_DECISION",
+    "ARTIFACT_RECEIPT",
+    "TRANSPORT_RECEIPT",
+    "EFFECT_RECEIPT",
+    "EMPIRICAL_MEASUREMENT",
+    "EXTERNAL_PUBLICATION"
+  ],
+  "non_equivalences": [
+    "TEST != PROOF",
+    "PROOF != EMPIRICAL_TRUTH",
+    "TRANSPORT_ACK != EFFECT_ACK",
+    "SEQUENCE != CAUSALITY",
+    "INTENT != AUTHORITY",
+    "PASS != DONE",
+    "DONE != FINAL_PASS",
+    "DONE != PUBLICATION",
+    "DONE != EFFECT_ACK_DONE"
+  ],
+  "hold_states": {
+    "empty_knowledge_region": "HOLD_EVIDENCE_INCONSISTENT",
+    "subject_mismatch": "HOLD_SUBJECT_UNBOUND",
+    "actual_state_uncovered": "HOLD_ACTUAL_STATE_UNCOVERED",
+    "knowledge_not_within_goal": "HOLD_REQUIREMENT_NOT_ESTABLISHED",
+    "unresolved_hard_obligation": "HOLD_HARD_OBLIGATION",
+    "missing_completion_authority": "HOLD_AUTHORITY_REQUIRED"
+  },
+  "negative_regressions": [
+    "green_checks_wrong_subject_must_not_done",
+    "stale_receipt_after_mutation_must_not_done",
+    "empty_or_contradictory_evidence_must_not_done",
+    "knowledge_region_with_counterexample_must_not_done",
+    "actual_state_outside_evidence_must_not_done",
+    "unauthorized_requirement_change_must_not_be_adopted"
+  ],
+  "formal_kernel": "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/Completion.lean",
+  "runtime_reference": "tools/temdd_language.py",
+  "tests": "tests/test_temdd_language.py",
+  "documentation": "docs/TEMDD_LANGUAGE_V1.md"
+}
