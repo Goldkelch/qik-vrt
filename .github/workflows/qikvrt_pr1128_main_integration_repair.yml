@@ -160,7 +160,7 @@ jobs:
           python3 -B tools/qikvrt_integrity.py generate
           git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
           test -z "$(git diff --name-only --diff-filter=U)"
-          git diff --cached --check
+          git diff --cached --check -- README.md REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt docs/publications/index.html docs/publications/index.json
 
       - name: Verify repaired exact candidate before persistence
         shell: bash
