@@ -251,3 +251,112 @@ jobs:
             old=''
             inventory_complete_comments=false
             for page in 1 2 3 4 5; do
+              comments="$(gh api "repos/${REPOSITORY}/issues/${pr}/comments?per_page=100&page=${page}")"
+              matches="$(printf '%s' "$comments" | jq -c --arg marker "$MARKER" '[.[] | select(.user.login == "github-actions[bot]" and .user.type == "Bot") | select((.body // "") | startswith($marker))]')"
+              count="$(printf '%s' "$matches" | jq 'length')"
+              if [ "$count" -gt 1 ] || { [ "$count" -eq 1 ] && [ -n "$comment_id" ]; }; then
+                echo "BLOCK: duplicate continuation obligation comments for PR #$pr" >&2
+                exit 1
+              fi
+              if [ "$count" -eq 1 ]; then
+                comment_id="$(printf '%s' "$matches" | jq -r '.[0].id')"
+                old="$(printf '%s' "$matches" | jq -r '.[0].body')"
+              fi
+              if [ "$(printf '%s' "$comments" | jq 'length')" -lt 100 ]; then
+                inventory_complete_comments=true
+                break
+              fi
+            done
+            if [ "$inventory_complete_comments" != true ]; then
+              echo "BLOCK: comment inventory truncated for PR #$pr" >&2
+              exit 1
+            fi
+
+            changed=true
+            if [ -n "$comment_id" ] && printf '%s' "$old" | grep -Fq "$fingerprint"; then
+              changed=false
+              body="$old"
+            elif [ -n "$comment_id" ]; then
+              gh api --method PATCH "repos/${REPOSITORY}/issues/comments/${comment_id}" -f body="$body" >/dev/null
+            else
+              comment_id="$(gh api --method POST "repos/${REPOSITORY}/issues/${pr}/comments" -f body="$body" --jq '.id')"
+            fi
+            [[ "$comment_id" =~ ^[1-9][0-9]*$ ]]
+
+            readback="$(gh api "repos/${REPOSITORY}/issues/comments/${comment_id}")"
+            printf '%s' "$readback" | jq -e \
+              --argjson id "$comment_id" \
+              --arg body "$body" \
+              --arg issue "https://api.github.com/repos/$REPOSITORY/issues/$pr" \
+              '.id == $id and .issue_url == $issue and .body == $body and .user.login == "github-actions[bot]" and .user.type == "Bot"' \
+              >/dev/null
+
+            case "$d0" in
+              1)
+                desired_status=pending
+                description='Continuation active/held; exact subject remains live'
+                ;;
+              2)
+                desired_status=error
+                description='Nonterminal exact head requires a successor transition'
+                ;;
+              3)
+                desired_status=pending
+                description='Nonterminal exact head awaits explicit authority'
+                ;;
+              *)
+                echo "BLOCK: unexpected D0=$d0" >&2
+                exit 1
+                ;;
+            esac
+
+            status="$(gh api "repos/${REPOSITORY}/commits/${head}/status")"
+            current_status="$(printf '%s' "$status" | jq -r --arg context "$STATUS_CONTEXT" '[.statuses[] | select(.context == $context)][0].state // "missing"')"
+            current_description="$(printf '%s' "$status" | jq -r --arg context "$STATUS_CONTEXT" '[.statuses[] | select(.context == $context)][0].description // ""')"
+            status_changed=false
+            if [ "$current_status" != "$desired_status" ] || [ "$current_description" != "$description" ]; then
+              gh api --method POST "repos/${REPOSITORY}/statuses/${head}" \
+                -f state="$desired_status" \
+                -f context="$STATUS_CONTEXT" \
+                -f description="$description" \
+                -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+                >/dev/null
+              status_changed=true
+            fi
+            status_readback="$(gh api "repos/${REPOSITORY}/commits/${head}/status")"
+            printf '%s' "$status_readback" | jq -e \
+              --arg context "$STATUS_CONTEXT" \
+              --arg state "$desired_status" \
+              --arg description "$description" \
+              '[.statuses[] | select(.context == $context)][0] | .state == $state and .description == $description' \
+              >/dev/null
+
+            jq -n \
+              --arg repository "$REPOSITORY" \
+              --argjson pr "$pr" \
+              --arg head "$head" \
+              --arg tree "$tree" \
+              --arg fingerprint "$fingerprint" \
+              --argjson comment "$comment_id" \
+              --argjson changed "$changed" \
+              --argjson status_changed "$status_changed" \
+              --argjson decision "$(cat "$root/envelope-${pr}.json")" \
+              '{
+                schema:"qikvrt_continuation_obligation_receipt_v1",
+                repository:$repository,
+                pull_request:$pr,
+                head_sha:$head,
+                head_tree_sha:$tree,
+                decision_fingerprint:$fingerprint,
+                decision:$decision,
+                carrier:"SYNTHESIZED_STATUS_AND_COMMENT",
+                comment_id:$comment,
+                comment_write_performed:$changed,
+                status_write_performed:$status_changed,
+                write_performed:($changed or $status_changed),
+                readback_verified:true,
+                status_readback_verified:true,
+                productive_effect:false,
+                effect_ack_done:false,
+                predecessor_evidence_transfer:false
+              }' > "$root/receipt-${pr}.json"
