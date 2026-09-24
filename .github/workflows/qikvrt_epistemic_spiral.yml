@@ -34,8 +34,8 @@ jobs:
           import json
           x=json.load(open('/tmp/epistemic-spiral-temdd-ir.json'))
           assert x['subject']['binding']=='exact'
-          assert 'SERIALIZE_DESERIALIZE_IDENTITY' in x['dod']
-          assert 'FRESH_EFFECT_READBACK' in x['dod']
+          required={'ZERO_BUGS','ALL_PULL_REQUESTS_REGARDED','ALL_BRANCHES_REGARDED','ALL_PRODUCTIVE_BRANCHES_MERGED','FRESH_EXACT_MAIN_VALIDATION_PASS','FRESH_EFFECT_READBACK'}
+          assert set(x['dod']) == required
           PY
       - name: Test vector surface and carriers
         run: python3 -B -m unittest -v tests.test_qikvrt_epistemic_spiral
