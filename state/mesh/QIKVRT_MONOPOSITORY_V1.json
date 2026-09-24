@@ -1,0 +1,83 @@
+{
+  "_license": {
+    "classification": "machine_readable_control_contract",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_monopository_topology_v1",
+  "instance_id": "QIKVRT_MONOPOSITORY_V1",
+  "purpose": "Manifest one authoritative repository as the container for multiple independently bound causal carriers while preserving exact-subject isolation, the single canonical publication spine through P7, and explicit convergence barriers.",
+  "authority_repository": {
+    "repository": "Goldkelch/qik-vrt",
+    "role": "AUTHORITY",
+    "base_main_sha": "3b140fd85e6723f4cc8c147c56d34d7e1ca48740",
+    "base_main_tree": "7cecfdb608c17b20fc41428e98c28668d802229d"
+  },
+  "normative_precedence": {
+    "policy": "policy/QIKVRT_EXECUTION_PRECEDENCE_V1.json",
+    "relation_type": "STRICT_PARTIAL_ORDER",
+    "single_publication_spine_before_p7": true,
+    "external_fanout_only_after_p7": true,
+    "unspecified_relation": "HOLD_UNVERIFIED",
+    "predecessor_evidence_transfer": false,
+    "head_mutation_resets_p2_plus": true,
+    "timestamp_is_causality": false,
+    "pr_number_is_causality": false,
+    "file_order_is_causality": false
+  },
+  "carrier_model": {
+    "multiple_repository_native_carriers_allowed": true,
+    "carrier_subjects_are_independent_until_explicitly_related": true,
+    "carrier_failure_completes_other_carrier": false,
+    "carrier_success_completes_other_carrier": false,
+    "convergence_requires_explicit_policy_edge_or_barrier": true,
+    "redundant_routes_required": true
+  },
+  "current_publication_context": {
+    "canonical_predecessor": {
+      "pr": 966,
+      "head_sha": "870a5ef7dc008d667315f8a682c3ca42961de3a7",
+      "tree_sha": "f4b2df2c5972509827c693a747b05bbb411a1a75",
+      "role": "HISTORICAL_EXACT_SUBJECT",
+      "p4_receipt_comment": 5562159069,
+      "evidence_transfer": false
+    },
+    "active_fresh_successor": {
+      "pr": 1035,
+      "branch": "publication/pr966-p5-successor-v1",
+      "head_sha": "c81281e42f7d7899e7d8f5b29a066a13a78b81c2",
+      "tree_sha": "7cecfdb608c17b20fc41428e98c28668d802229d",
+      "role": "CURRENT_PUBLICATION_CANDIDATE",
+      "p2_plus": "REQUIRES_FRESH_EXACT_SUBJECT_EVIDENCE",
+      "evidence_transfer": false
+    },
+    "additional_method_slot": {
+      "role": "INDEPENDENT_REPOSITORY_NATIVE_CONTINUATION_METHOD",
+      "status": "UNBOUND",
+      "activation_rule": "REQUIRES_EXPLICIT_CAUSAL_BINDING_AND_MUST_NOT_RETROACTIVELY_RECLASSIFY_PREDECESSOR_EVENTS"
+    }
+  },
+  "external_fanout": {
+    "barrier": "P7_DERIVE_BOUND_EXTERNAL_OBLIGATIONS",
+    "independent_edges": [
+      "WIKIPEDIA",
+      "ZENODO",
+      "ARXIV"
+    ],
+    "cross_edge_order": "NONE_AFTER_COMMON_BARRIER"
+  },
+  "effect_boundary": {
+    "changes_active_publication_head_1035": false,
+    "changes_trusted_main": false,
+    "requests_review": false,
+    "approval": false,
+    "merge": false,
+    "publication": false,
+    "empirical_confirmation": false,
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
