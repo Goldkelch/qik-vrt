@@ -5,6 +5,8 @@ Tested Event Model Driven Development is specified here as an executable QIK-VRT
 Entry points:
 - `TEMDD_LANGUAGE_SPEC_V0_1.md` — normative bootstrap semantics.
 - `TEMDD_Syntax_V0_1.ebnf` — grammar.
+- `TEMDD_TECHNICAL_EVOLUTION_DECLARATION_V1.md` — human-readable authorship, priority and technical-evolution declaration by Ingolf Lohmann.
+- `TEMDD_TECHNICAL_EVOLUTION_DECLARATION_V1.json` — machine-readable form of that declaration and its evidence boundary.
 - `../../schemas/temdd-ir-v0.1.schema.json` — canonical IR contract.
 - `../../tools/qikvrt_temdd.py` — deterministic reference parser/elaborator.
 - `../../tools/qikvrt_temdd_conformance.py` — executable T01-T12 semantic checks.
