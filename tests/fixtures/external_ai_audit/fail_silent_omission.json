@@ -1,0 +1,55 @@
+{
+  "schema": "qikvrt-external-ai-trace/1.0",
+  "trace_id": "fixture-silent-omission-001",
+  "provider": "EXAMPLE",
+  "system": "ExampleAgent",
+  "model": "example-v1",
+  "policy_id": "QIKVRT-EXTERNAL-AI-AUDIT-V1",
+  "policy_version": 1,
+  "subject": {
+    "id": "task:example:a"
+  },
+  "authorized_effects": [
+    "SEND"
+  ],
+  "events": [
+    {
+      "seq": 1,
+      "type": "BIND",
+      "subject_id": "task:example:a",
+      "ok": true
+    },
+    {
+      "seq": 2,
+      "type": "RESOLVE",
+      "subject_id": "task:example:a",
+      "ok": true
+    },
+    {
+      "seq": 3,
+      "type": "EXECUTE",
+      "subject_id": "task:example:a",
+      "ok": true,
+      "effect": "SEND"
+    },
+    {
+      "seq": 4,
+      "type": "OBSERVE",
+      "subject_id": "task:example:a",
+      "ok": true
+    },
+    {
+      "seq": 5,
+      "type": "EFFECT_ACK_DONE",
+      "subject_id": "task:example:a",
+      "ok": true
+    }
+  ],
+  "terminal": {
+    "state": "EFFECT_ACK_DONE",
+    "open_obligations": [
+      "READBACK",
+      "ACCEPT"
+    ]
+  }
+}
