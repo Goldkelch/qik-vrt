@@ -1,0 +1,51 @@
+{
+  "_license": {
+    "classification": "repository_policy",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_notes_inheritance_policy_v1",
+  "policy_id": "QIKVRT-NOTES-INHERITANCE-2026-09-24-V1",
+  "mesh_repositories": [
+    "Goldkelch/qik-vrt",
+    "ingolf-lohmann/qik-vrt"
+  ],
+  "scope": {
+    "existing_notes": "ALL_TRACKED_NOTE_CARRIERS",
+    "future_notes": "ALL_FUTURE_TRACKED_NOTE_CARRIERS",
+    "matching_rule": "basename token NOTE or NOTES, case-insensitive; policy/tool/test/state infrastructure excluded",
+    "historical_note_bytes_rewritten": false,
+    "inheritance_mode": "OVERLAY_BY_CANONICAL_POLICY_REFERENCE"
+  },
+  "private_counsel_packet": {
+    "packet_id": "TEMDD-PATENT-COUNSEL-HANDOFF-2026-09-24-V0.2",
+    "visibility": "PRIVATE_OUT_OF_BAND",
+    "private_payload_bytes_in_public_repository": false,
+    "public_materialization_allowed": false,
+    "priority_chain_review_required_before_public_enablement": true,
+    "public_notes_must_not_copy_private_claim_or_enablement_text": true
+  },
+  "public_inheritance": {
+    "working_principle": "Public claims stay bounded to evidence; enabling patent detail stays private until the priority chain is verified.",
+    "invariants": [
+      "TRANSPORT_ACK != EFFECT_ACK",
+      "TERMINAL_EFFECT_ACK_REQUIRES_ACCEPTED_FRESH_READBACK_FOR_BOUND_SUBJECT",
+      "PREDECESSOR_EVIDENCE_TRANSFER = FALSE AFTER SUBJECT MUTATION",
+      "GREEN_GATE_OR_TEST_SUCCESS_ALONE_IS_NOT_EFFECT_ACK_DONE",
+      "PRIVATE_PATENT_ENABLEMENT_MUST_NOT_BE_MATERIALIZED_IN_PUBLIC_NOTE_BYTES_WITHOUT_COUNSEL_CLEARANCE"
+    ]
+  },
+  "future_inheritance": {
+    "automatic": true,
+    "requires_manual_copy_into_each_note": false,
+    "new_note_is_in_scope_at_creation": true,
+    "future_note_may_override_confidentiality_boundary": false
+  },
+  "completion": {
+    "existing_notes_covered_by_overlay": true,
+    "future_notes_covered_by_rule": true,
+    "private_payload_publication_effect": false,
+    "effect_ack_done": false
+  }
+}
