@@ -1,0 +1,123 @@
+{
+  "_license": {
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_continuation_obligation_contract_v1",
+  "contract_id": "qikvrt-continuation-obligation-v1",
+  "authority_entrypoint": "AI",
+  "purpose": "Prevent silent nonterminal quiescence after an exact repository transition without inventing authority or weakening fail-closed safety.",
+  "problem_model": {
+    "safety_failure": "UNAUTHORIZED_OR_UNBOUND_EFFECT",
+    "liveness_failure_classes": [
+      "DEADLOCK",
+      "CONTINUATION_OMISSION"
+    ],
+    "relationship": "DEADLOCK_AND_CONTINUATION_OMISSION_ARE_DISTINCT_LIVENESS_FAILURE_CLASSES",
+    "deadlock_boundary": "HOLD_MAY_BLOCK_ONE_EFFECT_EDGE_BUT_MUST_NOT_BECOME_A_GLOBAL_LOCK",
+    "continuation_omission_boundary": "A_NONTERMINAL_EXACT_SUBJECT_MUST_NOT_BECOME_QUIESCENT_WITHOUT_A_PERSISTED_SUCCESSOR_OBLIGATION"
+  },
+  "invariants": [
+    "TRANSPORT_ACK != EFFECT_ACK",
+    "PREDECESSOR_EVIDENCE_TRANSFER=false",
+    "OPEN_EXACT_SUBJECT && EFFECT_ACK_DONE=false => ACTIVE_TRANSITION || PERSISTED_SUCCESSOR_OBLIGATION",
+    "STABLE && NOT_DONE => SEARCH_FOR_MISSING_TRANSITION",
+    "HOLD != DEADLOCK",
+    "NO_SILENT_QUIESCENCE"
+  ],
+  "normative_safety_invariant": {
+    "name": "CATEGORICAL_IMPERATIVE_MAXIM_ADMISSION",
+    "role": "NORMATIVE_EFFECT_ADMISSION_CONSTRAINT",
+    "machine_interpretation": "A proposed effect gains no authority merely from local success or self-interest; promotion to an authorized effect requires explicit exact-subject policy predicates for the declared affected scope and the repository authority model.",
+    "claim_boundary": "NORMATIVE_POLICY_COMPONENT_NOT_A_STANDALONE_PROOF_OF_COMPLETE_AI_SAFETY"
+  },
+  "equilibrium_boundary": {
+    "rule": "NASH_EQUILIBRIUM_IS_NOT_IDENTICAL_TO_DEADLOCK_OR_AN_ENDLESS_LOOP",
+    "liveness_consequence": "A locally stable state that is not terminal still requires SEARCH_FOR_MISSING_TRANSITION."
+  },
+  "detector": {
+    "workflow_path": ".github/workflows/qikvrt_continuation_obligation_watch.yml",
+    "classifier_path": "tools/qikvrt_continuation_obligation.py",
+    "test_path": "tests/test_qikvrt_continuation_obligation.py",
+    "event_sources": [
+      "PULL_REQUEST_TARGET_TRANSITION",
+      "WORKFLOW_DISPATCH",
+      "REPOSITORY_NATIVE_FIVE_MINUTE_RECONCILIATION"
+    ],
+    "fallback_cadence": "PT5M",
+    "exact_head_run_discovery": "ACTIONS_RUN_INVENTORY_BY_HEAD_SHA_WITHOUT_WORKFLOW_NAME_ALLOWLIST",
+    "new_workflow_registration_required": false,
+    "unknown_workflow_policy": "INCLUDE_BY_DEFAULT_EXCEPT_EXPLICIT_OBSERVER_SELF_EXCLUSION",
+    "subjects_per_cycle": 30,
+    "maximum_open_main_pull_requests": 300,
+    "maximum_full_inventory_cycle": "PT50M",
+    "inventory_overflow_disposition": "BLOCK_WITHOUT_CLAIMING_COMPLETE_COVERAGE",
+    "maximum_actions_run_pages_per_subject": 5,
+    "actions_run_page_size": 100
+  },
+  "decision_model": {
+    "D0_0": {
+      "state": "NOOP",
+      "meaning": "SUBJECT_CLOSED_OR_EFFECT_ACK_DONE",
+      "terminal_claim": false
+    },
+    "D0_1": {
+      "state": "HOLD",
+      "meaning": "EXACT_HEAD_TRANSITION_IS_ACTIVE_OR_INVENTORY_CANNOT_BE_PROVED_COMPLETE",
+      "terminal_claim": false
+    },
+    "D0_2": {
+      "state": "REOBSERVE",
+      "meaning": "TERMINAL_ADVERSE_MISSING_OR_UNTRUSTED_EXACT_HEAD_TRANSITION_REQUIRES_A_SUCCESSOR",
+      "terminal_claim": false
+    },
+    "D0_3": {
+      "state": "REQUEST_AUTHORITY",
+      "meaning": "THE_SUBJECT_IS_STILL_OPEN_BUT_NO_SAFE_AUTONOMOUS_SUCCESSOR_IS_AUTHORIZED",
+      "terminal_claim": false
+    }
+  },
+  "successor_carrier": {
+    "reuse_order": [
+      "ACTIVE_EXACT_HEAD_TRANSITION",
+      "EXISTING_REQUESTED_REVIEWER_METADATA",
+      "SYNTHESIZED_EXACT_STATUS_AND_PR_COMMENT"
+    ],
+    "pr_comment_marker": "<!-- qikvrt-continuation-obligation-v1 -->",
+    "commit_status_context": "QIKVRT continuation obligation",
+    "actions_artifact_prefix": "qikvrt-continuation-obligation-",
+    "required_binding": [
+      "REPOSITORY",
+      "PULL_REQUEST_NUMBER",
+      "HEAD_SHA",
+      "HEAD_TREE_SHA",
+      "DECISION_D0",
+      "DECISION_REASON",
+      "CAUSAL_RUN_ID_WHEN_AVAILABLE",
+      "DECISION_FINGERPRINT",
+      "FRESH_PR_HEAD_READBACK",
+      "FRESH_COMMENT_READBACK"
+    ],
+    "unchanged_fingerprint": "NO_NEW_WRITE",
+    "obligation_lifetime": "UNTIL_EXACT_POSTCONDITION_REBIND_INVALIDATION_OR_SOURCED_EXTERNAL_HOLD_WITH_REOBSERVATION",
+    "sourced_external_hold_is_terminal": false
+  },
+  "authority_boundary": {
+    "detector_may_repair_source": false,
+    "detector_may_review": false,
+    "detector_may_merge": false,
+    "detector_may_release": false,
+    "detector_may_deploy": false,
+    "detector_may_publish": false,
+    "detector_may_assert_effect_ack_done": false,
+    "productive_mutation_requires_existing_repository_native_authority": true
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "DEADLOCK_FREEDOM_PROVED": false,
+    "COMPLETE_AI_SAFETY_PROVED": false
+  }
+}
