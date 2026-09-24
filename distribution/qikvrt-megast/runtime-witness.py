@@ -119,6 +119,24 @@ def main():
     wait_for_window("Firefox")
     run(["pgrep", "-u", str(os.getuid()), "firefox-esr"])
     stage("firefox-window-observed")
+    with urllib.request.urlopen("http://127.0.0.1:8788/AI/", timeout=5) as response:
+        ai_page = response.read()
+    if b"epistemic spiral" not in ai_page.lower() or b"Universal Terminal" not in ai_page:
+        raise RuntimeError("local /AI epistemic-spiral surface not observed")
+    spiral_root = Path("/usr/share/qikvrt/web/assets/epistemic-spiral")
+    manifest = json.loads((spiral_root / "manifest.json").read_text())
+    i18n = json.loads((spiral_root / "i18n.json").read_text())
+    bundle = {"schema":"qikvrt_epistemic_spiral_serialized_v1","manifest":manifest,
+              "svg":(spiral_root / "spiral.svg").read_text(),"i18n":i18n}
+    bundle_bytes = json.dumps(bundle,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()
+    spiral_sha256 = hashlib.sha256(bundle_bytes).hexdigest()
+    if spiral_sha256 != config["epistemic_spiral"]["carrier_sha256"]:
+        raise RuntimeError("Linux spiral readback digest mismatch")
+    firefox_package = Path(config["epistemic_spiral"]["firefox_extension_package"])
+    if not firefox_package.is_file() or firefox_package.stat().st_size == 0:
+        raise RuntimeError("Firefox Effect-Ack adapter package missing from distribution")
+    stage("epistemic-spiral-ai-surface-readback")
+
     rom = Path("/usr/share/qikvrt/emutos/etos256de.img")
     rom_sha256 = verify_emutos_rom(rom, config["emutos_rom_sha256"])
     hatari_pid = run(["pgrep", "-u", str(os.getuid()), "-x", "hatari"]).splitlines()[0]
@@ -169,6 +187,9 @@ def main():
                "hatari_process_observed": True, "hatari_machine": "st",
                "emutos_rom": str(rom), "emutos_rom_sha256": rom_sha256,
                "hatari_window_observed": True, "physical_atari_boot": False,
+               "epistemic_spiral_carrier_sha256": spiral_sha256, "ai_surface_readback": True,
+               "firefox_effect_ack_adapter_package_present": True,
+               "firefox_effect_ack_adapter_signed": config["epistemic_spiral"]["firefox_extension_signed"],
                "effect_ack_done": False}
     Path.home().joinpath(".config/qikvrt/runtime-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     emit_serial("QIKVRT_RUNTIME_RECEIPT " + json.dumps(receipt, sort_keys=True))
