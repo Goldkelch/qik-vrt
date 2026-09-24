@@ -62,8 +62,11 @@ class EpistemicSpiralTests(unittest.TestCase):
         self.assertIn("QIKVRT_START_URL=about:blank",docker)
         self.assertIn('START_URL="${QIKVRT_START_URL:-about:blank}"',entry)
         self.assertIn("python3 -m http.server",entry)
-        self.assertIn("root /opt/qikvrt/docs;",nginx)
-        self.assertIn("X-QIKVRT-Surface",nginx)
+        self.assertIn("try_files /mesh-index.html =404;",nginx)
+        self.assertIn("location /assets/",nginx)
+        mesh=(ROOT/"deploy/universal-terminal/mesh-index.html").read_text(encoding="utf-8")
+        self.assertIn("/assets/epistemic-spiral/spiral.svg",mesh)
+        self.assertIn("data-qikvrt-spiral",mesh)
 
     def test_delivery_contract_requires_roundtrip_receipts(self):
         request=json.loads((ROOT/"state/delivery/requests/AI_PERSONAL_FIREFOX_V1.json").read_text(encoding="utf-8"))
