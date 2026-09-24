@@ -1,0 +1,204 @@
+name: QIKVRT PR1128 Zenodo v2 idempotent public readback
+
+on:
+  push:
+    branches:
+      - verification/pr1128-zenodo-v2-replay-20260924
+    paths:
+      - .github/workflows/qikvrt_pr1128_zenodo_v2_replay_readback.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-pr1128-zenodo-v2-replay-readback
+  cancel-in-progress: false
+
+jobs:
+  readback:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: verification/pr1128-zenodo-v2-replay-20260924
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Bind consumed authorization and perform public readback only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import datetime
+          import hashlib
+          import json
+          import pathlib
+          import urllib.parse
+          import urllib.request
+
+          root = pathlib.Path('.').resolve()
+          evidence_path = root / 'release/pr1128-truth-expectations-law-zenodo-v2/zenodo-publication.json'
+          receipt = json.loads(evidence_path.read_text(encoding='utf-8'))
+
+          expected = {
+              'authorization_id': 'pr1128-truth-expectations-law-20260919-v2',
+              'publication_id': 'qikvrt-truth-expectations-wager-effect-law-2026-09-19-v2',
+              'return_sha256': 'e0ad74195ff7cd6c621bc3c6c749cf98bfe3e7071aeb0b7eb18003e178aa6d1b',
+              'metadata_sha256': 'c6988f8a9916eb7c30cd8a8705b62c290dc7e400f425dc32621e31dccd50640f',
+              'machine_proof_sha256': '297019a870a775b9834f0195e36c756eda170f4a8c24baeb19ca404bc143d925',
+              'record_id': 22845516,
+              'doi': '10.5281/zenodo.22845516',
+          }
+
+          binding = receipt['binding']
+          owner = receipt['owner_authorization']
+          machine = receipt['machine_proof']
+          assert binding['authorization_id'] == expected['authorization_id']
+          assert binding['publication_id'] == expected['publication_id']
+          assert owner['candidate_return_receipt']['sha256'] == expected['return_sha256']
+          assert owner['canonical_metadata_sha256'] == expected['metadata_sha256']
+          assert owner['machine_proof']['sha256'] == expected['machine_proof_sha256']
+          assert machine['sha256'] == expected['machine_proof_sha256']
+          assert receipt['record_id'] == expected['record_id']
+          assert receipt['doi'] == expected['doi']
+          assert receipt['state'] == 'published'
+          assert receipt['phase'] == 'public_verified'
+          assert receipt['recovery']['authorization_consumed'] is True
+          assert receipt['recovery']['duplicate_remote_mutation_forbidden'] is True
+
+          headers = {
+              'Accept': 'application/json',
+              'User-Agent': 'qikvrt-temdd-public-readback/1',
+          }
+          api_url = f"https://zenodo.org/api/records/{expected['record_id']}"
+          request = urllib.request.Request(api_url, headers=headers, method='GET')
+          with urllib.request.urlopen(request, timeout=60) as response:
+              if response.status != 200:
+                  raise SystemExit(f'READBACK_BLOCK_RECORD_HTTP={response.status}')
+              record = json.load(response)
+
+          observed_id = int(record.get('id') or 0)
+          if observed_id != expected['record_id']:
+              raise SystemExit(f'READBACK_BLOCK_RECORD_ID={observed_id}')
+
+          doi = (
+              record.get('doi')
+              or (record.get('metadata') or {}).get('doi')
+              or (((record.get('pids') or {}).get('doi') or {}).get('identifier'))
+          )
+          if doi != expected['doi']:
+              raise SystemExit(f'READBACK_BLOCK_DOI={doi!r}')
+
+          title = (record.get('metadata') or {}).get('title')
+          if title != receipt['title']:
+              raise SystemExit(f'READBACK_BLOCK_TITLE={title!r}')
+
+          raw_files = record.get('files')
+          public_files = {}
+          if isinstance(raw_files, list):
+              for item in raw_files:
+                  name = item.get('key') or item.get('filename')
+                  if name:
+                      public_files[name] = item
+          elif isinstance(raw_files, dict):
+              entries = raw_files.get('entries')
+              if isinstance(entries, dict):
+                  public_files.update(entries)
+              else:
+                  for name, item in raw_files.items():
+                      if isinstance(item, dict):
+                          public_files[name] = item
+
+          expected_files = {item['name']: item for item in receipt['files']}
+          if set(public_files) != set(expected_files):
+              raise SystemExit(
+                  'READBACK_BLOCK_FILESET='
+                  + json.dumps({
+                      'missing': sorted(set(expected_files) - set(public_files)),
+                      'unexpected': sorted(set(public_files) - set(expected_files)),
+                  }, sort_keys=True)
+              )
+
+          observed_files = []
+          for name in sorted(expected_files):
+              exp = expected_files[name]
+              meta = public_files[name]
+              links = meta.get('links') or {}
+              url = links.get('content') or links.get('download') or links.get('self')
+              if not url:
+                  url = (
+                      f"https://zenodo.org/records/{expected['record_id']}/files/"
+                      + urllib.parse.quote(name)
+                      + '?download=1'
+                  )
+              file_req = urllib.request.Request(url, headers={'User-Agent': headers['User-Agent']}, method='GET')
+              h = hashlib.sha256()
+              size = 0
+              with urllib.request.urlopen(file_req, timeout=120) as response:
+                  if response.status != 200:
+                      raise SystemExit(f'READBACK_BLOCK_FILE_HTTP name={name} status={response.status}')
+                  while True:
+                      chunk = response.read(1024 * 1024)
+                      if not chunk:
+                          break
+                      h.update(chunk)
+                      size += len(chunk)
+              digest = h.hexdigest()
+              if size != int(exp['size']):
+                  raise SystemExit(f'READBACK_BLOCK_SIZE name={name} expected={exp["size"]} actual={size}')
+              if digest != exp['sha256']:
+                  raise SystemExit(f'READBACK_BLOCK_SHA256 name={name} expected={exp["sha256"]} actual={digest}')
+              observed_files.append({'name': name, 'size': size, 'sha256': digest})
+
+          now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+          replay = {
+              'schema': 'qikvrt_temdd_idempotent_publication_replay_readback_v1',
+              'observed_at': now,
+              'repository': 'Goldkelch/qik-vrt',
+              'pr': 1128,
+              'authorization_id': expected['authorization_id'],
+              'publication_id': expected['publication_id'],
+              'return_sha256': expected['return_sha256'],
+              'metadata_sha256': expected['metadata_sha256'],
+              'machine_proof_sha256': expected['machine_proof_sha256'],
+              'authorization_consumed': True,
+              'single_use': True,
+              'idempotent_replay': True,
+              'new_zenodo_mutation': False,
+              'duplicate_remote_mutation_forbidden': True,
+              'record_id': expected['record_id'],
+              'doi': expected['doi'],
+              'public_record_readback': True,
+              'public_file_count': len(observed_files),
+              'public_byte_readback': 'PASS',
+              'files': observed_files,
+              'predecessor_evidence_transfer': False,
+              'publication_effect_ack_done': True,
+              'repository_effect_ack_done': False,
+              'transport_ack_is_effect_ack': False,
+          }
+          out = root / 'release/pr1128-truth-expectations-law-zenodo-v2/TEMDD_REPLAY_READBACK_2026-09-24.json'
+          out.write_text(json.dumps(replay, ensure_ascii=False, sort_keys=True, indent=2) + '\n', encoding='utf-8')
+          print('TEMDD_REPLAY=IDEMPOTENT')
+          print('ZENODO_NEW_MUTATION=false')
+          print('ZENODO_RECORD_ID=22845516')
+          print('ZENODO_DOI=10.5281/zenodo.22845516')
+          print('PUBLIC_FILE_COUNT=14')
+          print('TEMDD_PUBLIC_BYTE_READBACK=PASS')
+          print('PUBLICATION_EFFECT_ACK_DONE=true')
+          print('REPOSITORY_EFFECT_ACK_DONE=false')
+          PY
+
+      - name: Persist fresh readback receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name qikvrt-publication-readback
+          git config user.email qikvrt-publication-readback@users.noreply.github.com
+          git add release/pr1128-truth-expectations-law-zenodo-v2/TEMDD_REPLAY_READBACK_2026-09-24.json
+          python3 -B tools/qikvrt_integrity.py generate
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git diff --cached --check
+          git commit -m 'verification: persist PR1128 Zenodo v2 idempotent readback'
+          git push origin HEAD:verification/pr1128-zenodo-v2-replay-20260924
