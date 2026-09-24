@@ -76,4 +76,24 @@ class EpistemicSpiralTests(unittest.TestCase):
                          "epistemic_spiral_oci_readback_receipt"} <= required)
         self.assertFalse(request["completion_claims"]["EFFECT_ACK_DONE"])
 
+    def test_same_access_path_reenters_without_human_copy_paste(self):
+        content=(ROOT/"browser/firefox/qikvrt-terminal/content.js").read_text(encoding="utf-8")
+        background=(ROOT/"browser/firefox/qikvrt-terminal/background.js").read_text(encoding="utf-8")
+        manifest=json.loads((ROOT/"browser/firefox/qikvrt-terminal/manifest.json").read_text(encoding="utf-8"))
+        # Every fresh page injection automatically reobserves authority.
+        self.assertIn("applyPreferences().then(observe)",content)
+        self.assertIn('cache: "no-store"',background)
+        self.assertIn("OBSERVE_AUTHORITY",content)
+        self.assertIn("OBSERVE_AUTHORITY",background)
+        # The same /AI and Mesh paths are injected automatically; no clipboard,
+        # paste or manually supplied SHA is part of the route.
+        matches=set(manifest["content_scripts"][0]["matches"])
+        self.assertIn("https://goldkelch.github.io/qik-vrt/*",matches)
+        self.assertIn("http://127.0.0.1:8080/qik-vrt/mesh/v1/*",matches)
+        forbidden=("navigator.clipboard","readText(","paste","prompt(")
+        lower=content.lower()
+        for token in forbidden:
+            self.assertNotIn(token.lower(),lower)
+
+
 if __name__=="__main__": unittest.main()
