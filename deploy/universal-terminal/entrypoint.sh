@@ -12,7 +12,7 @@ DISPLAY_VALUE="${DISPLAY:-:99}"
 # Compose carriers opt into their explicit Mesh URLs; the standalone image must
 # remain addressable without assuming a peer service exists.
 AI_UI_PORT="${QIKVRT_AI_UI_PORT:-8788}"
-START_URL="${QIKVRT_START_URL:-http://127.0.0.1:${AI_UI_PORT}/AI/}"
+START_URL="${QIKVRT_START_URL:-about:blank}"
 
 # BEGIN TEMDD deployment subject binding
 # Exact deployments must not silently inherit the language carrier's PR 1103.
