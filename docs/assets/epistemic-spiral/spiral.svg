@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+<title id="title">QIK-VRT epistemic spiral</title>
+<desc id="desc">A vector animation from linear observation to closed feedback loop to an outward epistemic spiral. Each verified successor becomes the next bound input.</desc>
+<defs>
+  <radialGradient id="bg" cx="50%" cy="45%" r="70%"><stop offset="0" stop-color="#102d4e"/><stop offset=".45" stop-color="#071729"/><stop offset="1" stop-color="#02070f"/></radialGradient>
+  <linearGradient id="gold" x1="0" x2="1"><stop stop-color="#f8dd8b"/><stop offset=".55" stop-color="#d7a64a"/><stop offset="1" stop-color="#88dfff"/></linearGradient>
+  <filter id="glow"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>
+<style>
+  .trace{fill:none;stroke:url(#gold);stroke-width:5;stroke-linecap:round;stroke-linejoin:round;filter:url(#glow)}
+  .muted{fill:none;stroke:#55728f;stroke-width:2;opacity:.45}
+  .node{fill:#071729;stroke:#f4d473;stroke-width:4;filter:url(#glow)}
+  .blue{stroke:#88dfff}
+  .label{fill:#f4ead2;font:600 22px system-ui,sans-serif;letter-spacing:.06em}
+  .small{fill:#a9bfd1;font:16px system-ui,sans-serif}
+  .phase1{stroke-dasharray:420;stroke-dashoffset:420;animation:draw 2.2s ease forwards}
+  .phase2{stroke-dasharray:650;stroke-dashoffset:650;animation:draw 3s 2.1s ease forwards}
+  .phase3{stroke-dasharray:1500;stroke-dashoffset:1500;animation:draw 7s 4.8s ease forwards}
+  .pulse{animation:pulse 2.2s ease-in-out infinite}
+  .orbit{transform-origin:600px 338px;animation:orbit 18s linear infinite}
+  @keyframes draw{to{stroke-dashoffset:0}}
+  @keyframes pulse{50%{opacity:.35;transform:scale(.82)}}
+  @keyframes orbit{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.phase1,.phase2,.phase3,.pulse,.orbit{animation:none;stroke-dashoffset:0}}
+</style>
+<rect width="1200" height="675" rx="28" fill="url(#bg)"/>
+<g opacity=".6">
+  <circle cx="100" cy="110" r="2" fill="#fff"/><circle cx="1080" cy="90" r="2" fill="#fff"/><circle cx="1020" cy="520" r="1.5" fill="#fff"/>
+  <circle cx="170" cy="540" r="1.5" fill="#fff"/><circle cx="840" cy="160" r="1.5" fill="#fff"/><circle cx="350" cy="120" r="1" fill="#fff"/>
+</g>
+<text x="60" y="72" class="label" font-size="34">QIK-VRT · EPISTEMIC SPIRAL</text>
+<text x="60" y="104" class="small">OBSERVE → READBACK → ACCEPT → NEXT BOUND INPUT</text>
+
+<!-- stage 1: linear roundtrip -->
+<g>
+  <text x="70" y="195" class="label">1 · LINEAR</text>
+  <path d="M85 245 H330" class="trace phase1"/>
+  <path d="M320 235 L340 245 L320 255" class="trace phase1"/>
+  <circle cx="92" cy="245" r="10" class="node"/>
+  <circle cx="330" cy="245" r="10" class="node blue"/>
+  <text x="85" y="285" class="small">event</text><text x="280" y="285" class="small">readback</text>
+</g>
+
+<!-- stage 2: closed loop -->
+<g>
+  <text x="70" y="375" class="label">2 · LOCAL LOOP</text>
+  <path d="M120 470 C120 385 300 385 300 470 C300 555 120 555 120 470" class="trace phase2"/>
+  <circle cx="120" cy="470" r="10" class="node"/><circle cx="300" cy="470" r="10" class="node blue"/>
+  <text x="145" y="575" class="small">locally closed feedback</text>
+</g>
+
+<!-- stage 3: spiral progression -->
+<g>
+  <text x="445" y="170" class="label">3 · VERIFIED SUCCESSOR → NEXT INPUT</text>
+  <circle cx="760" cy="355" r="210" class="muted"/>
+  <circle cx="760" cy="355" r="155" class="muted"/>
+  <path id="spiralPath" d="M760 355
+    C790 325 835 348 830 390
+    C824 442 756 460 710 428
+    C650 386 659 299 724 259
+    C808 208 914 256 941 347
+    C976 466 874 565 755 553
+    C603 537 531 375 604 251
+    C692 103 909 99 1031 238" class="trace phase3"/>
+  <g class="orbit"><circle cx="970" cy="355" r="8" class="node blue pulse"/></g>
+  <circle cx="760" cy="355" r="12" class="node pulse"/>
+  <circle r="9" class="node blue">
+    <animateMotion dur="8s" begin="5s" repeatCount="indefinite" rotate="auto"><mpath href="#spiralPath"/></animateMotion>
+  </circle>
+  <text x="688" y="335" class="label">STATE</text>
+  <text x="815" y="395" class="small">EFFECT_ACK</text>
+  <text x="855" y="520" class="small">s′ becomes next bound input</text>
+</g>
+
+<g transform="translate(440,585)">
+  <rect width="700" height="58" rx="14" fill="#061521" stroke="#31516e"/>
+  <text x="24" y="25" class="small">LOCAL CLOSURE ≠ GLOBAL STASIS</text>
+  <text x="24" y="47" class="small">Each accepted effect changes the evidence state from which the next step begins.</text>
+</g>
+</svg>

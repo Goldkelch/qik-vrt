@@ -11,7 +11,7 @@
   host.innerHTML = `
     <header class="qv-head">
       <div><strong>QIKVRT · AI TERMINAL</strong><small data-i18n="subtitle"></small></div>
-      <div class="qv-head-actions"><button data-act="observe" data-i18n="observe"></button><button data-act="options" data-i18n-label="personalize">⚙</button><button data-act="collapse" data-i18n-label="collapse">—</button></div>
+      <div class="qv-head-actions"><button data-act="observe" data-i18n="observe"></button><button data-act="spiral" data-i18n="spiral"></button><button data-act="options" data-i18n-label="personalize">⚙</button><button data-act="collapse" data-i18n-label="collapse">—</button></div>
     </header>
     <div class="qv-body">
       <div class="qv-status" data-role="status">OBSERVE</div>
@@ -86,6 +86,12 @@
     const result = await send("OBSERVE_AUTHORITY");
     render(result);
     setState(result.ok ? "OBSERVE" : "HOLD", result.ok ? message("observed") : result.reason);
+  }
+
+  function openSpiral() {
+    const local = ["127.0.0.1", "localhost"].includes(location.hostname) && ["8080", "8788"].includes(location.port);
+    const target = local ? location.origin + "/AI/" : "https://goldkelch.github.io/qik-vrt/AI/";
+    window.open(target, "_blank", "noopener,noreferrer");
   }
 
   async function blobPayload(blob, mediaType) {
@@ -199,6 +205,7 @@
     try {
       const act = button.dataset.act;
       if (act === "observe") await observe();
+      else if (act === "spiral") openSpiral();
       else if (act === "audio") await toggleAudio();
       else if (act === "camera") await toggleCamera();
       else if (act === "snapshot") await takeSnapshot();

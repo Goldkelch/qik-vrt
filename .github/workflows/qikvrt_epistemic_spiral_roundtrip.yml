@@ -1,0 +1,32 @@
+name: QIKVRT epistemic spiral roundtrip
+on:
+  pull_request:
+    branches: [main, ux/public-qikvrt-entry-20260924]
+permissions:
+  contents: read
+jobs:
+  spiral-roundtrip:
+    runs-on: ubuntu-latest
+    env:
+      EXACT_SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXACT_SUBJECT_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind exact subject
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXACT_SUBJECT_SHA"
+          printf 'HEAD=%s\nTREE=%s\n' "$EXACT_SUBJECT_SHA" "$(git rev-parse 'HEAD^{tree}')"
+      - name: Static carrier tests
+        run: python3 -B -m unittest tests.test_qikvrt_epistemic_spiral -v
+      - name: Build Universal Transputer runtime
+        run: cargo build --release --locked --manifest-path next/Cargo.toml
+      - name: Serialize, deserialize and roundtrip through Universal Transputer
+        run: python3 -B tools/qikvrt_epistemic_spiral_roundtrip.py --output epistemic-spiral-roundtrip.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qikvrt-epistemic-spiral-roundtrip
+          path: epistemic-spiral-roundtrip.json

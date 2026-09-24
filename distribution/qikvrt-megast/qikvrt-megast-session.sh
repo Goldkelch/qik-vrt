@@ -57,6 +57,8 @@ cat > "$HOME/.config/qikvrt/session-receipt.json" <<EOF
   "firefox_present":$(command -v firefox-esr >/dev/null 2>&1 && echo true || echo false),
   "podman_present":$(command -v podman >/dev/null 2>&1 && echo true || echo false),
   "flatpak_present":$(command -v flatpak >/dev/null 2>&1 && echo true || echo false),
+  "epistemic_spiral_url":"http://127.0.0.1:8788/AI/",
+  "firefox_effect_ack_adapter_package_present":$(test -s /usr/share/qikvrt/qikvrt-ai-terminal.xpi && echo true || echo false),
   "effect_ack_done":false,
   "reason":"session_materialization_is_not_terminal_effect"
 }
@@ -64,7 +66,7 @@ EOF
 
 # Start the actual client in the graphical session, then observe its window and
 # the locally executed C90/Smalltalk/MC68000 paths before reporting runtime ready.
-firefox-esr --new-window http://127.0.0.1:8771/.well-known/effect-ack \
+firefox-esr --new-window http://127.0.0.1:8788/AI/ \
   > "$HOME/.config/qikvrt/firefox.log" 2>&1 &
 hatari --machine st --tos /usr/share/qikvrt/emutos/etos256de.img \
   > "$HOME/.config/qikvrt/hatari.log" 2>&1 &

@@ -112,6 +112,29 @@ jobs:
           docker exec qikvrt-terminal curl --max-time 2 -fsS http://127.0.0.1:8771/AI > /tmp/temdd-ide.html
           grep -Fq 'TEMDD v0.1 IDE' /tmp/temdd-ide.html
           printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
+          CHECK_NAME=same_ai_path_fresh_reentry
+          : > /tmp/ai-reentry-observations.log
+          for invocation in 1 2; do
+            started="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+            code="$(docker exec qikvrt-terminal curl --max-time 3 -sS -H 'Cache-Control: no-cache' -o /tmp/qikvrt-ai-reentry.html -w '%{http_code}' http://127.0.0.1:8788/AI/)"
+            test "$code" = 200
+            docker cp qikvrt-terminal:/tmp/qikvrt-ai-reentry.html "/tmp/ai-reentry-$invocation.html"
+            digest="$(sha256sum "/tmp/ai-reentry-$invocation.html" | awk '{print $1}')"
+            grep -Fqi 'epistemic spiral' "/tmp/ai-reentry-$invocation.html"
+            printf 'invocation=%s started=%s http=%s sha256=%s path=/AI/ human_copy_paste=false\n' "$invocation" "$started" "$code" "$digest" >> /tmp/ai-reentry-observations.log
+          done
+          test "$(sha256sum /tmp/ai-reentry-1.html | awk '{print $1}')" = "$(sha256sum /tmp/ai-reentry-2.html | awk '{print $1}')"
+          printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
+          CHECK_NAME=ai_reentry_fresh_readback
+          docker exec qikvrt-terminal curl --fail --silent --show-error --header 'Cache-Control: no-cache' http://127.0.0.1:8788/AI/ > /tmp/ai-first.html
+          sleep 1
+          docker exec qikvrt-terminal curl --fail --silent --show-error --header 'Cache-Control: no-cache' http://127.0.0.1:8788/AI/ > /tmp/ai-second.html
+          test -s /tmp/ai-first.html
+          test -s /tmp/ai-second.html
+          grep -Fqi 'epistemic spiral' /tmp/ai-first.html
+          grep -Fqi 'epistemic spiral' /tmp/ai-second.html
+          test "$(sha256sum /tmp/ai-first.html | awk '{print $1}')" = "$(sha256sum /tmp/ai-second.html | awk '{print $1}')"
+          printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
           CHECK_NAME=novnc_surface
           curl -fsS http://127.0.0.1:6080/vnc.html >/tmp/vnc.html
           grep -Eqi '<html|<!doctype html' /tmp/vnc.html
@@ -173,8 +196,23 @@ jobs:
           CHECK_NAME=restart_sentinel
           test "$(docker exec qikvrt-terminal cat /var/lib/qikvrt/profile/.qikvrt-restart-sentinel)" = durable-session-sentinel
           printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
+          CHECK_NAME=restart_ai_reentry_fresh_readback
+          docker exec qikvrt-terminal curl --fail --silent --show-error --header 'Cache-Control: no-cache' http://127.0.0.1:8788/AI/ > /tmp/ai-after-restart.html
+          test -s /tmp/ai-after-restart.html
+          grep -Fqi 'epistemic spiral' /tmp/ai-after-restart.html
+          test "$(sha256sum /tmp/ai-second.html | awk '{print $1}')" = "$(sha256sum /tmp/ai-after-restart.html | awk '{print $1}')"
+          printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
           CHECK_NAME=restart_runtime_state_copy
           docker cp qikvrt-terminal:/var/lib/qikvrt/state/runtime.json /tmp/runtime-after.json
+          printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
+          CHECK_NAME=restart_same_ai_path_fresh_reentry
+          started="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+          code="$(docker exec qikvrt-terminal curl --max-time 3 -sS -H 'Cache-Control: no-cache' -o /tmp/qikvrt-ai-reentry-after-restart.html -w '%{http_code}' http://127.0.0.1:8788/AI/)"
+          test "$code" = 200
+          docker cp qikvrt-terminal:/tmp/qikvrt-ai-reentry-after-restart.html /tmp/ai-reentry-after-restart.html
+          grep -Fqi 'epistemic spiral' /tmp/ai-reentry-after-restart.html
+          test "$(sha256sum /tmp/ai-reentry-1.html | awk '{print $1}')" = "$(sha256sum /tmp/ai-reentry-after-restart.html | awk '{print $1}')"
+          printf 'invocation=after_restart started=%s http=%s sha256=%s path=/AI/ human_copy_paste=false\n' "$started" "$code" "$(sha256sum /tmp/ai-reentry-after-restart.html | awk '{print $1}')" >> /tmp/ai-reentry-observations.log
           printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
           CHECK_NAME=restart_runtime_contract
           python3 - <<'PY'
@@ -211,8 +249,15 @@ jobs:
           cp /tmp/effect-ack-after-restart-observations.log /tmp/qikvrt-terminal-evidence/restart-readback-observations.log 2>/dev/null || true
           cp /tmp/initial-post-readback-checks.log /tmp/qikvrt-terminal-evidence/initial-post-readback-checks.log 2>/dev/null || true
           cp /tmp/restart-post-readback-checks.log /tmp/qikvrt-terminal-evidence/restart-post-readback-checks.log 2>/dev/null || true
+          cp /tmp/ai-first.html /tmp/qikvrt-terminal-evidence/ai-first.html 2>/dev/null || true
+          cp /tmp/ai-second.html /tmp/qikvrt-terminal-evidence/ai-second.html 2>/dev/null || true
+          cp /tmp/ai-after-restart.html /tmp/qikvrt-terminal-evidence/ai-after-restart.html 2>/dev/null || true
           cp /tmp/vnc.html /tmp/qikvrt-terminal-evidence/vnc.html 2>/dev/null || true
           cp /tmp/temdd-ide.html /tmp/qikvrt-terminal-evidence/temdd-ide.html 2>/dev/null || true
+          cp /tmp/ai-reentry-observations.log /tmp/qikvrt-terminal-evidence/ai-reentry-observations.log 2>/dev/null || true
+          cp /tmp/ai-reentry-1.html /tmp/qikvrt-terminal-evidence/ai-reentry-1.html 2>/dev/null || true
+          cp /tmp/ai-reentry-2.html /tmp/qikvrt-terminal-evidence/ai-reentry-2.html 2>/dev/null || true
+          cp /tmp/ai-reentry-after-restart.html /tmp/qikvrt-terminal-evidence/ai-reentry-after-restart.html 2>/dev/null || true
           cp /tmp/qikvrt-compose.json /tmp/qikvrt-terminal-evidence/compose-rendered.json 2>/dev/null || true
           printf '%s\n' "$EXACT_SUBJECT_SHA" > /tmp/qikvrt-terminal-evidence/exact-head.txt
           python3 - <<'PY'
@@ -233,6 +278,10 @@ jobs:
             'effect_ack_capability_readback':'OBSERVED' if initial_effect_ack_observed and restart_effect_ack_observed else 'UNOBSERVED',
             'firefox_process_check':'EXECUTED' if initial_runtime_observed and restart_runtime_observed else 'UNOBSERVED',
             'novnc_surface_check':'EXECUTED' if os.path.exists('/tmp/vnc.html') else 'UNOBSERVED',
+            'same_access_path_reentry':'OBSERVED' if all(os.path.exists(p) for p in ['/tmp/ai-first.html','/tmp/ai-second.html','/tmp/ai-after-restart.html']) else 'UNOBSERVED',
+            'human_copy_paste_required':False,
+            'same_access_path_reentry_readback':'OBSERVED' if all(os.path.exists(p) for p in ['/tmp/ai-reentry-1.html','/tmp/ai-reentry-2.html','/tmp/ai-reentry-after-restart.html']) else 'UNOBSERVED',
+            'human_copy_paste_required':False,
             'external_arxiv_submission':'NOT_EXECUTED',
             'external_wikipedia_edit':'NOT_EXECUTED',
             'pass':False,
