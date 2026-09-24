@@ -202,13 +202,36 @@ jobs:
             run_updated="$(jq -r '.updated_at // ""' "$run_json")"
             run_pr_count="$(jq --argjson pr "$pr" '[.pull_requests[] | select(.number == $pr)] | length' "$run_json")"
             run_pr_head="$(jq -r --argjson pr "$pr" '[.pull_requests[] | select(.number == $pr)][0].head.sha // ""' "$run_json")"
+            run_event="$(jq -r '.event // ""' "$run_json")"
+            run_head_branch="$(jq -r '.head_branch // ""' "$run_json")"
+            run_head_repo="$(jq -r '.head_repository.full_name // ""' "$run_json")"
+            pr_head_branch="$(jq -r '.head.ref // ""' "$pr_json")"
+            pr_head_repo="$(jq -r '.head.repo.full_name // ""' "$pr_json")"
 
             [[ "$current_head" =~ ^[0-9a-f]{40}$ ]]
             [[ "$current_tree" =~ ^[0-9a-f]{40}$ ]]
             [[ "$run_head" =~ ^[0-9a-f]{40}$ ]]
             [[ "$run_attempt" =~ ^[1-9][0-9]*$ ]]
 
-            if [ "$run_pr_count" -ne 1 ] || [ "$run_pr_head" != "$baseline" ] || [ "$run_head" != "$baseline" ]; then
+            run_pr_binding='RUN_PULL_REQUEST_ASSOCIATION'
+            if [ "$run_pr_count" -eq 1 ] && [ "$run_pr_head" = "$baseline" ] && [ "$run_head" = "$baseline" ]; then
+              :
+            elif [ "$run_pr_count" -eq 0 ] && [ "$run_event" = pull_request ] && [ "$run_head" = "$baseline" ]; then
+              # GitHub can age historical workflow runs out of the REST
+              # run.pull_requests relation after the PR head moves. Fail closed
+              # unless durable repository provenance still binds the exact
+              # baseline uniquely to this PR and the run came from its head ref.
+              associated_prs="$root/associated-prs-${issue_number}.json"
+              gh api "repos/${REPOSITORY}/commits/${baseline}/pulls?per_page=100" > "$associated_prs"
+              associated_total="$(jq 'length' "$associated_prs")"
+              associated_match="$(jq --argjson pr "$pr" '[.[] | select(.number == $pr)] | length' "$associated_prs")"
+              if [ "$associated_total" -ne 1 ] || [ "$associated_match" -ne 1 ] || \
+                 [ "$run_head_branch" != "$pr_head_branch" ] || [ "$run_head_repo" != "$pr_head_repo" ]; then
+                echo "HOLD_UNVERIFIED: historical run ${run_id} lost direct PR relation and durable fallback did not bind uniquely to PR #${pr} baseline ${baseline}" >&2
+                exit 2
+              fi
+              run_pr_binding='UNIQUE_COMMIT_PR_ASSOCIATION_FALLBACK'
+            else
               echo "HOLD_UNVERIFIED: run ${run_id} is not uniquely bound to PR #${pr} baseline ${baseline}" >&2
               exit 2
             fi
@@ -252,10 +275,11 @@ jobs:
               --arg run_updated_at "$run_updated" \
               --arg observed_at "$observed_at" \
               --arg binding "$binding" \
+              --arg run_pr_binding "$run_pr_binding" \
               --argjson head_changed "$head_changed" \
               --argjson run_terminal "$run_terminal" \
               --argjson predecessor "$predecessor" \
-              '{schema:$schema,repository:$repository,watch_issue:$watch_issue,pr_number:$pr_number,baseline_head:$baseline_head,current_head:$current_head,current_tree:$current_tree,pr_state:$pr_state,run_id:$run_id,run_head:$run_head,run_status:$run_status,run_conclusion:$run_conclusion,run_attempt:$run_attempt,run_updated_at:$run_updated_at,observed_at:$observed_at,binding:$binding,triggers:{pr_head_changed:$head_changed,run_terminal:$run_terminal},predecessor_evidence:$predecessor,predecessor_evidence_transfer:false,effect_ack_done:false}' \
+              '{schema:$schema,repository:$repository,watch_issue:$watch_issue,pr_number:$pr_number,baseline_head:$baseline_head,current_head:$current_head,current_tree:$current_tree,pr_state:$pr_state,run_id:$run_id,run_head:$run_head,run_status:$run_status,run_conclusion:$run_conclusion,run_attempt:$run_attempt,run_updated_at:$run_updated_at,observed_at:$observed_at,binding:$binding,run_pr_binding:$run_pr_binding,triggers:{pr_head_changed:$head_changed,run_terminal:$run_terminal},predecessor_evidence:$predecessor,predecessor_evidence_transfer:false,effect_ack_done:false}' \
               > "$receipt_json"
 
             # Deduplicate the repository transition, not the observation event.
