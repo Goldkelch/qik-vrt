@@ -11,7 +11,7 @@
   host.innerHTML = `
     <header class="qv-head">
       <div><strong>QIKVRT · AI TERMINAL</strong><small data-i18n="subtitle"></small></div>
-      <div class="qv-head-actions"><button data-act="observe" data-i18n="observe"></button><button data-act="spiral" data-i18n="spiral"></button><button data-act="options" data-i18n-label="personalize">⚙</button><button data-act="collapse" data-i18n-label="collapse">—</button></div>
+      <div class="qv-head-actions"><button data-act="observe" data-i18n="observe"></button><button class="qv-spiral-link" data-act="spiral" data-i18n="spiral"></button><button data-act="options" data-i18n-label="personalize">⚙</button><button data-act="collapse" data-i18n-label="collapse">—</button></div>
     </header>
     <div class="qv-body">
       <div class="qv-status" data-role="status">OBSERVE</div>
@@ -90,7 +90,7 @@
 
   function openSpiral() {
     const local = ["127.0.0.1", "localhost"].includes(location.hostname) && ["8080", "8788"].includes(location.port);
-    const target = local ? location.origin + "/AI/" : "https://goldkelch.github.io/qik-vrt/AI/";
+    const target = local ? location.origin + "/AI/spiral/" : "https://goldkelch.github.io/qik-vrt/terminal/epistemic-spiral/";
     window.open(target, "_blank", "noopener,noreferrer");
   }
 
