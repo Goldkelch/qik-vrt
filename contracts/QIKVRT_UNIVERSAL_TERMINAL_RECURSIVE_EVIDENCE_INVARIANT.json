@@ -1,0 +1,45 @@
+{
+  "contract": "QIKVRT_UNIVERSAL_TERMINAL_RECURSIVE_EVIDENCE_INVARIANT",
+  "version": 1,
+  "stable_end_state_requires_external_cognition": false,
+  "predecessor_evidence_transfer": false,
+  "live_state": ["events", "head", "tree", "lean_lake_proof_state", "receipts", "provenance", "validity_supersession_state", "reachable_evidence_relations"],
+  "relation_semantics": {
+    "relations_are_addressable_information_objects": true,
+    "routing_transitivity_implies_evidence_transitivity": false,
+    "candidate_route_rule": "UT(A,B) AND UT(B,C) => candidateRoute(A,C)",
+    "admission_requires": ["fresh_edge_validation", "exact_subject_binding", "provenance_preserved", "proof_validity", "accessibility", "fail_closed_semantics"]
+  },
+  "shortcuts": {
+    "allowed": true,
+    "evidence_deletion": false,
+    "predecessor_evidence_transfer": false,
+    "complete_provenance_path_reconstructible": true,
+    "fresh_validation_required": true
+  },
+  "routing_objective": {
+    "minimize_where_appropriate": ["latency", "unnecessary_traversal", "computation", "stale_state_risk"],
+    "subject_to": ["provenance_preservation", "exact_subject_binding", "proof_validity", "accessibility", "fail_closed_semantics"]
+  },
+  "monotonicity": {
+    "evidence_history": "append_only",
+    "assertion_validity": "non_monotonic",
+    "routing_knowledge": "monotonic_where_provenance_remains_addressable",
+    "current_admissibility": "requires_fresh_validation",
+    "supersession_is_evidence": true
+  },
+  "learning_cycle": ["request", "discover", "select", "reobserve", "validate", "traverse", "readback", "materialize_receipts", "append_delta_evidence", "update_routing", "expose_live_state"],
+  "lean_lake": {
+    "proof_is_live_state": true,
+    "binds": ["theorem_identity", "source_head", "source_tree", "dependency_digest", "verifier_identity", "verification_receipt", "observed_at", "validity_state", "invalidation_supersession"]
+  },
+  "accessibility": "optimization_must_not_hide_original_evidence_or_proof_path",
+  "fail_closed": ["stale_proof!=current_proof", "reachable!=valid", "cached_relation!=fresh_effect", "shorter_path!=stronger_evidence", "success!=effect", "transported!=effect", "effect!=EFFECT_ACK_DONE"],
+  "autonomy": ["routing_knowledge_repository_native", "validation_rules_repository_native", "proof_dependencies_repository_native", "reconstruction_knowledge_repository_native"],
+  "compatibility": {
+    "preserve_existing_interfaces": true,
+    "preserve_receipt_provenance": true,
+    "preserve_exact_subject_semantics": true,
+    "learning_may_shorten_discovery_not_proof": true
+  }
+}
