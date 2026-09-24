@@ -1,0 +1,235 @@
+{
+  "schema": "temdd_interoperability_vectors_v1",
+  "canonical_profile": "temdd_canonical_json_v1",
+  "evaluation_semantics": "temdd_decision_v1",
+  "vectors": [
+    {
+      "id": "accept_fresh_exact",
+      "input": {
+        "canonicalization": "temdd_canonical_json_v1",
+        "data": {
+          "status": "READY",
+          "transaction_id": "tx-001"
+        },
+        "evidence": [
+          {
+            "assertion": true,
+            "fresh": true,
+            "subject": {
+              "subject_id": "interop:sample",
+              "repository": "Goldkelch/qik-vrt",
+              "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "type": "VALIDATION"
+          }
+        ],
+        "policy": {
+          "data_equals": {
+            "status": "READY"
+          },
+          "evaluation_semantics": "temdd_decision_v1",
+          "required_evidence_types": [
+            "VALIDATION"
+          ]
+        },
+        "subject": {
+          "subject_id": "interop:sample",
+          "repository": "Goldkelch/qik-vrt",
+          "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      },
+      "expected_canonical": "{\"canonicalization\":\"temdd_canonical_json_v1\",\"data\":{\"status\":\"READY\",\"transaction_id\":\"tx-001\"},\"evidence\":[{\"assertion\":true,\"fresh\":true,\"subject\":{\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"repository\":\"Goldkelch/qik-vrt\",\"subject_id\":\"interop:sample\",\"tree\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},\"type\":\"VALIDATION\"}],\"policy\":{\"data_equals\":{\"status\":\"READY\"},\"evaluation_semantics\":\"temdd_decision_v1\",\"required_evidence_types\":[\"VALIDATION\"]},\"subject\":{\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"repository\":\"Goldkelch/qik-vrt\",\"subject_id\":\"interop:sample\",\"tree\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}}",
+      "expected_decision": "ACCEPT"
+    },
+    {
+      "id": "hold_stale_evidence",
+      "input": {
+        "canonicalization": "temdd_canonical_json_v1",
+        "data": {
+          "status": "READY",
+          "transaction_id": "tx-001"
+        },
+        "evidence": [
+          {
+            "assertion": true,
+            "fresh": false,
+            "subject": {
+              "subject_id": "interop:sample",
+              "repository": "Goldkelch/qik-vrt",
+              "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "type": "VALIDATION"
+          }
+        ],
+        "policy": {
+          "data_equals": {
+            "status": "READY"
+          },
+          "evaluation_semantics": "temdd_decision_v1",
+          "required_evidence_types": [
+            "VALIDATION"
+          ]
+        },
+        "subject": {
+          "subject_id": "interop:sample",
+          "repository": "Goldkelch/qik-vrt",
+          "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      },
+      "expected_canonical": "{\"canonicalization\":\"temdd_canonical_json_v1\",\"data\":{\"status\":\"READY\",\"transaction_id\":\"tx-001\"},\"evidence\":[{\"assertion\":true,\"fresh\":false,\"subject\":{\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"repository\":\"Goldkelch/qik-vrt\",\"subject_id\":\"interop:sample\",\"tree\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},\"type\":\"VALIDATION\"}],\"policy\":{\"data_equals\":{\"status\":\"READY\"},\"evaluation_semantics\":\"temdd_decision_v1\",\"required_evidence_types\":[\"VALIDATION\"]},\"subject\":{\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"repository\":\"Goldkelch/qik-vrt\",\"subject_id\":\"interop:sample\",\"tree\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}}",
+      "expected_decision": "HOLD_UNVERIFIED"
+    },
+    {
+      "id": "hold_predecessor_evidence",
+      "input": {
+        "canonicalization": "temdd_canonical_json_v1",
+        "data": {
+          "status": "READY",
+          "transaction_id": "tx-001"
+        },
+        "evidence": [
+          {
+            "assertion": true,
+            "fresh": true,
+            "subject": {
+              "subject_id": "interop:sample",
+              "repository": "Goldkelch/qik-vrt",
+              "head": "cccccccccccccccccccccccccccccccccccccccc",
+              "tree": "dddddddddddddddddddddddddddddddddddddddd"
+            },
+            "type": "VALIDATION"
+          }
+        ],
+        "policy": {
+          "data_equals": {
+            "status": "READY"
+          },
+          "evaluation_semantics": "temdd_decision_v1",
+          "required_evidence_types": [
+            "VALIDATION"
+          ]
+        },
+        "subject": {
+          "subject_id": "interop:sample",
+          "repository": "Goldkelch/qik-vrt",
+          "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      },
+      "expected_canonical": "{\"canonicalization\":\"temdd_canonical_json_v1\",\"data\":{\"status\":\"READY\",\"transaction_id\":\"tx-001\"},\"evidence\":[{\"assertion\":true,\"fresh\":true,\"subject\":{\"head\":\"cccccccccccccccccccccccccccccccccccccccc\",\"repository\":\"Goldkelch/qik-vrt\",\"subject_id\":\"interop:sample\",\"tree\":\"dddddddddddddddddddddddddddddddddddddddd\"},\"type\":\"VALIDATION\"}],\"policy\":{\"data_equals\":{\"status\":\"READY\"},\"evaluation_semantics\":\"temdd_decision_v1\",\"required_evidence_types\":[\"VALIDATION\"]},\"subject\":{\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"repository\":\"Goldkelch/qik-vrt\",\"subject_id\":\"interop:sample\",\"tree\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}}",
+      "expected_decision": "HOLD_UNVERIFIED"
+    },
+    {
+      "id": "reject_data_policy_mismatch",
+      "input": {
+        "canonicalization": "temdd_canonical_json_v1",
+        "data": {
+          "status": "BLOCKED",
+          "transaction_id": "tx-001"
+        },
+        "evidence": [
+          {
+            "assertion": true,
+            "fresh": true,
+            "subject": {
+              "subject_id": "interop:sample",
+              "repository": "Goldkelch/qik-vrt",
+              "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "type": "VALIDATION"
+          }
+        ],
+        "policy": {
+          "data_equals": {
+            "status": "READY"
+          },
+          "evaluation_semantics": "temdd_decision_v1",
+          "required_evidence_types": [
+            "VALIDATION"
+          ]
+        },
+        "subject": {
+          "subject_id": "interop:sample",
+          "repository": "Goldkelch/qik-vrt",
+          "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      },
+      "expected_canonical": "{\"canonicalization\":\"temdd_canonical_json_v1\",\"data\":{\"status\":\"BLOCKED\",\"transaction_id\":\"tx-001\"},\"evidence\":[{\"assertion\":true,\"fresh\":true,\"subject\":{\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"repository\":\"Goldkelch/qik-vrt\",\"subject_id\":\"interop:sample\",\"tree\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},\"type\":\"VALIDATION\"}],\"policy\":{\"data_equals\":{\"status\":\"READY\"},\"evaluation_semantics\":\"temdd_decision_v1\",\"required_evidence_types\":[\"VALIDATION\"]},\"subject\":{\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"repository\":\"Goldkelch/qik-vrt\",\"subject_id\":\"interop:sample\",\"tree\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}}",
+      "expected_decision": "REJECT"
+    },
+    {
+      "id": "reject_verified_false_assertion",
+      "input": {
+        "canonicalization": "temdd_canonical_json_v1",
+        "data": {
+          "status": "READY",
+          "transaction_id": "tx-001"
+        },
+        "evidence": [
+          {
+            "assertion": false,
+            "fresh": true,
+            "subject": {
+              "subject_id": "interop:sample",
+              "repository": "Goldkelch/qik-vrt",
+              "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "type": "VALIDATION"
+          }
+        ],
+        "policy": {
+          "data_equals": {
+            "status": "READY"
+          },
+          "evaluation_semantics": "temdd_decision_v1",
+          "required_evidence_types": [
+            "VALIDATION"
+          ]
+        },
+        "subject": {
+          "subject_id": "interop:sample",
+          "repository": "Goldkelch/qik-vrt",
+          "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      },
+      "expected_canonical": "{\"canonicalization\":\"temdd_canonical_json_v1\",\"data\":{\"status\":\"READY\",\"transaction_id\":\"tx-001\"},\"evidence\":[{\"assertion\":false,\"fresh\":true,\"subject\":{\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"repository\":\"Goldkelch/qik-vrt\",\"subject_id\":\"interop:sample\",\"tree\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},\"type\":\"VALIDATION\"}],\"policy\":{\"data_equals\":{\"status\":\"READY\"},\"evaluation_semantics\":\"temdd_decision_v1\",\"required_evidence_types\":[\"VALIDATION\"]},\"subject\":{\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"repository\":\"Goldkelch/qik-vrt\",\"subject_id\":\"interop:sample\",\"tree\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}}",
+      "expected_decision": "REJECT"
+    },
+    {
+      "id": "hold_missing_required_evidence",
+      "input": {
+        "canonicalization": "temdd_canonical_json_v1",
+        "data": {
+          "status": "READY",
+          "transaction_id": "tx-001"
+        },
+        "evidence": [],
+        "policy": {
+          "data_equals": {
+            "status": "READY"
+          },
+          "evaluation_semantics": "temdd_decision_v1",
+          "required_evidence_types": [
+            "VALIDATION"
+          ]
+        },
+        "subject": {
+          "subject_id": "interop:sample",
+          "repository": "Goldkelch/qik-vrt",
+          "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      },
+      "expected_canonical": "{\"canonicalization\":\"temdd_canonical_json_v1\",\"data\":{\"status\":\"READY\",\"transaction_id\":\"tx-001\"},\"evidence\":[],\"policy\":{\"data_equals\":{\"status\":\"READY\"},\"evaluation_semantics\":\"temdd_decision_v1\",\"required_evidence_types\":[\"VALIDATION\"]},\"subject\":{\"head\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"repository\":\"Goldkelch/qik-vrt\",\"subject_id\":\"interop:sample\",\"tree\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}}",
+      "expected_decision": "HOLD_UNVERIFIED"
+    }
+  ]
+}
