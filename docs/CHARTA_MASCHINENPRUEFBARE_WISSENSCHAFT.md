@@ -219,3 +219,40 @@ Die Architektur beschreibt keine biologische Kognition, sondern ein informatisch
 
 **q.e.d.**  
 **Ingolf Lohmann**
+
+# Mesh-Mitgliedschaft, Charta-Konformität und Rang
+
+## Normative Grundregel
+
+Ein Repository-Node, der als Teil eines QIK-VRT-Mesh geführt werden will, **MUSS** diese Charta als verbindliche Betriebs- und Nachweisregel anerkennen und ihre maschinenprüfbaren Anforderungen im jeweils aktuellen, für den Node maßgeblichen Repository-Zustand erfüllen.
+
+Die Mesh-Mitgliedschaft und der Mesh-Rang sind dabei strikt zu trennen:
+
+1. **Vollständig konformer Node (`PEER`)**  
+   Ein Node ist gegenüber anderen vollständig konformen Nodes gleichrangig, wenn seine Charta-Konformität für den aktuellen Gegenstand frisch und maschinenprüfbar belegt ist.
+
+2. **Nicht oder nicht vollständig konformer Node (`SUBORDINATE`)**  
+   Kann ein bereits registrierter Node die Charta-Anforderungen nicht vollständig belegen oder einhalten, wird er **nicht allein aus diesem Grund unmittelbar aus dem Mesh ausgeschlossen**. Seine Mitgliedschaft bleibt bestehen, sofern keine davon getrennte Suspendierungs- oder Widerrufsentscheidung vorliegt. Er wird jedoch gegenüber vollständig konformen Nodes als **untergeordnetes Mitglied** behandelt.
+
+3. **Folge der Unterordnung**  
+   Ein `SUBORDINATE`-Node darf für Mesh-Governance, Kontrollentscheidungen, Autoritätsableitungen oder Gleichrangigkeitsbehauptungen keine gleichrangige Stellung gegenüber einem `PEER`-Node beanspruchen. Sein Status darf insbesondere nicht verwendet werden, um fehlende Charta-Konformität eines `PEER`-Pfades zu ersetzen, zu überstimmen oder als gleichwertige Evidenz auszugeben.
+
+4. **Keine epistemische Abkürzung**  
+   Der Mesh-Rang entscheidet nicht über die Wahrheit einer wissenschaftlichen Aussage. Wissenschaftliche Aussagen bleiben nach Quelle, Methode, Evidenz und Geltungsbereich zu beurteilen. Der Rang ordnet ausschließlich die repository- und meshbezogene Vertrauens-, Governance- und Weitergabestellung unter dieser Charta.
+
+5. **Reversibilität und Wiederaufstieg**  
+   Unterordnung ist kein dauerhafter Makel. Sobald ein `SUBORDINATE`-Node die Anforderungen für den aktuellen Gegenstand vollständig erfüllt und dies durch eine frische Revalidierung belegt, **MUSS** er wieder den Rang `PEER` erhalten. Vorgänger-Evidenz darf dabei nicht auf einen geänderten Subject-Zustand übertragen werden.
+
+6. **Ausschluss bleibt getrennt**  
+   Suspendierung, Widerruf oder Ausschluss bleiben eigenständige, ausdrücklich zu belegende Zustände. Charta-Nichtkonformität allein **DARF NICHT** automatisch als Ausschluss, Widerruf oder Löschung der Mesh-Mitgliedschaft behandelt werden.
+
+## Maschinenprüfbare Konsequenz
+
+Jede QIK-VRT-Mesh-Registry **MUSS** mindestens die folgenden Zustände getrennt ausweisen:
+
+- Mitgliedschaft bzw. Lifecycle-Status,
+- aktuellen technischen Node-Status,
+- aktuellen Charta-Konformitätsstatus und
+- daraus abgeleiteten Mesh-Rang `PEER` oder `SUBORDINATE`.
+
+Gleichrangigkeit **DARF NUR** aus frischer, subject-gebundener Charta-Konformität folgen. Fehlende, veraltete oder ungültige Konformität **MUSS** fail-closed zu `SUBORDINATE` führen, nicht automatisch zu Ausschluss.
