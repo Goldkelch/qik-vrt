@@ -1,0 +1,374 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT continuation obligation watch
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, review_requested, review_request_removed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Optional exact pull request number; empty reconciles the bounded open-main inventory"
+        required: false
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: qikvrt-continuation-obligation-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Check out current Authority main policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Reconcile nonterminal exact-subject obligations
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_PR: ${{ inputs.pr }}
+          MARKER: '<!-- qikvrt-continuation-obligation-v1 -->'
+          STATUS_CONTEXT: 'QIKVRT continuation obligation'
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=.qikvrt/continuation-obligation
+          mkdir -p "$root"
+          : > "$root/receipts.jsonl"
+
+          if [ "$EVENT_NAME" = pull_request_target ]; then
+            jq -c '[.pull_request]' "$GITHUB_EVENT_PATH" > "$root/candidates.json"
+          elif [ "$EVENT_NAME" = workflow_dispatch ] && [ -n "${DISPATCH_PR:-}" ]; then
+            [[ "$DISPATCH_PR" =~ ^[1-9][0-9]*$ ]]
+            gh api "repos/${REPOSITORY}/pulls/${DISPATCH_PR}" | jq -c '[.]' > "$root/candidates.json"
+          else
+            total="$(gh api --method GET search/issues \
+              -f q="repo:${REPOSITORY} is:pr is:open base:main" \
+              -f per_page=1 --jq '.total_count')"
+            [[ "$total" =~ ^[0-9]+$ ]]
+            if [ "$total" -gt 300 ]; then
+              echo "BLOCK: open main-based PR inventory exceeds bounded 300-subject reconciliation surface" >&2
+              exit 1
+            fi
+            if [ "$total" -eq 0 ]; then
+              printf '[]\n' > "$root/candidates.json"
+            else
+              pages=$(( (total + 29) / 30 ))
+              page=$(( ((GITHUB_RUN_NUMBER - 1) % pages) + 1 ))
+              gh api "repos/${REPOSITORY}/pulls?state=open&base=main&sort=created&direction=asc&per_page=30&page=${page}" \
+                > "$root/candidates.json"
+            fi
+          fi
+
+          while IFS= read -r candidate; do
+            test -n "$candidate" || continue
+            pr="$(jq -r '.number' <<<"$candidate")"
+            head="$(jq -r '.head.sha' <<<"$candidate")"
+            head_repo="$(jq -r '.head.repo.full_name // ""' <<<"$candidate")"
+            base_ref="$(jq -r '.base.ref // ""' <<<"$candidate")"
+            state="$(jq -r '.state // ""' <<<"$candidate")"
+            [[ "$pr" =~ ^[1-9][0-9]*$ ]]
+            [[ "$head" =~ ^[0-9a-f]{40}$ ]]
+
+            if [ "$state" != open ] || [ "$head_repo" != "$REPOSITORY" ] || [ "$base_ref" != main ]; then
+              continue
+            fi
+
+            # Rebind to the live exact PR before observing any causal evidence.
+            live="$(gh api "repos/${REPOSITORY}/pulls/${pr}")"
+            live_head="$(jq -r '.head.sha' <<<"$live")"
+            live_state="$(jq -r '.state' <<<"$live")"
+            live_head_repo="$(jq -r '.head.repo.full_name // ""' <<<"$live")"
+            live_base="$(jq -r '.base.ref // ""' <<<"$live")"
+            if [ "$live_state" != open ] || [ "$live_head_repo" != "$REPOSITORY" ] || [ "$live_base" != main ]; then
+              continue
+            fi
+            if [ "$live_head" != "$head" ]; then
+              continue
+            fi
+
+            : > "$root/runs-${pr}.jsonl"
+            inventory_complete=false
+            for page in 1 2 3 4 5; do
+              page_json="$(gh api "repos/${REPOSITORY}/actions/runs?head_sha=${head}&per_page=100&page=${page}")"
+              printf '%s' "$page_json" | jq -c '.workflow_runs[]?' >> "$root/runs-${pr}.jsonl"
+              count="$(printf '%s' "$page_json" | jq '.workflow_runs | length')"
+              if [ "$count" -lt 100 ]; then
+                inventory_complete=true
+                break
+              fi
+            done
+            jq -s '.' "$root/runs-${pr}.jsonl" > "$root/runs-${pr}.json"
+
+            if [ "$inventory_complete" = true ]; then
+              jq -n \
+                --argjson pr "$live" \
+                --slurpfile runs "$root/runs-${pr}.json" \
+                '{
+                  subject:{
+                    open:($pr.state == "open"),
+                    pull_request:$pr.number,
+                    head_sha:$pr.head.sha,
+                    draft:($pr.draft // false),
+                    effect_ack_done:false,
+                    requested_reviewers:[$pr.requested_reviewers[]?.login]
+                  },
+                  runs:$runs[0]
+                }' \
+                > "$root/input-${pr}.json"
+              python3 -B tools/qikvrt_continuation_obligation.py classify \
+                --input "$root/input-${pr}.json" \
+                --output "$root/decision-${pr}.json"
+            else
+              jq -n \
+                '{
+                  d0:1,
+                  state:"HOLD",
+                  reason:"ACTIONS_RUN_INVENTORY_TRUNCATED",
+                  productive_effect:false,
+                  effect_ack:"NOT_REQUIRED",
+                  follow_up_required:true,
+                  causal_run_id:null,
+                  causal_workflow:null,
+                  causal_status:null,
+                  causal_conclusion:null
+                }' > "$root/decision-${pr}.json"
+            fi
+
+            d0="$(jq -r '.d0' "$root/decision-${pr}.json")"
+            reason="$(jq -r '.reason' "$root/decision-${pr}.json")"
+            if [ "$d0" -eq 0 ]; then
+              continue
+            fi
+
+            # The observed state becomes the next bound input only if the PR is
+            # still exactly the same subject immediately before persistence.
+            current="$(gh api "repos/${REPOSITORY}/pulls/${pr}")"
+            current_head="$(jq -r '.head.sha' <<<"$current")"
+            current_state="$(jq -r '.state' <<<"$current")"
+            test "$current_head" = "$head"
+            test "$current_state" = open
+
+            tree="$(gh api "repos/${REPOSITORY}/git/commits/${head}" --jq '.tree.sha')"
+            [[ "$tree" =~ ^[0-9a-f]{40}$ ]]
+
+            jq -cS \
+              --arg repository "$REPOSITORY" \
+              --argjson pr "$pr" \
+              --arg head "$head" \
+              --arg tree "$tree" \
+              '. + {
+                repository:$repository,
+                pull_request:$pr,
+                head_sha:$head,
+                head_tree_sha:$tree,
+                predecessor_evidence_transfer:false
+              }' "$root/decision-${pr}.json" > "$root/envelope-${pr}.json"
+
+            fingerprint="$(sha256sum "$root/envelope-${pr}.json" | awk '{print $1}')"
+            [[ "$fingerprint" =~ ^[0-9a-f]{64}$ ]]
+
+            decision_state="$(jq -r '.state' "$root/envelope-${pr}.json")"
+            causal_id="$(jq -r '.causal_run_id // "none"' "$root/envelope-${pr}.json")"
+            causal_workflow="$(jq -r '.causal_workflow // "none"' "$root/envelope-${pr}.json" | tr '\r\n' '  ')"
+            causal_status="$(jq -r '.causal_status // "none"' "$root/envelope-${pr}.json")"
+            causal_conclusion="$(jq -r '.causal_conclusion // "none"' "$root/envelope-${pr}.json")"
+
+            carrier_kind=SYNTHESIZED_STATUS_AND_COMMENT
+            if [ "$d0" -eq 1 ] && [ "$reason" = ACTIVE_EXACT_HEAD_TRANSITION ]; then
+              carrier_kind=ACTIVE_EXACT_HEAD_TRANSITION
+            elif [ "$d0" -eq 3 ] && [ "$reason" = REQUESTED_REVIEW_PENDING_AFTER_TERMINAL_RUNS ]; then
+              carrier_kind=REQUESTED_REVIEWER_METADATA
+            fi
+
+            if [ "$carrier_kind" != SYNTHESIZED_STATUS_AND_COMMENT ]; then
+              jq -n \
+                --arg repository "$REPOSITORY" \
+                --argjson pr "$pr" \
+                --arg head "$head" \
+                --arg tree "$tree" \
+                --arg fingerprint "$fingerprint" \
+                --arg carrier "$carrier_kind" \
+                --argjson decision "$(cat "$root/envelope-${pr}.json")" \
+                '{
+                  schema:"qikvrt_continuation_obligation_receipt_v1",
+                  repository:$repository,
+                  pull_request:$pr,
+                  head_sha:$head,
+                  head_tree_sha:$tree,
+                  decision_fingerprint:$fingerprint,
+                  decision:$decision,
+                  carrier:$carrier,
+                  write_performed:false,
+                  readback_verified:true,
+                  productive_effect:false,
+                  effect_ack_done:false,
+                  predecessor_evidence_transfer:false
+                }' > "$root/receipt-${pr}.json"
+              cat "$root/receipt-${pr}.json" >> "$root/receipts.jsonl"
+              printf '\n' >> "$root/receipts.jsonl"
+              continue
+            fi
+
+            body="$MARKER
+
+          ## QIKVRT continuation obligation
+
+          **Exact subject:** \`PR #$pr @ $head\`
+          **Exact tree:** \`$tree\`
+          **Causal state:** \`D0=$d0 $decision_state\`
+          **Reason:** \`$reason\`
+          **Causal run:** \`$causal_id\` · \`$causal_workflow\` · status \`$causal_status\` · conclusion \`$causal_conclusion\`
+          **Decision fingerprint:** \`$fingerprint\`
+
+          This is the repository-native liveness carrier for a nonterminal exact subject. An open subject may not become silent merely because the preceding repository event was terminal. The obligation remains live until a freshly bound successor transition, exact postcondition, rebind/invalidation, or sourced external HOLD is observed.
+
+          \`TRANSPORT_ACK != EFFECT_ACK\` · \`HOLD != DEADLOCK\` · \`PREDECESSOR_EVIDENCE_TRANSFER=false\`
+
+          This detector does not repair source, review, merge, release, deploy, publish, or assert \`EFFECT_ACK_DONE\`. Productive effects remain subject to their existing exact repository authority."
+
+            comment_id=''
+            old=''
+            inventory_complete_comments=false
+            for page in 1 2 3 4 5; do
+              comments="$(gh api "repos/${REPOSITORY}/issues/${pr}/comments?per_page=100&page=${page}")"
+              matches="$(printf '%s' "$comments" | jq -c --arg marker "$MARKER" '[.[] | select(.user.login == "github-actions[bot]" and .user.type == "Bot") | select((.body // "") | startswith($marker))]')"
+              count="$(printf '%s' "$matches" | jq 'length')"
+              if [ "$count" -gt 1 ] || { [ "$count" -eq 1 ] && [ -n "$comment_id" ]; }; then
+                echo "BLOCK: duplicate continuation obligation comments for PR #$pr" >&2
+                exit 1
+              fi
+              if [ "$count" -eq 1 ]; then
+                comment_id="$(printf '%s' "$matches" | jq -r '.[0].id')"
+                old="$(printf '%s' "$matches" | jq -r '.[0].body')"
+              fi
+              if [ "$(printf '%s' "$comments" | jq 'length')" -lt 100 ]; then
+                inventory_complete_comments=true
+                break
+              fi
+            done
+            if [ "$inventory_complete_comments" != true ]; then
+              echo "BLOCK: comment inventory truncated for PR #$pr" >&2
+              exit 1
+            fi
+
+            changed=true
+            if [ -n "$comment_id" ] && printf '%s' "$old" | grep -Fq "$fingerprint"; then
+              changed=false
+              body="$old"
+            elif [ -n "$comment_id" ]; then
+              gh api --method PATCH "repos/${REPOSITORY}/issues/comments/${comment_id}" -f body="$body" >/dev/null
+            else
+              comment_id="$(gh api --method POST "repos/${REPOSITORY}/issues/${pr}/comments" -f body="$body" --jq '.id')"
+            fi
+            [[ "$comment_id" =~ ^[1-9][0-9]*$ ]]
+
+            readback="$(gh api "repos/${REPOSITORY}/issues/comments/${comment_id}")"
+            printf '%s' "$readback" | jq -e \
+              --argjson id "$comment_id" \
+              --arg body "$body" \
+              --arg issue "https://api.github.com/repos/$REPOSITORY/issues/$pr" \
+              '.id == $id and .issue_url == $issue and .body == $body and .user.login == "github-actions[bot]" and .user.type == "Bot"' \
+              >/dev/null
+
+            case "$d0" in
+              1)
+                desired_status=pending
+                description='Continuation active/held; exact subject remains live'
+                ;;
+              2)
+                desired_status=error
+                description='Nonterminal exact head requires a successor transition'
+                ;;
+              3)
+                desired_status=pending
+                description='Nonterminal exact head awaits explicit authority'
+                ;;
+              *)
+                echo "BLOCK: unexpected D0=$d0" >&2
+                exit 1
+                ;;
+            esac
+
+            status="$(gh api "repos/${REPOSITORY}/commits/${head}/status")"
+            current_status="$(printf '%s' "$status" | jq -r --arg context "$STATUS_CONTEXT" '[.statuses[] | select(.context == $context)][0].state // "missing"')"
+            current_description="$(printf '%s' "$status" | jq -r --arg context "$STATUS_CONTEXT" '[.statuses[] | select(.context == $context)][0].description // ""')"
+            status_changed=false
+            if [ "$current_status" != "$desired_status" ] || [ "$current_description" != "$description" ]; then
+              gh api --method POST "repos/${REPOSITORY}/statuses/${head}" \
+                -f state="$desired_status" \
+                -f context="$STATUS_CONTEXT" \
+                -f description="$description" \
+                -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+                >/dev/null
+              status_changed=true
+            fi
+            status_readback="$(gh api "repos/${REPOSITORY}/commits/${head}/status")"
+            printf '%s' "$status_readback" | jq -e \
+              --arg context "$STATUS_CONTEXT" \
+              --arg state "$desired_status" \
+              --arg description "$description" \
+              '[.statuses[] | select(.context == $context)][0] | .state == $state and .description == $description' \
+              >/dev/null
+
+            jq -n \
+              --arg repository "$REPOSITORY" \
+              --argjson pr "$pr" \
+              --arg head "$head" \
+              --arg tree "$tree" \
+              --arg fingerprint "$fingerprint" \
+              --argjson comment "$comment_id" \
+              --argjson changed "$changed" \
+              --argjson status_changed "$status_changed" \
+              --argjson decision "$(cat "$root/envelope-${pr}.json")" \
+              '{
+                schema:"qikvrt_continuation_obligation_receipt_v1",
+                repository:$repository,
+                pull_request:$pr,
+                head_sha:$head,
+                head_tree_sha:$tree,
+                decision_fingerprint:$fingerprint,
+                decision:$decision,
+                carrier:"SYNTHESIZED_STATUS_AND_COMMENT",
+                comment_id:$comment,
+                comment_write_performed:$changed,
+                status_write_performed:$status_changed,
+                write_performed:($changed or $status_changed),
+                readback_verified:true,
+                status_readback_verified:true,
+                productive_effect:false,
+                effect_ack_done:false,
+                predecessor_evidence_transfer:false
+              }' > "$root/receipt-${pr}.json"
+            cat "$root/receipt-${pr}.json" >> "$root/receipts.jsonl"
+            printf '\n' >> "$root/receipts.jsonl"
+          done < <(jq -c '.[]' "$root/candidates.json")
+
+      - name: Preserve exact continuation receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-continuation-obligation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .qikvrt/continuation-obligation
+          if-no-files-found: warn
+          retention-days: 30
