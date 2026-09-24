@@ -141,6 +141,27 @@ jobs:
       (evidence/'backend-receipt.json').write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
       print('TEMDD_EXECUTABLE_BACKENDS_RECEIPT head='+head+' tree='+tree)
       PY
+   - name: TEMDD interoperability by executable proof
+     env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+     shell: bash
+     run: |
+      set -euo pipefail
+      test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+      mkdir -p "$RUNNER_TEMP/temdd-backends"
+      python3 -B conformance/temdd/interop_runner.py --repository "$GITHUB_REPOSITORY" \
+        --output "$RUNNER_TEMP/temdd-backends/temdd-interoperability-proof-v1.json"
+      python3 - "$RUNNER_TEMP/temdd-backends/temdd-interoperability-proof-v1.json" <<'PY'
+      import json,subprocess,sys
+      report=json.load(open(sys.argv[1],encoding='utf-8'))
+      head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+      tree=subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip()
+      assert report['overall']=='INTEROPERABILITY_BY_EXECUTABLE_PROOF'
+      assert report['subject']['head']==head
+      assert report['subject']['tree']==tree
+      assert report['effect_ack_done'] is False
+      assert all(v['status']=='PASS' for v in report['vectors'])
+      PY
    - name: TEMDD v1 exact-subject seven-layer conformance
      env:
       EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -159,6 +180,7 @@ jobs:
       tree=subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip()
       assert report['overall']=='PASS'
       assert report['temdd_conformance']=='1'
+      assert report['interoperability']=='PASS'
       assert report['implementation']['head']==head
       assert report['implementation']['tree']==tree
       PY
