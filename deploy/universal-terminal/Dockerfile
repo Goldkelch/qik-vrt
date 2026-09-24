@@ -20,7 +20,7 @@ RUN set -eux; \
 FROM debian:bookworm-slim
 ENV DEBIAN_FRONTEND=noninteractive DISPLAY=:99 \
     QIKVRT_HTTP_HOST=127.0.0.1 QIKVRT_HTTP_PORT=8771 QIKVRT_NOVNC_PORT=6080 \
-    QIKVRT_START_URL=about:blank \
+    QIKVRT_START_URL=http://127.0.0.1:8788/AI/ \
     QIKVRT_PROFILE_DIR=/var/lib/qikvrt/profile QIKVRT_STATE_DIR=/var/lib/qikvrt/state \
     QIKVRT_RUNTIME_ID=qikvrt-firefox-terminal QIKVRT_SERVICE_MODE=terminal \
     QIKVRT_MC68000_CC=m68k-linux-gnu-gcc QIKVRT_MC68000_RUNNER=qemu-m68k
