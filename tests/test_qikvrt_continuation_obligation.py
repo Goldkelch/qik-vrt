@@ -148,7 +148,7 @@ class ContinuationObligationRepositoryTests(unittest.TestCase):
         self.assertIn("schedule:", text)
         self.assertIn('cron: "*/5 * * * *"', text)
         self.assertIn("pull_request_target:", text)
-        self.assertIn("actions/runs?head_sha=${{head}", text)
+        self.assertIn("actions/runs?head_sha=${head}", text)
         self.assertNotIn("workflow_run:", text)
         self.assertNotIn("QIKVRT Reference Minimal Linux v1", text)
         self.assertIn("QIKVRT continuation obligation", text)
