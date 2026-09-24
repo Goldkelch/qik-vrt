@@ -1,0 +1,86 @@
+name: QIKVRT causal continuation integrity materializer
+
+on:
+  push:
+    branches:
+      - materialize/causal-continuation-integrity-7bb4b3e5
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-causal-continuation-integrity-materializer
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TARGET_REF: fix/causal-continuation-liveness-v1
+      EXPECTED_HEAD: 7bb4b3e5e4bb44fde060957750a612d0cd71b775
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_HEAD }}
+          fetch-depth: 2
+      - name: Bind exact target
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_head" = "$EXPECTED_HEAD"
+          printf 'BOUND_HEAD=%s\nBOUND_TREE=%s\n' \
+            "$EXPECTED_HEAD" "$(git rev-parse 'HEAD^{tree}')"
+      - name: Regenerate and validate exact integrity successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py generate
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+          PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest -v \
+            tests.test_qikvrt_pr_head_recovery \
+            tests.test_qikvrt_autonomous_pr_head_continuation
+          make test
+          rm -f .qikvrt-integrity.lock
+      - name: Persist only deterministic integrity metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_head" = "$EXPECTED_HEAD"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt
+          actual="$(
+            git diff --cached --name-only |
+              LC_ALL=C sort |
+              tr '\n' ' '
+          )"
+          expected='REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt '
+          test "$actual" = "$expected"
+          git commit -m "fix(autonomy): persist causal continuation integrity"
+          candidate="$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_HEAD"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_head" = "$EXPECTED_HEAD"
+          git push origin "HEAD:$TARGET_REF"
+          test "$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )" = "$candidate"
+          printf 'SUCCESSOR_HEAD=%s\nSUCCESSOR_TREE=%s\nPREDECESSOR_EVIDENCE_TRANSFER=false\n' \
+            "$candidate" "$(git rev-parse 'HEAD^{tree}')"
