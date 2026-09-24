@@ -126,9 +126,9 @@ jobs:
           test "$(sha256sum /tmp/ai-reentry-1.html | awk '{print $1}')" = "$(sha256sum /tmp/ai-reentry-2.html | awk '{print $1}')"
           printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
           CHECK_NAME=ai_reentry_fresh_readback
-          curl --fail --silent --show-error --header 'Cache-Control: no-cache' http://127.0.0.1:8788/AI/ > /tmp/ai-first.html
+          docker exec qikvrt-terminal curl --fail --silent --show-error --header 'Cache-Control: no-cache' http://127.0.0.1:8788/AI/ > /tmp/ai-first.html
           sleep 1
-          curl --fail --silent --show-error --header 'Cache-Control: no-cache' http://127.0.0.1:8788/AI/ > /tmp/ai-second.html
+          docker exec qikvrt-terminal curl --fail --silent --show-error --header 'Cache-Control: no-cache' http://127.0.0.1:8788/AI/ > /tmp/ai-second.html
           test -s /tmp/ai-first.html
           test -s /tmp/ai-second.html
           grep -Fqi 'epistemic spiral' /tmp/ai-first.html
@@ -197,7 +197,7 @@ jobs:
           test "$(docker exec qikvrt-terminal cat /var/lib/qikvrt/profile/.qikvrt-restart-sentinel)" = durable-session-sentinel
           printf 'check=%s state=PASS\n' "$CHECK_NAME" >> "$CHECK_LOG"
           CHECK_NAME=restart_ai_reentry_fresh_readback
-          curl --fail --silent --show-error --header 'Cache-Control: no-cache' http://127.0.0.1:8788/AI/ > /tmp/ai-after-restart.html
+          docker exec qikvrt-terminal curl --fail --silent --show-error --header 'Cache-Control: no-cache' http://127.0.0.1:8788/AI/ > /tmp/ai-after-restart.html
           test -s /tmp/ai-after-restart.html
           grep -Fqi 'epistemic spiral' /tmp/ai-after-restart.html
           test "$(sha256sum /tmp/ai-second.html | awk '{print $1}')" = "$(sha256sum /tmp/ai-after-restart.html | awk '{print $1}')"
