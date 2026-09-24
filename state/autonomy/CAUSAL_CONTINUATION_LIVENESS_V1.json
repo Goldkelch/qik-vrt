@@ -1,0 +1,49 @@
+{
+  "_license": {
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "PolyForm-Noncommercial-1.0.0",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_causal_continuation_liveness_v1",
+  "concept": {
+    "name": "causal_liveness_corridor",
+    "description": "Viable cognition must avoid both blocked progress and absent required continuation without fabricating completion."
+  },
+  "failure_classes": {
+    "DEADLOCK": {
+      "definition": "required work exists but cannot make progress",
+      "detector": "tools/qikvrt_reflexive_repository_watchdog.py",
+      "first_response": "HOLD"
+    },
+    "MISSING_REQUIRED_CONTINUATION": {
+      "definition": "a required successor workflow edge is absent on the exact head",
+      "detector": "tools/qikvrt_pr_head_recovery.py",
+      "first_response": "REOBSERVE",
+      "persistent_after_trusted_verification": "HOLD"
+    }
+  },
+  "required_pr_head_continuations": [
+    "QIKVRT CI",
+    "QIKVRT Collective Proposal Review",
+    "QIKVRT repository evidence materialization"
+  ],
+  "invariants": [
+    "absence_is_observable_state",
+    "active_work_precedes_missing_edge_recovery",
+    "executed_failure_precedes_missing_edge_recovery",
+    "one_bounded_reobserve_before_hold",
+    "exact_head_binding_required",
+    "predecessor_evidence_transfer_false",
+    "transport_ack_not_effect_ack"
+  ],
+  "nonclaims": [
+    "global_optimality_of_qikvrt",
+    "inferiority_of_other_artificial_cognition_systems",
+    "global_deadlock_freedom",
+    "effect_ack_done"
+  ],
+  "completion_claims": {
+    "DEADLOCK_FREEDOM_PROVED": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
