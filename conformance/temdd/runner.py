@@ -40,7 +40,7 @@ IMPLEMENTATION_FILES = (
 PASS_FIELDS = (
     "language", "ir", "event_semantics", "ledger", "ide", "evidence_binding",
     "causality", "effect_ack", "execution", "formal_invariants", "tests",
-    "negative_vectors",
+    "negative_vectors", "decision_determinism",
 )
 
 def sha256_bytes(data: bytes) -> str:
@@ -232,6 +232,7 @@ def build_report(repository: str, adapter: str, backend_receipt: Path) -> dict:
     vectors = json.loads((ROOT / "conformance/temdd/vectors-v1.json").read_text(encoding="utf-8"))
     require(vectors.get("schema") == "temdd_conformance_vectors_v1", "VECTOR_SCHEMA_MISMATCH")
     check_t13_t16(vectors)
+    check_machine_verifiable_standard(vectors)
     check_formal_core()
     check_repository_tests()
     execution_receipt_digest = check_backend_receipt(backend_receipt, subject)
@@ -260,6 +261,7 @@ def build_report(repository: str, adapter: str, backend_receipt: Path) -> dict:
         "formal_invariants": "PASS",
         "tests": "PASS",
         "negative_vectors": "PASS",
+        "decision_determinism": "PASS",
         "overall": "PASS",
     }
     require(all(report[k] == "PASS" for k in PASS_FIELDS), "T16_PARTIAL_PASS")
