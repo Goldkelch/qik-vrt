@@ -11,7 +11,8 @@ DISPLAY_VALUE="${DISPLAY:-:99}"
 # A terminal launched on its own has no Compose gateway namespace.  Cloud and
 # Compose carriers opt into their explicit Mesh URLs; the standalone image must
 # remain addressable without assuming a peer service exists.
-START_URL="${QIKVRT_START_URL:-about:blank}"
+AI_UI_PORT="${QIKVRT_AI_UI_PORT:-8788}"
+START_URL="${QIKVRT_START_URL:-http://127.0.0.1:${AI_UI_PORT}/AI/}"
 
 # BEGIN TEMDD deployment subject binding
 # Exact deployments must not silently inherit the language carrier's PR 1103.
@@ -114,6 +115,21 @@ until curl --max-time 2 -fsS "http://127.0.0.1:${HTTP_PORT}/.well-known/effect-a
   sleep 1
 done
 
+python3 -m http.server "$AI_UI_PORT" --bind 127.0.0.1 --directory /opt/qikvrt/docs \
+  > /opt/qikvrt/runtime/logs/ai-ui.log 2>&1 &
+AI_UI_PID=$!
+PIDS="$PIDS ${AI_UI_PID}"
+attempt=0
+until curl --max-time 2 -fsS "http://127.0.0.1:${AI_UI_PORT}/AI/" >/dev/null 2>&1; do
+  attempt=$((attempt + 1))
+  if ! kill -0 "$AI_UI_PID" 2>/dev/null || [ "$attempt" -ge 30 ]; then
+    diagnostics
+    echo "BLOCK: local /AI surface did not become readable" >&2
+    exit 1
+  fi
+  sleep 1
+done
+
 Xvfb "$DISPLAY_VALUE" -screen 0 1440x900x24 -nolisten tcp \
   > /opt/qikvrt/runtime/logs/xvfb.log 2>&1 &
 XVFB_PID=$!
@@ -155,9 +171,9 @@ firefox-esr --no-remote --profile "$PROFILE_DIR" "$START_URL" \
 FIREFOX_PID=$!
 PIDS="$PIDS ${FIREFOX_PID}"
 
-python3 -B - "$STATE_DIR/runtime.json" "$RUNTIME_ID" "$PROFILE_DIR" "$START_URL" "$NOVNC_PORT" "$HTTP_HOST" "$HTTP_PORT" <<'PY'
+python3 -B - "$STATE_DIR/runtime.json" "$RUNTIME_ID" "$PROFILE_DIR" "$START_URL" "$NOVNC_PORT" "$HTTP_HOST" "$HTTP_PORT" "$AI_UI_PORT" <<'PY'
 import json,sys,time
-path,runtime_id,profile,start_url,novnc_port,http_host,http_port=sys.argv[1:]
+path,runtime_id,profile,start_url,novnc_port,http_host,http_port,ai_ui_port=sys.argv[1:]
 obj={
   'schema':'qikvrt_universal_terminal_runtime_state_v2',
   'runtime_id':runtime_id,
@@ -168,6 +184,7 @@ obj={
   'novnc_port':int(novnc_port),
   'effect_ack_host':http_host,
   'effect_ack_port':int(http_port),
+  'ai_ui_port':int(ai_ui_port),
   'mesh_path':'/qik-vrt/mesh/v1/',
   'temdd_ide':'/AI',
   'temdd_event_stream':'/api/temdd/events',
