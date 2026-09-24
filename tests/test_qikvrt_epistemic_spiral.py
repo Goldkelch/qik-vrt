@@ -38,4 +38,36 @@ class EpistemicSpiralTests(unittest.TestCase):
         self.assertLessEqual(len(raw),62784)
         self.assertEqual(json.loads(raw.decode())["manifest"]["schema"],"qikvrt_epistemic_spiral_carrier_v1")
 
+    def test_firefox_and_virtualization_carriers_are_bound(self):
+        firefox=json.loads((ROOT/"browser/firefox/qikvrt-terminal/manifest.json").read_text(encoding="utf-8"))
+        matches=set(firefox["content_scripts"][0]["matches"])
+        self.assertIn("http://127.0.0.1:8788/AI/*",matches)
+        self.assertIn("https://goldkelch.github.io/qik-vrt/*",matches)
+        for locale in json.loads((ASSET/"i18n.json").read_text(encoding="utf-8"))["locales"]:
+            messages=json.loads((ROOT/f"browser/firefox/qikvrt-terminal/_locales/{locale}/messages.json").read_text(encoding="utf-8"))
+            self.assertTrue(messages["spiral"]["message"],locale)
+
+        build=(ROOT/"distribution/qikvrt-megast/build.sh").read_text(encoding="utf-8")
+        session=(ROOT/"distribution/qikvrt-megast/qikvrt-megast-session.sh").read_text(encoding="utf-8")
+        witness=(ROOT/"distribution/qikvrt-megast/runtime-witness.py").read_text(encoding="utf-8")
+        docker=(ROOT/"deploy/universal-terminal/Dockerfile").read_text(encoding="utf-8")
+        entry=(ROOT/"deploy/universal-terminal/entrypoint.sh").read_text(encoding="utf-8")
+        nginx=(ROOT/"deploy/universal-terminal/nginx.conf").read_text(encoding="utf-8")
+        self.assertIn("docs/assets/epistemic-spiral",build)
+        self.assertIn("qikvrt-ai-ui.service",build)
+        self.assertIn("http://127.0.0.1:8788/AI/",session)
+        self.assertIn("epistemic-spiral-ai-surface-readback",witness)
+        self.assertIn("QIKVRT_START_URL=http://127.0.0.1:8788/AI/",docker)
+        self.assertIn("python3 -m http.server",entry)
+        self.assertIn("root /opt/qikvrt/docs;",nginx)
+        self.assertIn("X-QIKVRT-Surface",nginx)
+
+    def test_delivery_contract_requires_roundtrip_receipts(self):
+        request=json.loads((ROOT/"state/delivery/requests/AI_PERSONAL_FIREFOX_V1.json").read_text(encoding="utf-8"))
+        required=set(request["effect_ack"]["fields"])
+        self.assertTrue({"epistemic_spiral_transputer_roundtrip_receipt",
+                         "epistemic_spiral_linux_readback_receipt",
+                         "epistemic_spiral_oci_readback_receipt"} <= required)
+        self.assertFalse(request["completion_claims"]["EFFECT_ACK_DONE"])
+
 if __name__=="__main__": unittest.main()
