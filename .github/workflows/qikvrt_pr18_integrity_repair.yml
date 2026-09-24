@@ -11,6 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: write
   contents: write
 
 concurrency:
@@ -36,7 +37,9 @@ jobs:
           set -euo pipefail
           python3 tools/qikvrt_integrity.py generate
           python3 tools/qikvrt_integrity.py verify
-      - name: Commit regenerated integrity outputs
+      - name: Commit regenerated integrity outputs and admit the exact successor
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
@@ -44,10 +47,30 @@ jobs:
           git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
           if git diff --cached --quiet; then
             echo "Integrity outputs already current."
-            exit 0
+          else
+            git commit -m "fix: regenerate repository integrity for live status watcher"
+            git push origin HEAD:infra/live-status-default-branch
           fi
-          git commit -m "fix: regenerate repository integrity for live status watcher"
-          git push origin HEAD:infra/live-status-default-branch
+
+          successor="$(git rev-parse --verify HEAD^{commit})"
+          remote="$(git ls-remote origin refs/heads/infra/live-status-default-branch | cut -f1)"
+          test "$remote" = "$successor"
+
+          # GITHUB_TOKEN-authored pushes deliberately do not recurse into ordinary
+          # push/pull_request workflows. workflow_dispatch is the GitHub-native
+          # exception, so explicitly admit the exact persisted successor into the
+          # three gates consumed by the requested-review executor.
+          for workflow in \
+            qikvrt_ci.yml \
+            qikvrt_batch04_integrity.yml \
+            qikvrt_collective_review.yml
+          do
+            gh workflow run "$workflow" --ref infra/live-status-default-branch
+          done
+
+          printf 'ADMISSION_DISPATCHED_HEAD=%s\n' "$successor"
+          printf 'PREDECESSOR_EVIDENCE_TRANSFER=false\n'
+          printf 'EFFECT_ACK_DONE=false\n'
 
   materialize-monitor:
     if: >-
