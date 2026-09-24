@@ -11,7 +11,7 @@
   host.innerHTML = `
     <header class="qv-head">
       <div><strong>QIKVRT · AI TERMINAL</strong><small data-i18n="subtitle"></small></div>
-      <div class="qv-head-actions"><button data-act="observe" data-i18n="observe"></button><button data-act="options" data-i18n-label="personalize">⚙</button><button data-act="collapse" data-i18n-label="collapse">—</button></div>
+      <div class="qv-head-actions"><a class="qv-spiral-link" href="https://goldkelch.github.io/qik-vrt/terminal/epistemic-spiral/" target="_blank" rel="noopener" aria-label="Epistemic Spiral" title="Epistemic Spiral">∞</a><button data-act="observe" data-i18n="observe"></button><button data-act="options" data-i18n-label="personalize">⚙</button><button data-act="collapse" data-i18n-label="collapse">—</button></div>
     </header>
     <div class="qv-body">
       <div class="qv-status" data-role="status">OBSERVE</div>

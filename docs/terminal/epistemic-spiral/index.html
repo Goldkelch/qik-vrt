@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>QIK-VRT · Epistemic Spiral</title>
+  <meta name="description" content="Interactive, multilingual QIK-VRT visualization of the epistemic spiral: locally closed, globally advancing.">
+  <link rel="stylesheet" href="spiral.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">QIK-VRT · Tested Event Model Driven Development</p>
+        <h1 data-i18n="title">The Epistemic Spiral</h1>
+        <p class="subtitle" data-i18n="subtitle">The universal principle of creation</p>
+      </div>
+      <div class="controls">
+        <label for="locale" data-i18n="language">Language</label>
+        <select id="locale" aria-label="Language"></select>
+        <button id="motion" type="button" data-i18n="pause">Pause</button>
+      </div>
+    </header>
+
+    <section class="stage" aria-label="Epistemic spiral animation">
+      <div class="cosmos" aria-hidden="true"></div>
+      <svg class="spiral" viewBox="0 0 1000 650" role="img" aria-labelledby="svgTitle svgDesc">
+        <title id="svgTitle">QIK-VRT epistemic spiral</title>
+        <desc id="svgDesc">A verified successor state becomes the next bound input and advances the process as a spiral.</desc>
+        <defs>
+          <filter id="glow"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <linearGradient id="gold" x1="0" x2="1"><stop offset="0" stop-color="#7ad8ff"/><stop offset=".5" stop-color="#ffd58a"/><stop offset="1" stop-color="#fff4ce"/></linearGradient>
+        </defs>
+        <path class="spiral-path" d="M500 330 C500 255 590 245 615 320 C645 410 525 465 445 405 C335 322 405 150 565 155 C790 160 855 430 665 555 C410 720 120 485 225 245 C355 -55 805 5 930 295"/>
+        <g class="orbit-labels">
+          <g transform="translate(500 250)"><circle class="node event" r="13"/><text x="22" y="6">EVENT</text></g>
+          <g transform="translate(620 320)"><circle class="node" r="13"/><text x="22" y="6">STATE</text></g>
+          <g transform="translate(600 430)"><circle class="node" r="13"/><text x="22" y="6">OBSERVE</text></g>
+          <g transform="translate(485 475)"><circle class="node" r="13"/><text x="22" y="6">READBACK</text></g>
+          <g transform="translate(375 410)"><circle class="node" r="13"/><text x="-110" y="6">ACCEPT</text></g>
+          <g transform="translate(350 285)"><circle class="node" r="13"/><text x="-150" y="6">EFFECT_ACK</text></g>
+          <g transform="translate(455 170)"><circle class="node next" r="13"/><text x="-145" y="-10">NEXT INPUT</text></g>
+        </g>
+        <g class="center-label">
+          <text x="500" y="325" text-anchor="middle">QIK-VRT</text>
+          <text class="small" x="500" y="350" text-anchor="middle">s′ → next bound input</text>
+        </g>
+      </svg>
+      <div class="stage-sequence" aria-label="From line to loop to spiral">
+        <article><span>1</span><strong>LINE</strong><i>observe → read back</i></article>
+        <article><span>2</span><strong>LOOP</strong><i>locally closed</i></article>
+        <article><span>3</span><strong>SPIRAL</strong><i>globally advancing</i></article>
+      </div>
+    </section>
+
+    <section class="explanation">
+      <div class="copy">
+        <p class="lead" data-i18n="body"></p>
+        <p data-i18n="universal"></p>
+      </div>
+      <aside class="boundary">
+        <strong data-i18n="status"></strong>
+        <p data-i18n="boundary"></p>
+        <p class="technical">EVENT → STATE → OBSERVE → READBACK → ACCEPT → EFFECT_ACK → NEXT INPUT</p>
+      </aside>
+    </section>
+
+    <footer>
+      <p><strong>Quod erat demonstrandum — Ingolf Lohmann</strong></p>
+      <p><a href="state.json">state.json</a> · <a href="locales.json">locales.json</a> · <a href="program.temdd">TEMDD</a></p>
+    </footer>
+  </main>
+  <script src="spiral.js" defer></script>
+</body>
+</html>
