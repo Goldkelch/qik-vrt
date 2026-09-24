@@ -12,6 +12,13 @@ Use this checkout's actual owner/repository for a Mirror or fork. Choose a new o
 
 <!-- /qikvrt-roundtrip-first:v1 -->
 
+## Aktuelles Dossier: Erwartungen, Wetten, Wirkung und Recht
+
+[Drei Artikel und die Autorenerklärung von Ingolf Lohmann](docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/README.md) dokumentieren die behauptete Erklärung, ihre Begründung und die Grenzen der vorhandenen Evidenz. Die Einschätzung „am wahrscheinlichsten“ ist ausdrücklich dem Autor zugeschrieben. Quellen, Aussageverzeichnis und prüfbare Grenzen gehören zum Dossier.
+
+[Veröffentlicht auf Zenodo · Version 2.0.0 · DOI 10.5281/zenodo.22845516](https://doi.org/10.5281/zenodo.22845516) · [Publikationsnachweis](docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/PUBLICATION_STATUS.md).
+
+
 <!-- qikvrt-machine-verifiable-science-charter-binding:v1 -->
 ## Charta einer maschinenprüfbaren Wissenschaft
 
