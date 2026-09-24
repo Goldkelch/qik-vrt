@@ -158,10 +158,7 @@ VERSION_MISMATCH, REPLAY, DUPLICATE and BOUNDARY_CASE.
 
 The v1 executable profile uses deterministic UTF-8 JSON with lexicographically
 sorted object keys and compact separators for the canonical comparison surface.
-This profile does not assert that an external implementation exists. Cross-
-implementation interoperability is established only after at least two
-independent implementations execute the same normative vectors and return the
-same canonical decisions.
+For this bounded decision profile, implementation independence means at least two separately implemented evaluator code paths, in distinct languages, executed through separate process boundaries without shared evaluator implementation code. It does not imply independent authorship or organizational provenance. Cross-implementation interoperability is established only when both implementations execute every normative vector from the same canonical bytes and return the same canonical expected decision.
 
 ```text
 MACHINE_VERIFIABLE_STANDARD
@@ -172,6 +169,8 @@ and INDEPENDENT_IMPLEMENTATIONS
 and IDENTICAL_EXPECTED_DECISIONS
 = INTEROPERABILITY_BY_EXECUTABLE_PROOF
 ```
+
+A PASS for this equation is scoped to the v1 decision profile and exact conformance subject. It is not evidence of deployment, Main promotion, external organizational validation, or EFFECT_ACK_DONE.
 
 ## Canonical pipeline
 

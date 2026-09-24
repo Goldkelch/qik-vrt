@@ -23,6 +23,8 @@
     "tests",
     "negative_vectors",
     "decision_determinism",
+    "decision_implementations",
+    "interoperability_by_executable_proof",
     "overall"
   ],
   "properties": {
@@ -173,6 +175,43 @@
       ]
     },
     "decision_determinism": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "HOLD_UNVERIFIED"
+      ]
+    },
+    "decision_implementations": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "language",
+          "digest"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "language": {
+            "enum": [
+              "python",
+              "c90"
+            ]
+          },
+          "digest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "interoperability_by_executable_proof": {
       "enum": [
         "PASS",
         "FAIL",

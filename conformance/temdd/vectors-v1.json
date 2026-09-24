@@ -91,6 +91,14 @@
     "policy_version": "1",
     "evaluator_version": "1",
     "canonicalization": "JSON_SORTED_KEYS_UTF8_COMPACT",
+    "implementation_independence": {
+      "required": true,
+      "minimum_implementations": 2,
+      "shared_evaluator_code_forbidden": true,
+      "process_boundary_required": true,
+      "distinct_languages_required": true,
+      "authorship_or_organization_independence_claimed": false
+    },
     "vector_classes": [
       "VALID",
       "INVALID",
@@ -107,108 +115,309 @@
       {
         "id": "valid_accept",
         "class": "VALID",
-        "input": {
+        "bound_input": {
           "data": {
+            "valid": true,
             "value": 1
           },
+          "evaluator_version": "1",
+          "evidence": {
+            "duplicate": false,
+            "fresh": true,
+            "replay": false,
+            "subject_digest": "sha256:subject-a"
+          },
+          "model_version": "1",
           "policy": {
             "allow": true
           },
+          "policy_version": "1",
           "subject": {
             "digest": "sha256:subject-a"
-          },
-          "evidence": {
-            "fresh": true,
-            "subject_digest": "sha256:subject-a"
           }
         },
-        "equivalent_input": {
-          "evidence": {
-            "subject_digest": "sha256:subject-a",
-            "fresh": true
-          },
+        "equivalent_bound_input": {
           "subject": {
             "digest": "sha256:subject-a"
           },
+          "policy_version": "1",
           "policy": {
             "allow": true
           },
+          "model_version": "1",
+          "evidence": {
+            "subject_digest": "sha256:subject-a",
+            "replay": false,
+            "fresh": true,
+            "duplicate": false
+          },
+          "evaluator_version": "1",
           "data": {
-            "value": 1
+            "value": 1,
+            "valid": true
           }
         },
         "expected_decision": {
-          "result": "PASS",
-          "code": "ACCEPT"
+          "code": "ACCEPT",
+          "result": "PASS"
+        }
+      },
+      {
+        "id": "invalid_data_fails",
+        "class": "INVALID",
+        "bound_input": {
+          "data": {
+            "valid": false,
+            "value": 1
+          },
+          "evaluator_version": "1",
+          "evidence": {
+            "duplicate": false,
+            "fresh": true,
+            "replay": false,
+            "subject_digest": "sha256:subject-a"
+          },
+          "model_version": "1",
+          "policy": {
+            "allow": true
+          },
+          "policy_version": "1",
+          "subject": {
+            "digest": "sha256:subject-a"
+          }
+        },
+        "expected_decision": {
+          "code": "INVALID",
+          "result": "FAIL"
+        }
+      },
+      {
+        "id": "insufficient_evidence_holds",
+        "class": "INSUFFICIENT_EVIDENCE",
+        "bound_input": {
+          "data": {
+            "valid": true,
+            "value": 1
+          },
+          "evaluator_version": "1",
+          "evidence": {
+            "duplicate": false,
+            "fresh": false,
+            "replay": false,
+            "subject_digest": "sha256:subject-a"
+          },
+          "model_version": "1",
+          "policy": {
+            "allow": true
+          },
+          "policy_version": "1",
+          "subject": {
+            "digest": "sha256:subject-a"
+          }
+        },
+        "expected_decision": {
+          "code": "INSUFFICIENT_EVIDENCE",
+          "result": "HOLD_UNVERIFIED"
         }
       },
       {
         "id": "subject_mismatch_holds",
         "class": "SUBJECT_MISMATCH",
-        "input": {
+        "bound_input": {
           "data": {
+            "valid": true,
             "value": 1
           },
+          "evaluator_version": "1",
+          "evidence": {
+            "duplicate": false,
+            "fresh": true,
+            "replay": false,
+            "subject_digest": "sha256:subject-a"
+          },
+          "model_version": "1",
           "policy": {
             "allow": true
           },
+          "policy_version": "1",
           "subject": {
             "digest": "sha256:subject-b"
-          },
-          "evidence": {
-            "fresh": true,
-            "subject_digest": "sha256:subject-a"
           }
         },
         "expected_decision": {
-          "result": "HOLD_UNVERIFIED",
-          "code": "SUBJECT_MISMATCH"
-        }
-      },
-      {
-        "id": "stale_evidence_holds",
-        "class": "INSUFFICIENT_EVIDENCE",
-        "input": {
-          "data": {
-            "value": 1
-          },
-          "policy": {
-            "allow": true
-          },
-          "subject": {
-            "digest": "sha256:subject-a"
-          },
-          "evidence": {
-            "fresh": false,
-            "subject_digest": "sha256:subject-a"
-          }
-        },
-        "expected_decision": {
-          "result": "HOLD_UNVERIFIED",
-          "code": "INSUFFICIENT_EVIDENCE"
+          "code": "SUBJECT_MISMATCH",
+          "result": "HOLD_UNVERIFIED"
         }
       },
       {
         "id": "policy_denial_fails",
         "class": "POLICY_VIOLATION",
-        "input": {
+        "bound_input": {
           "data": {
+            "valid": true,
             "value": 1
           },
+          "evaluator_version": "1",
+          "evidence": {
+            "duplicate": false,
+            "fresh": true,
+            "replay": false,
+            "subject_digest": "sha256:subject-a"
+          },
+          "model_version": "1",
           "policy": {
             "allow": false
           },
+          "policy_version": "1",
           "subject": {
             "digest": "sha256:subject-a"
-          },
-          "evidence": {
-            "fresh": true,
-            "subject_digest": "sha256:subject-a"
           }
         },
         "expected_decision": {
-          "result": "FAIL",
-          "code": "POLICY_VIOLATION"
+          "code": "POLICY_VIOLATION",
+          "result": "FAIL"
+        }
+      },
+      {
+        "id": "malformed_missing_policy_fails",
+        "class": "MALFORMED_INPUT",
+        "bound_input": {
+          "data": {
+            "valid": true,
+            "value": 1
+          },
+          "evaluator_version": "1",
+          "evidence": {
+            "duplicate": false,
+            "fresh": true,
+            "replay": false,
+            "subject_digest": "sha256:subject-a"
+          },
+          "model_version": "1",
+          "policy_version": "1",
+          "subject": {
+            "digest": "sha256:subject-a"
+          }
+        },
+        "expected_decision": {
+          "code": "MALFORMED_INPUT",
+          "result": "FAIL"
+        }
+      },
+      {
+        "id": "version_mismatch_holds",
+        "class": "VERSION_MISMATCH",
+        "bound_input": {
+          "data": {
+            "valid": true,
+            "value": 1
+          },
+          "evaluator_version": "2",
+          "evidence": {
+            "duplicate": false,
+            "fresh": true,
+            "replay": false,
+            "subject_digest": "sha256:subject-a"
+          },
+          "model_version": "1",
+          "policy": {
+            "allow": true
+          },
+          "policy_version": "1",
+          "subject": {
+            "digest": "sha256:subject-a"
+          }
+        },
+        "expected_decision": {
+          "code": "VERSION_MISMATCH",
+          "result": "HOLD_UNVERIFIED"
+        }
+      },
+      {
+        "id": "replay_fails",
+        "class": "REPLAY",
+        "bound_input": {
+          "data": {
+            "valid": true,
+            "value": 1
+          },
+          "evaluator_version": "1",
+          "evidence": {
+            "duplicate": false,
+            "fresh": true,
+            "replay": true,
+            "subject_digest": "sha256:subject-a"
+          },
+          "model_version": "1",
+          "policy": {
+            "allow": true
+          },
+          "policy_version": "1",
+          "subject": {
+            "digest": "sha256:subject-a"
+          }
+        },
+        "expected_decision": {
+          "code": "REPLAY",
+          "result": "FAIL"
+        }
+      },
+      {
+        "id": "duplicate_fails",
+        "class": "DUPLICATE",
+        "bound_input": {
+          "data": {
+            "valid": true,
+            "value": 1
+          },
+          "evaluator_version": "1",
+          "evidence": {
+            "duplicate": true,
+            "fresh": true,
+            "replay": false,
+            "subject_digest": "sha256:subject-a"
+          },
+          "model_version": "1",
+          "policy": {
+            "allow": true
+          },
+          "policy_version": "1",
+          "subject": {
+            "digest": "sha256:subject-a"
+          }
+        },
+        "expected_decision": {
+          "code": "DUPLICATE",
+          "result": "FAIL"
+        }
+      },
+      {
+        "id": "boundary_zero_accepts",
+        "class": "BOUNDARY_CASE",
+        "bound_input": {
+          "data": {
+            "valid": true,
+            "value": 0
+          },
+          "evaluator_version": "1",
+          "evidence": {
+            "duplicate": false,
+            "fresh": true,
+            "replay": false,
+            "subject_digest": "sha256:subject-a"
+          },
+          "model_version": "1",
+          "policy": {
+            "allow": true
+          },
+          "policy_version": "1",
+          "subject": {
+            "digest": "sha256:subject-a"
+          }
+        },
+        "expected_decision": {
+          "code": "ACCEPT",
+          "result": "PASS"
         }
       }
     ]

@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -40,7 +41,7 @@ IMPLEMENTATION_FILES = (
 PASS_FIELDS = (
     "language", "ir", "event_semantics", "ledger", "ide", "evidence_binding",
     "causality", "effect_ack", "execution", "formal_invariants", "tests",
-    "negative_vectors", "decision_determinism",
+    "negative_vectors", "decision_determinism", "interoperability_by_executable_proof",
 )
 
 def sha256_bytes(data: bytes) -> str:
@@ -119,24 +120,23 @@ def effect_ack(v: dict) -> bool:
 def canonical_json(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
-def evaluate_machine_standard(bound_input: dict) -> dict:
-    required = {"data", "policy", "subject", "evidence"}
-    if set(bound_input) != required:
-        return {"result": "FAIL", "code": "MALFORMED_INPUT"}
-    subject = bound_input["subject"]
-    evidence = bound_input["evidence"]
-    policy = bound_input["policy"]
-    if not isinstance(subject, dict) or not isinstance(evidence, dict) or not isinstance(policy, dict):
-        return {"result": "FAIL", "code": "MALFORMED_INPUT"}
-    if evidence.get("subject_digest") != subject.get("digest"):
-        return {"result": "HOLD_UNVERIFIED", "code": "SUBJECT_MISMATCH"}
-    if evidence.get("fresh") is not True:
-        return {"result": "HOLD_UNVERIFIED", "code": "INSUFFICIENT_EVIDENCE"}
-    if policy.get("allow") is not True:
-        return {"result": "FAIL", "code": "POLICY_VIOLATION"}
-    return {"result": "PASS", "code": "ACCEPT"}
+def file_digest(relative: str) -> str:
+    return "sha256:" + sha256_bytes((ROOT / relative).read_bytes())
 
-def check_machine_verifiable_standard(vectors: dict) -> None:
+def invoke_decision_evaluator(command: list[str], bound_input: object) -> str:
+    payload = canonical_json(bound_input) + "\n"
+    p = subprocess.run(
+        command,
+        cwd=ROOT,
+        input=payload,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    require(p.returncode == 0, "DECISION_EVALUATOR_PROCESS_FAILED:" + (p.stderr or "").strip())
+    return p.stdout.strip()
+
+def check_machine_verifiable_standard(vectors: dict) -> list[dict]:
     profile = vectors.get("machine_verifiable_standard", {})
     require(profile.get("model_version") == "1", "MODEL_VERSION_MISMATCH")
     require(profile.get("policy_version") == "1", "POLICY_VERSION_MISMATCH")
@@ -148,26 +148,61 @@ def check_machine_verifiable_standard(vectors: dict) -> None:
         "REPLAY", "DUPLICATE", "BOUNDARY_CASE",
     }
     require(set(profile.get("vector_classes", [])) == required_classes, "VECTOR_CLASS_SET_MISMATCH")
-    seen = set()
-    for vector in profile.get("vectors", []):
-        vector_id = vector.get("id")
-        require(isinstance(vector_id, str) and vector_id and vector_id not in seen, "VECTOR_ID_INVALID")
-        seen.add(vector_id)
-        actual = evaluate_machine_standard(vector.get("input", {}))
-        require(
-            canonical_json(actual) == canonical_json(vector.get("expected_decision", {})),
-            "DECISION_VECTOR_MISMATCH:" + vector_id,
+    independence = profile.get("implementation_independence", {})
+    require(independence.get("required") is True, "IMPLEMENTATION_INDEPENDENCE_NOT_REQUIRED")
+    require(independence.get("minimum_implementations") == 2, "IMPLEMENTATION_COUNT_REQUIREMENT_MISMATCH")
+    require(independence.get("shared_evaluator_code_forbidden") is True, "SHARED_EVALUATOR_CODE_NOT_FORBIDDEN")
+    require(independence.get("process_boundary_required") is True, "PROCESS_BOUNDARY_NOT_REQUIRED")
+    require(independence.get("distinct_languages_required") is True, "DISTINCT_LANGUAGES_NOT_REQUIRED")
+    require(independence.get("authorship_or_organization_independence_claimed") is False, "UNSUPPORTED_AUTHORSHIP_INDEPENDENCE_CLAIM")
+
+    reference = "conformance/temdd/evaluator_reference.py"
+    independent = "conformance/temdd/evaluator_independent.c"
+    implementations = [
+        {"id": "python-reference-v1", "language": "python", "digest": file_digest(reference)},
+        {"id": "c90-independent-v1", "language": "c90", "digest": file_digest(independent)},
+    ]
+
+    with tempfile.TemporaryDirectory(prefix="temdd-decision-") as temp:
+        binary = str(Path(temp) / "temdd-independent")
+        build = subprocess.run(
+            ["cc", "-std=c90", "-pedantic", "-Wall", "-Wextra", "-Werror",
+             str(ROOT / independent), "-o", binary],
+            cwd=ROOT, text=True, capture_output=True, check=False,
         )
-        if "equivalent_input" in vector:
-            require(
-                canonical_json(vector["input"]) == canonical_json(vector["equivalent_input"]),
-                "CANONICAL_INPUT_EQUIVALENCE_MISMATCH:" + vector_id,
-            )
-            equivalent = evaluate_machine_standard(vector["equivalent_input"])
-            require(
-                canonical_json(actual) == canonical_json(equivalent),
-                "DETERMINISTIC_DECISION_MISMATCH:" + vector_id,
-            )
+        require(build.returncode == 0, "INDEPENDENT_EVALUATOR_BUILD_FAILED:" + (build.stderr or build.stdout)[-2000:])
+        commands = (
+            [sys.executable, str(ROOT / reference)],
+            [binary],
+        )
+        seen_ids = set()
+        seen_classes = set()
+        for vector in profile.get("vectors", []):
+            vector_id = vector.get("id")
+            vector_class = vector.get("class")
+            require(isinstance(vector_id, str) and vector_id and vector_id not in seen_ids, "VECTOR_ID_INVALID")
+            require(vector_class in required_classes, "VECTOR_CLASS_INVALID:" + str(vector_id))
+            seen_ids.add(vector_id)
+            seen_classes.add(vector_class)
+            expected = canonical_json(vector.get("expected_decision", {}))
+            outputs = [
+                invoke_decision_evaluator(command, vector.get("bound_input", {}))
+                for command in commands
+            ]
+            require(all(output == expected for output in outputs), "DECISION_VECTOR_MISMATCH:" + vector_id)
+            require(len(set(outputs)) == 1, "INDEPENDENT_IMPLEMENTATION_DECISION_MISMATCH:" + vector_id)
+            if "equivalent_bound_input" in vector:
+                require(
+                    canonical_json(vector["bound_input"]) == canonical_json(vector["equivalent_bound_input"]),
+                    "CANONICAL_INPUT_EQUIVALENCE_MISMATCH:" + vector_id,
+                )
+                equivalent_outputs = [
+                    invoke_decision_evaluator(command, vector["equivalent_bound_input"])
+                    for command in commands
+                ]
+                require(outputs == equivalent_outputs, "DETERMINISTIC_DECISION_MISMATCH:" + vector_id)
+        require(seen_classes == required_classes, "VECTOR_CLASS_COVERAGE_INCOMPLETE")
+    return implementations
 
 def check_t13_t16(vectors: dict) -> None:
     t13 = vectors["t13"]
@@ -232,7 +267,7 @@ def build_report(repository: str, adapter: str, backend_receipt: Path) -> dict:
     vectors = json.loads((ROOT / "conformance/temdd/vectors-v1.json").read_text(encoding="utf-8"))
     require(vectors.get("schema") == "temdd_conformance_vectors_v1", "VECTOR_SCHEMA_MISMATCH")
     check_t13_t16(vectors)
-    check_machine_verifiable_standard(vectors)
+    decision_implementations = check_machine_verifiable_standard(vectors)
     check_formal_core()
     check_repository_tests()
     execution_receipt_digest = check_backend_receipt(backend_receipt, subject)
@@ -262,6 +297,8 @@ def build_report(repository: str, adapter: str, backend_receipt: Path) -> dict:
         "tests": "PASS",
         "negative_vectors": "PASS",
         "decision_determinism": "PASS",
+        "decision_implementations": decision_implementations,
+        "interoperability_by_executable_proof": "PASS",
         "overall": "PASS",
     }
     require(all(report[k] == "PASS" for k in PASS_FIELDS), "T16_PARTIAL_PASS")
