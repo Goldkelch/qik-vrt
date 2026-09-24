@@ -2,7 +2,7 @@ name: QIKVRT TEMDD conformance
 on:
   pull_request:
     paths: ['next/**','spec/temdd/**','examples/temdd/**','conformance/temdd/**','src/temdd/**','schemas/temdd-*','tools/qikvrt_temdd.py','tools/qikvrt_temdd_conformance.py','tests/test_temdd.py','tests/temdd/**','src/temdd_core.c','include/temdd_core.h','tests/test_temdd_core.c','runtime/temdd/**','runtime/m68000/temdd_transition.s','runtime/toolchains/pharo-13.lock.json','formalization/TEMDDCore.lean','src/qikvrt_temdd_event_ledger.py','src/qikvrt_effect_ack_http_terminal.py','tests/test_temdd_event_ledger.py','docs/terminal/temdd/**','deploy/universal-terminal/**','Makefile','.github/workflows/qikvrt_temdd.yml']
-  push: {branches: [main, architecture/universal-transputer-c90-v1]}
+  push: {branches: [main, architecture/universal-transputer-c90-v1, spec/temdd-machine-verifiable-standard-20260924-v1]}
 permissions: {contents: read}
 jobs:
  conformance:
@@ -201,6 +201,52 @@ jobs:
        ${{ runner.temp }}/temdd-backends/
        ${{ runner.temp }}/temdd-integrity/
       if-no-files-found: error
+
+
+ persist-integrity-candidate:
+  needs: conformance
+  if: >-
+   github.event_name == 'push' &&
+   github.ref_name == 'spec/temdd-machine-verifiable-standard-20260924-v1' &&
+   github.actor != 'github-actions[bot]'
+  permissions:
+   contents: write
+  runs-on: ubuntu-24.04
+  timeout-minutes: 20
+  steps:
+   - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+     with:
+      ref: ${{ github.sha }}
+      fetch-depth: 2
+   - uses: actions/setup-python@v6
+     with:
+      python-version: '3.12.13'
+   - name: Regenerate exact-head integrity candidate
+     shell: bash
+     run: |
+      set -euo pipefail
+      test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      python3 -B tools/qikvrt_integrity.py generate
+      python3 -B tools/qikvrt_integrity.py verify
+      make test
+      python3 -B tools/qikvrt_integrity.py verify
+   - name: Persist only the bounded integrity trio
+     shell: bash
+     run: |
+      set -euo pipefail
+      source_head="$(git rev-parse --verify HEAD^{commit})"
+      test "$source_head" = "$GITHUB_SHA"
+      remote_head="$(git ls-remote --heads origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+      test "$remote_head" = "$source_head"
+      git config user.name "github-actions[bot]"
+      git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+      staged="$(git diff --cached --name-only)"
+      test "$staged" = "$(printf '%s\n' REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt)"
+      git commit -m "ci: materialize TEMDD interoperability integrity"
+      remote_after="$(git ls-remote --heads origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+      test "$remote_after" = "$source_head"
+      git push origin "HEAD:$GITHUB_REF_NAME"
 
  target-c90-bus:
   runs-on: ubuntu-24.04
