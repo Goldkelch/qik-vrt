@@ -62,13 +62,13 @@ jobs:
           REPOSITORY_FILE_MANIFEST.json
           REPOSITORY_FILE_MANIFEST.json.sha256
           SHA256SUMS.txt
-          docs/publications/index.html
-          docs/publications/index.json
           EOF
           sort -o /tmp/expected-conflicts.txt /tmp/expected-conflicts.txt
           diff -u /tmp/expected-conflicts.txt /tmp/actual-conflicts.txt
 
-          git checkout --theirs --             README.md             REPOSITORY_FILE_MANIFEST.json             REPOSITORY_FILE_MANIFEST.json.sha256             SHA256SUMS.txt             docs/publications/index.html             docs/publications/index.json
+          git checkout --theirs --             README.md             REPOSITORY_FILE_MANIFEST.json             REPOSITORY_FILE_MANIFEST.json.sha256             SHA256SUMS.txt
+          git show "$EXPECTED_MAIN:docs/publications/index.html" > docs/publications/index.html
+          git show "$EXPECTED_MAIN:docs/publications/index.json" > docs/publications/index.json
 
           python3 -B - <<'PY'
           import json
