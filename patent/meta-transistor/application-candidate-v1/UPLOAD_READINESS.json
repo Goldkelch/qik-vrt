@@ -5,7 +5,12 @@
   "exact_subject": {
     "repository": "Goldkelch/qik-vrt",
     "pull_request": 1192,
-    "predecessor_head": "d44c167ca2b47ee64cd38aa210a19a02619912b5"
+    "content_binding": "SUBMISSION_PACKAGE_MANIFEST.application_sources[].blob_sha"
+  },
+  "machine_inputs": {
+    "facts": "patent/meta-transistor/application-candidate-v1/SUBMISSION_FACTS.json",
+    "plan": "patent/meta-transistor/application-candidate-v1/SUBMISSION_PLAN.json",
+    "manifest": "patent/meta-transistor/application-candidate-v1/SUBMISSION_PACKAGE_MANIFEST.json"
   },
   "required_conditions": {
     "filing_package_ready": false,
@@ -23,12 +28,13 @@
     "owner_submission_authorization": false
   },
   "unresolved_facts": {
-    "inventor_data": "UNKNOWN",
-    "applicant_data": "UNKNOWN",
-    "public_disclosure_history": "UNKNOWN_OR_INCOMPLETE",
-    "priority_data": "UNKNOWN",
-    "target_office": "UNKNOWN",
-    "filing_route": "UNKNOWN"
+    "inventor_data": "UNCONFIRMED",
+    "applicant_data": "UNCONFIRMED",
+    "public_disclosure_history": "INCOMPLETE",
+    "priority_data": "UNCONFIRMED",
+    "existing_application_data": "UNCONFIRMED",
+    "target_office": "UNSELECTED",
+    "filing_route": "UNSELECTED"
   },
   "derived_state": {
     "upload_ready": false,
@@ -40,8 +46,9 @@
     "patentability_established": false,
     "filing_effect_ack_done": false
   },
-  "fail_closed_rule": "UPLOAD_READY is true iff every required condition is explicitly true. false, null, missing, unknown, or stale evidence fails closed.",
+  "fail_closed_rule": "UPLOAD_READY is true iff every required condition is explicitly true and the final owner authorization binds the exact final subject and final package SHA-256. false, null, missing, unknown, unconfirmed, incomplete, or stale evidence fails closed.",
   "non_equivalences": [
+    "STAGING_BUNDLE != FILING_PACKAGE",
     "UPLOAD_READY != UPLOADED",
     "UPLOADED != FILED",
     "RECEIPT != VERIFIED_FILING",

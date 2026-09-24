@@ -2,24 +2,22 @@
   "schema": "qikvrt_submission_plan_v1",
   "subject": "meta-transistor-effect-haltpoint-application-candidate-v1",
   "status": "BLOCKED_BY_UNRESOLVED_FACTS_AND_TARGET",
-  "target": {
-    "office": null,
-    "route": null,
-    "endpoint": null,
-    "schema_version": null,
-    "authentication_profile": null
-  },
+  "facts_carrier": "patent/meta-transistor/application-candidate-v1/SUBMISSION_FACTS.json",
+  "target": {"office": null, "route": null, "endpoint": null, "schema_version": null, "authentication_profile": null},
   "field_mapping": [],
   "file_mapping": [],
-  "required_receipt_fields": [
-    "office",
-    "application_number",
-    "filing_timestamp",
-    "submitted_file_identifiers_or_hashes"
-  ],
+  "automation": {
+    "staging_builder": "tools/qikvrt_patent_submission_bundle.py",
+    "readiness_gate": "tools/qikvrt_patent_filing_gate.py",
+    "workflow": ".github/workflows/meta-transistor-filing-package-readiness.yml",
+    "staging_bundle_role": "AUTOMATION_STAGING_BUNDLE_NOT_OFFICE_FILING_PAYLOAD"
+  },
+  "required_receipt_fields": ["office", "application_number", "filing_timestamp", "submitted_file_identifiers_or_hashes"],
   "preconditions": [
     "UPLOAD_READY == true",
-    "OWNER_SUBMISSION_AUTHORIZATION == true"
+    "OWNER_SUBMISSION_AUTHORIZATION == true",
+    "OWNER_SUBMISSION_AUTHORIZATION.authorized_subject == exact final subject",
+    "OWNER_SUBMISSION_AUTHORIZATION.authorized_package_sha256 == exact final package sha256"
   ],
   "execution_chain": [
     "MATERIALIZE_TARGET_PACKAGE",
@@ -37,6 +35,8 @@
     "format_validation_failure",
     "hash_mismatch",
     "missing_owner_submission_authorization",
+    "authorization_subject_mismatch",
+    "authorization_package_hash_mismatch",
     "missing_or_unverifiable_office_receipt"
   ],
   "current_blockers": [
@@ -44,6 +44,7 @@
     "applicant_data_unconfirmed",
     "public_disclosure_history_incomplete",
     "priority_data_unconfirmed",
+    "existing_application_data_unconfirmed",
     "primary_prior_art_not_fully_bound",
     "full_claim_chart_incomplete",
     "patent_drawings_incomplete",

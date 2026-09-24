@@ -14,6 +14,10 @@ Required before owner filing authorization:
 - [x] claim-chart skeleton
 - [x] PR #1191 prior-art search seed provenance-bound into this application-candidate subject
 - [x] independent Claims 1 and 11 decomposed into an evidence matrix with unresolved source bindings explicit
+- [x] machine-readable unresolved-facts carrier persisted
+- [x] source files content-addressed by Git blob SHA in the submission manifest
+- [x] repository-native deterministic staging-bundle builder persisted
+- [x] fail-closed gate verifies declared source blobs against actual repository bytes
 - [ ] authoritative primary-source independent claims and relevant figures bound for substantive prior-art comparison
 - [ ] patent-quality drawings produced and cross-checked
 - [ ] full prior-art claim chart completed
@@ -24,8 +28,10 @@ Required before owner filing authorization:
 - [ ] priority strategy confirmed
 - [ ] DPMA/EPO/PCT route selected
 - [ ] formal requirements checked for selected route
+- [ ] target-specific filing payload generated and validated
+- [ ] final target-specific package SHA-256 bound
 - [ ] professional patent review or explicit owner decision to self-file
-- [ ] final owner authorization for external filing
+- [ ] final owner authorization binds exact subject and exact final package SHA-256
 
 ## Bound prior-art provenance
 
@@ -39,5 +45,9 @@ Required before owner filing authorization:
 - `novelty_established = FALSE`
 - `inventive_step_established = FALSE`
 - `effect_ack_done = FALSE`
+
+## Automation boundary
+
+The repository can deterministically build and hash an **automation staging bundle** from the content-addressed candidate sources and machine-readable control files. That bundle is not an office-specific filing payload and is not evidence of filing readiness.
 
 Hard boundary: NOT FILED. No external patent-office submission is authorized by this repository artifact.

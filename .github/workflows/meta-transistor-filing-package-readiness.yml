@@ -6,6 +6,7 @@ on:
     paths:
       - 'patent/meta-transistor/application-candidate-v1/**'
       - 'tools/qikvrt_patent_filing_gate.py'
+      - 'tools/qikvrt_patent_submission_bundle.py'
       - '.github/workflows/meta-transistor-filing-package-readiness.yml'
   workflow_dispatch:
 
@@ -17,13 +18,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate fail-closed filing package
+      - name: Build deterministic automation staging bundle
+        run: |
+          python3 tools/qikvrt_patent_submission_bundle.py \
+            --output meta-transistor-submission-staging.zip \
+            --receipt submission-staging-bundle-receipt.json
+          cat submission-staging-bundle-receipt.json
+      - name: Validate fail-closed filing readiness
         run: |
           python3 tools/qikvrt_patent_filing_gate.py > submission-readiness-receipt.json
           cat submission-readiness-receipt.json
-      - name: Persist machine-readable readiness receipt
+      - name: Persist machine-readable automation receipts
         uses: actions/upload-artifact@v4
         with:
           name: meta-transistor-submission-readiness
-          path: submission-readiness-receipt.json
+          path: |
+            meta-transistor-submission-staging.zip
+            submission-staging-bundle-receipt.json
+            submission-readiness-receipt.json
           if-no-files-found: error
