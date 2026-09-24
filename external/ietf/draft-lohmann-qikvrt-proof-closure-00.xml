@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rfc xmlns:xi="http://www.w3.org/2001/XInclude"
+     version="3"
+     ipr="trust200902"
+     category="exp"
+     submissionType="IETF"
+     docName="draft-lohmann-qikvrt-proof-closure-00"
+     tocInclude="true"
+     symRefs="true"
+     sortRefs="true">
+  <front>
+    <title abbrev="QIK-VRT Proof Closure">Proof Closure for Evidence-Bound Effect Protocols</title>
+    <seriesInfo name="Internet-Draft" value="draft-lohmann-qikvrt-proof-closure-00"/>
+    <author initials="I." surname="Lohmann" fullname="Ingolf Lohmann">
+      <organization>Independent Researcher</organization>
+      <address><email>ingolf.lohmann@live.com</email></address>
+    </author>
+    <date year="2026" month="September" day="24"/>
+    <area>Applications and Real-Time</area>
+    <keyword>proof closure</keyword>
+    <keyword>effect acknowledgement</keyword>
+    <keyword>audit</keyword>
+    <keyword>terminal state</keyword>
+    <abstract>
+      <t>This document describes an Experimental application-layer terminality rule for evidence-bound effect protocols. A system reaches proof closure for one exactly bound subject only when every required proof obligation is satisfied, provenance and verifier bindings are established, a fresh readback has been accepted, declared boundaries are explicit, no obligation remains open, and predecessor evidence has not been transferred to a changed successor.</t>
+      <t>The rule does not establish the truth of external premises, does not solve the halting problem, and does not create IETF endorsement. It defines a bounded condition for stopping repeated self-verification of an unchanged subject while reopening verification after subject mutation.</t>
+    </abstract>
+  </front>
+  <middle>
+    <section anchor="introduction">
+      <name>Introduction</name>
+      <t>Evidence-producing systems can fail in two opposite ways. They can stop while a required obligation remains open, or they can continue producing confirmations after the bound subject is already complete. The first failure is a liveness failure. The second is synthetic progress: additional computation that does not establish a new property of the unchanged subject.</t>
+      <t>This document defines a bounded proof-closure condition intended for application-layer audit and effect-control protocols. It complements, but does not replace, terminal effect acknowledgement.</t>
+    </section>
+    <section anchor="model">
+      <name>Closure Model</name>
+      <t>For an exactly bound subject S, an implementation MAY represent proof closure using the following conjunction:</t>
+      <sourcecode type="text"><![CDATA[
+PROOF_CLOSURE(S) =
+    ALL_REQUIRED_PROOFS_VALID(S)
+and PROVENANCE_BOUND(S)
+and VERIFIER_CHECKED(S)
+and FRESH_INDEPENDENT_READBACK(S)
+and BOUNDARIES_EXPLICIT(S)
+and NO_OPEN_OBLIGATIONS(S)
+and SUBJECT_UNCHANGED(S)
+and NO_PREDECESSOR_EVIDENCE_TRANSFER(S)
+]]></sourcecode>
+      <t>An implementation that claims PROOF_CLOSURE for S MUST be able to identify S unambiguously and MUST bind every required proof and readback to that same subject.</t>
+      <t>If any required obligation remains open, the implementation MUST NOT claim proof closure.</t>
+    </section>
+    <section anchor="mutation">
+      <name>Subject Mutation and Successors</name>
+      <t>A mutation that changes the bound subject creates a successor subject S'. Closure evidence for S MAY be retained as historical evidence, but MUST NOT by itself establish proof closure for S'.</t>
+      <t>The successor MUST be rebound and the closure predicate MUST be evaluated against the successor's own required evidence and obligations.</t>
+    </section>
+    <section anchor="effect-ack">
+      <name>Relationship to Effect Acknowledgement</name>
+      <t>An effect-acknowledgement state and proof closure answer different questions. A terminal effect state indicates completion of one bound effect transition under its protocol rules. Proof closure indicates that no declared proof obligation for the same bound subject remains open.</t>
+      <t>Neither state is a claim of universal truth. New evidence, a policy change, or a subject mutation can create a new evaluation subject.</t>
+    </section>
+    <section anchor="security">
+      <name>Security Considerations</name>
+      <t>Implementations MUST fail closed when subject identity, provenance, verifier identity, freshness, or obligation completeness cannot be established. A boolean assertion of closure supplied by an untrusted producer is not sufficient evidence of closure.</t>
+      <t>Implementations SHOULD retain predecessor closure receipts for auditability but MUST prevent those receipts from being silently relabeled as successor evidence.</t>
+      <t>Repeated verification can consume resources and can be abused to create apparent activity. Implementations SHOULD halt repeated closure checks for an unchanged subject unless new admissible evidence, a new obligation, or a changed subject is observed.</t>
+    </section>
+    <section anchor="iana">
+      <name>IANA Considerations</name>
+      <t>This document requests no IANA actions.</t>
+    </section>
+  </middle>
+  <back/>
+</rfc>
