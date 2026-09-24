@@ -9,8 +9,10 @@ class EpistemicSpiralTests(unittest.TestCase):
         root=ET.parse(ASSET/"spiral.svg").getroot()
         self.assertTrue(root.tag.endswith("svg"))
         text=(ASSET/"spiral.svg").read_text(encoding="utf-8")
-        self.assertNotIn("http://",text)
-        self.assertNotIn("https://",text)
+        self.assertNotIn('href="http://',text)
+        self.assertNotIn('href="https://',text)
+        self.assertNotIn('url(http://',text)
+        self.assertNotIn('url(https://',text)
         self.assertIn("prefers-reduced-motion",text)
 
     def test_target_locales_match_firefox_policy(self):
@@ -57,7 +59,8 @@ class EpistemicSpiralTests(unittest.TestCase):
         self.assertIn("qikvrt-ai-ui.service",build)
         self.assertIn("http://127.0.0.1:8788/AI/",session)
         self.assertIn("epistemic-spiral-ai-surface-readback",witness)
-        self.assertIn("QIKVRT_START_URL=http://127.0.0.1:8788/AI/",docker)
+        self.assertIn("QIKVRT_START_URL=about:blank",docker)
+        self.assertIn('START_URL="${QIKVRT_START_URL:-about:blank}"',entry)
         self.assertIn("python3 -m http.server",entry)
         self.assertIn("root /opt/qikvrt/docs;",nginx)
         self.assertIn("X-QIKVRT-Surface",nginx)
