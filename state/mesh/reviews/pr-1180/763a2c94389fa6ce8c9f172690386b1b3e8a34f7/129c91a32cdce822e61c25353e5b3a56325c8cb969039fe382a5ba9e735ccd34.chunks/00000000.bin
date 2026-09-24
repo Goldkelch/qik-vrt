@@ -1,0 +1,352 @@
+diff --git a/conformance/temdd/runner.py b/conformance/temdd/runner.py
+index c1f700a2a1242a647686f566573b10c64deb14e6..d055079f01ed9a8986e87a0c569780ebe7b2ab00 100644
+--- a/conformance/temdd/runner.py
++++ b/conformance/temdd/runner.py
+@@ -40,7 +40,7 @@ IMPLEMENTATION_FILES = (
+ PASS_FIELDS = (
+     "language", "ir", "event_semantics", "ledger", "ide", "evidence_binding",
+     "causality", "effect_ack", "execution", "formal_invariants", "tests",
+-    "negative_vectors",
++    "negative_vectors", "decision_determinism",
+ )
+ 
+ def sha256_bytes(data: bytes) -> str:
+@@ -116,6 +116,59 @@ def effect_ack(v: dict) -> bool:
+         v.get("expected_matches_observed") is True,
+     ))
+ 
++def canonical_json(value: object) -> str:
++    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
++
++def evaluate_machine_standard(bound_input: dict) -> dict:
++    required = {"data", "policy", "subject", "evidence"}
++    if set(bound_input) != required:
++        return {"result": "FAIL", "code": "MALFORMED_INPUT"}
++    subject = bound_input["subject"]
++    evidence = bound_input["evidence"]
++    policy = bound_input["policy"]
++    if not isinstance(subject, dict) or not isinstance(evidence, dict) or not isinstance(policy, dict):
++        return {"result": "FAIL", "code": "MALFORMED_INPUT"}
++    if evidence.get("subject_digest") != subject.get("digest"):
++        return {"result": "HOLD_UNVERIFIED", "code": "SUBJECT_MISMATCH"}
++    if evidence.get("fresh") is not True:
++        return {"result": "HOLD_UNVERIFIED", "code": "INSUFFICIENT_EVIDENCE"}
++    if policy.get("allow") is not True:
++        return {"result": "FAIL", "code": "POLICY_VIOLATION"}
++    return {"result": "PASS", "code": "ACCEPT"}
++
++def check_machine_verifiable_standard(vectors: dict) -> None:
++    profile = vectors.get("machine_verifiable_standard", {})
++    require(profile.get("model_version") == "1", "MODEL_VERSION_MISMATCH")
++    require(profile.get("policy_version") == "1", "POLICY_VERSION_MISMATCH")
++    require(profile.get("evaluator_version") == "1", "EVALUATOR_VERSION_MISMATCH")
++    require(profile.get("canonicalization") == "JSON_SORTED_KEYS_UTF8_COMPACT", "CANONICALIZATION_MISMATCH")
++    required_classes = {
++        "VALID", "INVALID", "INSUFFICIENT_EVIDENCE", "SUBJECT_MISMATCH",
++        "POLICY_VIOLATION", "MALFORMED_INPUT", "VERSION_MISMATCH",
++        "REPLAY", "DUPLICATE", "BOUNDARY_CASE",
++    }
++    require(set(profile.get("vector_classes", [])) == required_classes, "VECTOR_CLASS_SET_MISMATCH")
++    seen = set()
++    for vector in profile.get("vectors", []):
++        vector_id = vector.get("id")
++        require(isinstance(vector_id, str) and vector_id and vector_id not in seen, "VECTOR_ID_INVALID")
++        seen.add(vector_id)
++        actual = evaluate_machine_standard(vector.get("input", {}))
++        require(
++            canonical_json(actual) == canonical_json(vector.get("expected_decision", {})),
++            "DECISION_VECTOR_MISMATCH:" + vector_id,
++        )
++        if "equivalent_input" in vector:
++            require(
++                canonical_json(vector["input"]) == canonical_json(vector["equivalent_input"]),
++                "CANONICAL_INPUT_EQUIVALENCE_MISMATCH:" + vector_id,
++            )
++            equivalent = evaluate_machine_standard(vector["equivalent_input"])
++            require(
++                canonical_json(actual) == canonical_json(equivalent),
++                "DETERMINISTIC_DECISION_MISMATCH:" + vector_id,
++            )
++
+ def check_t13_t16(vectors: dict) -> None:
+     t13 = vectors["t13"]
+     seq = t13["sequence_without_cause"]
+@@ -179,6 +232,7 @@ def build_report(repository: str, adapter: str, backend_receipt: Path) -> dict:
+     vectors = json.loads((ROOT / "conformance/temdd/vectors-v1.json").read_text(encoding="utf-8"))
+     require(vectors.get("schema") == "temdd_conformance_vectors_v1", "VECTOR_SCHEMA_MISMATCH")
+     check_t13_t16(vectors)
++    check_machine_verifiable_standard(vectors)
+     check_formal_core()
+     check_repository_tests()
+     execution_receipt_digest = check_backend_receipt(backend_receipt, subject)
+@@ -207,6 +261,7 @@ def build_report(repository: str, adapter: str, backend_receipt: Path) -> dict:
+         "formal_invariants": "PASS",
+         "tests": "PASS",
+         "negative_vectors": "PASS",
++        "decision_determinism": "PASS",
+         "overall": "PASS",
+     }
+     require(all(report[k] == "PASS" for k in PASS_FIELDS), "T16_PARTIAL_PASS")
+diff --git a/conformance/temdd/vectors-v1.json b/conformance/temdd/vectors-v1.json
+index 3bdcd8fb170b95ce8f90a9fbe37e337b9d3a9d05..665421b82e9e4628132d936e92376e74a5ce5584 100644
+--- a/conformance/temdd/vectors-v1.json
++++ b/conformance/temdd/vectors-v1.json
+@@ -85,5 +85,132 @@
+     "require_implementation_digest": true,
+     "require_suite_digest": true,
+     "predecessor_evidence_transfer": false
++  },
++  "machine_verifiable_standard": {
++    "model_version": "1",
++    "policy_version": "1",
++    "evaluator_version": "1",
++    "canonicalization": "JSON_SORTED_KEYS_UTF8_COMPACT",
++    "vector_classes": [
++      "VALID",
++      "INVALID",
++      "INSUFFICIENT_EVIDENCE",
++      "SUBJECT_MISMATCH",
++      "POLICY_VIOLATION",
++      "MALFORMED_INPUT",
++      "VERSION_MISMATCH",
++      "REPLAY",
++      "DUPLICATE",
++      "BOUNDARY_CASE"
++    ],
++    "vectors": [
++      {
++        "id": "valid_accept",
++        "class": "VALID",
++        "input": {
++          "data": {
++            "value": 1
++          },
++          "policy": {
++            "allow": true
++          },
++          "subject": {
++            "digest": "sha256:subject-a"
++          },
++          "evidence": {
++            "fresh": true,
++            "subject_digest": "sha256:subject-a"
++          }
++        },
++        "equivalent_input": {
++          "evidence": {
++            "subject_digest": "sha256:subject-a",
++            "fresh": true
++          },
++          "subject": {
++            "digest": "sha256:subject-a"
++          },
++          "policy": {
++            "allow": true
++          },
++          "data": {
++            "value": 1
++          }
++        },
++        "expected_decision": {
++          "result": "PASS",
++          "code": "ACCEPT"
++        }
++      },
++      {
++        "id": "subject_mismatch_holds",
++        "class": "SUBJECT_MISMATCH",
++        "input": {
++          "data": {
++            "value": 1
++          },
++          "policy": {
++            "allow": true
++          },
++          "subject": {
++            "digest": "sha256:subject-b"
++          },
++          "evidence": {
++            "fresh": true,
++            "subject_digest": "sha256:subject-a"
++          }
++        },
++        "expected_decision": {
++          "result": "HOLD_UNVERIFIED",
++          "code": "SUBJECT_MISMATCH"
++        }
++      },
++      {
++        "id": "stale_evidence_holds",
++        "class": "INSUFFICIENT_EVIDENCE",
++        "input": {
++          "data": {
++            "value": 1
++          },
++          "policy": {
++            "allow": true
++          },
++          "subject": {
++            "digest": "sha256:subject-a"
++          },
++          "evidence": {
++            "fresh": false,
++            "subject_digest": "sha256:subject-a"
++          }
++        },
++        "expected_decision": {
++          "result": "HOLD_UNVERIFIED",
++          "code": "INSUFFICIENT_EVIDENCE"
++        }
++      },
++      {
++        "id": "policy_denial_fails",
++        "class": "POLICY_VIOLATION",
++        "input": {
++          "data": {
++            "value": 1
++          },
++          "policy": {
++            "allow": false
++          },
++          "subject": {
++            "digest": "sha256:subject-a"
++          },
++          "evidence": {
++            "fresh": true,
++            "subject_digest": "sha256:subject-a"
++          }
++        },
++        "expected_decision": {
++          "result": "FAIL",
++          "code": "POLICY_VIOLATION"
++        }
++      }
++    ]
+   }
+ }
+diff --git a/schemas/temdd-conformance-report-v1.schema.json b/schemas/temdd-conformance-report-v1.schema.json
+index bbffa44035c0a9c0d7f702f14e8e15db56c4e94c..9c3e41b844b96dc9923294638a4b9dec94f70a4f 100644
+--- a/schemas/temdd-conformance-report-v1.schema.json
++++ b/schemas/temdd-conformance-report-v1.schema.json
+@@ -22,6 +22,7 @@
+     "formal_invariants",
+     "tests",
+     "negative_vectors",
++    "decision_determinism",
+     "overall"
+   ],
+   "properties": {
+@@ -170,6 +171,13 @@
+         "FAIL",
+         "HOLD_UNVERIFIED"
+       ]
++    },
++    "decision_determinism": {
++      "enum": [
++        "PASS",
++        "FAIL",
++        "HOLD_UNVERIFIED"
++      ]
+     }
+   }
+ }
+diff --git a/spec/temdd/TEMDD_CONFORMANCE_V1.md b/spec/temdd/TEMDD_CONFORMANCE_V1.md
+index e3e81581af1c0a8ffc6a64d9d05ca04b43513faf..6ef45cf53da4595f70d8e1599060c6333cbc9a39 100644
+--- a/spec/temdd/TEMDD_CONFORMANCE_V1.md
++++ b/spec/temdd/TEMDD_CONFORMANCE_V1.md
+@@ -15,9 +15,19 @@ A PASS report is emitted only when the independent conformance runner:
+ 7. validates a same-HEAD/TREE executable-backend receipt covering C90, Smalltalk,
+    M68000-under-QEMU and Lean/Lake;
+ 8. computes implementation and normative-suite SHA-256 digests;
+-9. emits a report conforming to `schemas/temdd-conformance-report-v1.schema.json`.
++9. executes the machine-verifiable standard vectors over canonical data, policy, subject, evidence, evaluation and decision bindings and verifies deterministic canonical decisions;\n10. emits a report conforming to `schemas/temdd-conformance-report-v1.schema.json`.
+ 
+ The report remains subject-bound. Any HEAD/TREE mutation invalidates it and
+ requires a fresh run. `PREDECESSOR_EVIDENCE_TRANSFER = false`.
+ 
+ `TEMDD_V1_CONFORMANCE_PASS != P3 != MAIN != EFFECT_ACK_DONE`.
++
++
++## Deterministic decision conformance
++
++The runner MUST verify the machine-verifiable standard profile declared in
++`TEMDD_NORMATIVE_CORE_V1.md` and `conformance/temdd/vectors-v1.json`.
++A local `decision_determinism = PASS` proves only that the current exact
++subject satisfies the declared deterministic vectors. It MUST NOT be promoted
++to cross-implementation interoperability until a separately implemented
++conforming evaluator reproduces the same canonical decisions.
+diff --git a/spec/temdd/TEMDD_NORMATIVE_CORE_V1.md b/spec/temdd/TEMDD_NORMATIVE_CORE_V1.md
+index 1af763493808fc5f192e5cd7536b1b51e437804d..64a0d409816ea0069dff22d1bae933ea7dc59896 100644
+--- a/spec/temdd/TEMDD_NORMATIVE_CORE_V1.md
++++ b/spec/temdd/TEMDD_NORMATIVE_CORE_V1.md
+@@ -109,6 +109,70 @@ TEMDD_CONFORMANT(S) :=
+   and REPORT.suite == normative_suite
+ ```
+ 
++## Machine-verifiable standard model
++
++A TEMDD conformance decision is defined over a canonical, version-bound input.
++The normative layers are:
++
++```text
++DATA_MODEL
+++ POLICY_MODEL
+++ SUBJECT_BINDING
+++ EVIDENCE_MODEL
+++ EVALUATION_SEMANTICS
+++ DECISION_MODEL
++= MACHINE_VERIFIABLE_STANDARD
++```
++
++The exact evaluation input is:
++
++```text
++INPUT := DATA and POLICY and SUBJECT and EVIDENCE
++
++BOUND_INPUT :=
++    Canonicalize(INPUT)
++    and MODEL_VERSION
++    and POLICY_VERSION
++    and EVALUATOR_VERSION
++
++DECISION := Evaluate(BOUND_INPUT)
++```
++
++Two conforming implementations operating under the same canonicalization and
++semantic versions MUST produce the same canonical decision for the same
++canonical input:
++
++```text
++Canonicalize(INPUT_1) = Canonicalize(INPUT_2)
++and MODEL_VERSION_1 = MODEL_VERSION_2
++and POLICY_VERSION_1 = POLICY_VERSION_2
++and EVALUATOR_VERSION_1 = EVALUATOR_VERSION_2
++=> Canonicalize(DECISION_1) = Canonicalize(DECISION_2)
++```
++
++Conformance vectors MUST bind at least an identifier, model version, policy
++version, evaluator version, input data, subject, evidence and expected canonical
++decision. The normative vector classes are VALID, INVALID,
++INSUFFICIENT_EVIDENCE, SUBJECT_MISMATCH, POLICY_VIOLATION, MALFORMED_INPUT,
++VERSION_MISMATCH, REPLAY, DUPLICATE and BOUNDARY_CASE.
++
++The v1 executable profile uses deterministic UTF-8 JSON with lexicographically
++sorted object keys and compact separators for the canonical comparison surface.
++This profile does not assert that an external implementation exists. Cross-
++implementation interoperability is established only after at least two
++independent implementations execute the same normative vectors and return the
++same canonical decisions.
++
++```text
++MACHINE_VERIFIABLE_STANDARD
++and CANONICAL_SERIALIZATION
++and DETERMINISTIC_EVALUATION
++and CONFORMANCE_VECTORS
++and INDEPENDENT_IMPLEMENTATIONS
++and IDENTICAL_EXPECTED_DECISIONS
++= INTEROPERABILITY_BY_EXECUTABLE_PROOF
++```
++
+ ## Canonical pipeline
+ 
+ ```text
