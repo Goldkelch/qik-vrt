@@ -11,7 +11,7 @@ on:
       - .github/workflows/qikvrt_mesh_fanout_optimized.yml
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: qikvrt-mesh-fanout-optimized-v1
@@ -26,7 +26,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 1
-          persist-credentials: true
+          persist-credentials: false
 
       - name: Bind exact optimized subject
         id: bind
@@ -72,31 +72,6 @@ jobs:
           assert r['evidence_boundary']['silicon_speedup_established'] is False
           assert r['evidence_boundary']['patentability_established'] is False
           PY
-
-      - name: Persist optimized benchmark receipt
-        shell: bash
-        run: |
-          set -euo pipefail
-          destination=evidence/benchmarks/2026-09-24-qikvrt-mesh-fanout-after-lock-scope-v1
-          mkdir -p "$destination"
-          cp /tmp/qikvrt-benchmark/report.json "$destination/REPORT.json"
-          cp /tmp/qikvrt-benchmark/report.md "$destination/REPORT.md"
-          python3 -B tools/qikvrt_integrity.py generate
-          python3 -B tools/qikvrt_integrity.py verify
-          git config user.name qikvrt-mesh-benchmark
-          git config user.email qikvrt-mesh-benchmark@users.noreply.github.com
-          git add "$destination" REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
-          git commit -m "benchmark: persist optimized fan-out consolidation results"
-          successor="$(git rev-parse --verify HEAD^{commit})"
-          tree="$(git rev-parse --verify HEAD^{tree})"
-          remote_before="$(git ls-remote --heads origin refs/heads/optimize/mesh-message-lock-scope-v1 | awk 'NR==1 {print $1}')"
-          test "$remote_before" = "$GITHUB_SHA"
-          git push origin HEAD:refs/heads/optimize/mesh-message-lock-scope-v1
-          remote_after="$(git ls-remote --heads origin refs/heads/optimize/mesh-message-lock-scope-v1 | awk 'NR==1 {print $1}')"
-          test "$remote_after" = "$successor"
-          printf 'BENCHMARK_RECEIPT_HEAD=%s\nBENCHMARK_RECEIPT_TREE=%s\n' "$successor" "$tree"
-          printf 'PREDECESSOR_EVIDENCE_TRANSFER=false\n'
-          printf 'REPOSITORY_EFFECT_ACK_DONE=false\n'
 
       - name: Preserve optimized runner artifact
         if: always()
