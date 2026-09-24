@@ -105,9 +105,42 @@ TEMDD_CONFORMANT(S) :=
   and FORMAL_INVARIANTS_SATISFIED(S)
   and TEST_SUITE_PASS(S)
   and NEGATIVE_VECTORS_PASS(S)
+  and INTEROPERABILITY_BY_EXECUTABLE_PROOF(S)
   and REPORT.subject == S
   and REPORT.suite == normative_suite
 ```
+
+## T17 — INTEROPERABILITY_BY_EXECUTABLE_PROOF
+
+A TEMDD v1 conformance PASS additionally requires an executable interoperability
+proof over the bounded decision model defined by
+`spec/temdd/TEMDD_INTEROPERABILITY_V1.md`.
+
+For every required conformance vector and every required implementation:
+
+```text
+Canonicalize_I(Input(V)) = ExpectedCanonical(V)
+and Evaluate_I(Input(V)) = ExpectedDecision(V)
+```
+
+The required implementations MUST execute through distinct source/runtime process
+boundaries. Equal implementation decisions without equality to the vector's
+normative expected decision are insufficient because common-mode defects remain
+possible.
+
+```text
+MACHINE_VERIFIABLE_STANDARD
+and CANONICAL_SERIALIZATION
+and DETERMINISTIC_EVALUATION
+and CONFORMANCE_VECTORS
+and INDEPENDENT_IMPLEMENTATIONS
+and IDENTICAL_EXPECTED_DECISIONS
+= INTEROPERABILITY_BY_EXECUTABLE_PROOF
+```
+
+This is a bounded conformance property. It does not establish independent
+authorship or governance and does not imply Main adoption, deployment or
+`EFFECT_ACK_DONE`.
 
 ## Canonical pipeline
 
