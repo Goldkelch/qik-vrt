@@ -1,0 +1,19 @@
+name: QIKVRT journal terminal integration
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "docs/journal/**"
+      - "docs/terminal/**"
+      - "docs/assets/js/qikvrt-repository-terminal.js"
+      - "tests/test_qikvrt_journal_terminal_integration.py"
+      - ".github/workflows/qikvrt_journal_terminal_integration.yml"
+permissions:
+  contents: read
+jobs:
+  journal-terminal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify read-only Journal ↔ Universal Terminal integration
+        run: python3 -B -m unittest tests.test_qikvrt_journal_terminal_integration -v
