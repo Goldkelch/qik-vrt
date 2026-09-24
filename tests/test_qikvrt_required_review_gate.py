@@ -196,6 +196,9 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
         self.assertIn("EVENT_WORKFLOW_RUN_HEAD: ${{ github.event.workflow_run.head_sha || '' }}", workflow)
         self.assertNotIn("EVENT_EXPECTED_HEAD: ${{ github.event.workflow_run.head_sha", workflow)
         self.assertIn("qikvrt-required-code-owner-selection-", workflow)
+        self.assertIn("github.event.workflow_run.path == '.github/workflows/qikvrt_requested_review_executor.yml'", workflow)
+        self.assertNotIn("github.event.workflow_run.name == 'QIKVRT requested review executor'", workflow)
+        self.assertNotIn("run.get('name') != 'QIKVRT requested review executor'", workflow)
         self.assertLess(
             workflow.index("pr=gh_json(f'repos/{repo}/pulls/{number}')"),
             workflow.index("rules=gh_json(f'repos/{repo}/rules/branches/main')"),
