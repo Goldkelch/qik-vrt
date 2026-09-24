@@ -3,6 +3,7 @@
 # Copyright 2026 Ingolf Lohmann.
 from __future__ import annotations
 
+import concurrent.futures
 import copy
 import json
 import pathlib
@@ -140,6 +141,89 @@ class RealMeshNetworkTests(unittest.TestCase):
         projection = dict(receipt)
         stored_hash = projection.pop("receipt_sha256")
         self.assertEqual(stored_hash, mesh.canonical_sha256(projection))
+
+    def test_concurrent_reverse_routes_pipeline_without_loss(self) -> None:
+        routes = (
+            (
+                "pair-a-authority",
+                "pair-a-mirror",
+                "pair-b-mirror",
+                "pair-b-authority",
+            ),
+            (
+                "pair-b-authority",
+                "pair-b-mirror",
+                "pair-a-mirror",
+                "pair-a-authority",
+            ),
+            (
+                "pair-b-mirror",
+                "pair-a-mirror",
+                "pair-a-authority",
+                "pair-b-authority",
+            ),
+            (
+                "pair-a-mirror",
+                "pair-a-authority",
+                "pair-b-authority",
+                "pair-b-mirror",
+            ),
+        )
+        with tempfile.TemporaryDirectory(prefix="qikvrt-real-mesh-concurrent-") as directory:
+            with mesh.MeshHarness(pathlib.Path(directory), SOURCE_TREE) as harness:
+                assert harness.topology is not None
+                messages = [
+                    mesh.build_message(
+                        harness.topology,
+                        routes[index % len(routes)],
+                        message_id=f"concurrent-route-{index:04d}",
+                        nonce=f"CONCURRENT-NONCE-{index:04d}",
+                        source_head=SOURCE_HEAD,
+                        source_tree=SOURCE_TREE,
+                    )
+                    for index in range(8)
+                ]
+                with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+                    terminals = list(executor.map(harness.route_message, messages))
+                self.assertEqual(
+                    {item["message_id"] for item in terminals},
+                    {item["message_id"] for item in messages},
+                )
+                for message, terminal in zip(messages, terminals):
+                    observation = mesh.reobserve_route(harness, message, terminal)
+                    ack = mesh.finalize_effect_ack(message, observation)
+                    self.assertTrue(observation["complete_route_reobserved"])
+                    self.assertEqual(ack["state"], "EFFECT_ACK_DONE")
+
+    def test_concurrent_same_message_replay_is_single_ledger_effect(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="qikvrt-real-mesh-replay-") as directory:
+            with mesh.MeshHarness(pathlib.Path(directory), SOURCE_TREE) as harness:
+                assert harness.topology is not None
+                route = [
+                    "pair-a-authority",
+                    "pair-a-mirror",
+                    "pair-b-mirror",
+                    "pair-b-authority",
+                ]
+                message = mesh.build_message(
+                    harness.topology,
+                    route,
+                    message_id="concurrent-replay-0001",
+                    nonce="CONCURRENT-REPLAY-NONCE-0001",
+                    source_head=SOURCE_HEAD,
+                    source_tree=SOURCE_TREE,
+                )
+                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                    futures = [executor.submit(harness.route_message, message) for _ in range(2)]
+                    terminals = [future.result() for future in futures]
+                self.assertEqual(terminals[0], terminals[1])
+                for node_id in route:
+                    ledger = mesh.AppendOnlyNodeLedger(
+                        harness.nodes[node_id].ledger_path, node_id
+                    )
+                    self.assertEqual(ledger.sequence, 2)
+                    self.assertIn(message["message_id"], ledger.accepted)
+                    self.assertIn(message["message_id"], ledger.completed)
 
     def test_tamper_rebinding_and_partition_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory(prefix="qikvrt-real-mesh-negative-") as directory:

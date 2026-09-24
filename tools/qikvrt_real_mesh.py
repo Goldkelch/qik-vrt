@@ -653,7 +653,39 @@ class NodeRuntime:
     ) -> None:
         self.identity = identity
         self.ledger = ledger
-        self._lock = asyncio.Lock()
+        # Different message identities may pipeline concurrently.  Only replay
+        # or rebinding of the same message_id is serialized.  The previous
+        # node-wide lock was held across downstream awaits and could form
+        # cyclic lock chains for concurrent routes traversing the same nodes
+        # in different orders.
+        self._message_locks: dict[str, tuple[asyncio.Lock, int]] = {}
+        self._message_locks_guard = asyncio.Lock()
+
+    async def _acquire_message_lock(self, message_id: str) -> asyncio.Lock:
+        async with self._message_locks_guard:
+            entry = self._message_locks.get(message_id)
+            if entry is None:
+                lock = asyncio.Lock()
+                self._message_locks[message_id] = (lock, 1)
+            else:
+                lock, references = entry
+                self._message_locks[message_id] = (lock, references + 1)
+        await lock.acquire()
+        return lock
+
+    async def _release_message_lock(
+        self, message_id: str, lock: asyncio.Lock
+    ) -> None:
+        lock.release()
+        async with self._message_locks_guard:
+            current = self._message_locks.get(message_id)
+            if current is None or current[0] is not lock:
+                raise MeshRuntimeError("message lock identity drift")
+            _, references = current
+            if references == 1:
+                del self._message_locks[message_id]
+            else:
+                self._message_locks[message_id] = (lock, references - 1)
 
     async def handle(self, raw_message: Any) -> dict[str, Any]:
         try:
@@ -671,8 +703,12 @@ class NodeRuntime:
                 reason=f"INVALID_MESH_MESSAGE:{str(exc)[:512]}",
                 retryable=False,
             )
-        async with self._lock:
+        message_id = message["message_id"]
+        lock = await self._acquire_message_lock(message_id)
+        try:
             return await self._handle_valid(message)
+        finally:
+            await self._release_message_lock(message_id, lock)
 
     async def _handle_valid(self, message: dict[str, Any]) -> dict[str, Any]:
         message_id = message["message_id"]

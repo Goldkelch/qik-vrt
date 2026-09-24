@@ -1,0 +1,83 @@
+name: QIKVRT Mesh fan-out optimized benchmark
+
+on:
+  push:
+    branches:
+      - optimize/mesh-message-lock-scope-v1
+    paths:
+      - tools/qikvrt_real_mesh.py
+      - tests/test_qikvrt_real_mesh.py
+      - tools/qikvrt_mesh_fanout_benchmark.py
+      - .github/workflows/qikvrt_mesh_fanout_optimized.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-mesh-fanout-optimized-v1
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind exact optimized subject
+        id: bind
+        shell: bash
+        run: |
+          set -euo pipefail
+          head="$(git rev-parse --verify HEAD^{commit})"
+          tree="$(git rev-parse --verify HEAD^{tree})"
+          test "$head" = "$GITHUB_SHA"
+          printf 'head=%s\ntree=%s\n' "$head" "$tree" >> "$GITHUB_OUTPUT"
+
+      - name: Verify concurrent mesh regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v tests.test_qikvrt_real_mesh
+
+      - name: Execute optimized fan-out benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qikvrt-benchmark
+          python3 -B tools/qikvrt_mesh_fanout_benchmark.py \
+            --source-head '${{ steps.bind.outputs.head }}' \
+            --source-tree '${{ steps.bind.outputs.tree }}' \
+            --messages 20 \
+            --repeats 3 \
+            --json /tmp/qikvrt-benchmark/report.json \
+            --markdown /tmp/qikvrt-benchmark/report.md
+
+      - name: Classify optimized acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/qikvrt-benchmark/report.json').read_text())
+          print('ALL_TRIALS_LOSSLESS=' + str(r['lossless_acceptance']['all_trials_lossless']).lower())
+          print('FIRST_NON_LOSSLESS_FANOUT=' + str(r['lossless_acceptance']['first_non_lossless_fanout']))
+          print('OBSERVED_FAILURE_TYPES=' + ','.join(r['lossless_acceptance']['observed_failure_types']))
+          assert r['evidence_boundary']['silicon_speedup_established'] is False
+          assert r['evidence_boundary']['patentability_established'] is False
+          PY
+
+      - name: Preserve optimized runner artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mesh-fanout-optimized-${{ github.sha }}
+          path: /tmp/qikvrt-benchmark/
+          if-no-files-found: error
+          retention-days: 30
