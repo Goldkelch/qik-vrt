@@ -53,6 +53,17 @@ class AutonomousRulesetEffectLoopContractTest(unittest.TestCase):
         self.assertNotIn("required_approving_review_count: 0", self.text)
         self.assertNotIn("require_code_owner_review: false", self.text)
 
+    def test_deadlock_requires_external_transition_without_same_state_retry(self):
+        self.assertIn("EXTERNAL_TRANSITION_REQUIRED", self.text)
+        self.assertIn("MATERIALIZE_QIKVRT_RULESET_ADMIN_TOKEN_WITH_ADMINISTRATION_WRITE", self.text)
+        self.assertIn("retry_permitted", self.text)
+        self.assertIn("deadlock", self.text)
+        self.assertIn("steps.reconcile.outputs.state == 'CURRENT'", self.text)
+        self.assertNotIn(
+            "steps.reconcile.outputs.state == 'EXTERNAL_TRANSITION_REQUIRED' &&",
+            self.text,
+        )
+
     def test_hold_requires_absence_of_repository_carriers(self):
         self.assertIn("tools/qikvrt_hold_admissibility.py", self.text)
         self.assertIn("--pull-request-carrier", self.text)

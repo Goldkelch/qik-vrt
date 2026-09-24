@@ -87,11 +87,28 @@ class RulesetReconcileTests(unittest.TestCase):
         request = urlopen.call_args.args[0]
         self.assertEqual(request.get_header("Authorization"), "Bearer " + "admin-token")
 
+    def test_missing_admin_authority_is_an_external_deadlock_transition(self):
+        result = reconcile.external_transition_required(
+            self.policy,
+            "QIKVRT_RULESET_ADMIN_TOKEN_UNAVAILABLE",
+        )
+        self.assertEqual(result["state"], "EXTERNAL_TRANSITION_REQUIRED")
+        self.assertTrue(result["deadlock"])
+        self.assertFalse(result["retry_permitted"])
+        self.assertEqual(
+            result["next_action"],
+            "MATERIALIZE_QIKVRT_RULESET_ADMIN_TOKEN_WITH_ADMINISTRATION_WRITE",
+        )
+        self.assertEqual(result["mutation"], "NONE")
+        self.assertFalse(result["effect_observed"])
+
     def test_ruleset_failure_is_not_encoded_as_hold(self):
         source = (reconcile.ROOT / "tools/qikvrt_ruleset_reconcile.py").read_text(
             encoding="utf-8"
         )
         self.assertIn('"state": "REQUEST_AUTHORITY"', source)
+        self.assertIn('"state": "EXTERNAL_TRANSITION_REQUIRED"', source)
+        self.assertIn('"retry_permitted": False', source)
         self.assertIn('"continuation_required": True', source)
         self.assertNotIn('"state": "HOLD"', source)
 

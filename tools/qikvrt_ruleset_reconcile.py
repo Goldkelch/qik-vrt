@@ -185,6 +185,31 @@ def reconcile(token: str, policy: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def external_transition_required(
+    policy: Mapping[str, Any],
+    blocker: str,
+) -> dict[str, Any]:
+    """Return a non-retryable deadlock receipt that names the required external effect."""
+    return {
+        "schema": SCHEMA,
+        "repository": policy["repository"],
+        "ruleset_id": policy["ruleset_id"],
+        "state": "EXTERNAL_TRANSITION_REQUIRED",
+        "deadlock": True,
+        "retry_permitted": False,
+        "first_blocker": blocker,
+        "next_action": "MATERIALIZE_QIKVRT_RULESET_ADMIN_TOKEN_WITH_ADMINISTRATION_WRITE",
+        "required_external_effect": {
+            "credential": "QIKVRT_RULESET_ADMIN_TOKEN",
+            "minimum_permission": "Administration: write",
+        },
+        "wake_condition": "QIKVRT_RULESET_ADMIN_TOKEN_AVAILABLE_AND_AUTHORIZED",
+        "continuation_required": True,
+        "mutation": "NONE",
+        "effect_observed": False,
+    }
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--snapshot", type=pathlib.Path)
@@ -192,32 +217,52 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--receipt", type=pathlib.Path)
     args = parser.parse_args(argv)
     policy = load_policy()
-    try:
-        if args.apply:
-            token = os.environ.get("QIKVRT_RULESET_ADMIN_TOKEN", "")
-            if not token:
-                raise RulesetBlock("QIKVRT_RULESET_ADMIN_TOKEN is unavailable")
-            result = reconcile(token, policy)
-        else:
-            if args.snapshot is None:
-                raise RulesetBlock("--snapshot is required without --apply")
-            current = json.loads(args.snapshot.read_text(encoding="utf-8"))
-            result = evaluate(_mapping(current, "ruleset snapshot"), policy)
-    except (OSError, ValueError, json.JSONDecodeError, RulesetBlock) as exc:
-        result = {
-            "schema": SCHEMA,
-            "repository": policy["repository"],
-            "ruleset_id": policy["ruleset_id"],
-            "state": "REQUEST_AUTHORITY",
-            "first_blocker": str(exc),
-            "next_action": "ROUTE_RULESET_ADMIN_AUTHORITY_THROUGH_REPOSITORY_CARRIER",
-            "continuation_required": True,
-            "mutation": "NONE",
-            "effect_observed": False,
-        }
-        exit_code = 2
+
+    if args.apply and not os.environ.get("QIKVRT_RULESET_ADMIN_TOKEN", ""):
+        result = external_transition_required(
+            policy,
+            "QIKVRT_RULESET_ADMIN_TOKEN_UNAVAILABLE",
+        )
+        exit_code = 20
     else:
-        exit_code = 0 if result["state"] == "CURRENT" else 10
+        try:
+            if args.apply:
+                result = reconcile(
+                    os.environ["QIKVRT_RULESET_ADMIN_TOKEN"],
+                    policy,
+                )
+            else:
+                if args.snapshot is None:
+                    raise RulesetBlock("--snapshot is required without --apply")
+                current = json.loads(args.snapshot.read_text(encoding="utf-8"))
+                result = evaluate(_mapping(current, "ruleset snapshot"), policy)
+        except (OSError, ValueError, json.JSONDecodeError, RulesetBlock) as exc:
+            detail = str(exc)
+            if args.apply and (
+                "GitHub ruleset API HTTP 401" in detail
+                or "GitHub ruleset API HTTP 403" in detail
+            ):
+                result = external_transition_required(
+                    policy,
+                    "RULESET_ADMIN_AUTHORITY_REJECTED: " + detail,
+                )
+                exit_code = 20
+            else:
+                result = {
+                    "schema": SCHEMA,
+                    "repository": policy["repository"],
+                    "ruleset_id": policy["ruleset_id"],
+                    "state": "REQUEST_AUTHORITY",
+                    "first_blocker": detail,
+                    "next_action": "ROUTE_RULESET_ADMIN_AUTHORITY_THROUGH_REPOSITORY_CARRIER",
+                    "continuation_required": True,
+                    "mutation": "NONE",
+                    "effect_observed": False,
+                }
+                exit_code = 2
+        else:
+            exit_code = 0 if result["state"] == "CURRENT" else 10
+
     raw = canonical_bytes(result)
     if args.receipt is not None:
         args.receipt.parent.mkdir(parents=True, exist_ok=True)

@@ -1,0 +1,87 @@
+{
+  "schema": "qikvrt_governance_enforcement_repair_carrier_v1",
+  "repository": "Goldkelch/qik-vrt",
+  "created_from_main": "09339d6bc3c71354c7e96243c597a48058142668",
+  "subject": {
+    "kind": "github_repository_ruleset",
+    "ruleset_id": 19344903,
+    "ruleset_name": "QIK-VRT main protection",
+    "target_ref": "refs/heads/main"
+  },
+  "observed_blocker": "AUTHORITY_RULESET_ADMIN_CREDENTIAL_NOT_INJECTED",
+  "observed_drift": {
+    "required_approving_review_count": 0,
+    "require_code_owner_review": false,
+    "dismiss_stale_reviews_on_push": false,
+    "require_last_push_approval": false,
+    "required_status_checks": [
+      {
+        "context": "test",
+        "integration_id": 15368
+      }
+    ]
+  },
+  "desired_policy": {
+    "path": "policy/GITHUB_MAIN_RULESET_V1.json",
+    "git_blob": "0d89056d4d745a2c77e7de1f9b9e512dbc43a1e3",
+    "required_approving_review_count": 1,
+    "require_code_owner_review": true,
+    "dismiss_stale_reviews_on_push": true,
+    "require_last_push_approval": true,
+    "required_status_checks": [
+      {
+        "context": "QIKVRT required code-owner review",
+        "integration_id": 15368
+      },
+      {
+        "context": "test",
+        "integration_id": 15368
+      }
+    ]
+  },
+  "scope": {
+    "native_rule_enforcement": true,
+    "review_status_separation": false,
+    "charter_bytes_mutation": false,
+    "postmerge_evidence_mutation": false,
+    "predecessor_evidence_transfer": false,
+    "deadlock_escape_semantics": true
+  },
+  "effect_path": {
+    "reconciler": "tools/qikvrt_ruleset_reconcile.py",
+    "workflow": ".github/workflows/qikvrt_autonomous_ruleset_effect_loop.yml",
+    "readback_required": true,
+    "effect_ack_done_claimed": false
+  },
+  "state": "INTERNAL_TRANSITION_REQUIRED",
+  "next_action": "DISPATCH_MIRROR_GOLDKELCH_RULESET_AUTHORITY_EFFECT",
+  "runtime_evidence": {
+    "writer_run_id": 35868717813,
+    "attempts_observed": [
+      1,
+      2
+    ],
+    "first_failing_step": "Select exact ruleset-repair subject and active carriers",
+    "gh_token_runtime": "EMPTY",
+    "first_executable_failure": "gh api repos/Goldkelch/qik-vrt/commits/main -> exit 4",
+    "ruleset_put_attempted": false
+  },
+  "deadlock_policy": {
+    "prior_classification": "EXTERNAL_TRANSITION_REQUIRED",
+    "prior_classification_superseded": true,
+    "superseding_reason": "Mesh-native alternative authority workflow discovered",
+    "state": "INTERNAL_TRANSITION_REQUIRED",
+    "retry_permitted_without_material_change": false,
+    "selected_transition": "DISPATCH_MIRROR_GOLDKELCH_RULESET_AUTHORITY_EFFECT",
+    "external_transition_only_if": "MIRROR_AUTHORITY_PREFLIGHT_HAS_NO_VALID_ROUTE"
+  },
+  "alternative_capability": {
+    "id": "MIRROR_GOLDKELCH_RULESET_AUTHORITY_EFFECT",
+    "repository": "ingolf-lohmann/qik-vrt",
+    "path": ".github/workflows/qikvrt_goldkelch_ruleset_authority_effect.yml",
+    "target_repository": "Goldkelch/qik-vrt",
+    "target_ruleset_id": 19344903,
+    "administration_write_capable": true,
+    "runtime_preflight_required": true
+  }
+}
