@@ -8,7 +8,7 @@ EFFECT_ACK_C90_CFLAGS ?= -std=c90 -pedantic -Wall -Wextra -Werror
 .PHONY: test compile effect-ack-core-compile effect-ack-core-test scientific-bundle-test adaptive-cognition-test anticipation-contract runtime-contract tool-cache-contract ai-runtime-contract interaction-archive-test release-automation evidence-contract-test m68000-kernel-contract workflow-executor-mesh-contract repository-writer-contract repository-terminal-test mesh-authority-mirror-instance-test real-mesh-test real-mesh-system-verification launcher unit conformance security license seed e2e integrity run-api clean
 
 compile: effect-ack-core-compile
-	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m py_compile qikvrt.py tools/qikvrt_runtime_logger.py tools/qikvrt_subprocess.py tools/qikvrt_initial_acceptance_gate.py tools/qikvrt_integrity.py tools/qikvrt_ruleset_reconcile.py tools/qikvrt_tool_cache.py tools/ai_runtime_bootloader.py tools/qikvrt_master_acceptance_gate.py tools/qikvrt_cicd_publish.py tools/qikvrt_seed_common.py tools/qikvrt_workflow_executor.py tools/qikvrt_anticipation.py tools/qikvrt_validate_state_run.py tools/qikvrt_zenodo_actions.py tools/qikvrt_zenodo_metadata_edit.py tools/qikvrt_formalization_v2_zenodo.py tools/qikvrt_build_zenodo_manifest.py tools/qikvrt_status_zenodo.py tools/qikvrt_interaction_archive.py tools/qikvrt_global_completion.py tools/qikvrt_canonical_temporal_memory_kernel_evidence.py tools/qikvrt_vrtcore_zenodo_candidate.py tools/qikvrt_content_disposition_batch_001.py tools/qikvrt_content_disposition_batch_002_terminal.py tools/qikvrt_content_disposition_batch_002_corrected_candidate.py tools/qikvrt_content_disposition_batch_002_owner_acceptance.py tools/qikvrt_content_disposition_status_after_batch_002_acceptance.py tools/qikvrt_content_disposition_status_after_batch_002_acceptance_compat.py tools/qikvrt_content_disposition_batch_003_dispatch.py tools/qikvrt_zenodo_union_disposition.py tools/qikvrt_virtual_mesh_m68000_acceptance.py tools/qikvrt_authority_mirror_mesh_instance.py tools/qikvrt_real_mesh.py release/observer-relative-retrocausality-current-synthesis-zenodo-v2/finalize_authorized_controls.py src/qikvrt_effect_ack.py src/qikvrt_api_handler.py src/qikvrt_github_api_shim.py scripts/qikvrt_api_client.py tests/test_integrity.py tests/test_qikvrt_ruleset_reconcile.py tests/test_ai_runtime_bootloader.py tests/test_launcher_runtime.py tests/test_effect_ack_conformance.py tests/test_effect_ack_release_workflows.py tests/test_formalization_v2_release_workflow.py tests/test_formalization_v2_zenodo.py tests/test_status_release_workflows.py tests/test_zenodo_actions.py tests/test_zenodo_metadata_clarification_candidates.py tests/test_qikvrt_zenodo_metadata_edit.py tests/test_status_zenodo.py tests/test_zenodo_manifest_builder.py tests/test_status_clarification_bundle.py tests/test_global_completion.py tests/test_content_disposition_batch_001.py tests/test_content_disposition_batch_002_terminal.py tests/test_content_disposition_batch_002_corrected_candidate.py tests/test_content_disposition_batch_002_owner_acceptance.py tests/test_content_disposition_status_after_batch_002_acceptance.py tests/test_content_disposition_batch_003_dispatch.py tests/test_zenodo_union_disposition.py tests/test_handler_unit.py tests/test_handler_security.py tests/test_api_client.py tests/test_interaction_archive.py tests/test_anticipation.py tests/test_license_transition.py tests/test_ietf_offline_render.py tests/test_seed_workflows.py tests/test_qikvrt_workflow_executor_mesh_contract.py tests/test_qikvrt_autonomous_pr_head_continuation.py tests/test_qikvrt_pr_head_recovery.py tests/test_qikvrt_virtual_mesh_m68000_acceptance.py tests/test_tcpip_e2e.py tests/test_canonical_temporal_memory_publication.py tests/test_qikvrt_authority_mirror_mesh_instance.py tests/test_qikvrt_real_mesh.py tools/qikvrt_real_mesh_system_verification.py tests/test_qikvrt_real_mesh_system_verification.py
+	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m py_compile qikvrt.py tools/qikvrt_runtime_logger.py tools/qikvrt_subprocess.py tools/qikvrt_initial_acceptance_gate.py tools/qikvrt_integrity.py tools/qikvrt_ruleset_reconcile.py tools/qikvrt_tool_cache.py tools/ai_runtime_bootloader.py tools/qikvrt_master_acceptance_gate.py tools/qikvrt_cicd_publish.py tools/qikvrt_seed_common.py tools/qikvrt_workflow_executor.py tools/qikvrt_anticipation.py tools/qikvrt_validate_state_run.py tools/qikvrt_zenodo_actions.py tools/qikvrt_zenodo_metadata_edit.py tools/qikvrt_formalization_v2_zenodo.py tools/qikvrt_build_zenodo_manifest.py tools/qikvrt_status_zenodo.py tools/qikvrt_interaction_archive.py tools/qikvrt_global_completion.py tools/qikvrt_canonical_temporal_memory_kernel_evidence.py tools/qikvrt_vrtcore_zenodo_candidate.py tools/qikvrt_content_disposition_batch_001.py tools/qikvrt_content_disposition_batch_002_terminal.py tools/qikvrt_content_disposition_batch_002_corrected_candidate.py tools/qikvrt_content_disposition_batch_002_owner_acceptance.py tools/qikvrt_content_disposition_status_after_batch_002_acceptance.py tools/qikvrt_content_disposition_status_after_batch_002_acceptance_compat.py tools/qikvrt_content_disposition_batch_003_dispatch.py tools/qikvrt_zenodo_union_disposition.py tools/qikvrt_virtual_mesh_m68000_acceptance.py tools/qikvrt_authority_mirror_mesh_instance.py tools/qikvrt_real_mesh.py tools/qikvrt_execution_precedence.py tools/qikvrt_unattended_pr_disposition.py tools/qikvrt_repository_dod_census.py release/observer-relative-retrocausality-current-synthesis-zenodo-v2/finalize_authorized_controls.py src/qikvrt_effect_ack.py src/qikvrt_api_handler.py src/qikvrt_github_api_shim.py scripts/qikvrt_api_client.py tests/test_integrity.py tests/test_qikvrt_ruleset_reconcile.py tests/test_ai_runtime_bootloader.py tests/test_launcher_runtime.py tests/test_effect_ack_conformance.py tests/test_effect_ack_release_workflows.py tests/test_formalization_v2_release_workflow.py tests/test_formalization_v2_zenodo.py tests/test_status_release_workflows.py tests/test_zenodo_actions.py tests/test_zenodo_metadata_clarification_candidates.py tests/test_qikvrt_zenodo_metadata_edit.py tests/test_status_zenodo.py tests/test_zenodo_manifest_builder.py tests/test_status_clarification_bundle.py tests/test_global_completion.py tests/test_content_disposition_batch_001.py tests/test_content_disposition_batch_002_terminal.py tests/test_content_disposition_batch_002_corrected_candidate.py tests/test_content_disposition_batch_002_owner_acceptance.py tests/test_content_disposition_status_after_batch_002_acceptance.py tests/test_content_disposition_batch_003_dispatch.py tests/test_zenodo_union_disposition.py tests/test_handler_unit.py tests/test_handler_security.py tests/test_api_client.py tests/test_interaction_archive.py tests/test_anticipation.py tests/test_license_transition.py tests/test_ietf_offline_render.py tests/test_seed_workflows.py tests/test_qikvrt_workflow_executor_mesh_contract.py tests/test_qikvrt_autonomous_pr_head_continuation.py tests/test_qikvrt_pr_head_recovery.py tests/test_qikvrt_virtual_mesh_m68000_acceptance.py tests/test_tcpip_e2e.py tests/test_canonical_temporal_memory_publication.py tests/test_qikvrt_authority_mirror_mesh_instance.py tests/test_qikvrt_real_mesh.py tools/qikvrt_real_mesh_system_verification.py tests/test_qikvrt_real_mesh_system_verification.py tests/test_qikvrt_execution_precedence.py tests/test_qikvrt_unattended_pr_disposition.py tests/test_qikvrt_repository_dod_census.py
 
 effect-ack-core-compile:
 	$(CC) $(EFFECT_ACK_C90_CFLAGS) -Iinclude -fsyntax-only src/effect_ack_core.c tests/test_effect_ack_core.c
@@ -64,10 +64,10 @@ workflow-executor-mesh-contract: m68000-kernel-contract
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tools/qikvrt_workflow_executor.py snapshot --expect-head "$$(git rev-parse --verify HEAD^{commit})" --json >/dev/null
 
 repository-writer-contract:
-	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_materialization_scope tests.test_qikvrt_repository_writer_lease tests.test_qikvrt_required_review_gate tests.test_qikvrt_ruleset_reconcile tests.issue_agent.test_validate
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_materialization_scope tests.test_qikvrt_repository_writer_lease tests.test_qikvrt_required_review_gate tests.test_qikvrt_ruleset_reconcile tests.test_qikvrt_repository_native_watch_workflow tests.issue_agent.test_validate
 
 repository-terminal-test:
-	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_repository_terminal
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_repository_terminal tests.test_qikvrt_cloud_transputer_mesh_runtime tests.test_qikvrt_live_status_carrier_classification tests.test_qikvrt_execution_precedence tests.test_qikvrt_unattended_pr_disposition tests.test_qikvrt_repository_dod_census
 
 mesh-authority-mirror-instance-test:
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_authority_mirror_mesh_instance
@@ -104,7 +104,7 @@ seed:
 e2e:
 	$(PYTHON) tests/test_tcpip_e2e.py
 
-test: compile integrity effect-ack-core-test scientific-bundle-test adaptive-cognition-test anticipation-contract runtime-contract ai-runtime-contract interaction-archive-test release-automation evidence-contract-test workflow-executor-mesh-contract repository-writer-contract repository-terminal-test mesh-authority-mirror-instance-test real-mesh-test real-mesh-system-verification launcher conformance unit security license seed e2e
+test: compile integrity netboot-test effect-ack-core-test scientific-bundle-test adaptive-cognition-test anticipation-contract runtime-contract ai-runtime-contract interaction-archive-test release-automation evidence-contract-test workflow-executor-mesh-contract repository-writer-contract repository-terminal-test mesh-authority-mirror-instance-test real-mesh-test real-mesh-system-verification launcher conformance unit security license seed e2e
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tools/qikvrt_integrity.py verify
 
 run-api:
@@ -116,3 +116,29 @@ run-api:
 
 clean:
 	rm -rf unit_state e2e_state .qikvrt/runtime .qikvrt/evidence .qikvrt/api .qikvrt/cache .qikvrt/release .qikvrt/interactions .qikvrt/real-mesh logs __pycache__ src/__pycache__ scripts/__pycache__ tests/__pycache__ tools/__pycache__
+
+.PHONY: smalltalk-test
+smalltalk-test: tool-cache-contract effect-ack-core-test
+	$(PYTHON) -B tools/qikvrt_smalltalk.py test
+
+.PHONY: netboot-test
+netboot-test:
+	$(PYTHON) -B -m unittest tests.test_qikvrt_netboot -v
+
+.PHONY: cloud-carrier-live-sse-test
+cloud-carrier-live-sse-test: tool-cache-contract
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tests/test_cloud_carrier_live_sse_runtime.py -v
+
+test: cloud-carrier-live-sse-test
+
+# Finite producer/replay regression; no scheduling inside the TEMDD kernel.
+.PHONY: temdd-event-ledger-test
+test: temdd-event-ledger-test
+temdd-event-ledger-test:
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tests/test_temdd_event_ledger.py
+
+.PHONY: machine-verifiable-science-charter-test
+machine-verifiable-science-charter-test:
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tests/test_machine_verifiable_science_charter.py
+
+test: machine-verifiable-science-charter-test

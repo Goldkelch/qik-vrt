@@ -1,0 +1,61 @@
+{
+  "schema": "qikvrt-target-toolchains-v1",
+  "rust": {
+    "version": "1.85.0",
+    "source": "https://static.rust-lang.org",
+    "license": "MIT OR Apache-2.0",
+    "verification": [
+      "rustup component SHA-256 verification",
+      "rustc --version --verbose",
+      "cargo test --locked"
+    ],
+    "cache": "RUSTUP_HOME and CARGO_HOME outside repository",
+    "rollback": "isolated task prefix; no system toolchain changes",
+    "installer": {
+      "version": "1.29.1",
+      "url": "https://static.rust-lang.org/rustup/archive/1.29.1/x86_64-unknown-linux-gnu/rustup-init",
+      "sha256": "dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71"
+    },
+    "dependency_lock": "next/Cargo.lock"
+  },
+  "ghdl": {
+    "version": "2.0.0+dfsg-6.2+b2",
+    "source": "https://deb.debian.org/debian",
+    "license": "GPL-2.0-or-later",
+    "verification": [
+      "Debian Packages SHA256",
+      "ghdl --version",
+      "simulation and synthesis"
+    ],
+    "cache": "hash-verified extracted package prefix",
+    "rollback": "isolated task prefix",
+    "packages": [
+      {
+        "Package": "libgnat-12",
+        "Version": "12.2.0-14+deb12u1",
+        "Filename": "pool/main/g/gcc-12/libgnat-12_12.2.0-14+deb12u1_amd64.deb",
+        "SHA256": "64a529089a83765bf90bafd555278ec755d2b2541d77fdf093d2937a6a4673cd"
+      },
+      {
+        "Package": "ghdl-common",
+        "Version": "2.0.0+dfsg-6.2+b2",
+        "Filename": "pool/main/g/ghdl/ghdl-common_2.0.0+dfsg-6.2+b2_amd64.deb",
+        "SHA256": "73e65d33f091599177d15b8e39442ce4c6fd648e62224384000f671eaf59cce8"
+      },
+      {
+        "Package": "ghdl-mcode",
+        "Version": "2.0.0+dfsg-6.2+b2",
+        "Filename": "pool/main/g/ghdl/ghdl-mcode_2.0.0+dfsg-6.2+b2_amd64.deb",
+        "SHA256": "03ae598a0ac9d0cfd2e10e1861d546f25e1e10e6bdfeaca9103ce2aaa168e3e8"
+      }
+    ]
+  },
+  "python": {
+    "version_contract": ">=3.11 stdlib only",
+    "purpose": "independent conformance, checkpoint import and replay tests"
+  },
+  "cc": {
+    "version_contract": "ANSI C90",
+    "purpose": "portable C90 transputer, bus routing and canonical EAP core"
+  }
+}
