@@ -69,6 +69,20 @@ def main()->int:
         if loc=="fa":
             check('dir="rtl"' in html,"Persian edition is not RTL")
 
+    archive=ARTICLE/"versions"/manifest["version"]
+    check((archive/"i18n-manifest.json").is_file(),"archive i18n manifest missing")
+    for loc in locales:
+        qloc="zh" if loc=="zh-Hans" else loc
+        urlpart=url_locales[loc]
+        page=archive/"index.html" if not urlpart else archive/urlpart/"index.html"
+        check(page.is_file(),f"archive page missing: {loc}")
+        check((archive/f"claims.{qloc}.json").is_file(),f"archive claims missing: {loc}")
+        check((archive/f"content.{loc}.json").is_file(),f"archive content missing: {loc}")
+        if page.is_file():
+            html=page.read_text(encoding="utf-8")
+            check(f'name="qikvrt-locale" content="{loc}"' in html,f"archive locale metadata mismatch: {loc}")
+            check('content="2026-09-24-v1"' in html,f"archive version mismatch: {loc}")
+
     receipt={
       "schema":"qikvrt-journal-i18n-integrity/1.0",
       "article_id":manifest["article_id"],
