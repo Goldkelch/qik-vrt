@@ -40,6 +40,28 @@ class RecursiveExecutionAccelerationTests(unittest.TestCase):
         self.assertFalse(self.policy["effect_boundary"]["predecessor_evidence_transfer"])
         self.assertFalse(self.policy["effect_boundary"]["global_idle_implied"])
 
+    def test_temdd_terminal_predicate_is_conjunctive(self):
+        semantics = self.policy["stage_semantics"]
+        self.assertEqual(semantics["COMPILE"], "model_to_executable_plan")
+        self.assertEqual(semantics["BIND"], "bind_subject_artifacts_and_identity")
+        self.assertEqual(semantics["RESOLVE"], "resolve_runtime_capabilities_and_authority")
+        self.assertEqual(semantics["EXECUTE"], "perform_intended_effect")
+        self.assertEqual(semantics["TEST"], "evaluate_assertions_and_failure_paths")
+        self.assertEqual(semantics["OBSERVE"], "capture_actual_successor_state")
+        self.assertEqual(semantics["READBACK"], "fresh_independent_effect_readback")
+        self.assertEqual(semantics["ACCEPT"], "apply_acceptance_criteria_to_bound_evidence")
+        terminal = self.policy["terminal_predicate"]
+        self.assertEqual(terminal["alias_rule"], "DONE == EFFECT_ACK_DONE")
+        self.assertEqual(
+            terminal["required_all_of"],
+            ["COMPILE","BIND","RESOLVE","EXECUTE","TEST","OBSERVE","READBACK","ACCEPT"],
+        )
+        self.assertIn("EXECUTE != DONE", terminal["forbidden_single_step_promotions"])
+        self.assertIn("TEST != DONE", terminal["forbidden_single_step_promotions"])
+        self.assertIn("OBSERVE != DONE", terminal["forbidden_single_step_promotions"])
+        self.assertFalse(terminal["effect_ack_done_is_single_step_success_code"])
+        self.assertTrue(terminal["effect_ack_done_is_evidence_bound_haltpoint"])
+
     def test_required_read_order_propagates_policy(self):
         order = self.context["required_read_order"]
         self.assertIn("policy/QIKVRT_RECURSIVE_EXECUTION_ACCELERATION_V1.json", order)
