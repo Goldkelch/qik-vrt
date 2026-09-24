@@ -41,6 +41,17 @@ class AutonomousRulesetEffectLoopContractTest(unittest.TestCase):
         self.assertIn("--receipt", self.text)
         self.assertIn("rulesets/19344903", self.text)
 
+    def test_observation_uses_repository_token_and_scopes_admin_token_to_reconcile(self):
+        self.assertIn("GH_TOKEN: ${{ github.token }}", self.text)
+        self.assertIn(
+            "QIKVRT_RULESET_ADMIN_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}",
+            self.text,
+        )
+        self.assertNotIn(
+            "GH_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}",
+            self.text,
+        )
+
     def test_admin_authority_is_nonterminal_and_repository_routed(self):
         self.assertIn("QIKVRT_RULESET_ADMIN_TOKEN", self.text)
         self.assertNotIn("QIKVRT_GITHUB_ADMIN_TOKEN", self.text)
