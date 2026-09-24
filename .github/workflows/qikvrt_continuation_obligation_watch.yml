@@ -136,3 +136,118 @@ jobs:
                   runs:$runs[0]
                 }' \
                 > "$root/input-${pr}.json"
+              python3 -B tools/qikvrt_continuation_obligation.py classify \
+                --input "$root/input-${pr}.json" \
+                --output "$root/decision-${pr}.json"
+            else
+              jq -n \
+                '{
+                  d0:1,
+                  state:"HOLD",
+                  reason:"ACTIONS_RUN_INVENTORY_TRUNCATED",
+                  productive_effect:false,
+                  effect_ack:"NOT_REQUIRED",
+                  follow_up_required:true,
+                  causal_run_id:null,
+                  causal_workflow:null,
+                  causal_status:null,
+                  causal_conclusion:null
+                }' > "$root/decision-${pr}.json"
+            fi
+
+            d0="$(jq -r '.d0' "$root/decision-${pr}.json")"
+            reason="$(jq -r '.reason' "$root/decision-${pr}.json")"
+            if [ "$d0" -eq 0 ]; then
+              continue
+            fi
+
+            # The observed state becomes the next bound input only if the PR is
+            # still exactly the same subject immediately before persistence.
+            current="$(gh api "repos/${REPOSITORY}/pulls/${pr}")"
+            current_head="$(jq -r '.head.sha' <<<"$current")"
+            current_state="$(jq -r '.state' <<<"$current")"
+            test "$current_head" = "$head"
+            test "$current_state" = open
+
+            tree="$(gh api "repos/${REPOSITORY}/git/commits/${head}" --jq '.tree.sha')"
+            [[ "$tree" =~ ^[0-9a-f]{40}$ ]]
+
+            jq -cS \
+              --arg repository "$REPOSITORY" \
+              --argjson pr "$pr" \
+              --arg head "$head" \
+              --arg tree "$tree" \
+              '. + {
+                repository:$repository,
+                pull_request:$pr,
+                head_sha:$head,
+                head_tree_sha:$tree,
+                predecessor_evidence_transfer:false
+              }' "$root/decision-${pr}.json" > "$root/envelope-${pr}.json"
+
+            fingerprint="$(sha256sum "$root/envelope-${pr}.json" | awk '{print $1}')"
+            [[ "$fingerprint" =~ ^[0-9a-f]{64}$ ]]
+
+            decision_state="$(jq -r '.state' "$root/envelope-${pr}.json")"
+            causal_id="$(jq -r '.causal_run_id // "none"' "$root/envelope-${pr}.json")"
+            causal_workflow="$(jq -r '.causal_workflow // "none"' "$root/envelope-${pr}.json" | tr '\r\n' '  ')"
+            causal_status="$(jq -r '.causal_status // "none"' "$root/envelope-${pr}.json")"
+            causal_conclusion="$(jq -r '.causal_conclusion // "none"' "$root/envelope-${pr}.json")"
+
+            carrier_kind=SYNTHESIZED_STATUS_AND_COMMENT
+            if [ "$d0" -eq 1 ] && [ "$reason" = ACTIVE_EXACT_HEAD_TRANSITION ]; then
+              carrier_kind=ACTIVE_EXACT_HEAD_TRANSITION
+            elif [ "$d0" -eq 3 ] && [ "$reason" = REQUESTED_REVIEW_PENDING_AFTER_TERMINAL_RUNS ]; then
+              carrier_kind=REQUESTED_REVIEWER_METADATA
+            fi
+
+            if [ "$carrier_kind" != SYNTHESIZED_STATUS_AND_COMMENT ]; then
+              jq -n \
+                --arg repository "$REPOSITORY" \
+                --argjson pr "$pr" \
+                --arg head "$head" \
+                --arg tree "$tree" \
+                --arg fingerprint "$fingerprint" \
+                --arg carrier "$carrier_kind" \
+                --argjson decision "$(cat "$root/envelope-${pr}.json")" \
+                '{
+                  schema:"qikvrt_continuation_obligation_receipt_v1",
+                  repository:$repository,
+                  pull_request:$pr,
+                  head_sha:$head,
+                  head_tree_sha:$tree,
+                  decision_fingerprint:$fingerprint,
+                  decision:$decision,
+                  carrier:$carrier,
+                  write_performed:false,
+                  readback_verified:true,
+                  productive_effect:false,
+                  effect_ack_done:false,
+                  predecessor_evidence_transfer:false
+                }' > "$root/receipt-${pr}.json"
+              cat "$root/receipt-${pr}.json" >> "$root/receipts.jsonl"
+              printf '\n' >> "$root/receipts.jsonl"
+              continue
+            fi
+
+            body="$MARKER
+
+          ## QIKVRT continuation obligation
+
+          **Exact subject:** \`PR #$pr @ $head\`
+          **Exact tree:** \`$tree\`
+          **Causal state:** \`D0=$d0 $decision_state\`
+          **Reason:** \`$reason\`
+          **Causal run:** \`$causal_id\` · \`$causal_workflow\` · status \`$causal_status\` · conclusion \`$causal_conclusion\`
+          **Decision fingerprint:** \`$fingerprint\`
+
+          This is the repository-native liveness carrier for a nonterminal exact subject. An open subject may not become silent merely because the preceding repository event was terminal. The obligation remains live until a freshly bound successor transition, exact postcondition, rebind/invalidation, or sourced external HOLD is observed.
+
+          \`TRANSPORT_ACK != EFFECT_ACK\` · \`HOLD != DEADLOCK\` · \`PREDECESSOR_EVIDENCE_TRANSFER=false\`
+
+          This detector does not repair source, review, merge, release, deploy, publish, or assert \`EFFECT_ACK_DONE\`. Productive effects remain subject to their existing exact repository authority."
+
+            comment_id=''
+            old=''
+            inventory_complete_comments=false
+            for page in 1 2 3 4 5; do
