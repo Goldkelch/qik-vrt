@@ -1,7 +1,7 @@
 name: QIKVRT TEMDD conformance
 on:
   pull_request:
-    paths: ['next/**','spec/temdd/**','examples/temdd/**','conformance/temdd/**','src/temdd/**','schemas/temdd-*','tools/qikvrt_temdd.py','tools/qikvrt_temdd_conformance.py','tests/test_temdd.py','tests/temdd/**','src/temdd_core.c','include/temdd_core.h','tests/test_temdd_core.c','runtime/temdd/**','runtime/m68000/temdd_transition.s','runtime/toolchains/pharo-13.lock.json','formalization/TEMDDCore.lean','src/qikvrt_temdd_event_ledger.py','src/qikvrt_effect_ack_http_terminal.py','tests/test_temdd_event_ledger.py','docs/terminal/temdd/**','deploy/universal-terminal/**','Makefile','.github/workflows/qikvrt_temdd.yml']
+    paths: ['next/**','spec/temdd/**','examples/temdd/**','conformance/temdd/**','src/temdd/**','schemas/temdd-*','tools/qikvrt_temdd.py','tools/qikvrt_temdd_conformance.py','tests/test_temdd.py','tests/temdd/**','src/temdd_core.c','include/temdd_core.h','tests/test_temdd_core.c','runtime/temdd/**','runtime/m68000/**','runtime/toolchains/pharo-13.lock.json','formalization/TEMDDCore.lean','src/qikvrt_temdd_event_ledger.py','src/qikvrt_effect_ack_http_terminal.py','tests/test_temdd_event_ledger.py','docs/terminal/temdd/**','deploy/universal-terminal/**','Makefile','.github/workflows/qikvrt_temdd.yml']
   push: {branches: [main, architecture/universal-transputer-c90-v1]}
 permissions: {contents: read}
 jobs:
@@ -43,7 +43,7 @@ jobs:
       printf 'HEAD=%s\nTREE=%s\nEVIDENCE_TRANSFER=DENY\nSCOPE=producer-regression-only\nDOD=NOT_PROVEN\n' "$EXPECTED_HEAD" "$(git rev-parse 'HEAD^{tree}')" | tee "$RUNNER_TEMP/temdd-producer-binding.txt"
    - name: Python parser T01-T12 and corpus
      run: |
-      python3 -B -m unittest tests.test_temdd
+      python3 -B -m unittest tests.test_temdd tests.test_temdd_main_loop_v1
       python3 -B tools/qikvrt_temdd_conformance.py
       python3 -B tools/qikvrt_temdd.py tests/temdd/positive/minimal.temdd >/tmp/minimal.json
       for f in tests/temdd/negative/*.temdd; do if python3 -B tools/qikvrt_temdd.py "$f" >/dev/null 2>&1; then echo "negative corpus admitted: $f"; exit 1; fi; done
@@ -69,6 +69,11 @@ jobs:
       m68k-linux-gnu-objdump -d /tmp/temdd-m68000 > "$RUNNER_TEMP/temdd-backends/m68000-objdump.txt"
       qemu-m68k /tmp/temdd-m68000 | tee "$RUNNER_TEMP/temdd-backends/m68000-execution.log"
       grep -F 'TEMDD_M68000_EXECUTED vectors=4' "$RUNNER_TEMP/temdd-backends/m68000-execution.log"
+      m68k-linux-gnu-gcc -m68000 -c runtime/m68000/temdd_main_loop.s -o /tmp/temdd-main-loop.o
+      m68k-linux-gnu-gcc -m68000 -std=c90 -pedantic -Wall -Wextra -Werror -static \
+        tests/temdd/main-loop-m68000.c /tmp/temdd-main-loop.o -o /tmp/temdd-main-loop-m68000
+      qemu-m68k /tmp/temdd-main-loop-m68000 | tee "$RUNNER_TEMP/temdd-backends/m68000-main-loop-execution.log"
+      grep -F 'TEMDD_MAIN_LOOP_M68000_EXECUTED vectors=256' "$RUNNER_TEMP/temdd-backends/m68000-main-loop-execution.log"
    - name: Execute Smalltalk backend in pinned Pharo 13
      shell: bash
      run: |
@@ -98,8 +103,10 @@ jobs:
       chmod +x "/tmp/temdd-pharo/vm/$TEMDD_PHARO_VM_FILE"
       "/tmp/temdd-pharo/vm/$TEMDD_PHARO_VM_FILE" --headless \
         "/tmp/temdd-pharo/image/$TEMDD_PHARO_IMAGE_FILE" st \
-        runtime/temdd/TEMDDRuntime.st tests/temdd/runtime-smalltalk.st \
+        runtime/temdd/TEMDDRuntime.st runtime/temdd/TEMDDMainLoop.st \
+        tests/temdd/main-loop-smalltalk.st tests/temdd/runtime-smalltalk.st \
         | tee "$RUNNER_TEMP/temdd-backends/smalltalk-execution.log"
+      grep -F 'TEMDD_MAIN_LOOP_SMALLTALK_EXECUTED vectors=9' "$RUNNER_TEMP/temdd-backends/smalltalk-execution.log"
       grep -F 'TEMDD_SMALLTALK_EXECUTED vectors=6' "$RUNNER_TEMP/temdd-backends/smalltalk-execution.log"
    - name: Compile Lean obligations with Lean 4.19 / Lake
      working-directory: formalization/QIKVRT_Formalization_v2.0
@@ -113,7 +120,10 @@ jobs:
       lake clean
       lake build 2>&1 | tee "$RUNNER_TEMP/temdd-backends/lake-build.log"
       lake env lean ../TEMDDCore.lean 2>&1 | tee "$RUNNER_TEMP/temdd-backends/temdd-lean.log"
+      lake env lean ../../next/reference/full-core-draft03/TEMDDMainLoop.lean 2>&1 \
+        | tee "$RUNNER_TEMP/temdd-backends/temdd-main-loop-lean.log"
       grep -q 'theorem missing_effect_readback_not_done' ../TEMDDCore.lean
+      grep -q 'theorem done_iff_all' ../../next/reference/full-core-draft03/TEMDDMainLoop.lean
    - name: Seal exact-head executable-backend receipt
      env:
       EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -134,10 +144,10 @@ jobs:
           raw=(evidence/name).read_bytes()
           outputs[key]={'path':name,'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
       sources={}
-      for name in ['runtime/m68000/temdd_transition.s','tests/temdd/runtime-m68000.c','runtime/temdd/TEMDDRuntime.st','tests/temdd/runtime-smalltalk.st','formalization/TEMDDCore.lean','runtime/toolchains/pharo-13.lock.json']:
+      for name in ['runtime/m68000/temdd_transition.s','tests/temdd/runtime-m68000.c','runtime/m68000/temdd_main_loop.s','tests/temdd/main-loop-m68000.c','runtime/temdd/TEMDDRuntime.st','runtime/temdd/TEMDDMainLoop.st','tests/temdd/main-loop-smalltalk.st','tests/temdd/runtime-smalltalk.st','formalization/TEMDDCore.lean','next/reference/full-core-draft03/TEMDDMainLoop.lean','spec/temdd/TEMDD_MAIN_LOOP_V1.json','runtime/toolchains/pharo-13.lock.json']:
           raw=Path(name).read_bytes()
           sources[name]={'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
-      receipt={'schema':'qikvrt_temdd_executable_backends_v1','repository':os.environ['GITHUB_REPOSITORY'],'source_sha':head,'source_tree':tree,'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'backends':{'c90':'EXECUTED_SUCCESS','smalltalk':'EXECUTED_SUCCESS','m68000':'EXECUTED_SUCCESS_QEMU_USER','lean':'COMPILED_SUCCESS_LEAN_4_19_LAKE'},'sources':sources,'outputs':outputs,'predecessor_evidence_transfer':False,'physical_m68000_execution_observed':False,'stable_language_claim':False,'remaining_semantic_closure':['FRESH_V1_CONFORMANCE_REQUIRED'],'effect_ack_done':False}
+      receipt={'schema':'qikvrt_temdd_executable_backends_v1','repository':os.environ['GITHUB_REPOSITORY'],'source_sha':head,'source_tree':tree,'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'backends':{'c90':'EXECUTED_SUCCESS','smalltalk':'EXECUTED_SUCCESS','m68000':'EXECUTED_SUCCESS_QEMU_USER','lean':'COMPILED_SUCCESS_LEAN_4_19_LAKE'},'main_loop':{'python':'EXECUTED_SUCCESS','rust':'CARGO_TESTED_IN_TARGET_LANE','smalltalk':'EXECUTED_SUCCESS','m68000':'EXECUTED_SUCCESS_QEMU_USER','lean':'COMPILED_SUCCESS_LEAN_4_19_LAKE','ada_spark':'SOURCE_BOUND_SEPARATE_PROOF_LANE','vhdl':'SEPARATE_GHDL_LANE'},'sources':sources,'outputs':outputs,'predecessor_evidence_transfer':False,'physical_m68000_execution_observed':False,'stable_language_claim':False,'remaining_semantic_closure':['FRESH_V1_CONFORMANCE_REQUIRED'],'effect_ack_done':False}
       (evidence/'backend-receipt.json').write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
       print('TEMDD_EXECUTABLE_BACKENDS_RECEIPT head='+head+' tree='+tree)
       PY

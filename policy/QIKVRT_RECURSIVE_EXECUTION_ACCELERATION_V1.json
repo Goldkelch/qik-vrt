@@ -1,0 +1,107 @@
+{
+  "schema": "qikvrt_recursive_execution_acceleration_v1",
+  "version": "1.0.0",
+  "status": "NORMATIVE",
+  "owner": "Ingolf Lohmann",
+  "purpose": "Maximize evidence-producing progress while preserving exact-subject, authority, provenance, review, readback and Effect-Acknowledgement gates.",
+  "canonical_chain": [
+    "COMPILE",
+    "BIND",
+    "RESOLVE",
+    "EXECUTE",
+    "TEST",
+    "OBSERVE",
+    "READBACK",
+    "ACCEPT",
+    "EFFECT_ACK_DONE"
+  ],
+  "rules": {
+    "R01_SUCCESSOR_REBIND": "After an executed and freshly observed mutation, the observed successor becomes the next bound input after identity/provenance validation; the predecessor remains historical evidence only.",
+    "R02_BLOCKER_RECURSION": "The first causal blocker is the next work unit. Explaining a blocker is not a terminal state.",
+    "R03_NO_SYNTHETIC_PROGRESS": "Queued, pending, ACTION_REQUIRED, zero-job, dispatched, commented, attempted, running, transport-success and proposal states are not execution/effect evidence unless their declared effect is independently observed.",
+    "R04_PARALLEL_INDEPENDENCE": "Independent work units may progress in parallel when they do not compete for the same protected writer/effect boundary.",
+    "R05_SERIALIZE_ONLY_CONFLICTING_WRITERS": "Only genuinely conflicting mutations are serialized. A local writer lease MUST NOT turn unrelated work into global idle.",
+    "R06_FAIL_CLOSED_NOT_GLOBAL_IDLE": "Fail-closed forbids unsupported effect claims or unsafe mutations; it does not forbid evidence collection, diagnosis, independent work, successor preparation or read-only reobservation.",
+    "R07_EXACT_SUBJECT": "Every material execution, test, review, merge, publication, deployment or hardware effect is bound to its exact repository/subject/HEAD/TREE/scope.",
+    "R08_NO_PREDECESSOR_TRANSFER": "PREDECESSOR_EVIDENCE_TRANSFER is false. Successful predecessor evidence is never relabeled as fresh successor evidence.",
+    "R09_AUTHORITY_ISOLATION": "Missing external authority blocks only the effect that requires that authority. Other independent authorized work continues.",
+    "R10_MUTATION_REQUIRES_READBACK": "Every mutation creates a successor and requires fresh independent observation/readback before acceptance.",
+    "R11_ACTIVITY_NOT_EFFECT": "Analysis, explanation, tool invocation, workflow creation, transport acknowledgement and successful process exit are not the requested effect.",
+    "R12_SCOPE_SPECIFIC_DONE": "DONE/EFFECT_ACK_DONE is valid only for the declared scope whose complete DoD is freshly satisfied. Open productive work excludes repository-wide DONE."
+  },
+  "mandatory_non_equivalences": [
+    "ACTION_REQUIRED(0 jobs) != JOBS_EXECUTED",
+    "QUEUED != EXECUTED",
+    "PENDING != EXECUTED",
+    "FAIL_CLOSED != GLOBAL_IDLE",
+    "TRANSPORT_ACK != EFFECT_ACK",
+    "ACTIVITY != EFFECT",
+    "PROCESS_EXIT_SUCCESS != EFFECT_ACK_DONE",
+    "LOCAL_EFFECT_ACK != REPOSITORY_EFFECT_ACK_DONE",
+    "PUBLICATION_EFFECT_ACK_DONE != REPOSITORY_EFFECT_ACK_DONE"
+  ],
+  "propagation": {
+    "canonical_entrypoint": "/AI",
+    "context": "AI_CONTEXT.json",
+    "adapter_registry": "AI_ADAPTERS.json",
+    "inheritance_rule": "Every current or future QIK-VRT node, mesh instance, agent adapter, runtime, architecture interface, workflow carrier or derived client inherits this policy through /AI -> AI_CONTEXT.json -> required_read_order. Local contracts may strengthen but MUST NOT weaken it.",
+    "adapter_rule": "Compatibility adapters do not copy this policy; they resolve /AI and therefore inherit the current canonical policy."
+  },
+  "explicit_interfaces": [
+    "AGENTS.md",
+    "next/AI",
+    "spec/temdd/TEMDD_NORMATIVE_CORE_V1.md",
+    "policy/MESH_SELF_EXPLANATION_V1.json",
+    "docs/MESH_SELF_EXPLANATION_AND_DELIVERY.md",
+    "docs/architecture/QIKVRT_REAL_MESH_V1.md",
+    "docs/terminal/QIKVRT_CLOUD_TRANSPUTER_MATERIALIZATION_V1.md",
+    "docs/terminal/FIREFOX_PROXY_DELEGATION_BRIDGE_V1.md",
+    "spec/temdd/TEMDD_MAIN_LOOP_V1.md",
+    "spec/temdd/TEMDD_MAIN_LOOP_V1.json"
+  ],
+  "effect_boundary": {
+    "ordinary_release_state": "EFFECT_ACK_DONE",
+    "predecessor_evidence_transfer": false,
+    "fail_closed": true,
+    "global_idle_implied": false,
+    "mandatory_fresh_readback": true
+  },
+  "stage_semantics": {
+    "COMPILE": "model_to_executable_plan",
+    "BIND": "bind_subject_artifacts_and_identity",
+    "RESOLVE": "resolve_runtime_capabilities_and_authority",
+    "EXECUTE": "perform_intended_effect",
+    "TEST": "evaluate_assertions_and_failure_paths",
+    "OBSERVE": "capture_actual_successor_state",
+    "READBACK": "fresh_independent_effect_readback",
+    "ACCEPT": "apply_acceptance_criteria_to_bound_evidence",
+    "EFFECT_ACK_DONE": "set_terminal_effect_acknowledgement_state_only_after_complete_conjunction"
+  },
+  "terminal_predicate": {
+    "alias_rule": "DONE == EFFECT_ACK_DONE",
+    "required_all_of": [
+      "COMPILE",
+      "BIND",
+      "RESOLVE",
+      "EXECUTE",
+      "TEST",
+      "OBSERVE",
+      "READBACK",
+      "ACCEPT"
+    ],
+    "formula": "DONE iff COMPILE and BIND and RESOLVE and EXECUTE and TEST and OBSERVE and READBACK and ACCEPT",
+    "forbidden_single_step_promotions": [
+      "EXECUTE != DONE",
+      "TEST != DONE",
+      "OBSERVE != DONE"
+    ],
+    "effect_ack_done_is_single_step_success_code": false,
+    "effect_ack_done_is_evidence_bound_haltpoint": true
+  },
+  "temdd_main_loop": {
+    "contract": "spec/temdd/TEMDD_MAIN_LOOP_V1.json",
+    "effect_ack_done_terminates_subject_not_runtime": true,
+    "accepted_successor_becomes_next_bound_input": true,
+    "production_main_potentially_unbounded": true
+  }
+}

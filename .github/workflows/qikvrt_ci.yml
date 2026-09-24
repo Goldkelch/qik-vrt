@@ -108,6 +108,8 @@ jobs:
             hardware/vhdl/qikvrt_metatransistor.vhd
             hardware/vhdl/qikvrt_neutron_star_mesh.vhd
             hardware/vhdl/tb_qikvrt_metatransistor.vhd
+            hardware/vhdl/qikvrt_temdd_main_loop.vhd
+            hardware/vhdl/tb_qikvrt_temdd_main_loop.vhd
             tools/qikvrt_quantum_causal_neutron_star_fixpoint.py
             tests/test_qikvrt_quantum_causal_neutron_star_fixpoint.py
           )
@@ -154,8 +156,12 @@ jobs:
           ghdl -a --std=08 "$GITHUB_WORKSPACE/hardware/vhdl/qikvrt_metatransistor.vhd"
           ghdl -a --std=08 "$GITHUB_WORKSPACE/hardware/vhdl/qikvrt_neutron_star_mesh.vhd"
           ghdl -a --std=08 "$GITHUB_WORKSPACE/hardware/vhdl/tb_qikvrt_metatransistor.vhd"
+          ghdl -a --std=08 "$GITHUB_WORKSPACE/hardware/vhdl/qikvrt_temdd_main_loop.vhd"
+          ghdl -a --std=08 "$GITHUB_WORKSPACE/hardware/vhdl/tb_qikvrt_temdd_main_loop.vhd"
           ghdl -e --std=08 tb_qikvrt_metatransistor
           ghdl -r --std=08 tb_qikvrt_metatransistor
+          ghdl -e --std=08 tb_qikvrt_temdd_main_loop
+          ghdl -r --std=08 tb_qikvrt_temdd_main_loop
           popd >/dev/null
           cat > "$EVIDENCE_ROOT/vhdl-toolchain.json" <<'JSON'
           {

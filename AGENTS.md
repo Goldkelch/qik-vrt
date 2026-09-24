@@ -175,3 +175,20 @@ self-modification, and recursive agent spawning are prohibited.
 The normative machine-readable policy is
 `policy/COLLECTIVE_ADAPTIVE_COGNITION.json`. The explanatory contract is
 `docs/COLLECTIVE_ADAPTIVE_COGNITION.md`.
+
+
+<!-- qikvrt-recursive-execution-acceleration:v1 -->
+## Recursive execution acceleration
+
+Canonical policy: `policy/QIKVRT_RECURSIVE_EXECUTION_ACCELERATION_V1.json`
+(`QIKVRT_RECURSIVE_EXECUTION_ACCELERATION_V1`).
+
+After every verified mutation, bind the observed successor as the next active
+subject. The first causal blocker becomes the next work unit. Independent work
+continues in parallel; only genuinely conflicting writers/effect boundaries are
+serialized. `FAIL_CLOSED != GLOBAL_IDLE`,
+`ACTION_REQUIRED(0 jobs) != JOBS_EXECUTED`, and
+`PREDECESSOR_EVIDENCE_TRANSFER=false`. Every effect still requires fresh
+readback before acceptance; acceleration MUST NOT weaken review, authority,
+provenance, safety or Effect-Acknowledgement gates.
+<!-- /qikvrt-recursive-execution-acceleration:v1 -->

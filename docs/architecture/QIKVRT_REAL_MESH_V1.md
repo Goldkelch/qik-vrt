@@ -108,3 +108,15 @@ MERGE
 PASS
 FINAL_PASS
 ```
+
+
+## Node-local recursive progress
+
+Marker: `QIKVRT_RECURSIVE_EXECUTION_ACCELERATION_V1`.
+
+Each runtime node inherits the repository recursive-execution policy. A
+persisted and freshly reobserved node successor becomes that node's next bound
+input. A blocked route serializes only the affected route/effect boundary;
+independent node work remains eligible. No node may reinterpret
+`ACTION_REQUIRED`, an empty execution, transport success, timeout observation
+or a predecessor receipt as successor effect evidence.

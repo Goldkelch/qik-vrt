@@ -52,3 +52,14 @@ The bridge does not merge, mutate rulesets, publish, deploy, create credentials,
 ## Failure classes
 
 `BLOCK` is returned for a non-HTTPS target, non-allowlisted host, embedded URL credentials or an invalid exact binding. `HOLD` is returned when Firefox is unavailable or when live principal/PR/head/tree/review-disposition checks fail. Neither state is converted into review authority, release or completion.
+
+
+## Recursive proxy progression
+
+Marker: `QIKVRT_RECURSIVE_EXECUTION_ACCELERATION_V1`.
+
+The Firefox proxy inherits the canonical recursive-execution policy. A failed,
+missing or unobservable UI action becomes the next bounded work unit; it does
+not become a terminal explanation. The bridge may continue read-only
+reobservation and independent authorized work, but it MUST NOT bypass
+authentication, review identity, ruleset authority or exact-effect readback.

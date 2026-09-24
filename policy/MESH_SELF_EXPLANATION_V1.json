@@ -43,7 +43,12 @@
       "uncertainty",
       "exact_subject_binding",
       "authorization_boundary",
-      "effect_readback"
+      "effect_readback",
+      "successor_rebinding",
+      "causal_blocker_recursion",
+      "independent_progress",
+      "conflicting_writer_serialization",
+      "fresh_effect_readback"
     ],
     "adapters_may_extend": true,
     "adapters_may_weaken_core_semantics": false,
@@ -59,5 +64,14 @@
     "REPOSITORY_EVIDENCE != ZENODO_PUBLICATION",
     "ZENODO_PUBLICATION != EMPIRICAL_CONFIRMATION",
     "DELIVERY_PREPARATION != DELIVERY_ACCEPTED"
-  ]
+  ],
+  "recursive_execution_acceleration": {
+    "marker": "QIKVRT_RECURSIVE_EXECUTION_ACCELERATION_V1",
+    "policy": "policy/QIKVRT_RECURSIVE_EXECUTION_ACCELERATION_V1.json",
+    "inherited_via": "/AI -> AI_CONTEXT.json -> required_read_order",
+    "first_causal_blocker_is_next_work_unit": true,
+    "observed_successor_becomes_next_bound_input": true,
+    "fail_closed_implies_global_idle": false,
+    "predecessor_evidence_transfer": false
+  }
 }

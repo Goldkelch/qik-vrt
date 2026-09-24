@@ -117,3 +117,16 @@ For the full synthesis and public-language bridge, continue to:
 ## Bootstrap
 
 Artificial-cognitive systems must still begin at `/AI` and follow `AI_CONTEXT.json`. This document is an explanatory and interoperability surface, not a replacement for the repository boot protocol.
+
+
+## Recursive execution acceleration
+
+Marker: `QIKVRT_RECURSIVE_EXECUTION_ACCELERATION_V1`.
+
+Every Mesh node and adapter inherits
+`policy/QIKVRT_RECURSIVE_EXECUTION_ACCELERATION_V1.json` through the canonical
+`/AI` read order. After a verified transition the observed successor becomes
+the next bound input. The first causal blocker becomes the next work unit.
+Independent nodes and work units continue where authorized; only conflicting
+writers serialize. Fail-closed prevents unsupported effects but does not turn a
+local hold into global inactivity.
