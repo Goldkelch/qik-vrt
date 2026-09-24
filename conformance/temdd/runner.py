@@ -22,6 +22,12 @@ SUITE_FILES = (
     "schemas/temdd-evidence-v1.schema.json",
     "schemas/temdd-conformance-report-v1.schema.json",
     "conformance/temdd/vectors-v1.json",
+    "spec/temdd/TEMDD_INTEROPERABILITY_V1.md",
+    "schemas/temdd-interoperability-proof-v1.schema.json",
+    "conformance/temdd/interoperability-vectors-v1.json",
+    "conformance/temdd/interop_impl_python.py",
+    "conformance/temdd/interop_impl_node.js",
+    "conformance/temdd/interop_runner.py",
     "conformance/temdd/runner.py",
 )
 
@@ -40,7 +46,7 @@ IMPLEMENTATION_FILES = (
 PASS_FIELDS = (
     "language", "ir", "event_semantics", "ledger", "ide", "evidence_binding",
     "causality", "effect_ack", "execution", "formal_invariants", "tests",
-    "negative_vectors",
+    "negative_vectors", "interoperability",
 )
 
 def sha256_bytes(data: bytes) -> str:
@@ -173,6 +179,19 @@ def check_backend_receipt(path: Path, subject: dict) -> str:
     require(receipt.get("backends") == expected, "BACKEND_RECEIPT_EXECUTION_MISMATCH")
     return "sha256:" + sha256_bytes(path.read_bytes())
 
+def check_interoperability(repository: str, subject: dict) -> str:
+    proc = subprocess.run(
+        [sys.executable, str(ROOT / "conformance/temdd/interop_runner.py"), "--repository", repository],
+        cwd=ROOT, text=True, capture_output=True, check=False,
+    )
+    require(proc.returncode == 0, "INTEROPERABILITY_PROOF_FAILED:" + proc.stderr.strip())
+    proof = json.loads(proc.stdout)
+    require(proof.get("schema") == "temdd_interoperability_proof_v1", "INTEROPERABILITY_PROOF_SCHEMA_MISMATCH")
+    require(proof.get("subject") == subject, "INTEROPERABILITY_SUBJECT_MISMATCH")
+    require(proof.get("overall") == "INTEROPERABILITY_BY_EXECUTABLE_PROOF", "INTEROPERABILITY_NOT_PROVEN")
+    require(proof.get("effect_ack_done") is False, "INTEROPERABILITY_MANUFACTURED_EFFECT_ACK")
+    return "sha256:" + sha256_bytes(proc.stdout.encode("utf-8"))
+
 def build_report(repository: str, adapter: str, backend_receipt: Path) -> dict:
     subject = exact_subject(repository)
     check_language_and_ir(adapter)
@@ -181,6 +200,7 @@ def build_report(repository: str, adapter: str, backend_receipt: Path) -> dict:
     check_t13_t16(vectors)
     check_formal_core()
     check_repository_tests()
+    interoperability_proof_digest = check_interoperability(repository, subject)
     execution_receipt_digest = check_backend_receipt(backend_receipt, subject)
 
     report = {
@@ -195,6 +215,8 @@ def build_report(repository: str, adapter: str, backend_receipt: Path) -> dict:
             "digest": manifest_digest(SUITE_FILES),
         },
         "execution_receipt_digest": execution_receipt_digest,
+        "interoperability_proof_digest": interoperability_proof_digest,
+        "interoperability": "PASS",
         "language": "PASS",
         "ir": "PASS",
         "event_semantics": "PASS",
