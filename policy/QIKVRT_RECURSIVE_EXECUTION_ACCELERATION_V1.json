@@ -63,5 +63,37 @@
     "fail_closed": true,
     "global_idle_implied": false,
     "mandatory_fresh_readback": true
+  },
+  "stage_semantics": {
+    "COMPILE": "model_to_executable_plan",
+    "BIND": "bind_subject_artifacts_and_identity",
+    "RESOLVE": "resolve_runtime_capabilities_and_authority",
+    "EXECUTE": "perform_intended_effect",
+    "TEST": "evaluate_assertions_and_failure_paths",
+    "OBSERVE": "capture_actual_successor_state",
+    "READBACK": "fresh_independent_effect_readback",
+    "ACCEPT": "apply_acceptance_criteria_to_bound_evidence",
+    "EFFECT_ACK_DONE": "set_terminal_effect_acknowledgement_state_only_after_complete_conjunction"
+  },
+  "terminal_predicate": {
+    "alias_rule": "DONE == EFFECT_ACK_DONE",
+    "required_all_of": [
+      "COMPILE",
+      "BIND",
+      "RESOLVE",
+      "EXECUTE",
+      "TEST",
+      "OBSERVE",
+      "READBACK",
+      "ACCEPT"
+    ],
+    "formula": "DONE iff COMPILE and BIND and RESOLVE and EXECUTE and TEST and OBSERVE and READBACK and ACCEPT",
+    "forbidden_single_step_promotions": [
+      "EXECUTE != DONE",
+      "TEST != DONE",
+      "OBSERVE != DONE"
+    ],
+    "effect_ack_done_is_single_step_success_code": false,
+    "effect_ack_done_is_evidence_bound_haltpoint": true
   }
 }
