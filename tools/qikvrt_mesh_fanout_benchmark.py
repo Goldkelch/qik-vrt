@@ -58,29 +58,42 @@ def cpu_model() -> str:
 
 def run_one(harness: MeshHarness, message: dict[str, Any]) -> dict[str, Any]:
     start = time.perf_counter_ns()
-    terminal = harness.route_message(message)
-    observation = reobserve_route(harness, message, terminal)
-    ack = finalize_effect_ack(message, observation)
-    elapsed = time.perf_counter_ns() - start
-    if terminal["message_id"] != message["message_id"]:
-        raise RuntimeError("MESSAGE_ID_MISMATCH")
-    if terminal["payload_sha256"] != message["payload_sha256"]:
-        raise RuntimeError("PAYLOAD_HASH_MISMATCH")
-    if not observation["complete_route_reobserved"]:
-        raise RuntimeError("ROUTE_NOT_REOBSERVED")
-    return {
-        "message_id": message["message_id"],
-        "route_id": message["route_id"],
-        "payload_sha256": message["payload_sha256"],
-        "terminal_receipt_sha256": canonical_sha256(terminal),
-        "route_observation_sha256": canonical_sha256(observation),
-        "effect_ack_sha256": canonical_sha256(ack),
-        "latency_ns": elapsed,
-    }
+    try:
+        terminal = harness.route_message(message)
+        observation = reobserve_route(harness, message, terminal)
+        ack = finalize_effect_ack(message, observation)
+        elapsed = time.perf_counter_ns() - start
+        if terminal["message_id"] != message["message_id"]:
+            raise RuntimeError("MESSAGE_ID_MISMATCH")
+        if terminal["payload_sha256"] != message["payload_sha256"]:
+            raise RuntimeError("PAYLOAD_HASH_MISMATCH")
+        if not observation["complete_route_reobserved"]:
+            raise RuntimeError("ROUTE_NOT_REOBSERVED")
+        return {
+            "ok": True,
+            "message_id": message["message_id"],
+            "route_id": message["route_id"],
+            "payload_sha256": message["payload_sha256"],
+            "terminal_receipt_sha256": canonical_sha256(terminal),
+            "route_observation_sha256": canonical_sha256(observation),
+            "effect_ack_sha256": canonical_sha256(ack),
+            "latency_ns": elapsed,
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "message_id": message["message_id"],
+            "route_id": message["route_id"],
+            "payload_sha256": message["payload_sha256"],
+            "latency_ns": time.perf_counter_ns() - start,
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:512],
+        }
 
 def consolidate(expected_ids: set[str], rows: list[dict[str, Any]]) -> dict[str, Any]:
     start = time.perf_counter_ns()
-    observed_ids = [row["message_id"] for row in rows]
+    successful = [row for row in rows if row["ok"]]
+    observed_ids = [row["message_id"] for row in successful]
     unique_ids = set(observed_ids)
     missing = sorted(expected_ids - unique_ids)
     unexpected = sorted(unique_ids - expected_ids)
@@ -94,24 +107,21 @@ def consolidate(expected_ids: set[str], rows: list[dict[str, Any]]) -> dict[str,
             "route_observation_sha256": row["route_observation_sha256"],
             "effect_ack_sha256": row["effect_ack_sha256"],
         }
-        for row in sorted(rows, key=lambda row: row["message_id"])
+        for row in sorted(successful, key=lambda row: row["message_id"])
     ]
     digest = canonical_sha256(projection)
     elapsed = time.perf_counter_ns() - start
-    if missing or unexpected or duplicates:
-        raise RuntimeError(
-            f"LOSSLESS_CONSOLIDATION_FAILED missing={missing} "
-            f"unexpected={unexpected} duplicates={duplicates}"
-        )
     return {
         "expected_results": len(expected_ids),
-        "observed_results": len(rows),
+        "observed_results": len(successful),
         "unique_results": len(unique_ids),
-        "missing_results": 0,
-        "unexpected_results": 0,
-        "duplicate_results": 0,
+        "missing_results": len(missing),
+        "missing_message_ids": missing,
+        "unexpected_results": len(unexpected),
+        "unexpected_message_ids": unexpected,
+        "duplicate_results": duplicates,
         "hash_mismatch_results": 0,
-        "lossless": True,
+        "lossless": not missing and not unexpected and duplicates == 0,
         "consolidation_ns": elapsed,
         "consolidated_sha256": digest,
     }
@@ -135,20 +145,33 @@ def timed_trial(harness: MeshHarness, *, fanout: int, messages: int, trial: int,
     workload_ns = time.perf_counter_ns() - started
     consolidation = consolidate(expected, rows)
     total_ns = workload_ns + consolidation["consolidation_ns"]
-    latencies_ms = [row["latency_ns"] / 1_000_000.0 for row in rows]
+    successful = [row for row in rows if row["ok"]]
+    latencies_ms = [row["latency_ns"] / 1_000_000.0 for row in successful]
+    failures = [
+        {
+            "message_id": row["message_id"],
+            "error_type": row["error_type"],
+            "error": row["error"],
+            "latency_ms": row["latency_ns"] / 1_000_000.0,
+        }
+        for row in rows if not row["ok"]
+    ]
     return {
         "fanout": fanout,
         "trial": trial,
         "messages": messages,
+        "successful_messages": len(successful),
+        "failed_messages": len(failures),
+        "failures": failures,
         "workload_ns": workload_ns,
         "total_verified_ns": total_ns,
-        "verified_messages_per_second": messages / (total_ns / 1_000_000_000.0),
-        "latency_ms": {
+        "verified_messages_per_second": len(successful) / (total_ns / 1_000_000_000.0),
+        "latency_ms": ({
             "min": min(latencies_ms),
             "median": statistics.median(latencies_ms),
             "p95": percentile(latencies_ms, 0.95),
             "max": max(latencies_ms),
-        },
+        } if latencies_ms else None),
         "consolidation": consolidation,
     }
 
@@ -233,6 +256,16 @@ def benchmark(*, source_head: str, source_tree: str, messages: int, repeats: int
             "all_trials_lossless": all(
                 row["consolidation"]["lossless"] for row in results
             ),
+            "first_non_lossless_fanout": next(
+                (fanout for fanout in FANOUTS
+                 if not all(row["consolidation"]["lossless"] for row in grouped[fanout])),
+                None,
+            ),
+            "observed_failure_types": sorted({
+                failure["error_type"]
+                for row in results
+                for failure in row["failures"]
+            }),
             "predecessor_evidence_transfer": False,
             "transport_ack_is_effect_ack": False,
             "repository_effect_ack_done": False,
@@ -265,8 +298,8 @@ def render_markdown(report: dict[str, Any]) -> str:
                 fanout=row["fanout"],
                 t=row["median_verified_messages_per_second"],
                 r=row["throughput_ratio_vs_fanout_1"],
-                l=row["median_message_latency_ms"],
-                p=row["median_p95_latency_ms"],
+                l=row["median_message_latency_ms"] or 0.0,
+                p=row["median_p95_latency_ms"] or 0.0,
                 c=row["median_consolidation_ms"],
                 ok="YES" if row["all_trials_lossless"] else "NO",
             )
