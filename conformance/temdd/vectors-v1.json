@@ -1,0 +1,78 @@
+{
+  "schema": "temdd_conformance_vectors_v1",
+  "t13": {
+    "sequence_without_cause": {
+      "earlier": {
+        "event_id": "event:1",
+        "sequence": 1,
+        "cause_event_ids": []
+      },
+      "later": {
+        "event_id": "event:2",
+        "sequence": 2,
+        "cause_event_ids": []
+      }
+    },
+    "explicit_cause": {
+      "cause": {
+        "event_id": "event:3",
+        "sequence": 3,
+        "cause_event_ids": []
+      },
+      "effect": {
+        "event_id": "event:4",
+        "sequence": 4,
+        "cause_event_ids": [
+          "event:3"
+        ]
+      }
+    }
+  },
+  "t14": {
+    "subject_s0": {
+      "repository": "Goldkelch/qik-vrt",
+      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "subject_s1": {
+      "repository": "Goldkelch/qik-vrt",
+      "head": "cccccccccccccccccccccccccccccccccccccccc",
+      "tree": "dddddddddddddddddddddddddddddddddddddddd"
+    },
+    "evidence": {
+      "evidence_id": "e:1",
+      "freshness": "FRESH",
+      "evidence_transfer": "DENY",
+      "observed_subject": {
+        "repository": "Goldkelch/qik-vrt",
+        "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "t15": {
+    "commit_only": {
+      "authority": true,
+      "committed": true,
+      "fresh_readback": false,
+      "exact_subject": true,
+      "expected_matches_observed": true,
+      "effect_ack": false
+    },
+    "fresh_exact_readback": {
+      "authority": true,
+      "committed": true,
+      "fresh_readback": true,
+      "exact_subject": true,
+      "expected_matches_observed": true,
+      "effect_ack": true
+    }
+  },
+  "t16": {
+    "require_exact_head": true,
+    "require_exact_tree": true,
+    "require_implementation_digest": true,
+    "require_suite_digest": true,
+    "predecessor_evidence_transfer": false
+  }
+}

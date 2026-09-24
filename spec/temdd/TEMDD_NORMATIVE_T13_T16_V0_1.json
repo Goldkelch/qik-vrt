@@ -1,0 +1,63 @@
+{
+  "schema": "temdd_normative_t13_t16_v0_1",
+  "version": "0.1",
+  "T13": {
+    "name": "TEMPORAL_PROVENANCE_AND_DUAL_ORDER",
+    "required": [
+      "emitted_at",
+      "observed_at",
+      "source_order",
+      "observation_order"
+    ],
+    "rule": "SOURCE_ORDER_AND_OBSERVATION_ORDER_ARE_DISTINCT",
+    "clock_conflation": false,
+    "retrograde_source_reference": "ADMISSIBLE_CLASSIFICATION_NOT_PAST_MUTATION",
+    "stale_or_missing": "HOLD_UNVERIFIED"
+  },
+  "T14": {
+    "name": "TYPED_EPISTEMIC_REFINEMENT",
+    "states": [
+      "TRUE",
+      "FALSE",
+      "UNKNOWN",
+      "CONFLICT",
+      "STALE",
+      "UNOBSERVABLE"
+    ],
+    "same_subject_context_refinement": "K_AFTER_SUBSET_OF_K_BEFORE",
+    "silent_widening": false,
+    "coercions_to_true_done_effect_ack": "FORBIDDEN"
+  },
+  "T15": {
+    "name": "CONTEXT_PERSPECTIVE_CONTINUITY",
+    "context_is_first_class": true,
+    "perspective_is_first_class": true,
+    "successor_rule": "PRESERVE_OR_EXPLICITLY_AUTHORIZE_TRANSITION",
+    "evidence_transfer_across_drift": "DENY"
+  },
+  "T16": {
+    "name": "REPRESENTATION_CONSERVATION",
+    "full_ir_fields": [
+      "authority",
+      "subject",
+      "context",
+      "relations",
+      "dod",
+      "effect_readback_obligation"
+    ],
+    "partial_backend_rule": "DECLARE_SUPPORTED_SLICE_AND_NEVER_INFER_OMITTED_SEMANTICS",
+    "mismatch": "BLOCK",
+    "formal_kernel": [
+      "QIKVRTFormalization/TEMDD/Completion.lean",
+      "QIKVRTFormalization/TEMDD/MetaGrammar.lean",
+      "QIKVRTFormalization/TEMDD/T13T16.lean"
+    ]
+  },
+  "self_application": {
+    "status": "SELF_DESCRIPTION_BOOTSTRAP",
+    "compiler_self_hosting_claim": false,
+    "rule": "TEMDD_MAY_DESCRIBE_AND_VALIDATE_A_TEMDD_PROGRAM_WITHOUT_CLAIMING_A_COMPILER_IMPLEMENTED_IN_TEMDD"
+  },
+  "stable_language_claim": false,
+  "effect_ack_done": false
+}
