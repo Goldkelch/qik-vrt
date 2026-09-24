@@ -1,0 +1,29 @@
+name: Meta-Transistor RTL
+
+on:
+  pull_request:
+    paths:
+      - 'next/hardware/meta_transistor/**'
+      - '.github/workflows/meta-transistor-rtl.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rtl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GHDL
+        run: sudo apt-get update && sudo apt-get install -y ghdl
+      - name: Analyze
+        run: |
+          ghdl -a --std=08 next/hardware/meta_transistor/meta_transistor.vhd
+          ghdl -a --std=08 next/hardware/meta_transistor/meta_transistor_tb.vhd
+      - name: Elaborate and run
+        run: |
+          ghdl -e --std=08 qikvrt_meta_transistor_tb
+          ghdl -r --std=08 qikvrt_meta_transistor_tb --assert-level=error
+      - name: Synthesis gate
+        run: ghdl synth --std=08 qikvrt_meta_transistor > meta_transistor_synth.vhd
