@@ -1,0 +1,290 @@
+name: QIKVRT Reference Minimal Linux v1
+
+on:
+  pull_request:
+    paths:
+      - 'distribution/qikvrt-reference-minimal/**'
+      - 'tests/test_qikvrt_reference_minimal.py'
+      - '.github/workflows/qikvrt_reference_minimal_v1.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'distribution/qikvrt-reference-minimal/**'
+      - 'tests/test_qikvrt_reference_minimal.py'
+      - '.github/workflows/qikvrt_reference_minimal_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-reference-minimal-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Verify repository and minimal reference contract
+        run: |
+          python3 -B tools/qikvrt_integrity.py verify
+          python3 -B -m unittest tests.test_qikvrt_reference_minimal -v
+          sh -n distribution/qikvrt-reference-minimal/build.sh
+          python3 -m py_compile distribution/qikvrt-reference-minimal/verify-rebuild.py
+
+  rebuild-and-boot:
+    needs: contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      QIKVRT_EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install hash-bound live-build and boot toolchain
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y debootstrap xorriso squashfs-tools qemu-system-x86 curl
+          curl -fsSLo /tmp/debian-archive-keyring.deb \
+            https://deb.debian.org/debian/pool/main/d/debian-archive-keyring/debian-archive-keyring_2025.1_all.deb
+          printf '%s  %s\n' \
+            '9ea7778e443144ca490668737a8ab22dd3e748bb99e805e22ec055abeb3c7fac' \
+            /tmp/debian-archive-keyring.deb | sha256sum -c -
+          sudo dpkg -i /tmp/debian-archive-keyring.deb
+          curl -fsSLo /tmp/live-build.deb \
+            https://deb.debian.org/debian/pool/main/l/live-build/live-build_20250505+deb13u1_all.deb
+          printf '%s  %s\n' \
+            '58e09779881cbcc631c49ceb703413e0247a87db01823e597b2a1c40a2afd8f4' \
+            /tmp/live-build.deb | sha256sum -c -
+          sudo dpkg -i /tmp/live-build.deb
+          lb --version
+          xorriso -version | head -n1
+          mksquashfs -version | head -n1
+          debootstrap --version | head -n1
+      - name: Build A in isolated directory
+        env:
+          QIKVRT_REFERENCE_WORK: ${{ runner.temp }}/qikvrt-ref-a
+          QIKVRT_REFERENCE_OUT: ${{ runner.temp }}/qikvrt-ref-a-out
+        run: sudo -E ./distribution/qikvrt-reference-minimal/build.sh
+      - name: Build B in independent isolated directory
+        env:
+          QIKVRT_REFERENCE_WORK: ${{ runner.temp }}/qikvrt-ref-b
+          QIKVRT_REFERENCE_OUT: ${{ runner.temp }}/qikvrt-ref-b-out
+        run: sudo -E ./distribution/qikvrt-reference-minimal/build.sh
+      - name: Diagnose rebuild byte drift without weakening gate
+        run: |
+          set -euo pipefail
+          a='${{ runner.temp }}/qikvrt-ref-a-out/qikvrt-reference-linux-amd64.iso'
+          b='${{ runner.temp }}/qikvrt-ref-b-out/qikvrt-reference-linux-amd64.iso'
+          echo 'QIKVRT_REPRO_DIAGNOSTIC_BEGIN'
+          sha256sum "$a" "$b"
+          echo 'FIRST_DIFFERING_BYTES'
+          cmp -l "$a" "$b" | head -n 32 || true
+
+          iso_a='${{ runner.temp }}/qikvrt-iso-a'
+          iso_b='${{ runner.temp }}/qikvrt-iso-b'
+          rm -rf "$iso_a" "$iso_b"
+          mkdir -p "$iso_a" "$iso_b"
+          xorriso -osirrox on -indev "$a" -extract / "$iso_a" >/tmp/qikvrt-xorriso-a.log 2>&1
+          xorriso -osirrox on -indev "$b" -extract / "$iso_b" >/tmp/qikvrt-xorriso-b.log 2>&1
+
+          python3 - "$iso_a" "$iso_b" <<'PY'
+          import hashlib
+          import os
+          import pathlib
+          import sys
+
+          roots = [pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])]
+
+          def digest(path):
+              h = hashlib.sha256()
+              with path.open("rb") as stream:
+                  for block in iter(lambda: stream.read(1024 * 1024), b""):
+                      h.update(block)
+              return h.hexdigest()
+
+          def snapshot(root):
+              result = {}
+              for path in sorted(root.rglob("*")):
+                  rel = path.relative_to(root).as_posix()
+                  if path.is_symlink():
+                      result[rel] = ("symlink", os.readlink(path))
+                  elif path.is_file():
+                      st = path.stat()
+                      result[rel] = ("file", st.st_size, digest(path))
+              return result
+
+          a, b = map(snapshot, roots)
+          diffs = []
+          for rel in sorted(set(a) | set(b)):
+              if a.get(rel) != b.get(rel):
+                  diffs.append((rel, a.get(rel), b.get(rel)))
+          print(f"ISO_PATH_DIFF_COUNT={len(diffs)}")
+          for rel, av, bv in diffs[:80]:
+              print(f"ISO_PATH_DIFF path={rel} a={av} b={bv}")
+          PY
+
+          sq_a="$iso_a/live/filesystem.squashfs"
+          sq_b="$iso_b/live/filesystem.squashfs"
+          if [ -f "$sq_a" ] && [ -f "$sq_b" ] && ! cmp -s "$sq_a" "$sq_b"; then
+            root_a='${{ runner.temp }}/qikvrt-squash-a'
+            root_b='${{ runner.temp }}/qikvrt-squash-b'
+            rm -rf "$root_a" "$root_b"
+            sudo unsquashfs -quiet -d "$root_a" "$sq_a"
+            sudo unsquashfs -quiet -d "$root_b" "$sq_b"
+            sudo python3 - "$root_a" "$root_b" <<'PY'
+          import hashlib
+          import os
+          import pathlib
+          import stat
+          import sys
+
+          roots = [pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])]
+
+          def digest(path):
+              h = hashlib.sha256()
+              with path.open("rb") as stream:
+                  for block in iter(lambda: stream.read(1024 * 1024), b""):
+                      h.update(block)
+              return h.hexdigest()
+
+          def snapshot(root):
+              result = {}
+              for path in sorted(root.rglob("*")):
+                  rel = path.relative_to(root).as_posix()
+                  st = path.lstat()
+                  meta = (stat.S_IMODE(st.st_mode), int(st.st_mtime))
+                  if path.is_symlink():
+                      result[rel] = ("symlink", meta, os.readlink(path))
+                  elif path.is_file():
+                      result[rel] = ("file", meta, st.st_size, digest(path))
+                  elif path.is_dir():
+                      result[rel] = ("dir", meta)
+              return result
+
+          a, b = map(snapshot, roots)
+          diffs = []
+          for rel in sorted(set(a) | set(b)):
+              if a.get(rel) != b.get(rel):
+                  diffs.append((rel, a.get(rel), b.get(rel)))
+          print(f"SQUASHFS_PATH_DIFF_COUNT={len(diffs)}")
+          for rel, av, bv in diffs[:120]:
+              print(f"SQUASHFS_PATH_DIFF path={rel} a={av} b={bv}")
+          PY
+          fi
+          echo 'QIKVRT_REPRO_DIAGNOSTIC_END'
+      - name: Verify deterministic rebuild and bind accepted candidate bytes
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          python3 -B distribution/qikvrt-reference-minimal/verify-rebuild.py \
+            '${{ runner.temp }}/qikvrt-ref-a-out/qikvrt-reference-linux-amd64.iso' \
+            '${{ runner.temp }}/qikvrt-ref-a-out/qikvrt-reference-linux-build-receipt.json' \
+            '${{ runner.temp }}/qikvrt-ref-b-out/qikvrt-reference-linux-amd64.iso' \
+            '${{ runner.temp }}/qikvrt-ref-b-out/qikvrt-reference-linux-build-receipt.json' \
+            --output out/qikvrt-reference-linux-rebuild-receipt.json
+          cp '${{ runner.temp }}/qikvrt-ref-a-out/qikvrt-reference-linux-amd64.iso' out/
+          cp '${{ runner.temp }}/qikvrt-ref-a-out/qikvrt-reference-linux-amd64.iso.sha256' out/
+          cp '${{ runner.temp }}/qikvrt-ref-a-out/qikvrt-reference-linux-build-receipt.json' out/
+          (cd out && sha256sum -c qikvrt-reference-linux-amd64.iso.sha256)
+      - name: Boot accepted candidate through BIOS and reobserve exact subject
+        run: |
+          set -euo pipefail
+          log=out/qikvrt-reference-linux-serial.log
+          qemu_stderr=out/qikvrt-reference-linux-qemu-stderr.log
+          boot_diag=out/qikvrt-reference-linux-boot-diagnostic.txt
+          : > "$log"
+          : > "$qemu_stderr"
+          xorriso -indev out/qikvrt-reference-linux-amd64.iso \
+            -report_el_torito plain >"$boot_diag" 2>&1 || true
+          qemu-system-x86_64 \
+            -accel tcg \
+            -m 768 \
+            -smp 1 \
+            -boot order=d \
+            -cdrom out/qikvrt-reference-linux-amd64.iso \
+            -display none \
+            -serial "file:$log" \
+            -no-reboot \
+            -no-shutdown 2>"$qemu_stderr" &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          ok=0
+          exited_early=0
+          for _ in $(seq 1 180); do
+            if grep -Fq "QIKVRT_REFERENCE_LINUX_BOOT_OK source_sha=${QIKVRT_EXACT_SHA}" "$log"; then
+              ok=1
+              break
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              exited_early=1
+              break
+            fi
+            sleep 1
+          done
+          alive_at_deadline=0
+          if [ "$ok" -eq 0 ] && [ "$exited_early" -eq 0 ] && kill -0 "$pid" 2>/dev/null; then
+            alive_at_deadline=1
+          fi
+          kill "$pid" 2>/dev/null || true
+          set +e
+          wait "$pid"
+          qemu_wait_status=$?
+          set -e
+          cat "$log"
+          cat "$qemu_stderr" >&2
+          BOOT_OK="$ok" \
+          QEMU_EXITED_EARLY="$exited_early" \
+          QEMU_ALIVE_AT_DEADLINE="$alive_at_deadline" \
+          QEMU_WAIT_STATUS="$qemu_wait_status" \
+          python3 -B - <<'PY'
+          import hashlib,json,os,pathlib
+          path=pathlib.Path('out/qikvrt-reference-linux-rebuild-receipt.json')
+          serial=pathlib.Path('out/qikvrt-reference-linux-serial.log')
+          qemu_stderr=pathlib.Path('out/qikvrt-reference-linux-qemu-stderr.log')
+          value=json.loads(path.read_text())
+          observed=os.environ['BOOT_OK']=='1'
+          value['boot_witness_observed']=observed
+          if observed:
+              value['boot_witness']='QIKVRT_REFERENCE_LINUX_BOOT_OK source_sha='+os.environ['QIKVRT_EXACT_SHA']
+          else:
+              value.pop('boot_witness',None)
+          value['boot_diagnostic']={
+              'expected_witness':'QIKVRT_REFERENCE_LINUX_BOOT_OK source_sha='+os.environ['QIKVRT_EXACT_SHA'],
+              'qemu_exited_early':os.environ['QEMU_EXITED_EARLY']=='1',
+              'qemu_alive_at_deadline':os.environ['QEMU_ALIVE_AT_DEADLINE']=='1',
+              'qemu_wait_status':int(os.environ['QEMU_WAIT_STATUS']),
+              'serial_bytes':serial.stat().st_size,
+              'serial_sha256':hashlib.sha256(serial.read_bytes()).hexdigest(),
+              'qemu_stderr_bytes':qemu_stderr.stat().st_size,
+              'qemu_stderr_sha256':hashlib.sha256(qemu_stderr.read_bytes()).hexdigest(),
+          }
+          path.write_text(json.dumps(value,indent=2,sort_keys=True)+'\n')
+          PY
+          test "$ok" -eq 1
+      - name: Preserve exact candidate and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qikvrt-reference-linux-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            out/qikvrt-reference-linux-amd64.iso
+            out/qikvrt-reference-linux-amd64.iso.sha256
+            out/qikvrt-reference-linux-build-receipt.json
+            out/qikvrt-reference-linux-rebuild-receipt.json
+            out/qikvrt-reference-linux-serial.log
+            out/qikvrt-reference-linux-qemu-stderr.log
+            out/qikvrt-reference-linux-boot-diagnostic.txt
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
