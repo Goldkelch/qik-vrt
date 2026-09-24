@@ -360,3 +360,15 @@ jobs:
                 effect_ack_done:false,
                 predecessor_evidence_transfer:false
               }' > "$root/receipt-${pr}.json"
+            cat "$root/receipt-${pr}.json" >> "$root/receipts.jsonl"
+            printf '\n' >> "$root/receipts.jsonl"
+          done < <(jq -c '.[]' "$root/candidates.json")
+
+      - name: Preserve exact continuation receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-continuation-obligation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .qikvrt/continuation-obligation
+          if-no-files-found: warn
+          retention-days: 30
