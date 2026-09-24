@@ -258,7 +258,12 @@ jobs:
               '{schema:$schema,repository:$repository,watch_issue:$watch_issue,pr_number:$pr_number,baseline_head:$baseline_head,current_head:$current_head,current_tree:$current_tree,pr_state:$pr_state,run_id:$run_id,run_head:$run_head,run_status:$run_status,run_conclusion:$run_conclusion,run_attempt:$run_attempt,run_updated_at:$run_updated_at,observed_at:$observed_at,binding:$binding,triggers:{pr_head_changed:$head_changed,run_terminal:$run_terminal},predecessor_evidence:$predecessor,predecessor_evidence_transfer:false,effect_ack_done:false}' \
               > "$receipt_json"
 
-            receipt_id="$(sha256sum "$receipt_json" | awk '{print $1}')"
+            # Deduplicate the repository transition, not the observation event.
+            # observed_at deliberately remains receipt evidence but is excluded from
+            # the stable transition identity so scheduled reobservation is idempotent.
+            transition_json="$root/transition-${issue_number}.json"
+            jq 'del(.observed_at)' "$receipt_json" > "$transition_json"
+            receipt_id="$(sha256sum "$transition_json" | awk '{print $1}')"
             body_file="$root/comment-${issue_number}.md"
             cat > "$body_file" <<EOF2
           <!-- qikvrt-repository-watch-receipt:${receipt_id} -->

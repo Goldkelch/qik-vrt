@@ -43,6 +43,13 @@ class RepositoryNativeWatchWorkflowTests(unittest.TestCase):
         self.assertIn("PREDECESSOR_EVIDENCE_TRANSFER=false", body)
         self.assertIn("EFFECT_ACK_DONE=false", body)
 
+    def test_transition_identity_excludes_observation_time(self) -> None:
+        body = self.body
+        self.assertIn("transition_json=", body)
+        self.assertIn("jq 'del(.observed_at)'", body)
+        self.assertIn('receipt_id="$(sha256sum "$transition_json"', body)
+        self.assertNotIn('receipt_id="$(sha256sum "$receipt_json"', body)
+
     def test_trigger_receipt_is_freshly_read_back(self) -> None:
         body = self.body
         self.assertIn("watch receipt comment readback mismatch", body)
