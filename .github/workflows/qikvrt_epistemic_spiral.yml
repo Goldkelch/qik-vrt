@@ -27,6 +27,16 @@ jobs:
           test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha || github.sha }}'
           git rev-parse HEAD
           git rev-parse 'HEAD^{tree}'
+      - name: Parse TEMDD materialization program
+        run: |
+          python3 -B tools/qikvrt_temdd.py docs/terminal/epistemic-spiral/program.temdd > /tmp/epistemic-spiral-temdd-ir.json
+          python3 - <<'PY'
+          import json
+          x=json.load(open('/tmp/epistemic-spiral-temdd-ir.json'))
+          assert x['subject']['binding']=='exact'
+          assert 'SERIALIZE_DESERIALIZE_IDENTITY' in x['dod']
+          assert 'FRESH_EFFECT_READBACK' in x['dod']
+          PY
       - name: Test vector surface and carriers
         run: python3 -B -m unittest -v tests.test_qikvrt_epistemic_spiral
       - name: Serialize and deserialize exact state
