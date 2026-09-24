@@ -21,7 +21,7 @@ def sha256(path:Path)->str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 def article_block(text:str)->str:
-    m=re.search(r'<article class="journal-article">.*?</article>',text,re.S)
+    m=re.search(r'<article class="journal-article"[^>]*>.*?</article>',text,re.S)
     if not m:
         raise ValueError("journal article block missing")
     return m.group(0)
