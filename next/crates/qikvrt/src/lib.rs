@@ -6,6 +6,7 @@ pub mod compiler;
 pub mod mesh;
 pub mod server;
 pub mod store;
+pub mod temdd_main_loop;
 
 pub type Result<T> = std::result::Result<T, String>;
 pub fn sha256(bytes: &[u8]) -> String {
