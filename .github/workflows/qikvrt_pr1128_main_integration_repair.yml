@@ -1,0 +1,194 @@
+name: QIKVRT PR1128 main integration repair
+
+on:
+  push:
+    branches:
+      - repair/pr1128-main-integration-20260924
+    paths:
+      - .github/workflows/qikvrt_pr1128_main_integration_repair.yml
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: qikvrt-pr1128-main-integration-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TARGET_BRANCH: publication/truth-no-conspiracy-theory-2026-09-19
+      EXPECTED_HEAD: a6e8c77489ec37b04f43d22658892d5aab519562
+      EXPECTED_MAIN: a27b3ee7eea1383291b821ec4c43ac9f3f167488
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact predecessor subjects
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
+          git fetch --no-tags origin main
+          test "$(git rev-parse --verify origin/main^{commit})" = "$EXPECTED_MAIN"
+          printf 'PR1128_PREDECESSOR_HEAD=%s\n' "$EXPECTED_HEAD"
+          printf 'MAIN_PREDECESSOR_HEAD=%s\n' "$EXPECTED_MAIN"
+          printf 'PREDECESSOR_EVIDENCE_TRANSFER=false\n'
+
+      - name: Integrate main and resolve only the known six conflict carriers
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          git merge --no-ff --no-commit "$EXPECTED_MAIN"
+          merge_status=$?
+          set -e
+          if [ "$merge_status" -ne 0 ] && [ "$merge_status" -ne 1 ]; then
+            exit "$merge_status"
+          fi
+
+          git diff --name-only --diff-filter=U | sort > /tmp/actual-conflicts.txt
+          cat > /tmp/expected-conflicts.txt <<'EOF'
+          README.md
+          REPOSITORY_FILE_MANIFEST.json
+          REPOSITORY_FILE_MANIFEST.json.sha256
+          SHA256SUMS.txt
+          docs/publications/index.html
+          docs/publications/index.json
+          EOF
+          sort -o /tmp/expected-conflicts.txt /tmp/expected-conflicts.txt
+          diff -u /tmp/expected-conflicts.txt /tmp/actual-conflicts.txt
+
+          git checkout --theirs --             README.md             REPOSITORY_FILE_MANIFEST.json             REPOSITORY_FILE_MANIFEST.json.sha256             SHA256SUMS.txt             docs/publications/index.html             docs/publications/index.json
+
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+
+          readme = Path('README.md')
+          text = readme.read_text(encoding='utf-8')
+          heading = '## Aktuelles Dossier: Erwartungen, Wetten, Wirkung und Recht'
+          block = """## Aktuelles Dossier: Erwartungen, Wetten, Wirkung und Recht
+
+          [Drei Artikel und die Autorenerklärung von Ingolf Lohmann](docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/README.md) dokumentieren die behauptete Erklärung, ihre Begründung und die Grenzen der vorhandenen Evidenz. Die Einschätzung „am wahrscheinlichsten“ ist ausdrücklich dem Autor zugeschrieben. Quellen, Aussageverzeichnis und prüfbare Grenzen gehören zum Dossier.
+
+          [Veröffentlicht auf Zenodo · Version 2.0.0 · DOI 10.5281/zenodo.22845516](https://doi.org/10.5281/zenodo.22845516) · [Publikationsnachweis](docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/PUBLICATION_STATUS.md).
+          """
+          if heading not in text:
+              marker = '<!-- /qikvrt-roundtrip-first:v1 -->'
+              if marker in text:
+                  text = text.replace(marker, marker + '\n\n' + block, 1)
+              else:
+                  text = block + '\n' + text
+          readme.write_text(text, encoding='utf-8')
+
+          index_path = Path('docs/publications/index.json')
+          data = json.loads(index_path.read_text(encoding='utf-8'))
+
+          bundle_path = 'docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/README.md'
+          bundle = {
+              'id': '2026-09-19-truth-needs-no-conspiracy-theory',
+              'title': 'Erwartungen, Wetten, Wirkung und Recht',
+              'path': bundle_path,
+              'primary_article_path': 'docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/Die_Wahrheit_braucht_keine_Verschwoerungstheorie.txt',
+              'claim_matrix_path': 'docs/publications/2026-09-19-truth-needs-no-conspiracy-theory/CLAIM_MATRIX.json',
+              'version': '2.0.0',
+              'state': 'zenodo_published_public_bytes_verified',
+              'boundary': 'Drei Artikel plus zugeschriebene Autorenerklärung; wahrscheinlichste Erklärung ist die Einschätzung des Autors, nicht ein kalibrierter Posterior oder eine unabhängig geschlossene Kausalkette.',
+              'zenodo_url': 'https://zenodo.org/records/22845516',
+              'doi': '10.5281/zenodo.22845516',
+          }
+          bundles = data.setdefault('publication_bundles', [])
+          if not any(item.get('path') == bundle_path for item in bundles):
+              bundles.insert(0, bundle)
+
+          receipt_path = 'release/pr1128-truth-expectations-law-zenodo-v2/zenodo-publication.json'
+          receipt = json.loads(Path(receipt_path).read_text(encoding='utf-8'))
+          record = {
+              'id': 'qikvrt-truth-expectations-wager-effect-law-2026-09-19-v2',
+              'title': receipt['title'],
+              'version': receipt.get('version', '2.0.0'),
+              'record_id': receipt['record_id'],
+              'doi': receipt['doi'],
+              'doi_url': 'https://doi.org/' + receipt['doi'],
+              'concept_doi': receipt.get('conceptdoi') or receipt.get('concept_doi'),
+              'receipt_path': receipt_path,
+              'manifest_sha256': receipt['manifest_sha256'],
+              'repository_commit': receipt['repository_commit'],
+              'file_count': len(receipt['files']),
+              'state': 'published_receipt',
+              'boundary': 'Public record and exact uploaded bytes verified; publication does not establish peer review, scientific consensus, empirical closure, criminal responsibility, or repository-wide EFFECT_ACK_DONE.',
+          }
+          records = data.setdefault('zenodo_records', [])
+          if not any(item.get('receipt_path') == receipt_path for item in records):
+              records.insert(0, record)
+
+          index_path.write_text(
+              json.dumps(data, ensure_ascii=False, sort_keys=False, indent=2) + '\n',
+              encoding='utf-8'
+          )
+
+          html_path = Path('docs/publications/index.html')
+          html = html_path.read_text(encoding='utf-8')
+          if bundle_path not in html:
+              needle = '<div class="collection-list">'
+              row = (
+                  '\n        <a class="collection-row pinned" '
+                  'href="https://github.com/Goldkelch/qik-vrt/blob/main/'
+                  + bundle_path
+                  + '"><time>19.09.</time><span><strong>Erwartungen, Wetten, Wirkung und Recht</strong>'
+                  '<small>Drei Artikel · Autorenerklärung · Version 2.0.0 · '
+                  'https://doi.org/10.5281/zenodo.22845516</small></span><b>Öffnen →</b></a>'
+              )
+              if needle not in html:
+                  raise SystemExit('BLOCK: publication collection-list anchor missing')
+              html = html.replace(needle, needle + row, 1)
+          html_path.write_text(html, encoding='utf-8')
+          PY
+
+          git add README.md docs/publications/index.html docs/publications/index.json
+          python3 -B tools/qikvrt_integrity.py generate
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          test -z "$(git diff --name-only --diff-filter=U)"
+          git diff --cached --check
+
+      - name: Verify repaired exact candidate before persistence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v tests.test_qikvrt_self_disclosure
+          make test
+
+      - name: Persist merge successor and admit exact head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name qikvrt-pr1128-repair
+          git config user.email qikvrt-pr1128-repair@users.noreply.github.com
+          git commit -m "fix(pr1128): integrate main and restore publication coverage"
+          successor="$(git rev-parse --verify HEAD^{commit})"
+          tree="$(git rev-parse --verify HEAD^{tree})"
+          git push origin "HEAD:$TARGET_BRANCH"
+          remote="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
+          test "$remote" = "$successor"
+
+          for workflow in             qikvrt_ci.yml             qikvrt_collective_review.yml             qikvrt_batch04_integrity.yml             qikvrt_zero_bug_continuous.yml
+          do
+            gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref "$TARGET_BRANCH"
+          done
+
+          gh workflow run qikvrt_requested_review_executor.yml             --repo "$GITHUB_REPOSITORY"             --ref main             -f pr=1128             -f head="$successor"
+
+          printf 'PR1128_SUCCESSOR_HEAD=%s\n' "$successor"
+          printf 'PR1128_SUCCESSOR_TREE=%s\n' "$tree"
+          printf 'PREDECESSOR_EVIDENCE_TRANSFER=false\n'
+          printf 'EFFECT_ACK_DONE=false\n'
