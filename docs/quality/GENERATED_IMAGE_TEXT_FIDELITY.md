@@ -25,7 +25,7 @@ IMAGE_GENERATED != TEXT_VERIFIED.
 
 ## Exact-token protection
 
-Protocol identifiers and signatures are literals. They are not subject to creative rewriting. Examples: Effect_Ack, Effect_Ack_Done, q.e.d., Ingolf Lohmann.
+Protocol identifiers and signatures are literals. They are not subject to creative rewriting. Examples: EFFECT_ACK, EFFECT_ACK_DONE, q.e.d., Ingolf Lohmann.
 
 Case, underscores, punctuation, whitespace requirements, and spelling must be validated against the bound source specification.
 

@@ -12,15 +12,15 @@ def run(spec):
 
 base={
  'schema':'qikvrt_image_text_fidelity_v1',
- 'required_literals':['Bewusstsein ist Wechselwirkung!','Effect_Ack','Effect_Ack_Done','q.e.d.','Ingolf Lohmann'],
- 'observed_literals':['Bewusstsein ist Wechselwirkung!','Effect_Ack','Effect_Ack_Done','q.e.d.','Ingolf Lohmann'],
+ 'required_literals':['Bewusstsein ist Wechselwirkung!','EFFECT_ACK','EFFECT_ACK_DONE','q.e.d.','Ingolf Lohmann'],
+ 'observed_literals':['Bewusstsein ist Wechselwirkung!','EFFECT_ACK','EFFECT_ACK_DONE','q.e.d.','Ingolf Lohmann'],
  'unexpected_visible_text':[],
  'human_visual_readback_complete':True,
  'spelling_review_complete':True,
  'accepted':True
 }
 assert run(base).returncode==0
-bad=dict(base); bad['observed_literals']=['Bewusstsein ist Wechselwirkung!','Effect Ack','Effect_Ack_Done','q.e.d.','Ingolf Lohmann']
+bad=dict(base); bad['observed_literals']=['Bewusstsein ist Wechselwirkung!','Effect_Ack','EFFECT_ACK_DONE','q.e.d.','Ingolf Lohmann']
 assert run(bad).returncode!=0
 extra=dict(base); extra['unexpected_visible_text']=['invented caption']
 assert run(extra).returncode!=0
