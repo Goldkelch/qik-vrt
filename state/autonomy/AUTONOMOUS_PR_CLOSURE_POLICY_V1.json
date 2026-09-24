@@ -1,0 +1,63 @@
+{
+  "schema": "qikvrt_autonomous_pr_closure_policy_v1",
+  "policy_id": "AUTONOMOUS-PR-CLOSURE-POLICY-V1",
+  "status": "ACTIVE",
+  "purpose": "Drain repository pull-request work through bounded repository-native progress rather than stable observation-only states.",
+  "owner_delegation": "state/authorization/delegations/OWNER_AUTONOMOUS_REPOSITORY_CLOSURE_V1.json",
+  "max_scan_per_run": 8,
+  "max_mutations_per_run": 1,
+  "required_independent_reviewer": "Goldkelch",
+  "required_check": {
+    "name": "test",
+    "integration_id": 15368
+  },
+  "required_technical_review_context": "QIKVRT requested review execution",
+  "repositories": {
+    "Goldkelch/qik-vrt": {
+      "role": "AUTHORITY",
+      "base_branch": "main",
+      "promotion_mode": "NATIVE_PR_MERGE",
+      "ruleset_id": 19344903,
+      "role_local_head_required": true
+    },
+    "ingolf-lohmann/qik-vrt": {
+      "role": "MIRROR",
+      "base_branch": "main",
+      "promotion_mode": "FAST_FORWARD_CAS",
+      "role_local_head_required": true
+    }
+  },
+  "action_order": [
+    "CLOSE_ALREADY_CONTAINED",
+    "MARK_READY_TRUSTED_AUTOMATION",
+    "UPDATE_BRANCH_TO_CURRENT_MAIN",
+    "REQUEST_CURRENT_INDEPENDENT_REVIEW",
+    "MERGE_AFTER_FRESH_GATES_AND_REVIEW"
+  ],
+  "hard_boundaries": {
+    "predecessor_evidence_transfer": false,
+    "independent_review_fabrication": false,
+    "self_review_counts_as_independent": false,
+    "force_push_main": false,
+    "force_ref_update": false,
+    "external_effects": false,
+    "zenodo_mutation": false,
+    "ietf_mutation": false,
+    "release_mutation": false,
+    "effect_ack_done_claim": false
+  },
+  "closure_semantics": {
+    "observation_only_is_terminal": false,
+    "already_contained_pr_may_close_without_merge": true,
+    "merge_conflict_is_explicit_repair_required": true,
+    "one_repository_mutation_per_run": true,
+    "fresh_final_fence_before_merge": true,
+    "authority_relies_on_active_strict_native_ruleset": true,
+    "mirror_uses_non_force_fast_forward_as_base_cas": true
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
