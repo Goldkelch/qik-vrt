@@ -230,6 +230,8 @@ def evidence_urls(gh: GitHub, pr: int, head: str) -> list[tuple[str, str]]:
             text = raw.decode("utf-8")
         except (ValueError, UnicodeDecodeError):
             continue
+        if head not in text:
+            continue
         for match in PUBLIC_URL_RE.findall(text):
             urls.add((filename, match.rstrip(".,);]")))
     return sorted(urls)
