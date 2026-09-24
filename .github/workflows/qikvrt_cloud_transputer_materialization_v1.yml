@@ -143,6 +143,31 @@ jobs:
           curl -fsS http://127.0.0.1:8080/AI/spiral/locales.json > "$QIKVRT_EVIDENCE_DIR/epistemic-spiral-locales.json"
           grep -F 'qikvrt_epistemic_spiral_state_v1' "$QIKVRT_EVIDENCE_DIR/epistemic-spiral-state.json"
           grep -F 'qikvrt_epistemic_spiral_locales_v1' "$QIKVRT_EVIDENCE_DIR/epistemic-spiral-locales.json"
+          python3 -B - <<'PY'
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+          evidence = Path(os.environ["QIKVRT_EVIDENCE_DIR"])
+          state = json.loads((evidence / "epistemic-spiral-state.json").read_text(encoding="utf-8"))
+          locales = json.loads((evidence / "epistemic-spiral-locales.json").read_text(encoding="utf-8"))
+          payload = json.dumps(
+              {"state": state, "locales": locales},
+              ensure_ascii=False, sort_keys=True, separators=(",", ":")
+          ).encode("utf-8")
+          receipt = {
+              "schema": "qikvrt_epistemic_spiral_oci_readback_receipt_v1",
+              "source_head": subprocess.check_output(["git","rev-parse","HEAD"], text=True).strip(),
+              "source_tree": subprocess.check_output(["git","rev-parse","HEAD^{tree}"], text=True).strip(),
+              "runtime_route": "/AI/spiral/",
+              "state_schema": state["schema"],
+              "locales_schema": locales["schema"],
+              "payload_sha256": hashlib.sha256(payload).hexdigest(),
+              "transport_ack": True,
+              "effect_ack_done": False,
+          }
+          (evidence / "epistemic-spiral-oci-readback-receipt.json").write_text(
+              json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          PY
           python3 - <<'PY'
           import socket
           with socket.create_connection(('127.0.0.1',2222),timeout=5) as s:

@@ -1,0 +1,51 @@
+name: QIKVRT epistemic spiral Transputer carrier
+on:
+  pull_request:
+    paths:
+      - 'docs/terminal/epistemic-spiral/**'
+      - 'tools/qikvrt_epistemic_spiral_transputer_roundtrip.py'
+      - 'tests/test_qikvrt_epistemic_spiral_transport_layers.py'
+      - 'next/**'
+      - '.github/workflows/qikvrt_epistemic_spiral_transputer.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  transputer-roundtrip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Bind exact subject
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          test "$(git rev-parse HEAD)" = "$expected"
+          git rev-parse HEAD
+          git rev-parse 'HEAD^{tree}'
+      - name: Validate layer separation
+        run: python3 -B -m unittest -v tests.test_qikvrt_epistemic_spiral tests.test_qikvrt_epistemic_spiral_transport_layers
+      - name: Build Universal Transputer runtime
+        run: cargo build --release --locked --manifest-path next/Cargo.toml
+      - name: Execute exact-head Transputer roundtrip
+        run: python3 -B tools/qikvrt_epistemic_spiral_transputer_roundtrip.py --output /tmp/qikvrt-epistemic-spiral-transputer.json
+      - name: Verify receipt binding
+        run: |
+          python3 -B - <<'PY'
+          import json, subprocess
+          value=json.load(open('/tmp/qikvrt-epistemic-spiral-transputer.json',encoding='utf-8'))
+          assert value['schema']=='qikvrt_epistemic_spiral_transputer_receipt_v1'
+          assert value['source_head']==subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          assert value['source_tree']==subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip()
+          assert value['transputer_forward_equal'] is True
+          assert value['transputer_return_equal'] is True
+          assert value['effect_ack_done'] is False
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qikvrt-epistemic-spiral-transputer-${{ github.event.pull_request.head.sha || github.sha }}
+          path: /tmp/qikvrt-epistemic-spiral-transputer.json
+          retention-days: 30

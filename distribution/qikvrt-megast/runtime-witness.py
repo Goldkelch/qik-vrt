@@ -119,6 +119,39 @@ def main():
     wait_for_window("Firefox")
     run(["pgrep", "-u", str(os.getuid()), "firefox-esr"])
     stage("firefox-window-observed")
+    spiral_root = Path("/opt/qikvrt/share/epistemic-spiral")
+    state = json.loads((spiral_root / "state.json").read_text(encoding="utf-8"))
+    locales = json.loads((spiral_root / "locales.json").read_text(encoding="utf-8"))
+    if state.get("schema") != "qikvrt_epistemic_spiral_state_v1":
+        raise RuntimeError("Linux spiral state schema mismatch")
+    if locales.get("schema") != "qikvrt_epistemic_spiral_locales_v1":
+        raise RuntimeError("Linux spiral locales schema mismatch")
+    payload_bytes = json.dumps(
+        {"state": state, "locales": locales},
+        ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    payload_sha256 = hashlib.sha256(payload_bytes).hexdigest()
+    serialization_receipt = json.loads(
+        (spiral_root / "roundtrip-receipt.json").read_text(encoding="utf-8")
+    )
+    if serialization_receipt.get("schema") != "qikvrt_epistemic_spiral_serialization_receipt_v1":
+        raise RuntimeError("Linux spiral serialization receipt schema mismatch")
+    if serialization_receipt.get("payload_sha256") != payload_sha256:
+        raise RuntimeError("Linux spiral payload digest mismatch")
+    linux_receipt = {
+        "schema": "qikvrt_epistemic_spiral_linux_readback_receipt_v1",
+        "source_head": source,
+        "state_schema": state["schema"],
+        "locales_schema": locales["schema"],
+        "payload_sha256": payload_sha256,
+        "serialization_receipt_schema": serialization_receipt["schema"],
+        "transport_ack": True,
+        "effect_ack_done": False,
+    }
+    linux_receipt_path = Path.home() / ".config/qikvrt/epistemic-spiral-linux-readback.json"
+    linux_receipt_path.parent.mkdir(parents=True, exist_ok=True)
+    linux_receipt_path.write_text(json.dumps(linux_receipt, indent=2, sort_keys=True) + "\n")
+    stage("epistemic-spiral-linux-readback")
     rom = Path("/usr/share/qikvrt/emutos/etos256de.img")
     rom_sha256 = verify_emutos_rom(rom, config["emutos_rom_sha256"])
     hatari_pid = run(["pgrep", "-u", str(os.getuid()), "-x", "hatari"]).splitlines()[0]
@@ -170,6 +203,7 @@ def main():
                "emutos_rom": str(rom), "emutos_rom_sha256": rom_sha256,
                "hatari_window_observed": True, "physical_atari_boot": False,
                "effect_ack_done": False}
+    receipt["epistemic_spiral_linux_readback_receipt"] = linux_receipt
     Path.home().joinpath(".config/qikvrt/runtime-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     emit_serial("QIKVRT_RUNTIME_RECEIPT " + json.dumps(receipt, sort_keys=True))
     # The root-owned boot-scoped journal reader also covers user device denial.

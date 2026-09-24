@@ -38,7 +38,7 @@ def main()->int:
     reserialized=canonical(reparsed)
     identity=(serialized==restored==reserialized)
     receipt={
-      "schema":"qikvrt_epistemic_spiral_roundtrip_receipt_v1",
+      "schema":"qikvrt_epistemic_spiral_serialization_receipt_v1",
       "source_root":str(root),
       "payload_sha256":sha(serialized),
       "wire_sha256":sha(wire),
