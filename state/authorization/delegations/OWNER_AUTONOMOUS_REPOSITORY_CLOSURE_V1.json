@@ -1,0 +1,47 @@
+{
+  "schema": "qikvrt_owner_autonomous_repository_closure_v1",
+  "delegation_id": "OWNER-AUTONOMOUS-REPOSITORY-CLOSURE-V1",
+  "status": "ACTIVE",
+  "owner": {
+    "name": "Ingolf Lohmann",
+    "role": "Product Owner"
+  },
+  "effective_at": "2026-09-23T10:14:00+02:00",
+  "source_instruction": "Na dann ist jetzt der Zeitpunkt, genau das zu ändern Freigabe erteilt.",
+  "authorized_scope": [
+    "reobserve_current_main_and_open_pull_requests",
+    "close_open_pull_requests_only_when_their_diff_is_already_contained_in_current_main",
+    "mark_only_trusted_repository_generated_self_heal_drafts_ready_for_review",
+    "update_same_repository_pull_request_branches_to_current_main_without_force",
+    "request_the_configured_independent_reviewer_for_the_current_exact_head",
+    "merge_authority_pull_requests_only_after_current_exact_head_required_checks_current_technical_review_current_independent_approval_and_active_strict_native_ruleset_are_reobserved",
+    "promote_mirror_pull_requests_only_by_non_force_fast_forward_of_current_main_to_the_exact_approved_head",
+    "continue_scanning_when_a_pull_request_is_waiting_on_a_non_mutable_gate_or_requires_semantic_conflict_repair"
+  ],
+  "mandatory_invariants": [
+    "TRANSPORT_ACK_NE_EFFECT_ACK",
+    "PREDECESSOR_EVIDENCE_TRANSFER_FALSE",
+    "NO_SELF_REVIEW_AS_INDEPENDENT_REVIEW",
+    "NO_FORCE_PUSH_TO_MAIN",
+    "EXACT_HEAD_REOBSERVATION_BEFORE_MUTATION",
+    "CURRENT_MAIN_REOBSERVATION_BEFORE_PROMOTION",
+    "AT_MOST_ONE_REPOSITORY_MUTATION_PER_EXECUTOR_RUN",
+    "NO_EXTERNAL_EFFECT_FROM_CLOSURE_ENGINE"
+  ],
+  "not_authorized": [
+    "zenodo_publication",
+    "ietf_submission",
+    "doi_creation",
+    "public_release",
+    "credential_escalation",
+    "fabricated_review",
+    "force_push",
+    "scientific_confirmation",
+    "EFFECT_ACK_DONE_without_fresh_effect_readback"
+  ],
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
