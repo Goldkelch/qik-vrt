@@ -22,9 +22,9 @@ MARKER = "qikvrt-weekly-publication-status:v1"
 API = "https://api.github.com"
 PUBLIC_HOSTS = {"zenodo.org", "doi.org", "datatracker.ietf.org", "www.ietf.org"}
 PUBLIC_URL_RE = re.compile(
-    r"https://(?:zenodo\\.org/records/\\d+|doi\\.org/10\\.5281/zenodo\\.\\d+|"
-    r"datatracker\\.ietf\\.org/doc/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+|"
-    r"www\\.ietf\\.org/archive/id/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+)"
+    r"https://(?:zenodo\.org/records/\d+|doi\.org/10\.5281/zenodo\.\d+|"
+    r"datatracker\.ietf\.org/doc/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+|"
+    r"www\.ietf\.org/archive/id/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+)"
 )
 EVIDENCE_NAME_RE = re.compile(
     r"(zenodo|publication|public[_-]?(?:readback|evidence|status)|doi)",
