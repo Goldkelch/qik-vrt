@@ -60,6 +60,13 @@ test -L "$WORK/config/includes.chroot/usr/share/hatari/tos.img"
 TREE=$(git -C "$ROOT" rev-parse 'HEAD^{tree}')
 [ "$SHA" = "$(git -C "$ROOT" rev-parse HEAD)" ] || { echo 'BLOCKED: source HEAD mismatch' >&2; exit 70; }
 GUEST="$WORK/config/includes.chroot"
+mkdir -p "$GUEST/opt/qikvrt/share"
+cp -a "$ROOT/docs/terminal/epistemic-spiral" "$GUEST/opt/qikvrt/share/"
+test -s "$GUEST/opt/qikvrt/share/epistemic-spiral/index.html"
+test -s "$GUEST/opt/qikvrt/share/epistemic-spiral/state.json"
+python3 -B "$ROOT/tools/qikvrt_epistemic_spiral_roundtrip.py" \
+  --root "$GUEST/opt/qikvrt/share/epistemic-spiral" \
+  --receipt "$GUEST/opt/qikvrt/share/epistemic-spiral/roundtrip-receipt.json"
 mkdir -p "$GUEST/opt/qikvrt/runtime" "$GUEST/opt/qikvrt/smalltalk" \
          "$GUEST/etc/lightdm/lightdm.conf.d" \
          "$GUEST/etc/systemd/system/lightdm.service.d"
