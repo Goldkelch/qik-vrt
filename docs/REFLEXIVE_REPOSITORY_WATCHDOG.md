@@ -74,3 +74,94 @@ Conventional relational database systems already provide transaction deadlock ha
 ## Nonclaims
 
 A successful watchdog run is observation evidence, not gate success. The mechanism does not prove global deadlock freedom, repository completion, Authority–Mirror equality, empirical confirmation, scientific consensus, `PASS`, `FINAL_PASS`, or `EFFECT_ACK_DONE`.
+
+
+## Forbidden deadlock elimination
+
+Detection is not a terminal disposition. Any watchdog state that identifies a
+forbidden deadlock, stale wait, exhausted observer API path, zero-job admission
+gap, or indefinitely pending review MUST derive a productive edge immediately.
+
+The control rule is:
+
+`DETECT -> CLASSIFY -> SELECT_NONCONFLICTING_CARRIER -> EXECUTE -> READBACK -> REPEAT`
+
+A read-only watchdog may remain read-only, but its receipt must name the exact
+next executable carrier. The repository controller consuming that receipt must
+execute that carrier when authorized. Merely emitting `HOLD`, `PENDING`,
+`RATE_LIMITED`, or `WAIT` without such a productive edge is itself a
+forbidden deadlock.
+
+API-rate exhaustion on one observer credential is local resource exhaustion,
+not global repository idleness. The controller must continue through an
+independent already-authorized carrier, cached exact-subject evidence when the
+contract permits it, or a later exact event. It must not busy-loop the exhausted
+credential.
+
+Human/code-owner authority is never fabricated. While that authority is
+pending, every independent repository work unit remains eligible for progress.
+A human-authority wait therefore serializes only the authority-dependent edge;
+it MUST NOT freeze unrelated publication preparation, deterministic validation,
+deadlock repair, or other nonconflicting work.
+
+The only terminal success remains a freshly read-back postcondition. A
+deadlock detector that reports a deadlock and stops has failed its operational
+purpose.
+
+
+## Merge conflicts are forbidden idle states too
+
+A merge conflict is a causal work item, not a terminal report. For every open
+pull request or promotion candidate, a detected conflict MUST be classified
+against the exact base/head pair and resolved through the smallest
+history-preserving successor that retains both intended changes.
+
+The control rule is:
+
+`MERGE_CONFLICT -> BIND_BASE_HEAD -> CLASSIFY_OVERLAP -> RESOLVE_SUCCESSOR -> VALIDATE -> READBACK -> REPEAT`
+
+A conflict may stop the conflicting merge mutation, but it MUST NOT stop
+independent work. Reporting `CONFLICTING`, `DIRTY`, `BEHIND`, or
+`MERGE_BLOCKED` without deriving and executing an authorized resolution edge
+is a forbidden deadlock.
+
+Resolution MUST NOT discard either side silently, force-push protected history,
+transfer predecessor PASS evidence, or manufacture Code-Owner authority.
+After any conflict-resolution mutation the resulting commit/tree is a new
+subject: all required exact-subject gates, review bindings, publication
+bindings, and effect acknowledgements are stale until freshly re-established.
+
+Where GitHub cannot provide an atomic expected-base-and-head mutation, the
+repository must construct a history-preserving successor branch/commit, verify
+both parent intents and deterministic integrity, and submit that successor
+through the ordinary protected path.
+
+
+## Minimal Valuable Product flow priority
+
+Repository housekeeping is subordinate to delivery of the current Minimal
+Valuable Product (MVP), except where a defect directly blocks correctness,
+security, provenance, required authority, or the MVP effect itself.
+
+Every open PR, issue, branch, conflict, failed gate, and deadlock MUST therefore
+be classified against the MVP critical path:
+
+- `MVP_BLOCKER`: prevents an MVP acceptance predicate; resolve first.
+- `MVP_ENABLER`: smallest change that unlocks one or more blockers; execute next.
+- `INDEPENDENT_LOW_HANGING_FRUIT`: merge/persist immediately when its exact
+  gates and authority permit it and doing so does not invalidate the active MVP
+  subject.
+- `POST_MVP`: preserve provenance and defer without consuming the critical
+  writer/review path.
+
+The scheduler must maximize verified reduction of the MVP blocker set, not the
+number of comments, workflow runs, branches, or intermediate artifacts.
+
+`MVP -> exact acceptance predicates -> first causal blocker -> smallest
+productive transition -> fresh validation -> effect readback`
+
+A technically mergeable candidate that is an MVP enabler may not remain idle
+merely because unrelated backlog exists. Conversely, bulk-merging unrelated
+work is forbidden when it increases integration risk or invalidates fresh MVP
+evidence. Agile flow means reducing verified lead time to a usable effect while
+retaining QIK-VRT's provenance and effect boundaries.
