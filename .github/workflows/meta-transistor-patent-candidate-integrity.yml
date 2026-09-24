@@ -1,0 +1,25 @@
+name: Patent candidate integrity successor
+on:
+  push:
+    branches: [patent/meta-transistor-application-candidate-v1]
+    paths:
+      - 'patent/meta-transistor/application-candidate-v1/**'
+      - '.github/workflows/meta-transistor-patent-candidate-integrity.yml'
+permissions:
+  contents: write
+jobs:
+  regenerate-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: patent/meta-transistor-application-candidate-v1
+      - run: python3 tools/qikvrt_integrity.py generate
+      - name: Persist deterministic metadata
+        run: |
+          if git diff --quiet -- REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git commit -m "chore(integrity): bind patent application candidate"
+          git push origin HEAD:patent/meta-transistor-application-candidate-v1
