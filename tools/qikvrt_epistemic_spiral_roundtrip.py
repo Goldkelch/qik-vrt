@@ -95,9 +95,11 @@ def main():
             returned=a.wait(lambda v:v.get("state")=="RECEIVED" and v.get("source")=="B" and v.get("kind")==3)
             roundtrip=bytes.fromhex(returned["payload_hex"])
             if roundtrip!=raw: raise RuntimeError("Transputer return bytes changed")
-            checkpoint=cli("verify",temp/"bus")["checkpoint"]
         finally:
             for p in processes: p.stop()
+        # Store verification requires writer exclusion.  Verify only after the
+        # bus and peer writers have released their locks.
+        checkpoint=cli("verify",temp/"bus")["checkpoint"]
 
     receipt={
       "schema":"qikvrt_epistemic_spiral_roundtrip_receipt_v1",
