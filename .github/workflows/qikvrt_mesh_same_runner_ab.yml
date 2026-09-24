@@ -1,0 +1,162 @@
+name: QIKVRT Mesh same-runner A-B benchmark
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - benchmark/mesh-scenario-campaign-v1
+    paths:
+      - .qikvrt/mesh-scaling-campaign-trigger-v1
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-mesh-same-runner-ab-v1
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BASELINE_HEAD: b075b0630401d8bf5a350620c50e4a08410b8813
+      OPTIMIZED_HEAD: 9055bd633a046577f972715d09a7e3d92ac98109
+    steps:
+      - name: Check out campaign harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind harness and exact A-B subjects
+        id: bind
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          harness_sha="$(sha256sum tools/qikvrt_mesh_fanout_benchmark.py | awk '{print $1}')"
+          git fetch --no-tags origin "$BASELINE_HEAD" "$OPTIMIZED_HEAD"
+          root="$RUNNER_TEMP/qikvrt-ab"
+          mkdir -p "$root"
+          git worktree add --detach "$root/baseline" "$BASELINE_HEAD"
+          git worktree add --detach "$root/optimized" "$OPTIMIZED_HEAD"
+          baseline_tree="$(git -C "$root/baseline" rev-parse HEAD^{tree})"
+          optimized_tree="$(git -C "$root/optimized" rev-parse HEAD^{tree})"
+          cp tools/qikvrt_mesh_fanout_benchmark.py "$root/baseline/tools/qikvrt_mesh_fanout_benchmark.py"
+          cp tools/qikvrt_mesh_fanout_benchmark.py "$root/optimized/tools/qikvrt_mesh_fanout_benchmark.py"
+          printf 'harness_sha=%s\nbaseline_tree=%s\noptimized_tree=%s\n'             "$harness_sha" "$baseline_tree" "$optimized_tree" >> "$GITHUB_OUTPUT"
+
+      - name: Execute baseline on this runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-ab"
+          mkdir -p "$root/results"
+          (
+            cd "$root/baseline"
+            PYTHONPATH="$root/baseline" python3 -B tools/qikvrt_mesh_fanout_benchmark.py               --source-head "$BASELINE_HEAD"               --source-tree '${{ steps.bind.outputs.baseline_tree }}'               --messages 20 --repeats 3               --json "$root/results/BASELINE.json"               --markdown "$root/results/BASELINE.md"
+          )
+
+      - name: Execute optimized subject on same runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-ab"
+          (
+            cd "$root/optimized"
+            PYTHONPATH="$root/optimized" python3 -B tools/qikvrt_mesh_fanout_benchmark.py               --source-head "$OPTIMIZED_HEAD"               --source-tree '${{ steps.bind.outputs.optimized_tree }}'               --messages 20 --repeats 3               --json "$root/results/OPTIMIZED.json"               --markdown "$root/results/OPTIMIZED.md"
+          )
+
+      - name: Compare A-B on identical runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-ab"
+          HARNESS_SHA='${{ steps.bind.outputs.harness_sha }}' python3 -B - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP'])/'qikvrt-ab'/'results'
+          a=json.loads((root/'BASELINE.json').read_text())
+          b=json.loads((root/'OPTIMIZED.json').read_text())
+          assert a['environment']['github_runner_name']==b['environment']['github_runner_name']
+          assert a['environment']['cpu_model']==b['environment']['cpu_model']
+          assert a['environment']['logical_cpu_count']==b['environment']['logical_cpu_count']
+          by_a={x['fanout']:x for x in a['summary']}
+          by_b={x['fanout']:x for x in b['summary']}
+          rows=[]
+          for fanout in sorted(by_a):
+              x,y=by_a[fanout],by_b[fanout]
+              base=x['median_verified_messages_per_second']
+              opt=y['median_verified_messages_per_second']
+              rows.append({
+                  'fanout':fanout,
+                  'baseline_lossless':x['all_trials_lossless'],
+                  'optimized_lossless':y['all_trials_lossless'],
+                  'baseline_median_verified_messages_per_second':base,
+                  'optimized_median_verified_messages_per_second':opt,
+                  'throughput_ratio_when_defined':(opt/base if base else None),
+                  'verified_throughput_restored_from_zero':base==0 and opt>0,
+                  'baseline_median_successful_messages':x['median_successful_messages'],
+                  'optimized_median_successful_messages':y['median_successful_messages'],
+              })
+          comparison={
+              'schema':'qikvrt_mesh_same_runner_ab_v1',
+              'baseline_head':a['source_head'],
+              'optimized_head':b['source_head'],
+              'benchmark_harness_sha256':os.environ['HARNESS_SHA'],
+              'same_runner':True,
+              'environment':a['environment'],
+              'rows':rows,
+              'baseline_all_trials_lossless':a['lossless_acceptance']['all_trials_lossless'],
+              'optimized_all_trials_lossless':b['lossless_acceptance']['all_trials_lossless'],
+              'baseline_first_non_lossless_fanout':a['lossless_acceptance']['first_non_lossless_fanout'],
+              'optimized_first_non_lossless_fanout':b['lossless_acceptance']['first_non_lossless_fanout'],
+              'causal_change':'NODE_WIDE_AWAIT_LOCK_TO_MESSAGE_ID_LOCK',
+              'evidence_boundary':{
+                  'software_loopback_ab':True,
+                  'physical_m68000_speedup_established':False,
+                  'fpga_asic_silicon_speedup_established':False,
+                  'patentability_established':False,
+                  'order_effect_eliminated':False,
+              },
+              'predecessor_evidence_transfer':False,
+              'repository_effect_ack_done':False,
+          }
+          (root/'COMPARISON.json').write_text(json.dumps(comparison,indent=2,sort_keys=True)+'\n')
+          md=['# QIK-VRT Mesh same-runner A/B','',
+              'Baseline: '+a['source_head'],'Optimized: '+b['source_head'],'',
+              '| Fan-out | Baseline lossless | Optimized lossless | Baseline verified msg/s | Optimized verified msg/s | Ratio |',
+              '| ---: | :---: | :---: | ---: | ---: | ---: |']
+          for row in rows:
+              ratio='n/a' if row['throughput_ratio_when_defined'] is None else f"{row['throughput_ratio_when_defined']:.3f}x"
+              md.append(f"| {row['fanout']} | {row['baseline_lossless']} | {row['optimized_lossless']} | {row['baseline_median_verified_messages_per_second']:.3f} | {row['optimized_median_verified_messages_per_second']:.3f} | {ratio} |")
+          md += ['', 'Same GitHub runner and CPU model for both measurements.',
+                 'Sequence was baseline then optimized; order effects are not claimed eliminated.',
+                 'No physical MC68000/FPGA/ASIC/silicon speedup or patentability conclusion is implied.','']
+          (root/'COMPARISON.md').write_text('\n'.join(md))
+          print(json.dumps(comparison,sort_keys=True))
+          PY
+
+      - name: Persist immutable A-B release
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-ab/results"
+          sha256sum "$root/"* > "$root/SHA256SUMS.txt"
+          tag="qikvrt-mesh-same-runner-ab-20260924-${GITHUB_RUN_ID}"
+          gh release create "$tag" "$root/"*             --repo "$GITHUB_REPOSITORY"             --target "$GITHUB_SHA"             --title "QIK-VRT Mesh same-runner A/B benchmark"             --notes "Same-runner software A/B: node-wide downstream-await lock versus message-id lock. Evidence is bounded to loopback TCP software execution; hardware speedup and patentability are not claimed."
+          echo "AB_RELEASE=$tag"
+          echo "PREDECESSOR_EVIDENCE_TRANSFER=false"
+          echo "REPOSITORY_EFFECT_ACK_DONE=false"
+
+      - name: Preserve A-B artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mesh-same-runner-ab-${{ github.run_id }}
+          path: ${{ runner.temp }}/qikvrt-ab/results/
+          if-no-files-found: error
+          retention-days: 30
