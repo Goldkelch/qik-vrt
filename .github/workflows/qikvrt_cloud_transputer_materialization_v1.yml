@@ -7,6 +7,9 @@ on:
       - 'src/cloud_transputer/**'
       - 'policy/QIKVRT_CLOUD_TRANSPUTER_V1.json'
       - 'docs/terminal/QIKVRT_CLOUD_TRANSPUTER_MATERIALIZATION_V1.md'
+      - 'docs/terminal/epistemic-spiral/**'
+      - 'tools/qikvrt_epistemic_spiral_roundtrip.py'
+      - 'tests/test_qikvrt_epistemic_spiral.py'
       - 'tests/test_qikvrt_cloud_transputer_materialization.py'
       - '.github/workflows/qikvrt_cloud_transputer_materialization_v1.yml'
   workflow_dispatch:
@@ -43,8 +46,8 @@ jobs:
           printf 'HEAD=%s\nTREE=%s\n' "$expected" "$(git rev-parse 'HEAD^{tree}')" | tee "$QIKVRT_EVIDENCE_DIR/subject.txt"
           git rev-parse HEAD > "$QIKVRT_EVIDENCE_DIR/head.txt"
           git rev-parse 'HEAD^{tree}' > "$QIKVRT_EVIDENCE_DIR/tree.txt"
-      - name: Validate recovered contract
-        run: python3 -B -m unittest -v tests.test_qikvrt_cloud_transputer_materialization
+      - name: Validate recovered contract and epistemic-spiral carrier
+        run: python3 -B -m unittest -v tests.test_qikvrt_cloud_transputer_materialization tests.test_qikvrt_epistemic_spiral
       - name: Validate Infrastructure as Code
         shell: bash
         run: |
@@ -80,6 +83,19 @@ jobs:
           docker image inspect --format '{{.Id}}' "$IMAGE" | tee "$QIKVRT_EVIDENCE_DIR/image-id.txt"
           docker image inspect --format '{{json .RepoTags}}' "$IMAGE" > "$QIKVRT_EVIDENCE_DIR/image-tags.json"
           docker image inspect --format '{{json .RepoDigests}}' "$IMAGE" > "$QIKVRT_EVIDENCE_DIR/image-repodigests.json"
+      - name: Execute spiral roundtrip inside exact Cloud Transputer image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint /bin/sh "$IMAGE" -c '
+            set -eu
+            python3 -B /opt/qikvrt/tools/qikvrt_epistemic_spiral_roundtrip.py \
+              --root /opt/qikvrt/docs/terminal/epistemic-spiral \
+              --receipt /tmp/epistemic-spiral-roundtrip.json
+            cat /tmp/epistemic-spiral-roundtrip.json
+          ' | tee "$QIKVRT_EVIDENCE_DIR/epistemic-spiral-image-roundtrip.txt"
+          grep -F '"serialize_deserialize_identity": true' "$QIKVRT_EVIDENCE_DIR/epistemic-spiral-image-roundtrip.txt"
+          grep -F '"effect_ack_done": false' "$QIKVRT_EVIDENCE_DIR/epistemic-spiral-image-roundtrip.txt"
       - name: Execute MC68000 contract in image
         shell: bash
         run: |
@@ -122,6 +138,11 @@ jobs:
           test "$ready" = 1
           curl -fsS http://127.0.0.1:8080/qik-vrt/mesh/v1/healthz | tee "$QIKVRT_EVIDENCE_DIR/healthz.txt"
           curl -fsS http://127.0.0.1:8080/qik-vrt/mesh/v1/ > "$QIKVRT_EVIDENCE_DIR/mesh-root.html"
+          curl -fsS http://127.0.0.1:8080/AI/spiral/ > "$QIKVRT_EVIDENCE_DIR/epistemic-spiral-runtime.html"
+          curl -fsS http://127.0.0.1:8080/AI/spiral/state.json > "$QIKVRT_EVIDENCE_DIR/epistemic-spiral-state.json"
+          curl -fsS http://127.0.0.1:8080/AI/spiral/locales.json > "$QIKVRT_EVIDENCE_DIR/epistemic-spiral-locales.json"
+          grep -F 'qikvrt_epistemic_spiral_state_v1' "$QIKVRT_EVIDENCE_DIR/epistemic-spiral-state.json"
+          grep -F 'qikvrt_epistemic_spiral_locales_v1' "$QIKVRT_EVIDENCE_DIR/epistemic-spiral-locales.json"
           python3 - <<'PY'
           import socket
           with socket.create_connection(('127.0.0.1',2222),timeout=5) as s:
