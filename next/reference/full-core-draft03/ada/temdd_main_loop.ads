@@ -9,12 +9,12 @@ package TEMDD_Main_Loop with SPARK_Mode is
       Test     : Boolean;
       Observe  : Boolean;
       Readback : Boolean;
-      Accept   : Boolean;
+      Accept_Stage : Boolean;
    end record;
 
    function Effect_Ack_Done (E : Stage_Evidence) return Boolean is
      (E.Compile and E.Bind and E.Resolve and E.Execute and
-      E.Test and E.Observe and E.Readback and E.Accept)
+      E.Test and E.Observe and E.Readback and E.Accept_Stage)
      with Global => null;
 
    function Advance_Allowed (E : Stage_Evidence; Successor_Bound : Boolean)
