@@ -16,11 +16,15 @@ import hashlib
 import json
 import pathlib
 import subprocess
+import sys
 from typing import Any
 
-from tools import qikvrt_zenodo_machine_proof as proof
-
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+ROOT_STR = str(ROOT)
+if ROOT_STR not in sys.path:
+    sys.path.insert(0, ROOT_STR)
+
+from tools import qikvrt_zenodo_machine_proof as proof
 RELEASE_REL = pathlib.PurePosixPath("release/temdd-technical-evolution-zenodo-v1")
 RELEASE = ROOT.joinpath(*RELEASE_REL.parts)
 PUBLICATION_ID = "qikvrt-temdd-technical-evolution-v1"
