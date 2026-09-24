@@ -8,6 +8,7 @@ on:
       - '.github/workflows/meta-transistor-patent-candidate-integrity.yml'
 permissions:
   contents: write
+  actions: write
 jobs:
   regenerate-integrity:
     runs-on: ubuntu-latest
@@ -47,3 +48,8 @@ jobs:
           name: meta-transistor-exact-successor-readiness
           path: submission-readiness-receipt.json
           if-no-files-found: error
+      - name: Dispatch QIKVRT CI on exact successor
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run qikvrt_ci.yml --repo "$GITHUB_REPOSITORY" --ref patent/meta-transistor-application-candidate-v1
