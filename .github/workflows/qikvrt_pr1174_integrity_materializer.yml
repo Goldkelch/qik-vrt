@@ -1,0 +1,86 @@
+name: QIKVRT PR1174 exact integrity materializer
+
+on:
+  push:
+    branches:
+      - materialize/pr1174-integrity-68f54865
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-pr1174-integrity-materializer
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      TARGET_REF: reference/minimal-linux-image-v1
+      EXPECTED_HEAD: 68f54865a7cc042fd00d5f62bf973228e0d14665
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_HEAD }}
+          fetch-depth: 2
+      - name: Bind exact target
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_head" = "$EXPECTED_HEAD"
+          printf 'BOUND_HEAD=%s\nBOUND_TREE=%s\n'             "$EXPECTED_HEAD" "$(git rev-parse 'HEAD^{tree}')"
+      - name: Regenerate exact integrity projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py generate
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+          printf '%s  %s\n'             '36b24cfaadc1edef07b3d4c86ee2e68b3488f23b764114667c64fbae07b2f11a'             REPOSITORY_FILE_MANIFEST.json | sha256sum -c -
+          printf '%s  %s\n'             '52dde072f86b8c16ab2ed8039378a27a02839d5f28f8c8233c9b091cf5103395'             REPOSITORY_FILE_MANIFEST.json.sha256 | sha256sum -c -
+          printf '%s  %s\n'             '259255f732ea3f210f398712e113ea4e81702aa5e70b421d53d5c08e9b5dabd3'             SHA256SUMS.txt | sha256sum -c -
+          rm -f .qikvrt-integrity.lock
+      - name: Persist exact successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          if [ "$remote_head" != "$EXPECTED_HEAD" ]; then
+            echo "BLOCK: target advanced before persistence" >&2
+            exit 2
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add             REPOSITORY_FILE_MANIFEST.json             REPOSITORY_FILE_MANIFEST.json.sha256             SHA256SUMS.txt
+          actual="$(
+            git diff --cached --name-only |
+              LC_ALL=C sort |
+              tr '\n' ' '
+          )"
+          expected='REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt '
+          test "$actual" = "$expected"
+          git commit -m "fix(reference): persist exact integrity projection"
+          candidate="$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_HEAD"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          if [ "$remote_head" != "$EXPECTED_HEAD" ]; then
+            echo "BLOCK: target advanced while successor was prepared" >&2
+            exit 2
+          fi
+          git push origin "HEAD:$TARGET_REF"
+          test "$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )" = "$candidate"
+          printf 'SUCCESSOR_HEAD=%s\nSUCCESSOR_TREE=%s\nPREDECESSOR_EVIDENCE_TRANSFER=false\n'             "$candidate" "$(git rev-parse 'HEAD^{tree}')"
