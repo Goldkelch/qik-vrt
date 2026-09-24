@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
 
+import base64
 import datetime as dt
 import unittest
 
@@ -81,6 +82,45 @@ class WeeklyPublicationStatusTest(unittest.TestCase):
         )
         self.assertFalse(tracker.is_allowed_public_url("http://zenodo.org/records/123"))
         self.assertFalse(tracker.is_allowed_public_url("https://example.com/records/123"))
+
+    def test_public_url_regex_extracts_supported_urls(self):
+        text = (
+            "https://zenodo.org/records/123 "
+            "https://doi.org/10.5281/zenodo.456"
+        )
+        self.assertEqual(
+            tracker.PUBLIC_URL_RE.findall(text),
+            [
+                "https://zenodo.org/records/123",
+                "https://doi.org/10.5281/zenodo.456",
+            ],
+        )
+
+    def test_publication_evidence_requires_exact_head_binding(self):
+        head = "a" * 40
+
+        class FakeGitHub:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def repo_paged(self, suffix):
+                self.assert_suffix = suffix
+                return [{"filename": "release/PUBLICATION_STATUS.json"}]
+
+            def repo_get(self, suffix):
+                encoded = base64.b64encode(self.payload.encode("utf-8")).decode("ascii")
+                return {"encoding": "base64", "content": encoded}
+
+        unbound = FakeGitHub('{"url":"https://zenodo.org/records/123"}')
+        self.assertEqual(tracker.evidence_urls(unbound, 1120, head), [])
+
+        bound = FakeGitHub(
+            '{"head":"' + head + '","url":"https://zenodo.org/records/123"}'
+        )
+        self.assertEqual(
+            tracker.evidence_urls(bound, 1120, head),
+            [("release/PUBLICATION_STATUS.json", "https://zenodo.org/records/123")],
+        )
 
     def test_unchanged_state_has_no_fresh_change(self):
         current = item()
