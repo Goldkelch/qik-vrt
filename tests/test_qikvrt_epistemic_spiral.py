@@ -62,5 +62,22 @@ class EpistemicSpiralTests(unittest.TestCase):
         self.assertIn("Epistemische Spirale",session)
         self.assertIn("terminal/epistemic-spiral",ai)
 
+    def test_homepage_and_firefox_surface_are_prominent(self):
+        home=(ROOT/"docs/index.html").read_text()
+        content=(ROOT/"browser/firefox/qikvrt-terminal/content.js").read_text()
+        manifest=json.loads((ROOT/"browser/firefox/qikvrt-terminal/manifest.json").read_text())
+        self.assertIn('terminal/epistemic-spiral/',home)
+        self.assertIn('<iframe src="terminal/epistemic-spiral/"',home)
+        self.assertIn('qv-spiral-link',content)
+        self.assertIn('https://goldkelch.github.io/qik-vrt/*',manifest['host_permissions'])
+
+    def test_cloud_and_linux_workflows_reobserve_materialized_bytes(self):
+        cloud=(ROOT/".github/workflows/qikvrt_cloud_transputer_materialization_v1.yml").read_text()
+        distro=(ROOT/".github/workflows/qikvrt_megast_distribution_v1.yml").read_text()
+        self.assertIn("Execute spiral roundtrip inside exact Cloud Transputer image",cloud)
+        self.assertIn("/AI/spiral/state.json",cloud)
+        self.assertIn("QIKVRT_SPIRAL_SQUASHFS_OK",distro)
+        self.assertIn("epistemic-spiral/roundtrip-receipt.json",distro)
+
 if __name__=="__main__":
     unittest.main()
