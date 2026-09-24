@@ -212,11 +212,29 @@ def benchmark(*, source_head: str, source_tree: str, messages: int, repeats: int
             "min_verified_messages_per_second": min(throughput),
             "max_verified_messages_per_second": max(throughput),
             "throughput_ratio_vs_fanout_1": median_throughput / baseline,
-            "median_message_latency_ms": statistics.median(
-                row["latency_ms"]["median"] for row in rows
+            "median_message_latency_ms": (
+                statistics.median(
+                    row["latency_ms"]["median"]
+                    for row in rows
+                    if row["latency_ms"] is not None
+                )
+                if any(row["latency_ms"] is not None for row in rows)
+                else None
             ),
-            "median_p95_latency_ms": statistics.median(
-                row["latency_ms"]["p95"] for row in rows
+            "median_p95_latency_ms": (
+                statistics.median(
+                    row["latency_ms"]["p95"]
+                    for row in rows
+                    if row["latency_ms"] is not None
+                )
+                if any(row["latency_ms"] is not None for row in rows)
+                else None
+            ),
+            "median_successful_messages": statistics.median(
+                row["successful_messages"] for row in rows
+            ),
+            "median_failed_messages": statistics.median(
+                row["failed_messages"] for row in rows
             ),
             "median_consolidation_ms": statistics.median(
                 row["consolidation"]["consolidation_ns"] / 1_000_000.0
