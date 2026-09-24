@@ -201,7 +201,12 @@ jobs:
         run: |
           set -euo pipefail
           log=out/qikvrt-reference-linux-serial.log
+          qemu_stderr=out/qikvrt-reference-linux-qemu-stderr.log
+          boot_diag=out/qikvrt-reference-linux-boot-diagnostic.txt
           : > "$log"
+          : > "$qemu_stderr"
+          xorriso -indev out/qikvrt-reference-linux-amd64.iso \
+            -report_el_torito plain >"$boot_diag" 2>&1 || true
           qemu-system-x86_64 \
             -accel tcg \
             -m 768 \
@@ -211,33 +216,64 @@ jobs:
             -display none \
             -serial "file:$log" \
             -no-reboot \
-            -no-shutdown &
+            -no-shutdown 2>"$qemu_stderr" &
           pid=$!
           trap 'kill "$pid" 2>/dev/null || true' EXIT
           ok=0
+          exited_early=0
           for _ in $(seq 1 180); do
             if grep -Fq "QIKVRT_REFERENCE_LINUX_BOOT_OK source_sha=${QIKVRT_EXACT_SHA}" "$log"; then
               ok=1
               break
             fi
             if ! kill -0 "$pid" 2>/dev/null; then
+              exited_early=1
               break
             fi
             sleep 1
           done
+          alive_at_deadline=0
+          if [ "$ok" -eq 0 ] && [ "$exited_early" -eq 0 ] && kill -0 "$pid" 2>/dev/null; then
+            alive_at_deadline=1
+          fi
           kill "$pid" 2>/dev/null || true
-          wait "$pid" 2>/dev/null || true
+          set +e
+          wait "$pid"
+          qemu_wait_status=$?
+          set -e
           cat "$log"
-          test "$ok" -eq 1
+          cat "$qemu_stderr" >&2
+          BOOT_OK="$ok" \
+          QEMU_EXITED_EARLY="$exited_early" \
+          QEMU_ALIVE_AT_DEADLINE="$alive_at_deadline" \
+          QEMU_WAIT_STATUS="$qemu_wait_status" \
           python3 -B - <<'PY'
-          import json,os,pathlib
+          import hashlib,json,os,pathlib
           path=pathlib.Path('out/qikvrt-reference-linux-rebuild-receipt.json')
+          serial=pathlib.Path('out/qikvrt-reference-linux-serial.log')
+          qemu_stderr=pathlib.Path('out/qikvrt-reference-linux-qemu-stderr.log')
           value=json.loads(path.read_text())
-          value['boot_witness_observed']=True
-          value['boot_witness']='QIKVRT_REFERENCE_LINUX_BOOT_OK source_sha='+os.environ['QIKVRT_EXACT_SHA']
+          observed=os.environ['BOOT_OK']=='1'
+          value['boot_witness_observed']=observed
+          if observed:
+              value['boot_witness']='QIKVRT_REFERENCE_LINUX_BOOT_OK source_sha='+os.environ['QIKVRT_EXACT_SHA']
+          else:
+              value.pop('boot_witness',None)
+          value['boot_diagnostic']={
+              'expected_witness':'QIKVRT_REFERENCE_LINUX_BOOT_OK source_sha='+os.environ['QIKVRT_EXACT_SHA'],
+              'qemu_exited_early':os.environ['QEMU_EXITED_EARLY']=='1',
+              'qemu_alive_at_deadline':os.environ['QEMU_ALIVE_AT_DEADLINE']=='1',
+              'qemu_wait_status':int(os.environ['QEMU_WAIT_STATUS']),
+              'serial_bytes':serial.stat().st_size,
+              'serial_sha256':hashlib.sha256(serial.read_bytes()).hexdigest(),
+              'qemu_stderr_bytes':qemu_stderr.stat().st_size,
+              'qemu_stderr_sha256':hashlib.sha256(qemu_stderr.read_bytes()).hexdigest(),
+          }
           path.write_text(json.dumps(value,indent=2,sort_keys=True)+'\n')
           PY
+          test "$ok" -eq 1
       - name: Preserve exact candidate and evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: qikvrt-reference-linux-${{ github.event.pull_request.head.sha || github.sha }}
@@ -247,6 +283,8 @@ jobs:
             out/qikvrt-reference-linux-build-receipt.json
             out/qikvrt-reference-linux-rebuild-receipt.json
             out/qikvrt-reference-linux-serial.log
+            out/qikvrt-reference-linux-qemu-stderr.log
+            out/qikvrt-reference-linux-boot-diagnostic.txt
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
