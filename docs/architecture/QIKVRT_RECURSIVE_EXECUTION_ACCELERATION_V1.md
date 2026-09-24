@@ -92,3 +92,44 @@ LOCAL_EFFECT_ACK != REPOSITORY_EFFECT_ACK_DONE
 PUBLICATION_EFFECT_ACK_DONE != REPOSITORY_EFFECT_ACK_DONE
 OPEN_PRODUCTIVE_WORK -> REPOSITORY_EFFECT_ACK_DONE = false
 ```
+
+
+## Canonical stage semantics
+
+```text
+COMPILE   = Modell -> ausfuehrbarer Plan
+BIND      = Subject / Artefakte / Identitaet fest binden
+RESOLVE   = Laufzeit-Capabilities und Authority aufloesen
+EXECUTE   = beabsichtigte Wirkung ausfuehren
+TEST      = Assertions und Failure Paths pruefen
+OBSERVE   = tatsaechlichen Folgezustand erfassen
+READBACK  = Wirkung frisch und unabhaengig zuruecklesen
+ACCEPT    = Akzeptanzkriterien auf gebundene Evidenz anwenden
+DONE      = EFFECT_ACK_DONE
+```
+
+The terminal predicate is conjunctive:
+
+```text
+DONE
+iff
+COMPILE
+and BIND
+and RESOLVE
+and EXECUTE
+and TEST
+and OBSERVE
+and READBACK
+and ACCEPT
+```
+
+Therefore:
+
+```text
+EXECUTE != DONE
+TEST    != DONE
+OBSERVE != DONE
+```
+
+`EFFECT_ACK_DONE` is not the success code of one stage. It is the
+evidence-bound haltpoint of the complete declared execution scope.
