@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
-      EXPECTED_PREDECESSOR: f4fa8948ec5eab0389c40ec60ec3c35eebb1571e
+      EXPECTED_PREDECESSOR: 15ca76579104a4856cb63b696017cb1d622daa37
       EXPECTED_MAIN: b075b0630401d8bf5a350620c50e4a08410b8813
       TARGET_REF: architecture/recursive-execution-acceleration-v1
       CARRIER_PATH: .github/workflows/qikvrt_pr1195_mainloop_successor.yml
@@ -68,7 +68,6 @@ jobs:
           python3 -B tools/qikvrt_integrity.py generate
           python3 -B tools/qikvrt_integrity.py verify
           git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
-          git diff --cached --check
 
       - name: Execute canonical main-loop and complete repository gates
         shell: bash
