@@ -24,7 +24,7 @@ jobs:
     if: >-
       github.ref == 'refs/heads/main' &&
       (github.event.workflow_run.conclusion == 'success' ||
-       (github.event.workflow_run.name == 'QIKVRT requested review executor' &&
+       (github.event.workflow_run.path == '.github/workflows/qikvrt_requested_review_executor.yml' &&
         github.event.workflow_run.conclusion == 'failure'))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -56,14 +56,12 @@ jobs:
           test "$checkout" = "$live_main"
 
           run="$(gh api "repos/${REPOSITORY}/actions/runs/${UPSTREAM_RUN_ID}")"
-          upstream_name="$(jq -r .name <<<"$run")"
           upstream_path="$(jq -r .path <<<"$run")"
           upstream_conclusion="$(jq -r .conclusion <<<"$run")"
           test "$(jq -r .repository.full_name <<<"$run")" = "$REPOSITORY"
 
-          case "$upstream_name" in
-            "QIKVRT required code-owner review")
-              test "$upstream_path" = ".github/workflows/qikvrt_required_review_gate.yml"
+          case "$upstream_path" in
+            ".github/workflows/qikvrt_required_review_gate.yml")
               test "$upstream_conclusion" = success
               test "$(jq -r .head_branch <<<"$run")" = main
               test "$(jq -r .head_sha <<<"$run")" = "$live_main"
@@ -72,8 +70,7 @@ jobs:
               selection_schema=qikvrt_required_code_owner_review_selection_v1
               selection_kind=required-review
               ;;
-            "QIKVRT requested review executor")
-              test "$upstream_path" = ".github/workflows/qikvrt_requested_review_executor.yml"
+            ".github/workflows/qikvrt_requested_review_executor.yml")
               case "$upstream_conclusion" in success|failure) ;; *) exit 1 ;; esac
               expected="qikvrt-mesh-review-selection-${UPSTREAM_RUN_ID}-CANDIDATE"
               selection_name=qikvrt-review-selection.json
