@@ -30,9 +30,18 @@ class RepositoryNativeWatchWorkflowTests(unittest.TestCase):
 
     def test_exact_subject_binding_is_fail_closed(self) -> None:
         body = self.body
-        self.assertIn('[ "$run_pr_count" -ne 1 ]', body)
-        self.assertIn('[ "$run_pr_head" != "$baseline" ]', body)
-        self.assertIn('[ "$run_head" != "$baseline" ]', body)
+        self.assertIn('[ "$run_pr_count" -eq 1 ]', body)
+        self.assertIn('[ "$run_pr_head" = "$baseline" ]', body)
+        self.assertIn('[ "$run_head" = "$baseline" ]', body)
+        self.assertIn('[ "$run_pr_count" -eq 0 ]', body)
+        self.assertIn('[ "$run_event" = pull_request ]', body)
+        self.assertIn('commits/${baseline}/pulls?per_page=100', body)
+        self.assertIn('[ "$associated_total" -ne 1 ]', body)
+        self.assertIn('[ "$associated_match" -ne 1 ]', body)
+        self.assertIn('[ "$run_head_branch" != "$pr_head_branch" ]', body)
+        self.assertIn('[ "$run_head_repo" != "$pr_head_repo" ]', body)
+        self.assertIn("RUN_PULL_REQUEST_ASSOCIATION", body)
+        self.assertIn("UNIQUE_COMMIT_PR_ASSOCIATION_FALLBACK", body)
         self.assertIn("BASELINE_PREDECESSOR_ONLY", body)
         self.assertIn("EXACT_CURRENT_HEAD", body)
 
