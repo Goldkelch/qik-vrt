@@ -873,7 +873,7 @@ jobs:
           PY
 
       - name: Select exactly one durable recursive review work unit
-        if: steps.active.outputs.active == 'true' && steps.ledger.outputs.persisted == 'true'
+        if: steps.active.outputs.active == 'true' && steps.ledger.outputs.persisted == 'true' && steps.ledger.outputs.d0 == '2'
         id: queue
         env:
           SUBJECT_PR_NUMBER: ${{ steps.select.outputs.pr }}
