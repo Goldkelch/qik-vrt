@@ -1,0 +1,84 @@
+{
+  "schema": "qikvrt_mesh_scaling_campaign_v1",
+  "version": "1.0.0",
+  "owner": "Ingolf Lohmann",
+  "status": "NORMATIVE_CANDIDATE",
+  "purpose": "Measure fan-out, verified completion, lossless consolidation and recovery behavior across multiple observable QIK-VRT Mesh states without transferring predecessor evidence.",
+  "repositories": {
+    "authority": "Goldkelch/qik-vrt",
+    "mirror": "ingolf-lohmann/qik-vrt"
+  },
+  "human_dod_idle": {
+    "formula": "AUTHORITY_ALL_PRODUCTIVE_BRANCHES_MERGED and AUTHORITY_OPEN_PRS=0 and AUTHORITY_OPEN_ISSUES=0 and MIRROR_ALL_PRODUCTIVE_BRANCHES_MERGED and MIRROR_OPEN_PRS=0 and MIRROR_OPEN_ISSUES=0",
+    "requires_main_tree_equality": false,
+    "reason_tree_equality_not_added": "Role-local Authority/Mirror trees are observed independently unless an explicit equality effect is separately required.",
+    "final_idle_benchmark_forbidden_before_predicate": true
+  },
+  "scenario_matrix": [
+    {
+      "id": "CURRENT_BACKLOG",
+      "description": "Measure while repository backlog exists; classify explicitly as busy/non-idle.",
+      "benchmark": true
+    },
+    {
+      "id": "STEADY_CONCURRENT",
+      "description": "Healthy four-node/two-pair loopback TCP Mesh with mixed opposing routes and fan-out 1,2,4,8,16.",
+      "benchmark": true
+    },
+    {
+      "id": "RESTART_RECOVERY",
+      "description": "Restart one bound node between trials, rebind its endpoint, then measure verified fan-out after recovery.",
+      "benchmark": true
+    },
+    {
+      "id": "PARTITION_RECOVERY",
+      "description": "Observe fail-closed route behavior during a bounded node partition, restore the node, then measure verified fan-out after recovery.",
+      "benchmark": true
+    },
+    {
+      "id": "FINAL_IDLE",
+      "description": "Run only after HUMAN_DOD_IDLE is freshly established for Authority and Mirror.",
+      "benchmark": true,
+      "release_only_after_fresh_gate": true
+    }
+  ],
+  "required_metrics": [
+    "verified_messages_per_second",
+    "successful_messages",
+    "failed_messages",
+    "median_message_latency_ms",
+    "p95_message_latency_ms",
+    "lossless_consolidation",
+    "missing_results",
+    "duplicate_results",
+    "hash_mismatch_results",
+    "consolidation_time",
+    "fanout",
+    "repository_state"
+  ],
+  "measurement_rules": {
+    "same_runner_ab_required_for_direct_performance_delta": true,
+    "different_runner_results_may_compare_correctness_but_not_attribute_numeric_speedup": true,
+    "transport_ack_is_effect_ack": false,
+    "predecessor_evidence_transfer": false,
+    "every_successful_message_requires_full_route_reobservation": true,
+    "every_successful_message_requires_bounded_effect_ack": true,
+    "loss_is_a_measurement_not_a_hidden_retry": true
+  },
+  "patent_evidence_boundary": {
+    "software_scaling_measurements_may_support_engineering_description": true,
+    "physical_m68000_speedup_established": false,
+    "fpga_speedup_established": false,
+    "asic_or_silicon_speedup_established": false,
+    "patentability_established": false,
+    "prior_art_clearance_established": false,
+    "hardware_projection_requires_separate_rtl_fpga_or_silicon_evidence": true
+  },
+  "final_idle_persistence": {
+    "mechanism": "immutable GitHub release/tag bound to exact Authority main plus Mirror main identity in receipt",
+    "creates_pull_request": false,
+    "creates_issue": false,
+    "reason": "Do not invalidate the zero-PR/zero-Issue idle observation merely by persisting its measurement."
+  },
+  "repository_effect_ack_done": false
+}

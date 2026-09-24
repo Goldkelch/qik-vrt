@@ -1,0 +1,154 @@
+name: QIKVRT Mesh multi-state scenario benchmark
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - benchmark/mesh-scenario-campaign-v1
+    paths:
+      - .qikvrt/mesh-scaling-campaign-trigger-v1
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-mesh-multi-state-scenarios-v1
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      AUTHORITY_REPO: Goldkelch/qik-vrt
+      MIRROR_REPO: ingolf-lohmann/qik-vrt
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind exact campaign subject and live repository state
+        id: bind
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-scenarios"
+          mkdir -p "$root"
+          head="$(git rev-parse --verify HEAD^{commit})"
+          tree="$(git rev-parse --verify HEAD^{tree})"
+          test "$head" = "$GITHUB_SHA"
+
+          auth_prs="$(gh api -X GET search/issues -f q="repo:$AUTHORITY_REPO is:open is:pr" --jq '.total_count')"
+          auth_issues="$(gh api -X GET search/issues -f q="repo:$AUTHORITY_REPO is:open is:issue" --jq '.total_count')"
+          mirror_prs="$(gh api -X GET search/issues -f q="repo:$MIRROR_REPO is:open is:pr" --jq '.total_count')"
+          mirror_issues="$(gh api -X GET search/issues -f q="repo:$MIRROR_REPO is:open is:issue" --jq '.total_count')"
+          auth_main="$(gh api "repos/$AUTHORITY_REPO/branches/main" --jq '.commit.sha')"
+          mirror_main="$(gh api "repos/$MIRROR_REPO/branches/main" --jq '.commit.sha')"
+
+          python3 - "$root/repository-state.json"             "$auth_prs" "$auth_issues" "$mirror_prs" "$mirror_issues"             "$auth_main" "$mirror_main" "$head" "$tree" <<'PY'
+          import json,sys
+          out,ap,ai,mp,mi,ah,mh,head,tree=sys.argv[1:]
+          state={
+            "schema":"qikvrt_mesh_benchmark_repository_state_v1",
+            "campaign_head":head,
+            "campaign_tree":tree,
+            "authority":{"repository":"Goldkelch/qik-vrt","main_head":ah,"open_pull_requests":int(ap),"open_issues":int(ai)},
+            "mirror":{"repository":"ingolf-lohmann/qik-vrt","main_head":mh,"open_pull_requests":int(mp),"open_issues":int(mi)},
+            "human_dod_idle":False,
+            "classification":"CURRENT_BACKLOG" if any(map(int,(ap,ai,mp,mi))) else "ZERO_VISIBLE_PR_ISSUE_REQUIRES_BRANCH_CENSUS",
+          }
+          open(out,'w',encoding='utf-8').write(json.dumps(state,indent=2,sort_keys=True)+'\n')
+          PY
+          printf 'head=%s\ntree=%s\n' "$head" "$tree" >> "$GITHUB_OUTPUT"
+
+      - name: Verify campaign and idle-gate contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1             python3 -B -m unittest -v               tests.test_qikvrt_mesh_idle_gate               tests.test_qikvrt_real_mesh
+
+      - name: Execute steady concurrent scenario
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-scenarios"
+          python3 -B tools/qikvrt_mesh_scenario_benchmark.py             --scenario STEADY_CONCURRENT             --source-head '${{ steps.bind.outputs.head }}'             --source-tree '${{ steps.bind.outputs.tree }}'             --messages 20 --repeats 3             --repository-state "$root/repository-state.json"             --output "$root/STEADY_CONCURRENT.json"
+
+      - name: Execute restart-recovery scenario
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-scenarios"
+          python3 -B tools/qikvrt_mesh_scenario_benchmark.py             --scenario RESTART_RECOVERY             --source-head '${{ steps.bind.outputs.head }}'             --source-tree '${{ steps.bind.outputs.tree }}'             --messages 20 --repeats 3             --repository-state "$root/repository-state.json"             --output "$root/RESTART_RECOVERY.json"
+
+      - name: Execute partition-recovery scenario
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-scenarios"
+          python3 -B tools/qikvrt_mesh_scenario_benchmark.py             --scenario PARTITION_RECOVERY             --source-head '${{ steps.bind.outputs.head }}'             --source-tree '${{ steps.bind.outputs.tree }}'             --messages 20 --repeats 3             --repository-state "$root/repository-state.json"             --output "$root/PARTITION_RECOVERY.json"
+
+      - name: Validate scenario evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-scenarios"
+          python3 -B - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP'])/'qikvrt-scenarios'
+          rows={}
+          for name in ('STEADY_CONCURRENT','RESTART_RECOVERY','PARTITION_RECOVERY'):
+              value=json.loads((root/(name+'.json')).read_text())
+              rows[name]=value
+              assert value['acceptance']['all_trials_lossless'] is True, name
+          assert rows['PARTITION_RECOVERY']['acceptance']['partition_fail_closed'] is True
+          summary={
+              'schema':'qikvrt_mesh_multi_state_summary_v1',
+              'source_head':rows['STEADY_CONCURRENT']['source_head'],
+              'source_tree':rows['STEADY_CONCURRENT']['source_tree'],
+              'repository_state':rows['STEADY_CONCURRENT']['repository_state'],
+              'scenarios':{
+                  name:{
+                      'all_trials_lossless':value['acceptance']['all_trials_lossless'],
+                      'partition_fail_closed':value['acceptance']['partition_fail_closed'],
+                      'summary':value['summary'],
+                  }
+                  for name,value in rows.items()
+              },
+              'predecessor_evidence_transfer':False,
+              'repository_effect_ack_done':False,
+              'evidence_boundary':{
+                  'software_loopback_only':True,
+                  'physical_m68000_speedup_established':False,
+                  'fpga_asic_silicon_speedup_established':False,
+                  'patentability_established':False,
+              },
+          }
+          (root/'SUMMARY.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(summary,sort_keys=True))
+          PY
+
+      - name: Persist immutable scenario release
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-scenarios"
+          sha256sum "$root/"*.json > "$root/SHA256SUMS.txt"
+          tag="qikvrt-mesh-scenarios-20260924-${GITHUB_RUN_ID}"
+          gh release create "$tag" "$root/"*.json "$root/SHA256SUMS.txt"             --repo "$GITHUB_REPOSITORY"             --target "$GITHUB_SHA"             --title "QIK-VRT Mesh multi-state scaling benchmark"             --notes "Steady concurrent, restart-recovery, and partition-recovery scenarios. All results are software loopback-TCP evidence; hardware speedup and patentability are not claimed."
+          echo "SCENARIO_RELEASE=$tag"
+          echo "PREDECESSOR_EVIDENCE_TRANSFER=false"
+          echo "REPOSITORY_EFFECT_ACK_DONE=false"
+
+      - name: Preserve scenario artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mesh-scenarios-${{ github.run_id }}
+          path: ${{ runner.temp }}/qikvrt-scenarios/
+          if-no-files-found: error
+          retention-days: 30
