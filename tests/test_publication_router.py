@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1] / "docs/publications/2026-08-04-pre-spacetime-ontology"
+NASH_ROOT = Path(__file__).resolve().parents[1] / "docs/publications/2026-09-23-nash-kognition"
 ROUTER = Path(__file__).resolve().parents[1] / "tools/qikvrt_publication_router.py"
 
 class PublicationRouterTests(unittest.TestCase):
@@ -20,6 +21,19 @@ class PublicationRouterTests(unittest.TestCase):
         self.assertEqual(data["repository"], "CANDIDATE")
         self.assertEqual(data["zenodo"], "STAGED_REQUIRES_EXPLICIT_REQUEST")
         self.assertEqual(data["ietf"], "NO_SUBMISSION_SCOPE_NOTE_ONLY")
+        self.assertIs(data["external_effect_performed"], False)
+
+    def test_nash_candidate_has_inert_hash_bound_authorization_carrier(self) -> None:
+        cp = subprocess.run(
+            [sys.executable, "-B", str(ROUTER), str(NASH_ROOT), "--json"],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        data = json.loads(cp.stdout)
+        self.assertEqual(data["repository"], "CANDIDATE")
+        self.assertEqual(data["zenodo"], "STAGED_REQUIRES_EXPLICIT_REQUEST")
+        self.assertEqual(data["authorization"], "NOT_AUTHORIZED")
         self.assertIs(data["external_effect_performed"], False)
 
     def test_ietf_disposition_is_non_mutating(self) -> None:
