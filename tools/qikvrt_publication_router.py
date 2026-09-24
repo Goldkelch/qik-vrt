@@ -31,11 +31,12 @@ def main() -> int:
     if candidate_path.is_file():
         candidate_raw = candidate_path.read_bytes()
         candidate = json.loads(candidate_raw.decode("utf-8"))
-        candidate_keys = {
+        candidate_required = {
             "schema","bundle_id","title","creators","language","license",
             "keywords","status","publication_preconditions","zenodo_mutation_performed"
         }
-        if set(candidate) != candidate_keys:
+        candidate_optional = {"contributors"}
+        if not candidate_required.issubset(candidate) or set(candidate) - candidate_required - candidate_optional:
             raise SystemExit("BLOCK: Zenodo candidate shape mismatch")
         if candidate["schema"] != "qikvrt_zenodo_candidate_v1":
             raise SystemExit("BLOCK: unsupported Zenodo candidate schema")
