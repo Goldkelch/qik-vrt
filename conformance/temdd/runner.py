@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -40,7 +41,7 @@ IMPLEMENTATION_FILES = (
 PASS_FIELDS = (
     "language", "ir", "event_semantics", "ledger", "ide", "evidence_binding",
     "causality", "effect_ack", "execution", "formal_invariants", "tests",
-    "negative_vectors",
+    "negative_vectors", "decision_determinism", "interoperability_by_executable_proof",
 )
 
 def sha256_bytes(data: bytes) -> str:
@@ -116,6 +117,93 @@ def effect_ack(v: dict) -> bool:
         v.get("expected_matches_observed") is True,
     ))
 
+def canonical_json(value: object) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+def file_digest(relative: str) -> str:
+    return "sha256:" + sha256_bytes((ROOT / relative).read_bytes())
+
+def invoke_decision_evaluator(command: list[str], bound_input: object) -> str:
+    payload = canonical_json(bound_input) + "\n"
+    p = subprocess.run(
+        command,
+        cwd=ROOT,
+        input=payload,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    require(p.returncode == 0, "DECISION_EVALUATOR_PROCESS_FAILED:" + (p.stderr or "").strip())
+    return p.stdout.strip()
+
+def check_machine_verifiable_standard(vectors: dict) -> list[dict]:
+    profile = vectors.get("machine_verifiable_standard", {})
+    require(profile.get("model_version") == "1", "MODEL_VERSION_MISMATCH")
+    require(profile.get("policy_version") == "1", "POLICY_VERSION_MISMATCH")
+    require(profile.get("evaluator_version") == "1", "EVALUATOR_VERSION_MISMATCH")
+    require(profile.get("canonicalization") == "JSON_SORTED_KEYS_UTF8_COMPACT", "CANONICALIZATION_MISMATCH")
+    required_classes = {
+        "VALID", "INVALID", "INSUFFICIENT_EVIDENCE", "SUBJECT_MISMATCH",
+        "POLICY_VIOLATION", "MALFORMED_INPUT", "VERSION_MISMATCH",
+        "REPLAY", "DUPLICATE", "BOUNDARY_CASE",
+    }
+    require(set(profile.get("vector_classes", [])) == required_classes, "VECTOR_CLASS_SET_MISMATCH")
+    independence = profile.get("implementation_independence", {})
+    require(independence.get("required") is True, "IMPLEMENTATION_INDEPENDENCE_NOT_REQUIRED")
+    require(independence.get("minimum_implementations") == 2, "IMPLEMENTATION_COUNT_REQUIREMENT_MISMATCH")
+    require(independence.get("shared_evaluator_code_forbidden") is True, "SHARED_EVALUATOR_CODE_NOT_FORBIDDEN")
+    require(independence.get("process_boundary_required") is True, "PROCESS_BOUNDARY_NOT_REQUIRED")
+    require(independence.get("distinct_languages_required") is True, "DISTINCT_LANGUAGES_NOT_REQUIRED")
+    require(independence.get("authorship_or_organization_independence_claimed") is False, "UNSUPPORTED_AUTHORSHIP_INDEPENDENCE_CLAIM")
+
+    reference = "conformance/temdd/evaluator_reference.py"
+    independent = "conformance/temdd/evaluator_independent.c"
+    implementations = [
+        {"id": "python-reference-v1", "language": "python", "digest": file_digest(reference)},
+        {"id": "c90-independent-v1", "language": "c90", "digest": file_digest(independent)},
+    ]
+
+    with tempfile.TemporaryDirectory(prefix="temdd-decision-") as temp:
+        binary = str(Path(temp) / "temdd-independent")
+        build = subprocess.run(
+            ["cc", "-std=c90", "-pedantic", "-Wall", "-Wextra", "-Werror",
+             str(ROOT / independent), "-o", binary],
+            cwd=ROOT, text=True, capture_output=True, check=False,
+        )
+        require(build.returncode == 0, "INDEPENDENT_EVALUATOR_BUILD_FAILED:" + (build.stderr or build.stdout)[-2000:])
+        commands = (
+            [sys.executable, str(ROOT / reference)],
+            [binary],
+        )
+        seen_ids = set()
+        seen_classes = set()
+        for vector in profile.get("vectors", []):
+            vector_id = vector.get("id")
+            vector_class = vector.get("class")
+            require(isinstance(vector_id, str) and vector_id and vector_id not in seen_ids, "VECTOR_ID_INVALID")
+            require(vector_class in required_classes, "VECTOR_CLASS_INVALID:" + str(vector_id))
+            seen_ids.add(vector_id)
+            seen_classes.add(vector_class)
+            expected = canonical_json(vector.get("expected_decision", {}))
+            outputs = [
+                invoke_decision_evaluator(command, vector.get("bound_input", {}))
+                for command in commands
+            ]
+            require(all(output == expected for output in outputs), "DECISION_VECTOR_MISMATCH:" + vector_id)
+            require(len(set(outputs)) == 1, "INDEPENDENT_IMPLEMENTATION_DECISION_MISMATCH:" + vector_id)
+            if "equivalent_bound_input" in vector:
+                require(
+                    canonical_json(vector["bound_input"]) == canonical_json(vector["equivalent_bound_input"]),
+                    "CANONICAL_INPUT_EQUIVALENCE_MISMATCH:" + vector_id,
+                )
+                equivalent_outputs = [
+                    invoke_decision_evaluator(command, vector["equivalent_bound_input"])
+                    for command in commands
+                ]
+                require(outputs == equivalent_outputs, "DETERMINISTIC_DECISION_MISMATCH:" + vector_id)
+        require(seen_classes == required_classes, "VECTOR_CLASS_COVERAGE_INCOMPLETE")
+    return implementations
+
 def check_t13_t16(vectors: dict) -> None:
     t13 = vectors["t13"]
     seq = t13["sequence_without_cause"]
@@ -179,6 +267,7 @@ def build_report(repository: str, adapter: str, backend_receipt: Path) -> dict:
     vectors = json.loads((ROOT / "conformance/temdd/vectors-v1.json").read_text(encoding="utf-8"))
     require(vectors.get("schema") == "temdd_conformance_vectors_v1", "VECTOR_SCHEMA_MISMATCH")
     check_t13_t16(vectors)
+    decision_implementations = check_machine_verifiable_standard(vectors)
     check_formal_core()
     check_repository_tests()
     execution_receipt_digest = check_backend_receipt(backend_receipt, subject)
@@ -207,6 +296,9 @@ def build_report(repository: str, adapter: str, backend_receipt: Path) -> dict:
         "formal_invariants": "PASS",
         "tests": "PASS",
         "negative_vectors": "PASS",
+        "decision_determinism": "PASS",
+        "decision_implementations": decision_implementations,
+        "interoperability_by_executable_proof": "PASS",
         "overall": "PASS",
     }
     require(all(report[k] == "PASS" for k in PASS_FIELDS), "T16_PARTIAL_PASS")
