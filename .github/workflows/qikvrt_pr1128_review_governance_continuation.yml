@@ -1,0 +1,42 @@
+name: QIKVRT PR1128 review governance continuation
+
+on:
+  push:
+    branches:
+      - repair/pr1128-main-integration-20260924
+    paths:
+      - .github/workflows/qikvrt_pr1128_review_governance_continuation.yml
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      PR_NUMBER: "1128"
+      EXPECTED_HEAD: "1284555610b50372be0fdba7e4450e357282dc0b"
+    steps:
+      - name: Reobserve exact PR head
+        shell: bash
+        run: |
+          set -euo pipefail
+          observed="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+          test "$observed" = "$EXPECTED_HEAD"
+          test "$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .state)" = open
+          test "$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .base.ref)" = main
+
+      - name: Dispatch exact required-review reobservation
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -n --arg pr "$PR_NUMBER" '{ref:"main",inputs:{pr:$pr}}' |
+            gh api --method POST \
+              "repos/${REPOSITORY}/actions/workflows/qikvrt_required_review_gate.yml/dispatches" \
+              --input -
+          printf 'PR=%s\nHEAD=%s\nPREDECESSOR_EVIDENCE_TRANSFER=false\nEFFECT_ACK_DONE=false\n' \
+            "$PR_NUMBER" "$EXPECTED_HEAD"
