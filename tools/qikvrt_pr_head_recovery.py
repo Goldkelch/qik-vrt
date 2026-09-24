@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
-"""Pure, fail-closed classification for stalled pull-request heads.
+"""Pure, fail-closed classification for stalled or causally incomplete PR heads.
 
-The classifier deliberately has no GitHub client and performs no effect.  It turns
-already collected run observations into the existing four-state D0 decision.  The
+The classifier deliberately has no GitHub client and performs no effect. It turns
+already collected run observations into the existing four-state D0 decision. The
 workflow remains responsible for exact-head reobservation and any bounded dispatch.
+
+Two independent liveness faults are distinguished: a deadlock/stall has required
+work present but unable to make progress; a missing continuation has a required
+successor edge absent altogether. Absence is observable state, never implicit
+terminal success.
 """
 from __future__ import annotations
 
@@ -35,6 +40,7 @@ class RecoveryDecision:
     active_workflows: int
     executed_failures: int
     zero_job_action_required: int
+    missing_required_continuations: tuple[str, ...] = ()
 
     def to_mapping(self) -> dict[str, object]:
         value: dict[str, object] = asdict(self)
@@ -121,16 +127,28 @@ def _latest_by_workflow(
     return tuple(latest[name] for name in sorted(latest))
 
 
+def _normalize_required_workflows(values: Iterable[str]) -> tuple[str, ...]:
+    normalized: set[str] = set()
+    for raw in values:
+        if not isinstance(raw, str) or not raw.strip():
+            raise ValueError("required_workflows entries must be non-empty strings")
+        normalized.add(raw.strip())
+    return tuple(sorted(normalized))
+
+
 def classify_observations(
     observations: Iterable[Mapping[str, object]],
     *,
     exact_head_status: str | None = None,
+    required_workflows: Iterable[str] = (),
 ) -> RecoveryDecision:
     """Classify one exact head without fabricating productive authority.
 
     Precedence is fail-closed: active work and executed failures HOLD; a trusted
-    exact-head status makes dispatch idempotent; only the characteristic latest
-    zero-job ``action_required`` state selects REOBSERVE.
+    exact-head status makes dispatch idempotent; zero-job ``action_required``
+    or an absent required continuation selects REOBSERVE. If trusted recovery
+    already succeeded but a required continuation is still absent, HOLD rather
+    than entering an unbounded retry loop.
     """
 
     normalized_status = "missing" if exact_head_status is None else exact_head_status
@@ -140,6 +158,11 @@ def classify_observations(
         )
 
     latest = _latest_by_workflow(observations)
+    required = _normalize_required_workflows(required_workflows)
+    observed_names = {item.name for item in latest}
+    missing_required_continuations = tuple(
+        name for name in required if name not in observed_names
+    )
     active_workflows = sum(item.status != "completed" for item in latest)
     executed_failures = sum(
         item.status == "completed"
@@ -162,6 +185,7 @@ def classify_observations(
             active_workflows=active_workflows,
             executed_failures=executed_failures,
             zero_job_action_required=zero_job_action_required,
+            missing_required_continuations=missing_required_continuations,
         )
 
     if active_workflows:
@@ -171,11 +195,19 @@ def classify_observations(
     if normalized_status in {"failure", "error"}:
         return decision(1, "HOLD", "TRUSTED_EXACT_HEAD_VERIFICATION_FAILED")
     if normalized_status == "success":
+        if missing_required_continuations:
+            return decision(
+                1,
+                "HOLD",
+                "TRUSTED_EXACT_HEAD_VERIFIED_BUT_CONTINUATION_MISSING",
+            )
         return decision(0, "NOOP", "TRUSTED_EXACT_HEAD_VERIFIED")
     if executed_failures:
         return decision(1, "HOLD", "EXECUTED_FAILURE_PRESENT")
     if zero_job_action_required:
         return decision(2, "REOBSERVE", "ZERO_JOB_ACTION_REQUIRED")
+    if missing_required_continuations:
+        return decision(2, "REOBSERVE", "MISSING_REQUIRED_CONTINUATION")
     return decision(0, "NOOP", "CONSISTENT_OR_ALREADY_TERMINAL")
 
 
@@ -213,6 +245,12 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=sorted(_ALLOWED_EXACT_HEAD_STATUSES),
         help="latest target-commit status for trusted exact-head verification",
     )
+    classify.add_argument(
+        "--required-workflow",
+        action="append",
+        default=[],
+        help="workflow name that must have a run on the exact head; repeatable",
+    )
     return parser
 
 
@@ -224,6 +262,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = classify_observations(
             _read_payload(args.input),
             exact_head_status=args.exact_head_status,
+            required_workflows=args.required_workflow,
         )
         _write_payload(args.output, result.to_mapping())
     except (OSError, ValueError, json.JSONDecodeError) as exc:

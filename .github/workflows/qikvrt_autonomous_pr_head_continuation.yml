@@ -52,6 +52,7 @@ jobs:
         run: |
           set -euo pipefail
           abi=state/autonomy/CAUSAL_D0_ABI_V1.json
+          liveness=state/autonomy/CAUSAL_CONTINUATION_LIVENESS_V1.json
           jq -e '
             .architecture_reference == "M68000" and
             .endianness == "big" and
@@ -62,6 +63,16 @@ jobs:
             .states.REQUEST_AUTHORITY.d0 == 3 and .states.REQUEST_AUTHORITY.bytes_hex == "70034E75" and
             .productive_effect_gate.expression == "D0 == 0 && EFFECT_ACK == DONE"
           ' "$abi" >/dev/null
+          jq -e '
+            .schema == "qikvrt_causal_continuation_liveness_v1" and
+            .failure_classes.DEADLOCK.first_response == "HOLD" and
+            .failure_classes.MISSING_REQUIRED_CONTINUATION.first_response == "REOBSERVE" and
+            .failure_classes.MISSING_REQUIRED_CONTINUATION.persistent_after_trusted_verification == "HOLD" and
+            (.required_pr_head_continuations | type == "array" and length > 0) and
+            all(.required_pr_head_continuations[];
+              (.workflow | type == "string") and
+              (.applies_to == "all_internal_pull_requests" or .applies_to == "base_main_only"))
+          ' "$liveness" >/dev/null
           python3 -B -m unittest -v \
             tests.test_qikvrt_pr_head_recovery \
             tests.test_qikvrt_autonomous_pr_head_continuation
@@ -74,6 +85,7 @@ jobs:
         run: |
           set -euo pipefail
           root=.qikvrt/autonomous-pr-head-continuation
+          continuation_policy=state/autonomy/CAUSAL_CONTINUATION_LIVENESS_V1.json
           mkdir -p "$root"
           : > "$root/decisions.jsonl"
           rate_limit_marker="$root/rate-limit-exhausted.json"
@@ -134,6 +146,8 @@ jobs:
           selected_ref=""
           selected_head=""
           selected_base=""
+          selected_base_ref=""
+          selected_reason=""
 
           # Bounded discovery: newest 30 open PRs only, one REOBSERVE edge per run.
           gh_read "repos/${GITHUB_REPOSITORY}/pulls?state=open&sort=updated&direction=desc&per_page=30" \
@@ -143,7 +157,268 @@ jobs:
             exit 0
           fi
 
-          while IFS=$'\t' read -r pr ref head base head_repo; do
+          while IFS=
+            test -n "$pr" || continue
+            if [ "$head_repo" != "$GITHUB_REPOSITORY" ]; then
+              continue
+            fi
+
+            # Exact live ref must still bind the PR head before any classification.
+            live_ref="$(git ls-remote --heads origin "refs/heads/$ref" | awk 'NR == 1 {print $1}')"
+            if [ "$live_ref" != "$head" ]; then
+              jq -nc \
+                --arg pr "$pr" \
+                --arg head "$head" \
+                '{pull_request:($pr|tonumber),head_sha:$head,d0:2,state:"REOBSERVE",reason:"STALE_HEAD",productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
+                >> "$root/decisions.jsonl"
+              continue
+            fi
+
+            gh_read "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${head}&per_page=100" \
+              > "$root/runs-${pr}.json"
+            if [ -f "$rate_limit_marker" ]; then
+              break
+            fi
+
+            : > "$root/observations-${pr}.jsonl"
+            # Read one JSON object per line. A tab-separated projection loses
+            # an empty `conclusion` because Bash treats tab as IFS whitespace,
+            # shifting `created_at` into the wrong field.
+            while IFS= read -r run; do
+              test -n "$run" || continue
+              run_id="$(jq -r '.id' <<<"$run")"
+              name="$(jq -r '.name' <<<"$run")"
+              status="$(jq -r '.status' <<<"$run")"
+              conclusion="$(jq -r '.conclusion' <<<"$run")"
+              created_at="$(jq -r '.created_at' <<<"$run")"
+              test -n "$run_id" || continue
+              jobs_total=0
+              case "$conclusion" in
+                action_required|cancelled|failure|startup_failure|timed_out)
+                  jobs_total="$(gh_read "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=1" --jq '.total_count')"
+                  if [ -f "$rate_limit_marker" ]; then
+                    break
+                  fi
+                  ;;
+                success)
+                  # A completed success is executed evidence; the classifier only
+                  # needs a positive witness, not the complete job inventory.
+                  jobs_total=1
+                  ;;
+              esac
+              jq -nc \
+                --argjson id "$run_id" \
+                --arg name "$name" \
+                --arg status "$status" \
+                --arg conclusion "$conclusion" \
+                --argjson jobs_total "$jobs_total" \
+                --arg created_at "$created_at" \
+                '{id:$id,name:$name,status:$status,conclusion:(if $conclusion == "" then null else $conclusion end),jobs_total:$jobs_total,created_at:$created_at}' \
+                >> "$root/observations-${pr}.jsonl"
+            done < <(
+              jq -c '.workflow_runs[] | select(.id != null) | {id,name,status,conclusion:(.conclusion // ""),created_at:(.created_at // "")}' \
+                "$root/runs-${pr}.json"
+            )
+            if [ -f "$rate_limit_marker" ]; then
+              break
+            fi
+
+            jq -s '.' "$root/observations-${pr}.jsonl" > "$root/observations-${pr}.json"
+
+            exact_head_status="$(
+              gh_read "repos/${GITHUB_REPOSITORY}/commits/${head}/status" \
+                --jq '[.statuses[] | select(.context == "QIKVRT autonomous exact-head verification")][0].state // "missing"'
+            )"
+            if [ -f "$rate_limit_marker" ]; then
+              break
+            fi
+
+            required_workflow_args=()
+            while IFS= read -r workflow_name; do
+              test -n "$workflow_name"
+              required_workflow_args+=(--required-workflow "$workflow_name")
+            done < <(
+              jq -r --arg base_ref "$base_ref" '
+                .required_pr_head_continuations[]
+                | select(
+                    .applies_to == "all_internal_pull_requests" or
+                    (.applies_to == "base_main_only" and $base_ref == "main")
+                  )
+                | .workflow
+              ' "$continuation_policy"
+            )
+
+            python3 -B tools/qikvrt_pr_head_recovery.py classify \
+              --input "$root/observations-${pr}.json" \
+              --output "$root/decision-${pr}.json" \
+              --exact-head-status "$exact_head_status" \
+              "${required_workflow_args[@]}"
+
+            jq -c \
+              --arg pr "$pr" \
+              --arg ref "$ref" \
+              --arg head "$head" \
+              --arg base "$base" \
+              '. + {pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base}' \
+              "$root/decision-${pr}.json" >> "$root/decisions.jsonl"
+
+            d0="$(jq -r '.d0' "$root/decision-${pr}.json")"
+            if [ "$d0" -eq 2 ]; then
+              selected_pr="$pr"
+              selected_ref="$ref"
+              selected_head="$head"
+              selected_base="$base"
+              selected_base_ref="$base_ref"
+              selected_reason="$(jq -r '.reason' "$root/decision-${pr}.json")"
+              break
+            fi
+          done < <(
+            jq -r '.[] | [.number,.head.ref,.head.sha,.base.sha,.base.ref,.head.repo.full_name] | @tsv' \
+              "$root/open-prs.json"
+          )
+
+          if [ -f "$rate_limit_marker" ]; then
+            emit_rate_limit_hold
+            exit 0
+          fi
+
+          if [ -z "$selected_pr" ]; then
+            echo "selected=false" >> "$GITHUB_OUTPUT"
+            if jq -e 'select(.d0 == 1)' "$root/decisions.jsonl" >/dev/null 2>&1; then
+              jq -n \
+                --arg event "$GITHUB_EVENT_NAME" \
+                '{d0:1,state:"HOLD",event:$event,productive_effect:false,effect_ack:"NOT_REQUIRED",reason:"NO_REOBSERVE_EDGE_WITH_ACTIVE_OR_ADVERSE_WORK"}' \
+                > "$root/decision-receipt.json"
+              echo "HOLD/D0=1: active or adverse exact-head work prevents dispatch"
+            else
+              jq -n \
+                --arg event "$GITHUB_EVENT_NAME" \
+                '{d0:0,state:"NOOP",event:$event,productive_effect:false,effect_ack:"NOT_REQUIRED",reason:"NO_REOBSERVE_EDGE"}' \
+                > "$root/decision-receipt.json"
+              echo "NOOP/D0=0: no stalled internal PR head requires reobservation"
+            fi
+            exit 0
+          fi
+
+          # Final exact reobservation immediately before exposing the REOBSERVE edge.
+          live_ref="$(git ls-remote --heads origin "refs/heads/$selected_ref" | awk 'NR == 1 {print $1}')"
+          test "$live_ref" = "$selected_head"
+          echo "selected=true" >> "$GITHUB_OUTPUT"
+          echo "pr=$selected_pr" >> "$GITHUB_OUTPUT"
+          echo "ref=$selected_ref" >> "$GITHUB_OUTPUT"
+          echo "head=$selected_head" >> "$GITHUB_OUTPUT"
+          echo "base=$selected_base" >> "$GITHUB_OUTPUT"
+          echo "base_ref=$selected_base_ref" >> "$GITHUB_OUTPUT"
+          echo "reason=$selected_reason" >> "$GITHUB_OUTPUT"
+          jq -n \
+            --arg event "$GITHUB_EVENT_NAME" \
+            --arg pr "$selected_pr" \
+            --arg ref "$selected_ref" \
+            --arg head "$selected_head" \
+            --arg reason "$selected_reason" \
+            '{d0:2,state:"REOBSERVE",event:$event,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,productive_effect:false,effect_ack:"NOT_REQUIRED",reason:$reason}' \
+            > "$root/decision-receipt.json"
+
+      - name: Dispatch exact-head REOBSERVE continuation
+        if: steps.select.outputs.selected == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.select.outputs.pr }}
+          HEAD_REF: ${{ steps.select.outputs.ref }}
+          HEAD_SHA: ${{ steps.select.outputs.head }}
+          BASE_SHA: ${{ steps.select.outputs.base }}
+          RECOVERY_REASON: ${{ steps.select.outputs.reason }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=.qikvrt/autonomous-pr-head-continuation
+          dispatch_status_published=false
+          publish_dispatch_error() {
+            rc=$?
+            trap - EXIT
+            if [ "$rc" -ne 0 ] && [ "$dispatch_status_published" = true ]; then
+              set +e
+              gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+                -f state=error \
+                -f context='QIKVRT autonomous exact-head verification' \
+                -f description='Exact-head recovery dispatch failed' \
+                -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+              set -e
+            fi
+            exit "$rc"
+          }
+          trap publish_dispatch_error EXIT
+
+          live_ref="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
+          test "$live_ref" = "$HEAD_SHA"
+
+          # Publish pending first. A concurrent invocation therefore HOLDs instead
+          # of dispatching a second verifier for the same exact head.
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state=pending \
+            -f context='QIKVRT autonomous exact-head verification' \
+            -f description='Trusted exact-head recovery dispatched' \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          dispatch_status_published=true
+
+          # D0=2 permits fresh observation/verifier execution only. It does not
+          # merge, publish, deploy, or assert EFFECT_ACK_DONE.
+          live_ref="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
+          test "$live_ref" = "$HEAD_SHA"
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg pr "$PR_NUMBER" \
+            --arg ref "$HEAD_REF" \
+            --arg head "$HEAD_SHA" \
+            --arg base "$BASE_SHA" \
+            --arg reason "$RECOVERY_REASON" \
+            '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base,d0:2,causal_state:"REOBSERVE",recovery_reason:$reason}}' \
+            | gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input -
+
+          : > "$root/dispatched-workflows.jsonl"
+          for workflow in \
+            qikvrt_batch04_integrity.yml \
+            qikvrt_ci.yml \
+            qikvrt_collective_review.yml \
+            qikvrt_global_completion.yml \
+            qikvrt_requested_review_contract.yml
+          do
+            live_ref="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
+            test "$live_ref" = "$HEAD_SHA"
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/dispatches" \
+              -f ref="$HEAD_REF"
+            jq -nc \
+              --arg workflow "$workflow" \
+              --arg ref "$HEAD_REF" \
+              --arg head "$HEAD_SHA" \
+              '{workflow:$workflow,ref:$ref,head:$head,d0:2,state:"REOBSERVE",productive_effect:false}' \
+              >> "$root/dispatched-workflows.jsonl"
+          done
+
+          # Requested review has no autonomous dispatch route. The review
+          # executor accepts only an exact native event or a human-supplied
+          # explicit dispatch subject; this global continuation classifier must
+          # not launder its selected PR into that interface.
+
+          jq -n \
+            --arg pr "$PR_NUMBER" \
+            --arg head "$HEAD_SHA" \
+            --arg ref "$HEAD_REF" \
+            --arg reason "$RECOVERY_REASON" \
+            '{pull_request:($pr|tonumber),head_sha:$head,head_ref:$ref,d0:2,state:"REOBSERVE",reason:$reason,disposition:"DISPATCHED_EXACT_HEAD_CONTINUATION",productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
+            > "$root/dispatch-receipt.json"
+          trap - EXIT
+
+      - name: Preserve causal continuation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-autonomous-pr-head-continuation-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: .qikvrt/autonomous-pr-head-continuation
+\t' read -r pr ref head base base_ref head_repo; do
             test -n "$pr" || continue
             if [ "$head_repo" != "$GITHUB_REPOSITORY" ]; then
               continue

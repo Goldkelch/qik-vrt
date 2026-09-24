@@ -18,6 +18,30 @@ The watchdog treats repository activity as a resource-allocation graph:
 
 The first deterministic response is admission control, not destructive recovery: keep one expected-head-bound writer, coalesce only superseded observer runs, preserve an exact-head receipt, and stop before another writer is introduced. The watchdog never cancels a productive writer, mutates a ref, merges a pull request, or performs a release, deployment, Zenodo, DOI, or IETF effect.
 
+
+## Two independent liveness failure classes
+
+The repository distinguishes two orthogonal progress failures.
+
+1. **Deadlock / blocked progress** — required work is present, but writer leases,
+   runner pressure, stale topology, or another blocking dependency prevents the
+   existing work from advancing. The reflexive watchdog detects this class and
+   responds fail-closed with \`HOLD\`.
+2. **Missing required continuation** — a new exact head exists, but one or more
+   mandatory successor workflow edges were never materialized. This is not an
+   empty pipeline and not successful quiescence. The PR-head continuation
+   classifier treats the absence itself as observable evidence and emits one
+   bounded \`REOBSERVE\` edge. If trusted exact-head recovery has already
+   succeeded and the required edge is still absent, the state becomes \`HOLD\`
+   rather than an unbounded retry loop.
+
+The machine-readable authority for this distinction is
+\`state/autonomy/CAUSAL_CONTINUATION_LIVENESS_V1.json\`. Required continuations
+are applicability-bound to the exact subject: workflows that are structurally
+inapplicable to a stacked pull request are never demanded as missing evidence.
+The detector is restricted to continuation workflows that the recovery path can
+itself re-dispatch, so detection cannot create an impossible repair obligation.
+
 ## Continuous exact-head Gatewatch
 
 Every scheduled or event-driven observation materializes an artifact-only

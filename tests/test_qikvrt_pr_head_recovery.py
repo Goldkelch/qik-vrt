@@ -204,6 +204,75 @@ class PrHeadRecoveryClassifierTests(unittest.TestCase):
         self.assertEqual(decision.d0, 0)
         self.assertEqual(decision.reason, "CONSISTENT_OR_ALREADY_TERMINAL")
 
+
+    def test_missing_required_continuation_reobserves(self) -> None:
+        decision = classify_observations(
+            [
+                observation(
+                    run_id=80,
+                    name="QIKVRT CI",
+                    conclusion="success",
+                    jobs_total=1,
+                    created_at="2026-09-24T06:47:17Z",
+                )
+            ],
+            required_workflows=(
+                "QIKVRT CI",
+                "QIKVRT Collective Proposal Review",
+                "QIKVRT repository evidence materialization",
+            ),
+        )
+        self.assertEqual(decision.d0, 2)
+        self.assertEqual(decision.state, "REOBSERVE")
+        self.assertEqual(decision.reason, "MISSING_REQUIRED_CONTINUATION")
+        self.assertEqual(
+            decision.missing_required_continuations,
+            (
+                "QIKVRT Collective Proposal Review",
+                "QIKVRT repository evidence materialization",
+            ),
+        )
+
+    def test_active_required_work_holds_before_missing_edge_recovery(self) -> None:
+        decision = classify_observations(
+            [
+                observation(
+                    run_id=81,
+                    name="QIKVRT CI",
+                    status="in_progress",
+                    jobs_total=1,
+                    created_at="2026-09-24T06:47:18Z",
+                )
+            ],
+            required_workflows=(
+                "QIKVRT CI",
+                "QIKVRT Collective Proposal Review",
+            ),
+        )
+        self.assertEqual(decision.d0, 1)
+        self.assertEqual(decision.reason, "ACTIVE_WORKFLOW")
+        self.assertEqual(
+            decision.missing_required_continuations,
+            ("QIKVRT Collective Proposal Review",),
+        )
+
+    def test_missing_continuation_after_trusted_recovery_holds(self) -> None:
+        decision = classify_observations(
+            [],
+            exact_head_status="success",
+            required_workflows=("QIKVRT CI",),
+        )
+        self.assertEqual(decision.d0, 1)
+        self.assertEqual(
+            decision.reason,
+            "TRUSTED_EXACT_HEAD_VERIFIED_BUT_CONTINUATION_MISSING",
+        )
+        self.assertEqual(decision.missing_required_continuations, ("QIKVRT CI",))
+
+    def test_invalid_required_workflow_fails_closed(self) -> None:
+        with self.assertRaisesRegex(ValueError, "required_workflows"):
+            classify_observations([], required_workflows=("",))
+
     def test_invalid_job_count_fails_closed(self) -> None:
         with self.assertRaisesRegex(ValueError, "jobs_total"):
             classify_observations(

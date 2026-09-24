@@ -23,9 +23,18 @@
     }
   },
   "required_pr_head_continuations": [
-    "QIKVRT CI",
-    "QIKVRT Collective Proposal Review",
-    "QIKVRT repository evidence materialization"
+    {
+      "workflow": "QIKVRT CI",
+      "applies_to": "all_internal_pull_requests"
+    },
+    {
+      "workflow": "QIKVRT Collective Proposal Review",
+      "applies_to": "all_internal_pull_requests"
+    },
+    {
+      "workflow": "QIKVRT repository evidence materialization",
+      "applies_to": "base_main_only"
+    }
   ],
   "invariants": [
     "absence_is_observable_state",
@@ -34,7 +43,8 @@
     "one_bounded_reobserve_before_hold",
     "exact_head_binding_required",
     "predecessor_evidence_transfer_false",
-    "transport_ack_not_effect_ack"
+    "transport_ack_not_effect_ack",
+    "continuation_applicability_must_match_subject"
   ],
   "nonclaims": [
     "global_optimality_of_qikvrt",

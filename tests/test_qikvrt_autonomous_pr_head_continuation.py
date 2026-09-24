@@ -13,6 +13,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "qikvrt_autonomous_pr_head_continuat
 EXACT_HEAD_WORKFLOW = ROOT / ".github" / "workflows" / "qikvrt_autonomous_exact_head_verify.yml"
 RECOVERY_TOOL = ROOT / "tools" / "qikvrt_pr_head_recovery.py"
 ABI = ROOT / "state" / "autonomy" / "CAUSAL_D0_ABI_V1.json"
+LIVENESS_POLICY = ROOT / "state" / "autonomy" / "CAUSAL_CONTINUATION_LIVENESS_V1.json"
 
 
 class AutonomousPrHeadContinuationTests(unittest.TestCase):
@@ -22,6 +23,83 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
         cls.exact_head_text = EXACT_HEAD_WORKFLOW.read_text(encoding="utf-8")
         cls.recovery_text = RECOVERY_TOOL.read_text(encoding="utf-8")
         cls.abi = json.loads(ABI.read_text(encoding="utf-8"))
+        cls.liveness_policy = json.loads(LIVENESS_POLICY.read_text(encoding="utf-8"))
+
+
+    def test_liveness_policy_distinguishes_blocked_from_missing_progress(self) -> None:
+        classes = self.liveness_policy["failure_classes"]
+        self.assertEqual(classes["DEADLOCK"]["first_response"], "HOLD")
+        self.assertEqual(
+            classes["MISSING_REQUIRED_CONTINUATION"]["first_response"],
+            "REOBSERVE",
+        )
+        self.assertEqual(
+            classes["MISSING_REQUIRED_CONTINUATION"][
+                "persistent_after_trusted_verification"
+            ],
+            "HOLD",
+        )
+        self.assertIn(
+            "absence_is_observable_state",
+            self.liveness_policy["invariants"],
+        )
+        self.assertIn(
+            "continuation_applicability_must_match_subject",
+            self.liveness_policy["invariants"],
+        )
+
+    def test_required_continuations_are_policy_driven_and_applicable(self) -> None:
+        required = self.liveness_policy["required_pr_head_continuations"]
+        self.assertEqual(
+            required,
+            [
+                {
+                    "workflow": "QIKVRT CI",
+                    "applies_to": "all_internal_pull_requests",
+                },
+                {
+                    "workflow": "QIKVRT Collective Proposal Review",
+                    "applies_to": "all_internal_pull_requests",
+                },
+                {
+                    "workflow": "QIKVRT repository evidence materialization",
+                    "applies_to": "base_main_only",
+                },
+            ],
+        )
+        self.assertIn("required_workflow_args=()", self.text)
+        self.assertIn("--required-workflow", self.text)
+        self.assertIn(".base.ref", self.text)
+        self.assertIn(
+            '(.applies_to == "base_main_only" and $base_ref == "main")',
+            self.text,
+        )
+
+        main_required = tuple(item["workflow"] for item in required)
+        decision = classify_observations(
+            [
+                {
+                    "id": 200,
+                    "name": "QIKVRT CI",
+                    "status": "completed",
+                    "conclusion": "success",
+                    "jobs_total": 1,
+                    "created_at": "2026-09-24T06:47:17Z",
+                }
+            ],
+            required_workflows=main_required,
+        )
+        self.assertEqual(decision.state, "REOBSERVE")
+        self.assertEqual(decision.reason, "MISSING_REQUIRED_CONTINUATION")
+
+    def test_selected_reobserve_reason_is_preserved_not_hardcoded(self) -> None:
+        self.assertIn('selected_reason=""', self.text)
+        self.assertIn("selected_reason=", self.text)
+        self.assertIn(".reason", self.text)
+        self.assertIn('echo "reason=$selected_reason" >> "$GITHUB_OUTPUT"', self.text)
+        self.assertIn("RECOVERY_REASON", self.text)
+        self.assertIn("recovery_reason:$reason", self.text)
+        self.assertNotIn('reason:"ZERO_JOB_ACTION_REQUIRED"', self.text)
 
     def test_is_event_driven_without_a_scheduled_recovery_path(self) -> None:
         self.assertIn("workflow_dispatch:", self.text)
