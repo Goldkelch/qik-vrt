@@ -1,0 +1,21 @@
+{
+  "schema": "qikvrt.outbound-email-cc-routing-policy.v1",
+  "status": "normative",
+  "scope": "Initiative outbound project email composed or sent by an agent acting for the Product/Code Owner.",
+  "rule": {
+    "recipient_review_required": true,
+    "description": "For initiative outbound email, recipient routing is part of the send decision. Determine To and CC from the concrete project/thread context rather than treating CC as an afterthought.",
+    "cc_selection": [
+      "Include participants whose responsibility, decision authority, execution role, or need for project transparency is materially affected by the message.",
+      "Preserve relevant established project stakeholders when the new message continues their subject matter.",
+      "Do not inflate CC with people who have no material need to receive the message.",
+      "Before adding a new or sensitive recipient whose inclusion is not clearly supported by the project context, obtain human confirmation."
+    ],
+    "thread_behavior": "Reply-all may preserve an existing relevant audience, but initiative messages require an independent recipient review.",
+    "evidence": "At send time, the selected To/CC set must be explainable from current project context."
+  },
+  "authority": {
+    "source": "Product/Code Owner instruction",
+    "date": "2026-09-22"
+  }
+}
