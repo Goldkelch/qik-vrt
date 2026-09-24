@@ -109,6 +109,70 @@ TEMDD_CONFORMANT(S) :=
   and REPORT.suite == normative_suite
 ```
 
+## Machine-verifiable standard model
+
+A TEMDD conformance decision is defined over a canonical, version-bound input.
+The normative layers are:
+
+```text
+DATA_MODEL
++ POLICY_MODEL
++ SUBJECT_BINDING
++ EVIDENCE_MODEL
++ EVALUATION_SEMANTICS
++ DECISION_MODEL
+= MACHINE_VERIFIABLE_STANDARD
+```
+
+The exact evaluation input is:
+
+```text
+INPUT := DATA and POLICY and SUBJECT and EVIDENCE
+
+BOUND_INPUT :=
+    Canonicalize(INPUT)
+    and MODEL_VERSION
+    and POLICY_VERSION
+    and EVALUATOR_VERSION
+
+DECISION := Evaluate(BOUND_INPUT)
+```
+
+Two conforming implementations operating under the same canonicalization and
+semantic versions MUST produce the same canonical decision for the same
+canonical input:
+
+```text
+Canonicalize(INPUT_1) = Canonicalize(INPUT_2)
+and MODEL_VERSION_1 = MODEL_VERSION_2
+and POLICY_VERSION_1 = POLICY_VERSION_2
+and EVALUATOR_VERSION_1 = EVALUATOR_VERSION_2
+=> Canonicalize(DECISION_1) = Canonicalize(DECISION_2)
+```
+
+Conformance vectors MUST bind at least an identifier, model version, policy
+version, evaluator version, input data, subject, evidence and expected canonical
+decision. The normative vector classes are VALID, INVALID,
+INSUFFICIENT_EVIDENCE, SUBJECT_MISMATCH, POLICY_VIOLATION, MALFORMED_INPUT,
+VERSION_MISMATCH, REPLAY, DUPLICATE and BOUNDARY_CASE.
+
+The v1 executable profile uses deterministic UTF-8 JSON with lexicographically
+sorted object keys and compact separators for the canonical comparison surface.
+This profile does not assert that an external implementation exists. Cross-
+implementation interoperability is established only after at least two
+independent implementations execute the same normative vectors and return the
+same canonical decisions.
+
+```text
+MACHINE_VERIFIABLE_STANDARD
+and CANONICAL_SERIALIZATION
+and DETERMINISTIC_EVALUATION
+and CONFORMANCE_VECTORS
+and INDEPENDENT_IMPLEMENTATIONS
+and IDENTICAL_EXPECTED_DECISIONS
+= INTEROPERABILITY_BY_EXECUTABLE_PROOF
+```
+
 ## Canonical pipeline
 
 ```text

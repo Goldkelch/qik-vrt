@@ -85,5 +85,132 @@
     "require_implementation_digest": true,
     "require_suite_digest": true,
     "predecessor_evidence_transfer": false
+  },
+  "machine_verifiable_standard": {
+    "model_version": "1",
+    "policy_version": "1",
+    "evaluator_version": "1",
+    "canonicalization": "JSON_SORTED_KEYS_UTF8_COMPACT",
+    "vector_classes": [
+      "VALID",
+      "INVALID",
+      "INSUFFICIENT_EVIDENCE",
+      "SUBJECT_MISMATCH",
+      "POLICY_VIOLATION",
+      "MALFORMED_INPUT",
+      "VERSION_MISMATCH",
+      "REPLAY",
+      "DUPLICATE",
+      "BOUNDARY_CASE"
+    ],
+    "vectors": [
+      {
+        "id": "valid_accept",
+        "class": "VALID",
+        "input": {
+          "data": {
+            "value": 1
+          },
+          "policy": {
+            "allow": true
+          },
+          "subject": {
+            "digest": "sha256:subject-a"
+          },
+          "evidence": {
+            "fresh": true,
+            "subject_digest": "sha256:subject-a"
+          }
+        },
+        "equivalent_input": {
+          "evidence": {
+            "subject_digest": "sha256:subject-a",
+            "fresh": true
+          },
+          "subject": {
+            "digest": "sha256:subject-a"
+          },
+          "policy": {
+            "allow": true
+          },
+          "data": {
+            "value": 1
+          }
+        },
+        "expected_decision": {
+          "result": "PASS",
+          "code": "ACCEPT"
+        }
+      },
+      {
+        "id": "subject_mismatch_holds",
+        "class": "SUBJECT_MISMATCH",
+        "input": {
+          "data": {
+            "value": 1
+          },
+          "policy": {
+            "allow": true
+          },
+          "subject": {
+            "digest": "sha256:subject-b"
+          },
+          "evidence": {
+            "fresh": true,
+            "subject_digest": "sha256:subject-a"
+          }
+        },
+        "expected_decision": {
+          "result": "HOLD_UNVERIFIED",
+          "code": "SUBJECT_MISMATCH"
+        }
+      },
+      {
+        "id": "stale_evidence_holds",
+        "class": "INSUFFICIENT_EVIDENCE",
+        "input": {
+          "data": {
+            "value": 1
+          },
+          "policy": {
+            "allow": true
+          },
+          "subject": {
+            "digest": "sha256:subject-a"
+          },
+          "evidence": {
+            "fresh": false,
+            "subject_digest": "sha256:subject-a"
+          }
+        },
+        "expected_decision": {
+          "result": "HOLD_UNVERIFIED",
+          "code": "INSUFFICIENT_EVIDENCE"
+        }
+      },
+      {
+        "id": "policy_denial_fails",
+        "class": "POLICY_VIOLATION",
+        "input": {
+          "data": {
+            "value": 1
+          },
+          "policy": {
+            "allow": false
+          },
+          "subject": {
+            "digest": "sha256:subject-a"
+          },
+          "evidence": {
+            "fresh": true,
+            "subject_digest": "sha256:subject-a"
+          }
+        },
+        "expected_decision": {
+          "result": "FAIL",
+          "code": "POLICY_VIOLATION"
+        }
+      }
+    ]
   }
 }

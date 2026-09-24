@@ -116,6 +116,59 @@ def effect_ack(v: dict) -> bool:
         v.get("expected_matches_observed") is True,
     ))
 
+def canonical_json(value: object) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+def evaluate_machine_standard(bound_input: dict) -> dict:
+    required = {"data", "policy", "subject", "evidence"}
+    if set(bound_input) != required:
+        return {"result": "FAIL", "code": "MALFORMED_INPUT"}
+    subject = bound_input["subject"]
+    evidence = bound_input["evidence"]
+    policy = bound_input["policy"]
+    if not isinstance(subject, dict) or not isinstance(evidence, dict) or not isinstance(policy, dict):
+        return {"result": "FAIL", "code": "MALFORMED_INPUT"}
+    if evidence.get("subject_digest") != subject.get("digest"):
+        return {"result": "HOLD_UNVERIFIED", "code": "SUBJECT_MISMATCH"}
+    if evidence.get("fresh") is not True:
+        return {"result": "HOLD_UNVERIFIED", "code": "INSUFFICIENT_EVIDENCE"}
+    if policy.get("allow") is not True:
+        return {"result": "FAIL", "code": "POLICY_VIOLATION"}
+    return {"result": "PASS", "code": "ACCEPT"}
+
+def check_machine_verifiable_standard(vectors: dict) -> None:
+    profile = vectors.get("machine_verifiable_standard", {})
+    require(profile.get("model_version") == "1", "MODEL_VERSION_MISMATCH")
+    require(profile.get("policy_version") == "1", "POLICY_VERSION_MISMATCH")
+    require(profile.get("evaluator_version") == "1", "EVALUATOR_VERSION_MISMATCH")
+    require(profile.get("canonicalization") == "JSON_SORTED_KEYS_UTF8_COMPACT", "CANONICALIZATION_MISMATCH")
+    required_classes = {
+        "VALID", "INVALID", "INSUFFICIENT_EVIDENCE", "SUBJECT_MISMATCH",
+        "POLICY_VIOLATION", "MALFORMED_INPUT", "VERSION_MISMATCH",
+        "REPLAY", "DUPLICATE", "BOUNDARY_CASE",
+    }
+    require(set(profile.get("vector_classes", [])) == required_classes, "VECTOR_CLASS_SET_MISMATCH")
+    seen = set()
+    for vector in profile.get("vectors", []):
+        vector_id = vector.get("id")
+        require(isinstance(vector_id, str) and vector_id and vector_id not in seen, "VECTOR_ID_INVALID")
+        seen.add(vector_id)
+        actual = evaluate_machine_standard(vector.get("input", {}))
+        require(
+            canonical_json(actual) == canonical_json(vector.get("expected_decision", {})),
+            "DECISION_VECTOR_MISMATCH:" + vector_id,
+        )
+        if "equivalent_input" in vector:
+            require(
+                canonical_json(vector["input"]) == canonical_json(vector["equivalent_input"]),
+                "CANONICAL_INPUT_EQUIVALENCE_MISMATCH:" + vector_id,
+            )
+            equivalent = evaluate_machine_standard(vector["equivalent_input"])
+            require(
+                canonical_json(actual) == canonical_json(equivalent),
+                "DETERMINISTIC_DECISION_MISMATCH:" + vector_id,
+            )
+
 def check_t13_t16(vectors: dict) -> None:
     t13 = vectors["t13"]
     seq = t13["sequence_without_cause"]
