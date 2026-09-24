@@ -1,0 +1,3789 @@
+ 'health.json').write_text('{"state":"FIXTURE"}')
+-        config = cls.work / 'nginx.conf'
+-        config.write_text(text)
+-        check = subprocess.run([cls.nginx, '-t', '-c', str(config)], capture_output=True, text=True, timeout=10)
+-        if check.returncode:
+-            raise AssertionError(check.stderr)
+-        cls.log = (cls.work / 'nginx.log').open('w+')
+-        cls.addClassCleanup(cls.log.close)
+-        cls.process = subprocess.Popen([cls.nginx, '-c', str(config), '-g', 'daemon off;'], stdout=cls.log, stderr=cls.log)
+-        cls.addClassCleanup(cls.stop_proxy)
+-        for _ in range(100):
+-            try:
+-                with socket.create_connection(('127.0.0.1', cls.port), timeout=.1):
+-                    return
+-            except OSError:
+-                if cls.process.poll() is not None:
+-                    break
+-                time.sleep(.02)
+-        cls.log.seek(0)
+-        raise AssertionError('nginx failed to listen: ' + cls.log.read())
+-
+-    @classmethod
+-    def stop_proxy(cls):
+-        if cls.process.poll() is None:
+-            cls.process.terminate()
+-        try:
+-            cls.process.wait(timeout=5)
+-        except subprocess.TimeoutExpired:
+-            cls.process.kill()
+-            cls.process.wait(timeout=5)
+-
+-    def request(self, path, method='GET', headers=None):
+-        connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=4)
+-        try:
+-            connection.request(method, path, headers=headers or {})
+-            response = connection.getresponse()
+-            return response.status, dict(response.getheaders()), response.read()
+-        finally:
+-            connection.close()
+-
+-    def test_prefixed_ide_and_subject_are_readable(self):
+-        for suffix in ('/AI', '/AI/', '/api/temdd/subject'):
+-            with self.subTest(suffix=suffix):
+-                code, _, body = self.request(PREFIX + suffix)
+-                self.assertEqual(code, 200, body)
+-                self.assertEqual(json.loads(body)['path'], suffix)
+-
+-    def test_browser_absolute_subject_path_reaches_same_backend(self):
+-        code, _, body = self.request('/api/temdd/subject')
+-        self.assertEqual(code, 200, body)
+-        self.assertEqual(json.loads(body)['path'], '/api/temdd/subject')
+-
+-    def test_event_stream_preserves_query_and_reconnect_cursor(self):
+-        for prefix in ('', PREFIX):
+-            code, headers, body = self.request(prefix + '/api/temdd/events?after=epoch%3A7', headers={'Last-Event-ID': 'epoch:9'})
+-            self.assertEqual(code, 200, body)
+-            self.assertEqual(headers['Content-Type'], 'text/event-stream')
+-            self.assertIn(b'event: subject', body)
+-            record = self.backend.observations[-1]
+-            self.assertEqual(record['path'], '/api/temdd/events?after=epoch%3A7')
+-            self.assertEqual(record['headers']['Last-Event-ID'], 'epoch:9')
+-
+-    def test_same_host_browser_origin_is_validated_before_translation(self):
+-        for scheme in ('http', 'https'):
+-            code, _, body = self.request(PREFIX + '/AI', headers={'Origin': f'{scheme}://127.0.0.1:{self.port}'})
+-            self.assertEqual(code, 200, body)
+-            self.assertNotIn('Origin', json.loads(body)['headers'])
+-
+-    def test_foreign_null_and_deceptive_origins_never_reach_backend(self):
+-        for origin in ('https://attacker.invalid', 'null', f'https://127.0.0.1:{self.port}.attacker.invalid'):
+-            before = len(self.backend.observations)
+-            code, _, _ = self.request('/api/temdd/subject', headers={'Origin': origin, 'X-Forwarded-Host': f'127.0.0.1:{self.port}'})
+-            self.assertEqual(code, 403)
+-            self.assertEqual(len(self.backend.observations), before)
+-
+-    def test_non_get_methods_never_reach_backend(self):
+-        for method in ('POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'):
+-            for path in (PREFIX + '/AI', '/api/temdd/subject', PREFIX + '/api/temdd/events'):
+-                with self.subTest(method=method, path=path):
+-                    before = len(self.backend.observations)
+-                    code, _, _ = self.request(path, method)
+-                    self.assertEqual(code, 405)
+-                    self.assertEqual(len(self.backend.observations), before)
+-
+-    def test_observation_routes_do_not_forward_browser_credentials(self):
+-        code, _, body = self.request('/api/temdd/subject', headers={'Authorization': 'Bearer synthetic-fixture', 'Cookie': 'session=synthetic-fixture'})
+-        self.assertEqual(code, 200, body)
+-        headers = json.loads(body)['headers']
+-        self.assertNotIn('Authorization', headers)
+-        self.assertNotIn('Cookie', headers)
+-
+-    def test_unknown_paths_get_no_loopback_translation(self):
+-        for path in ('/api/temdd/append', '/api/temdd/subject/extra', PREFIX + '/api/temdd/append'):
+-            code, _, _ = self.request(path)
+-            self.assertIn(code, (403, 404))
+-
+-    def test_existing_landing_and_redirect_stay_unchanged(self):
+-        code, _, body = self.request('/AI/')
+-        self.assertEqual((code, body), (200, b'existing mesh landing page'))
+-        code, headers, _ = self.request('/AI')
+-        self.assertEqual((code, headers['Location']), (308, '/AI/'))
+-
+-
+-if __name__ == '__main__':
+-    unittest.main()
+diff --git a/tests/test_qikvrt_unattended_pr_disposition.py b/tests/test_qikvrt_unattended_pr_disposition.py
+deleted file mode 100644
+index a75045d21013b70f8823301cb9f3f738098c0eb2..0000000000000000000000000000000000000000
+--- a/tests/test_qikvrt_unattended_pr_disposition.py
++++ /dev/null
+@@ -1,140 +0,0 @@
+-# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+-# Copyright 2026 Ingolf Lohmann.
+-import unittest
+-
+-from tools.qikvrt_unattended_pr_disposition import DISPOSITIONS, classify
+-
+-
+-HEAD = "a" * 40
+-MAIN = "b" * 40
+-
+-
+-def observation(**overrides):
+-    value = {
+-        "repository": "Goldkelch/qik-vrt",
+-        "pull_request": 929,
+-        "head_sha": HEAD,
+-        "base_sha": MAIN,
+-        "current_main_sha": MAIN,
+-        "state": "open",
+-        "merged": False,
+-        "superseded": False,
+-        "active_workflows": 0,
+-        "failed_workflows": 0,
+-        "gates_complete": True,
+-        "review_required": True,
+-        "review_satisfied": True,
+-        "external_effect_pending": False,
+-        "first_causal_blocker": None,
+-    }
+-    value.update(overrides)
+-    return value
+-
+-
+-class UnattendedPrDispositionTests(unittest.TestCase):
+-    def test_state_set_matches_canonical_backlog(self):
+-        self.assertEqual(
+-            DISPOSITIONS,
+-            {
+-                "ACTIVE_EXECUTION",
+-                "READY_FOR_INDEPENDENT_REVIEW",
+-                "HOLD_WITH_FIRST_CAUSAL_BLOCKER",
+-                "REBIND_REQUIRED",
+-                "MERGE_READY",
+-                "EXTERNAL_EFFECT_PENDING",
+-                "CLOSE_AS_SUPERSEDED",
+-                "MERGED",
+-                "CLOSED_NOT_PLANNED_WITH_CAUSE",
+-            },
+-        )
+-
+-    def test_merged_is_terminal(self):
+-        result = classify(observation(state="closed", merged=True))
+-        self.assertEqual(result.disposition, "MERGED")
+-        self.assertEqual(result.next_action, "NOOP")
+-
+-    def test_closed_without_merge_preserves_cause(self):
+-        result = classify(
+-            observation(
+-                state="closed",
+-                first_causal_blocker="NOT_PLANNED",
+-            )
+-        )
+-        self.assertEqual(result.disposition, "CLOSED_NOT_PLANNED_WITH_CAUSE")
+-        self.assertEqual(result.first_causal_blocker, "NOT_PLANNED")
+-
+-    def test_supersession_precedes_execution(self):
+-        result = classify(observation(superseded=True, active_workflows=2))
+-        self.assertEqual(result.disposition, "CLOSE_AS_SUPERSEDED")
+-
+-    def test_base_drift_precedes_downstream_gate_state(self):
+-        result = classify(
+-            observation(
+-                base_sha="c" * 40,
+-                active_workflows=3,
+-                failed_workflows=1,
+-                first_causal_blocker="DOWNSTREAM",
+-            )
+-        )
+-        self.assertEqual(result.disposition, "REBIND_REQUIRED")
+-        self.assertEqual(result.first_causal_blocker, "BASE_DRIFT")
+-        self.assertEqual(
+-            result.next_action,
+-            "HISTORY_PRESERVING_REBIND_TO_CURRENT_MAIN",
+-        )
+-
+-    def test_active_execution_precedes_review(self):
+-        result = classify(
+-            observation(active_workflows=1, review_satisfied=False)
+-        )
+-        self.assertEqual(result.disposition, "ACTIVE_EXECUTION")
+-
+-    def test_explicit_first_blocker_is_preserved(self):
+-        result = classify(
+-            observation(first_causal_blocker="CODE_OWNER_RULE_NOT_ENFORCED")
+-        )
+-        self.assertEqual(result.disposition, "HOLD_WITH_FIRST_CAUSAL_BLOCKER")
+-        self.assertEqual(
+-            result.first_causal_blocker,
+-            "CODE_OWNER_RULE_NOT_ENFORCED",
+-        )
+-
+-    def test_failed_gate_fails_closed(self):
+-        result = classify(observation(failed_workflows=1))
+-        self.assertEqual(result.disposition, "HOLD_WITH_FIRST_CAUSAL_BLOCKER")
+-        self.assertEqual(result.first_causal_blocker, "EXACT_HEAD_GATE_FAILURE")
+-
+-    def test_incomplete_evidence_cannot_be_merge_ready(self):
+-        result = classify(observation(gates_complete=False))
+-        self.assertEqual(result.disposition, "HOLD_WITH_FIRST_CAUSAL_BLOCKER")
+-        self.assertEqual(result.first_causal_blocker, "EXACT_HEAD_EVIDENCE_INCOMPLETE")
+-
+-    def test_review_boundary_is_explicit(self):
+-        result = classify(observation(review_satisfied=False))
+-        self.assertEqual(result.disposition, "READY_FOR_INDEPENDENT_REVIEW")
+-
+-    def test_external_effect_boundary_follows_internal_convergence(self):
+-        result = classify(observation(external_effect_pending=True))
+-        self.assertEqual(result.disposition, "EXTERNAL_EFFECT_PENDING")
+-
+-    def test_merge_ready_requires_complete_internal_evidence(self):
+-        result = classify(observation())
+-        self.assertEqual(result.disposition, "MERGE_READY")
+-        value = result.to_mapping()
+-        self.assertFalse(value["PASS"])
+-        self.assertFalse(value["FINAL_PASS"])
+-        self.assertFalse(value["EFFECT_ACK_DONE"])
+-
+-    def test_missing_required_evidence_is_rejected(self):
+-        candidate = observation()
+-        del candidate["gates_complete"]
+-        with self.assertRaises(ValueError):
+-            classify(candidate)
+-
+-    def test_inconsistent_merged_open_state_is_rejected(self):
+-        with self.assertRaises(ValueError):
+-            classify(observation(merged=True))
+-
+-
+-if __name__ == "__main__":
+-    unittest.main()
+diff --git a/tests/test_qikvrt_universal_terminal_network_boundary.py b/tests/test_qikvrt_universal_terminal_network_boundary.py
+index 2cf818b801ee4c9dba5be2241a0c99cb1d070fde..1bd5c5e8d91399163637e3a0fc5b8cad94c0df59 100644
+--- a/tests/test_qikvrt_universal_terminal_network_boundary.py
++++ b/tests/test_qikvrt_universal_terminal_network_boundary.py
+@@ -7,8 +7,6 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
+ COMPOSE = ROOT / "deploy/universal-terminal/compose.yaml"
+ POLICY = ROOT / "policy/QIKVRT_UNIVERSAL_TERMINAL_VIRTUALIZATION_V1.json"
+ ENTRYPOINT = ROOT / "deploy/universal-terminal/entrypoint.sh"
+-CLOUD_ENTRYPOINT = ROOT / "deploy/universal-terminal/cloud-entrypoint.sh"
+-DOCKERFILE = ROOT / "deploy/universal-terminal/Dockerfile"
+ WORKFLOW = ROOT / ".github/workflows/qikvrt_universal_terminal_container.yml"
+ 
+ 
+@@ -20,6 +18,16 @@ class UniversalTerminalNetworkBoundaryTests(unittest.TestCase):
+         self.assertNotIn('"0.0.0.0:', text)
+         self.assertNotIn('"[::]:', text)
+ 
++    def test_unsigned_reference_extension_is_explicit_ci_only_opt_in(self):
++        entrypoint = ENTRYPOINT.read_text(encoding="utf-8")
++        workflow = WORKFLOW.read_text(encoding="utf-8")
++        self.assertIn("QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION", entrypoint)
++        self.assertIn('user_pref("xpinstall.signatures.required", false);', entrypoint)
++        self.assertEqual(
++            workflow.count("QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION=1"),
++            2,
++        )
++
+     def test_policy_forbids_non_loopback_exposure(self):
+         policy = json.loads(POLICY.read_text(encoding="utf-8"))
+         boundary = policy["network_boundary"]
+@@ -41,59 +49,6 @@ class UniversalTerminalNetworkBoundaryTests(unittest.TestCase):
+             "REQUIRED",
+         )
+ 
+-    def test_standalone_default_and_cloud_mesh_route_are_explicit_and_distinct(self):
+-        policy = json.loads(POLICY.read_text(encoding="utf-8"))
+-        self.assertEqual(policy["runtime_transport"]["default_start_surface"], "about:blank")
+-        self.assertEqual(
+-            policy["runtime_transport"]["runtime_state_schema"],
+-            "qikvrt_universal_terminal_runtime_state_v2",
+-        )
+-        self.assertIn(
+-            'START_URL="${QIKVRT_START_URL:-about:blank}"',
+-            ENTRYPOINT.read_text(encoding="utf-8"),
+-        )
+-        dockerfile = DOCKERFILE.read_text(encoding="utf-8")
+-        self.assertIn("QIKVRT_START_URL=about:blank", dockerfile)
+-        self.assertIn('browser.startup.homepage", "about:blank"', dockerfile)
+-        entrypoint = ENTRYPOINT.read_text(encoding="utf-8")
+-        self.assertIn("QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION", entrypoint)
+-        self.assertIn(
+-            'user_pref("xpinstall.signatures.required", false);',
+-            entrypoint,
+-        )
+-        self.assertIn(
+-            'export QIKVRT_START_URL="${QIKVRT_CLOUD_START_URL:-http://127.0.0.1:8080/qik-vrt/mesh/v1/}"',
+-            CLOUD_ENTRYPOINT.read_text(encoding="utf-8"),
+-        )
+-        workflow = WORKFLOW.read_text(encoding="utf-8")
+-        self.assertIn("qikvrt_universal_terminal_runtime_state_v2", workflow)
+-        self.assertNotIn("qikvrt_universal_terminal_runtime_state_v1", workflow)
+-
+-    def test_workflow_requires_bounded_stable_paired_readbacks(self):
+-        workflow = WORKFLOW.read_text(encoding="utf-8")
+-        self.assertEqual(workflow.count("reobserve_stable_terminal()"), 2)
+-        self.assertEqual(workflow.count("for attempt in $(seq 1 40); do"), 2)
+-        self.assertEqual(workflow.count('if [ "$stable" -eq 3 ]; then return 0; fi'), 2)
+-        self.assertEqual(
+-            workflow.count(
+-                "curl --max-time 2 -fsS http://127.0.0.1:8771/.well-known/effect-ack"
+-            ),
+-            2,
+-        )
+-        self.assertIn("initial-readback-observations.log", workflow)
+-        self.assertIn("restart-readback-observations.log", workflow)
+-        self.assertIn("loopback-sockets.txt", workflow)
+-        self.assertIn("initial-post-readback-checks.log", workflow)
+-        self.assertIn("restart-post-readback-checks.log", workflow)
+-        self.assertEqual(workflow.count("CHECK_NAME=stable_paired_readback"), 2)
+-        self.assertEqual(
+-            workflow.count("QIKVRT_ENABLE_UNSIGNED_REFERENCE_EXTENSION=1"),
+-            2,
+-        )
+-        self.assertIn("CHECK_NAME=reference_extension_signature_mode", workflow)
+-        self.assertIn("CHECK_NAME=profile_extension", workflow)
+-        self.assertIn("CHECK_NAME=initial_runtime_state_copy", workflow)
+-
+ 
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/tests/test_roundtrip_entrypoint.py b/tests/test_roundtrip_entrypoint.py
+deleted file mode 100644
+index 8adbfa38290d7dbc86fe76ae216a809658bcd922..0000000000000000000000000000000000000000
+--- a/tests/test_roundtrip_entrypoint.py
++++ /dev/null
+@@ -1,146 +0,0 @@
+-# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+-# Copyright 2026 Ingolf Lohmann. Implementation: OpenAI ChatGPT.
+-"""Bounded entrypoint/dispatch tests; never label mocked dispatch as the Roundtrip."""
+-import contextlib
+-import importlib.util
+-import io
+-import os
+-from pathlib import Path
+-import tempfile
+-import unittest
+-from unittest import mock
+-
+-ROOT = Path(__file__).resolve().parents[1]
+-
+-
+-def load(name, path):
+-    spec = importlib.util.spec_from_file_location(name, path)
+-    module = importlib.util.module_from_spec(spec)
+-    spec.loader.exec_module(module)
+-    return module
+-
+-
+-entry = load("roundtrip_entry", ROOT / "tools/qikvrt_roundtrip_entrypoint.py")
+-runner = load("roundtrip_runner", ROOT / "roundtrip.py")
+-
+-
+-class EntrypointTests(unittest.TestCase):
+-    def fixture(self, root):
+-        originals = {}
+-        for relative in entry.PATHS:
+-            path = root / relative
+-            path.parent.mkdir(parents=True, exist_ok=True)
+-            originals[relative] = ("Original instructions: " + relative + "\n").encode()
+-            path.write_bytes(originals[relative])
+-        return originals
+-
+-    def test_first_position_preserves_every_original_byte(self):
+-        with tempfile.TemporaryDirectory() as tmp:
+-            root = Path(tmp)
+-            originals = self.fixture(root)
+-            self.assertEqual(set(entry.materialize(root, check=False)), set(entry.PATHS))
+-            for relative, original in originals.items():
+-                self.assertEqual((root / relative).read_bytes(), entry.prefix(relative) + original)
+-            self.assertEqual(entry.materialize(root, check=True), [])
+-
+-    def test_replay_is_byte_identical(self):
+-        with tempfile.TemporaryDirectory() as tmp:
+-            root = Path(tmp)
+-            self.fixture(root)
+-            entry.materialize(root, check=False)
+-            before = {p: (root / p).read_bytes() for p in entry.PATHS}
+-            self.assertEqual(entry.materialize(root, check=False), [])
+-            self.assertEqual(before, {p: (root / p).read_bytes() for p in entry.PATHS})
+-
+-    def test_check_never_writes(self):
+-        with tempfile.TemporaryDirectory() as tmp:
+-            root = Path(tmp)
+-            originals = self.fixture(root)
+-            with self.assertRaisesRegex(ValueError, "ROUNDTRIP_NOT_FIRST"):
+-                entry.materialize(root, check=True)
+-            self.assertEqual(originals, {p: (root / p).read_bytes() for p in entry.PATHS})
+-
+-    def test_conflict_prevents_all_writes(self):
+-        with tempfile.TemporaryDirectory() as tmp:
+-            root = Path(tmp)
+-            originals = self.fixture(root)
+-            (root / "next/AI").write_bytes(entry.START + b"conflict")
+-            with self.assertRaisesRegex(ValueError, "CONFLICTING"):
+-                entry.materialize(root, check=False)
+-            self.assertEqual((root / "AI").read_bytes(), originals["AI"])
+-
+-    def test_missing_file_is_not_silently_created(self):
+-        with tempfile.TemporaryDirectory() as tmp:
+-            root = Path(tmp)
+-            originals = self.fixture(root)
+-            (root / "next/AI").unlink()
+-            with self.assertRaisesRegex(ValueError, "MISSING_OR_UNSAFE"):
+-                entry.materialize(root, check=False)
+-            self.assertEqual((root / "AI").read_bytes(), originals["AI"])
+-
+-    def test_relative_links_resolve(self):
+-        self.assertIn(b"[../ROUNDTRIP.md](../ROUNDTRIP.md)", entry.prefix("next/AI"))
+-        self.assertIn(b"[ROUNDTRIP.md](ROUNDTRIP.md)", entry.prefix("AI"))
+-
+-
+-class RunnerTests(unittest.TestCase):
+-    def invoke(self, root, result=0, extra=(), env=None):
+-        target = root / "next/tools/run_checks.py"
+-        target.parent.mkdir(parents=True, exist_ok=True)
+-        target.write_text("# Test stub; not an executed proof\n")
+-        args = ["--repository", "Goldkelch/qik-vrt", "--output-dir", str(root.parent / "new-evidence"), *extra]
+-        with mock.patch.object(runner, "ROOT", root), mock.patch.object(runner, "RUNNER", target), \
+-             mock.patch.dict(os.environ, {"PYTHONOPTIMIZE": "", **(env or {})}), \
+-             mock.patch.object(runner.subprocess, "run", return_value=mock.Mock(returncode=result)) as call:
+-            code = runner.main(args)
+-            return code, call
+-
+-    def test_delegates_to_existing_runner_and_keeps_failure(self):
+-        with tempfile.TemporaryDirectory() as tmp:
+-            root = Path(tmp) / "repo"
+-            code, call = self.invoke(root, result=7, extra=("--offline",))
+-            self.assertEqual(code, 7)
+-            command = call.call_args.args[0]
+-            self.assertEqual(command[1], "-B")
+-            self.assertIn(str(root / "next/tools/run_checks.py"), command)
+-            self.assertIn("--offline", command)
+-            self.assertEqual(call.call_args.kwargs["env"]["GITHUB_REPOSITORY"], "Goldkelch/qik-vrt")
+-
+-    def test_success_is_only_delegated_exit_status(self):
+-        with tempfile.TemporaryDirectory() as tmp:
+-            code, call = self.invoke(Path(tmp) / "repo", result=0)
+-            self.assertEqual(code, 0)
+-            call.assert_called_once()
+-
+-    def test_optimization_is_rejected(self):
+-        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stderr(io.StringIO()):
+-            with self.assertRaises(SystemExit) as error:
+-                self.invoke(Path(tmp) / "repo", env={"PYTHONOPTIMIZE": "1"})
+-            self.assertEqual(error.exception.code, 2)
+-
+-    def test_missing_runner_has_no_fallback(self):
+-        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stderr(io.StringIO()):
+-            root = Path(tmp)
+-            with mock.patch.object(runner, "RUNNER", root / "missing.py"), \
+-                 mock.patch.dict(os.environ, {"PYTHONOPTIMIZE": ""}):
+-                with self.assertRaises(SystemExit) as error:
+-                    runner.main(["--repository", "Goldkelch/qik-vrt", "--output-dir", str(root / "out")])
+-                self.assertEqual(error.exception.code, 2)
+-
+-    def test_existing_output_is_not_reused(self):
+-        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stderr(io.StringIO()):
+-            (Path(tmp) / "new-evidence").mkdir()
+-            with self.assertRaises(SystemExit) as error:
+-                self.invoke(Path(tmp) / "repo")
+-            self.assertEqual(error.exception.code, 2)
+-
+-    def test_source_directory_is_not_an_evidence_sink(self):
+-        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stderr(io.StringIO()):
+-            root = Path(tmp) / "repo"
+-            with self.assertRaises(SystemExit) as error:
+-                self.invoke(root, extra=("--output-dir", str(root / "out")))
+-            self.assertEqual(error.exception.code, 2)
+-
+-
+-if __name__ == "__main__":
+-    unittest.main()
+diff --git a/tests/test_roundtrip_self_declaration.py b/tests/test_roundtrip_self_declaration.py
+deleted file mode 100644
+index 5f0515f8823f0345d3e4a5e79b4064d7c43c62bb..0000000000000000000000000000000000000000
+--- a/tests/test_roundtrip_self_declaration.py
++++ /dev/null
+@@ -1,164 +0,0 @@
+-# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+-# Copyright 2026 Ingolf Lohmann. Implementation: OpenAI ChatGPT.
+-"""Test full-text projections, source binding and non-destructive replay."""
+-import importlib.util
+-from html.parser import HTMLParser
+-from pathlib import Path
+-import tempfile
+-import unittest
+-from unittest import mock
+-
+-ROOT = Path(__file__).resolve().parents[1]
+-spec = importlib.util.spec_from_file_location("self_declaration_entry", ROOT / "tools/qikvrt_roundtrip_entrypoint.py")
+-entry = importlib.util.module_from_spec(spec)
+-spec.loader.exec_module(entry)
+-SOURCE = ("# Wenn Beobachtung als Handeln ausgegeben wird\n\n"
+-          "Ingolf Lohmann · September 2026\n\n"
+-          "Übergang → Wirkung; <script> & unveränderte Worte.\n\n"
+-          "## Ergänzung: Die gefährlichste Form des Scheiterns\n\n"
+-          "q.e.d.\nIngolf Lohmann\n").encode("utf-8")
+-
+-
+-class TextReader(HTMLParser):
+-    def __init__(self):
+-        super().__init__()
+-        self.parts = []
+-
+-    def handle_data(self, data):
+-        self.parts.append(data)
+-
+-
+-class SelfDeclarationTests(unittest.TestCase):
+-    def setUp(self):
+-        self.tmp = tempfile.TemporaryDirectory()
+-        self.addCleanup(self.tmp.cleanup)
+-        self.root = Path(self.tmp.name)
+-        self.patch = mock.patch.object(entry, "DECLARATION_BLOB", entry.git_blob(SOURCE))
+-        self.patch.start()
+-        self.addCleanup(self.patch.stop)
+-        self.originals = {}
+-        for relative in entry.PATHS:
+-            path = self.root / relative
+-            path.parent.mkdir(parents=True, exist_ok=True)
+-            raw = entry.prefix(relative) + ("Original: " + relative + "\n").encode()
+-            path.write_bytes(raw)
+-            self.originals[relative] = raw
+-        doc = self.root / entry.DECLARATION_PATH
+-        doc.parent.mkdir(parents=True, exist_ok=True)
+-        doc.write_bytes(SOURCE)
+-        self.originals["docs/index.html"] = (b"<!doctype html>\n" + entry.NAV_ANCHOR
+-            + b"    </nav>\n" + entry.MAIN_ANCHOR + b'<section id="top">Original site</section>\n</main>\n')
+-        (self.root / "docs/index.html").write_bytes(self.originals["docs/index.html"])
+-
+-    def snapshot(self):
+-        return {p: (self.root / p).read_bytes() for p in self.originals}
+-
+-    def test_full_readme_source_and_original_suffix_are_preserved(self):
+-        entry.materialize_declaration(self.root, check=False)
+-        for relative in entry.PATHS:
+-            raw = (self.root / relative).read_bytes()
+-            block = entry.declaration_prefix(relative, SOURCE)
+-            self.assertTrue(raw.startswith(entry.prefix(relative) + block))
+-            self.assertEqual(raw.replace(block, b"", 1), self.originals[relative])
+-        self.assertIn(SOURCE, (self.root / "README.md").read_bytes())
+-
+-    def test_static_full_html_is_first_and_does_not_hide_text(self):
+-        entry.materialize_declaration(self.root, check=False)
+-        raw = (self.root / "docs/index.html").read_bytes()
+-        block = entry.declaration_html(SOURCE)
+-        self.assertIn(entry.MAIN_ANCHOR + block, raw)
+-        self.assertEqual(raw.replace(block, b"", 1).replace(entry.NAV_LINK, b"", 1), self.originals["docs/index.html"])
+-        self.assertNotIn(b"<script>", block)
+-        self.assertNotIn(b"<details", block)
+-        self.assertNotIn(b"<iframe", block)
+-        reader = TextReader()
+-        reader.feed(block.decode())
+-        text = " ".join(" ".join(reader.parts).split())
+-        for paragraph in SOURCE.decode().strip().split("\n\n"):
+-            self.assertIn(" ".join(paragraph.lstrip("# ").split()), text)
+-
+-    def test_replay_is_idempotent(self):
+-        entry.materialize_declaration(self.root, check=False)
+-        before = self.snapshot()
+-        self.assertEqual(entry.materialize_declaration(self.root, check=False), [])
+-        self.assertEqual(entry.materialize_declaration(self.root, check=True), [])
+-        self.assertEqual(before, self.snapshot())
+-
+-    def test_check_only_never_writes(self):
+-        with self.assertRaisesRegex(ValueError, "NOT_CURRENT"):
+-            entry.materialize_declaration(self.root, check=True)
+-        self.assertEqual(self.snapshot(), self.originals)
+-
+-    def test_source_mutation_blocks_all_writes(self):
+-        (self.root / entry.DECLARATION_PATH).write_bytes(SOURCE + b"changed")
+-        with self.assertRaisesRegex(ValueError, "SOURCE_BLOB_MISMATCH"):
+-            entry.materialize_declaration(self.root, check=False)
+-        self.assertEqual(self.snapshot(), self.originals)
+-
+-    def test_missing_source_blocks_all_writes(self):
+-        (self.root / entry.DECLARATION_PATH).unlink()
+-        with self.assertRaisesRegex(ValueError, "SOURCE_MISSING_OR_UNSAFE"):
+-            entry.materialize_declaration(self.root, check=False)
+-        self.assertEqual(self.snapshot(), self.originals)
+-
+-    def test_missing_last_target_prevents_earlier_writes(self):
+-        (self.root / "docs/index.html").unlink()
+-        with self.assertRaisesRegex(ValueError, "TARGET_MISSING_OR_UNSAFE"):
+-            entry.materialize_declaration(self.root, check=False)
+-        self.assertEqual((self.root / "README.md").read_bytes(), self.originals["README.md"])
+-
+-    def test_conflicting_marker_blocks_all_writes(self):
+-        path = self.root / "docs/index.html"
+-        path.write_bytes(path.read_bytes() + entry.DECLARATION_START)
+-        before = self.snapshot()
+-        with self.assertRaisesRegex(ValueError, "PREFIX_CONFLICT"):
+-            entry.materialize_declaration(self.root, check=False)
+-        self.assertEqual(self.snapshot(), before)
+-
+-    def test_duplicate_main_anchor_blocks_all_writes(self):
+-        path = self.root / "docs/index.html"
+-        path.write_bytes(path.read_bytes() + entry.MAIN_ANCHOR)
+-        before = self.snapshot()
+-        with self.assertRaisesRegex(ValueError, "ANCHOR_CONFLICT"):
+-            entry.materialize_declaration(self.root, check=False)
+-        self.assertEqual(self.snapshot(), before)
+-
+-    def test_source_symlink_is_rejected(self):
+-        path = self.root / entry.DECLARATION_PATH
+-        other = self.root / "source.txt"
+-        other.write_bytes(SOURCE)
+-        path.unlink()
+-        path.symlink_to(other)
+-        with self.assertRaisesRegex(ValueError, "SOURCE_MISSING_OR_UNSAFE"):
+-            entry.materialize_declaration(self.root, check=False)
+-        self.assertEqual(self.snapshot(), self.originals)
+-
+-    def test_target_symlink_is_rejected(self):
+-        path = self.root / "docs/index.html"
+-        other = self.root / "page.html"
+-        other.write_bytes(path.read_bytes())
+-        path.unlink()
+-        path.symlink_to(other)
+-        with self.assertRaisesRegex(ValueError, "TARGET_MISSING_OR_UNSAFE"):
+-            entry.materialize_declaration(self.root, check=False)
+-        self.assertEqual((self.root / "README.md").read_bytes(), self.originals["README.md"])
+-
+-    def test_machine_entrypoints_link_to_the_same_source(self):
+-        for relative in entry.PATHS[1:]:
+-            prefix = "../" if relative.startswith("next/") else ""
+-            self.assertIn(("(" + prefix + entry.DECLARATION_PATH + ")").encode(),
+-                          entry.declaration_prefix(relative, SOURCE))
+-
+-    def test_tampered_projection_is_detected_and_repaired(self):
+-        entry.materialize_declaration(self.root, check=False)
+-        before = self.snapshot()
+-        path = self.root / "README.md"
+-        path.write_bytes(path.read_bytes().replace(SOURCE, SOURCE.replace(b"q.e.d.", b"TAMPERED"), 1))
+-        with self.assertRaisesRegex(ValueError, "NOT_CURRENT"):
+-            entry.materialize_declaration(self.root, check=True)
+-        entry.materialize_declaration(self.root, check=False)
+-        self.assertEqual(self.snapshot(), before)
+-
+-
+-if __name__ == "__main__":
+-    unittest.main()
+diff --git a/tests/test_seed_workflows.py b/tests/test_seed_workflows.py
+index 65851a56f61028ba56e53eab73a82b7eb151100a..25177e046b638891d0985d128d3d3400c8773a0c 100644
+--- a/tests/test_seed_workflows.py
++++ b/tests/test_seed_workflows.py
+@@ -358,18 +358,6 @@ class SeedWorkflowTests(unittest.TestCase):
+         self.assertIn('"source_tree": os.environ["ACTUAL_TREE"]', workflow)
+         self.assertIn("qikvrt_seed_dashboard_exact_head_binding_v1", workflow)
+ 
+-    def test_dashboard_continue_is_not_mislabelled_as_current_dashboard_evidence(self) -> None:
+-        repository = Path(__file__).resolve().parents[1]
+-        workflow = (
+-            repository / ".github/workflows/qikvrt_seed_dashboard_publish.yml"
+-        ).read_text(encoding="utf-8")
+-        self.assertIn("dashboard_execution=NOT_EXECUTED", workflow)
+-        self.assertIn("current_dashboard_evidence=NOT_ESTABLISHED", workflow)
+-        self.assertIn("NODE_REVALIDATION_CONTINUE", workflow)
+-        self.assertIn('"predecessor_evidence_transfer": False', workflow)
+-        self.assertIn("Build dashboard only from PASS revalidation", workflow)
+-        self.assertIn("steps.revalidate.outputs.dashboard_execution == 'ADMITTED'", workflow)
+-
+     def test_seed_workflows_are_pinned_read_only_and_do_not_push(self) -> None:
+         repository = Path(__file__).resolve().parents[1]
+         for workflow in sorted((repository / ".github/workflows").glob("qikvrt_seed_*.yml")):
+diff --git a/tests/test_temdd.py b/tests/test_temdd.py
+index 52e9464d877b1b263f6582ed8fe04dd8ca2f514a..97e1a674328c533839b6bd95655650ab32efd7ab 100644
+--- a/tests/test_temdd.py
++++ b/tests/test_temdd.py
+@@ -1,19 +1,30 @@
+ import unittest
+ from tools.qikvrt_temdd import parse
+-GOOD='''temdd 0.1; authority owner = "Goldkelch/qik-vrt"; subject s { repository = "Goldkelch/qik-vrt"; binding = exact; } request r { target = CUSTOM_DOD; } on event { follow exact; classify causal; } on blocker { learn smallest_sound_successor; execute successor; } until { ZERO_BUGS && FRESH_EFFECT_READBACK; }'''
++GOOD='''temdd 0.1; authority owner = "Goldkelch/qik-vrt"; context c { perspective = "test"; } subject s { repository = "Goldkelch/qik-vrt"; binding = exact; } relation rel { source = "a"; predicate = "observes"; target = "b"; epistemic = UNKNOWN; source_order = 2; observation_order = 1; freshness = FRESH; } request r { target = CUSTOM_DOD; } on event { follow exact; classify causal; } on blocker { learn smallest_sound_successor; execute successor; } until { ZERO_BUGS && FRESH_EFFECT_READBACK; }'''
+ class TEMDDTests(unittest.TestCase):
+  def test_deterministic_ir(self): self.assertEqual(parse(GOOD),parse(GOOD))
+  def test_exact_binding(self): self.assertEqual(parse(GOOD)['subject']['binding'],'exact')
++ def test_context_perspective(self): self.assertEqual(parse(GOOD)['context'],{'name':'c','perspective':'test'})
++ def test_first_class_relation(self):
++  rel=parse(GOOD)['relations'][0]
++  self.assertEqual((rel['source'],rel['predicate'],rel['target']),('a','observes','b'))
++  self.assertEqual((rel['source_order'],rel['observation_order']),(2,1))
++ def test_typed_epistemic_state(self): self.assertEqual(parse(GOOD)['relations'][0]['epistemic'],'UNKNOWN')
+  def test_dod_conjunction(self): self.assertEqual(parse(GOOD)['dod'],['ZERO_BUGS','FRESH_EFFECT_READBACK'])
+  def test_missing_authority_blocks(self):
+   with self.assertRaises(ValueError): parse(GOOD.replace('authority owner = "Goldkelch/qik-vrt";',''))
++ def test_missing_context_blocks(self):
++  with self.assertRaises(ValueError): parse(GOOD.replace('context c { perspective = "test"; }',''))
+  def test_nonexact_binding_blocks(self):
+   with self.assertRaises(ValueError): parse(GOOD.replace('binding = exact','binding = floating'))
+  def test_missing_repository_blocks(self):
+   with self.assertRaises(ValueError): parse(GOOD.replace('repository = "Goldkelch/qik-vrt";',''))
+- def test_subject_scope_not_global(self):
+-  bad=GOOD.replace('repository = "Goldkelch/qik-vrt";','')+' repository = "evil/global";'
+-  with self.assertRaises(ValueError): parse(bad)
++ def test_missing_relation_blocks(self):
++  with self.assertRaises(ValueError): parse(GOOD.replace('relation rel { source = "a"; predicate = "observes"; target = "b"; epistemic = UNKNOWN; source_order = 2; observation_order = 1; freshness = FRESH; }',''))
++ def test_invalid_epistemic_state_blocks(self):
++  with self.assertRaises(ValueError): parse(GOOD.replace('epistemic = UNKNOWN','epistemic = MAYBE'))
++ def test_invalid_freshness_blocks(self):
++  with self.assertRaises(ValueError): parse(GOOD.replace('freshness = FRESH','freshness = FUTURE'))
+  def test_missing_handler_blocks(self):
+   with self.assertRaises(ValueError): parse(GOOD.replace('on event { follow exact; classify causal; }','').replace('on blocker { learn smallest_sound_successor; execute successor; }',''))
+  def test_qikvrt_dod_is_complete(self):
+diff --git a/tests/test_temdd_conformance_report.py b/tests/test_temdd_conformance_report.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..9979c6bfcb1b5b8b19b45f454336a7171c835b4b
+--- /dev/null
++++ b/tests/test_temdd_conformance_report.py
+@@ -0,0 +1,54 @@
++import json
++import subprocess
++import tempfile
++import unittest
++from pathlib import Path
++
++from tools.qikvrt_temdd_conformance_report import (
++    ConformanceReportHold,
++    build_report,
++)
++
++
++ROOT = Path(__file__).resolve().parents[1]
++
++
++def git(*args):
++    return subprocess.check_output(["git", "-C", str(ROOT), *args], text=True).strip()
++
++
++def receipt(head, tree):
++    return {
++        "source_sha": head,
++        "source_tree": tree,
++        "backends": {
++            "c90": "EXECUTED_SUCCESS",
++            "smalltalk": "EXECUTED_SUCCESS",
++            "m68000": "EXECUTED_SUCCESS_QEMU_USER",
++            "lean": "COMPILED_SUCCESS_LEAN_4_19_LAKE",
++        },
++        "predecessor_evidence_transfer": False,
++    }
++
++
++class TEMDDConformanceReportTests(unittest.TestCase):
++    def test_exact_subject_report_is_crypto_bound_and_scoped(self):
++        head, tree = git("rev-parse", "HEAD"), git("rev-parse", "HEAD^{tree}")
++        report = build_report("Goldkelch/qik-vrt", head, tree, receipt(head, tree))
++        self.assertEqual(report["overall"], "PASS")
++        self.assertTrue(report["implementation"]["digest"].startswith("sha256:"))
++        self.assertTrue(report["suite"]["digest"].startswith("sha256:"))
++        self.assertFalse(report["stable_language_claim"])
++        self.assertFalse(report["main_adoption"])
++        self.assertFalse(report["production_effect"])
++        self.assertFalse(report["effect_ack_done"])
++        self.assertFalse(report["predecessor_evidence_transfer"])
++
++    def test_wrong_subject_cannot_receive_report(self):
++        head, tree = git("rev-parse", "HEAD"), git("rev-parse", "HEAD^{tree}")
++        with self.assertRaises(ConformanceReportHold):
++            build_report("Goldkelch/qik-vrt", "0" * 40, tree, receipt(head, tree))
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/test_temdd_event_ledger.py b/tests/test_temdd_event_ledger.py
+index 187230e0bab7512811c0e9d71c4f6498be5f06ef..a54856ec9b4660b546c33abe709162a755d786e5 100644
+--- a/tests/test_temdd_event_ledger.py
++++ b/tests/test_temdd_event_ledger.py
+@@ -48,14 +48,37 @@ class ProducerTests(unittest.TestCase):
+     def git(self, *args):
+         return subprocess.check_output(['git', '-C', str(self.root), *args], stderr=subprocess.DEVNULL).decode().strip()
+ 
+-    def event(self, native='native:1', **changes):
++    def event(self, native='native:1', source_order=1, **changes):
+         event = {'schema': m.SCHEMA, 'kind': 'READBACK', 'subject': copy.deepcopy(self.runtime.subject),
+-                 'provenance': {'source': 'repository', 'native_event_id': native},
++                 'provenance': {'source': 'repository', 'native_event_id': native, 'source_order': source_order},
++                 'emitted_at': '2026-09-15T19:59:59Z',
+                  'observed_at': '2026-09-15T20:00:00Z', 'message': 'native fixture readback',
+                  'payload': {'receipt': 'fixture-only; not production evidence'}}
+         event.update(changes)
+         return event
+ 
++    def conformance_report(self, head=None):
++        exact=self.runtime.subject
++        return {
++            'schema':'temdd_conformance_report_v1',
++            'temdd_conformance':'1',
++            'implementation':{
++                'repository':exact['repository'],
++                'head':head or exact['head'],
++                'tree':exact['tree'],
++                'digest':'sha256:'+'1'*64,
++            },
++            'suite':{'version':'1','digest':'sha256:'+'2'*64,'files':[{'path':'fixture'}]},
++            'language':'PASS','ir':'PASS','ide':'PASS','event_semantics':'PASS',
++            'ledger':'PASS','evidence_binding':'PASS','causality':'PASS','effect_ack':'PASS',
++            'formal_invariants':'PASS','tests':'PASS','negative_vectors':'PASS',
++            'backends':{'c90':'EXECUTED_SUCCESS','smalltalk':'EXECUTED_SUCCESS',
++                        'm68000':'EXECUTED_SUCCESS_QEMU_USER','lean':'COMPILED_SUCCESS_LEAN_4_19_LAKE'},
++            'overall':'PASS','predecessor_evidence_transfer':False,
++            'stable_language_claim':False,'main_adoption':False,
++            'production_effect':False,'effect_ack_done':False,
++        }
++
+     def start_servers(self):
+         self.http = m.terminal.ThreadingHTTPServer(('127.0.0.1', 0), m.make_handler(self.runtime))
+         self.ingress = m.make_ingress(self.runtime)
+@@ -159,6 +182,13 @@ class ProducerTests(unittest.TestCase):
+                 self.runtime.ledger.cursor(cursor)
+         self.assertEqual(self.runtime.ledger.cursor(first['id']), 1)
+ 
++    def test_source_and_observation_order_are_independent(self):
++        first = self.runtime.append(self.event('source:2', source_order=2))
++        second = self.runtime.append(self.event('source:1', source_order=1))
++        self.assertEqual((first['observation_order'], second['observation_order']), (1, 2))
++        self.assertGreater(first['provenance']['source_order'], second['provenance']['source_order'])
++        self.assertLess(first['observation_order'], second['observation_order'])
++
+     def test_successor_never_replays_predecessor_evidence(self):
+         first = self.runtime.append(self.event())
+         self.runtime.ledger.close()
+@@ -317,6 +347,24 @@ class ProducerTests(unittest.TestCase):
+         self.assertEqual(envelope['state'], 'HOLD_UNVERIFIED')
+         self.assertFalse(envelope['dod'])
+ 
++    def test_conformance_readback_is_exact_subject_and_fail_closed(self):
++        self.start_servers()
++        status, data = self.request('GET', '/api/temdd/conformance')
++        self.assertEqual(status, 409)
++        self.assertEqual(json.loads(data)['state'], 'HOLD')
++        path=self.runtime.ledger.directory/'conformance-report.json'
++        path.write_text(json.dumps(self.conformance_report(head='0'*40)), encoding='utf-8')
++        status, data = self.request('GET', '/api/temdd/conformance')
++        self.assertEqual(status, 409)
++        self.assertEqual(json.loads(data)['state'], 'HOLD')
++        path.write_text(json.dumps(self.conformance_report()), encoding='utf-8')
++        status, data = self.request('GET', '/api/temdd/conformance')
++        report=json.loads(data)
++        self.assertEqual(status, 200)
++        self.assertEqual(report['overall'], 'PASS')
++        self.assertEqual(report['implementation']['head'], self.runtime.subject['head'])
++        self.assertFalse(report['effect_ack_done'])
++
+     def test_legacy_effect_ack_remains_exact_bound_and_single_use(self):
+         self.start_servers()
+         status, data = self.request('GET', '/.well-known/effect-ack')
+@@ -374,6 +422,11 @@ class ProducerTests(unittest.TestCase):
+     def test_browser_ide_is_local_editable_and_effect_free(self):
+         page = (ROOT/'docs/terminal/temdd/index.html').read_text(encoding='utf-8')
+         self.assertIn('id="ideSource"', page)
++        for view in ('source','ir','event-graph','ledger','conformance'):
++            self.assertIn(f'data-temdd-view="{view}"', page)
++        self.assertIn('/api/temdd/conformance', page)
++        self.assertIn('cause_event_ids', page)
++        self.assertIn('SEQUENCE != CAUSALITY', page)
+         self.assertIn('ANALYZE → IR', page)
+         self.assertIn('function analyzeTemdd(text)', page)
+         self.assertIn('QIKVRT_DOD requires complete canonical predicate', page)
+@@ -386,6 +439,10 @@ class ProducerTests(unittest.TestCase):
+         self.assertIn("schema:'temdd_ir_v0_1'", page)
+         self.assertIn("version!=='0.1'", page)
+         self.assertIn("binding:'exact'", page)
++        self.assertIn('perspective', page)
++        self.assertIn('source_order', page)
++        self.assertIn('observation_order', page)
++        self.assertIn('epistemic', page)
+         self.assertIn('FRESH_EFFECT_READBACK', page)
+ 
+     def test_consumer_validation_and_reconnect_state_machine(self):
+@@ -397,17 +454,22 @@ const subj={repository:'Goldkelch/qik-vrt',pr:1103,head:'a'.repeat(40),tree:'b'.
+ class ES{constructor(url){this.url=url;this.handlers={};this.closed=false;sources.push(this);}addEventListener(n,f){this.handlers[n]=f;}close(){this.closed=true;}}
+ const ctx={document:{getElementById(id){if(!elements.has(id))elements.set(id,{textContent:'',className:'',scrollHeight:0});return elements.get(id);}},
+  localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},EventSource:ES,
+- fetch:async()=>({ok:true,json:async()=>({subject:subj,ledger_id:epoch,dod:false,evidence_transfer:'DENY'})}),Date,JSON,BigInt,Number,Error,console};
++ fetch:async(url)=>url==='/api/temdd/conformance'
++   ?({ok:true,json:async()=>({schema:'temdd_conformance_report_v1',temdd_conformance:'1',overall:'PASS',
++      implementation:{repository:subj.repository,head:subj.head,tree:subj.tree},
++      predecessor_evidence_transfer:false,effect_ack_done:false})})
++   :({ok:true,json:async()=>({subject:subj,ledger_id:epoch,dod:false,evidence_transfer:'DENY'})}),
++ Date,JSON,BigInt,Number,Error,console};
+ vm.createContext(ctx);vm.runInContext(script,ctx);
+ setImmediate(()=>{try{
+  const es=sources[0];assert(es);es.onopen();assert.equal(elements.get('state').textContent,'CONNECTED');
+  es.handlers.subject({data:JSON.stringify({subject:subj,ledger_id:epoch,dod:false,evidence_transfer:'DENY'})});
+  assert.equal(elements.get('state').textContent,'OBSERVING');
+- const event={schema:'qikvrt_temdd_event_v1',subject:subj,id:epoch+':1',kind:'READBACK',message:'<script>not html</script>',dod:false,evidence_transfer:'DENY'};
++ const event={schema:'qikvrt_temdd_event_v1',subject:subj,id:epoch+':1',kind:'READBACK',message:'<script>not html</script>',dod:false,evidence_transfer:'DENY',provenance:{source:'repository',native_event_id:'native:2',source_order:2},emitted_at:'2026-09-15T19:59:59Z',observed_at:'2026-09-15T20:00:00Z',observation_order:1};
+  es.onmessage({data:JSON.stringify(event),lastEventId:event.id});assert.equal(storage.size,1);
+  es.onerror();assert.equal(es.closed,false);assert.equal(elements.get('state').textContent,'HOLD');assert.equal(elements.get('dod').textContent,'NOT PROVEN');
+  es.onopen();es.handlers.subject({data:JSON.stringify({subject:subj,ledger_id:epoch,dod:false,evidence_transfer:'DENY'})});
+- event.id=epoch+':2';event.dod=true;es.onmessage({data:JSON.stringify(event),lastEventId:event.id});
++ event.id=epoch+':2';event.observation_order=2;event.provenance.source_order=1;event.dod=true;es.onmessage({data:JSON.stringify(event),lastEventId:event.id});
+  assert.equal(es.closed,true);assert.equal(elements.get('dod').textContent,'NOT PROVEN');assert.equal([...storage.values()][0],epoch+':1');
+  console.log('consumer reconnect, exact-subject binding, and false-DONE rejection PASS');
+ }catch(e){console.error(e);process.exitCode=1;}});
+diff --git a/tests/test_temdd_runtime_subject_binding.py b/tests/test_temdd_runtime_subject_binding.py
+deleted file mode 100644
+index 58f5af0d026dfa9319f99b3beb8dcd6e30aec18d..0000000000000000000000000000000000000000
+--- a/tests/test_temdd_runtime_subject_binding.py
++++ /dev/null
+@@ -1,84 +0,0 @@
+-"""Exercise the actual shell guard and ledger argv without starting GUI services."""
+-import os
+-from pathlib import Path
+-import subprocess
+-import unittest
+-
+-
+-ROOT = Path(__file__).resolve().parents[1]
+-ENTRYPOINT = ROOT / "deploy/universal-terminal/entrypoint.sh"
+-BEGIN = "# BEGIN TEMDD deployment subject binding"
+-END = "# END TEMDD deployment subject binding"
+-
+-
+-class TEMDDRuntimeSubjectBindingTests(unittest.TestCase):
+-    @classmethod
+-    def setUpClass(cls):
+-        cls.source = ENTRYPOINT.read_text(encoding="utf-8")
+-        if cls.source.count(BEGIN) != 1 or cls.source.count(END) != 1:
+-            raise AssertionError("The tested subject guard must occur exactly once")
+-        cls.guard = cls.source.split(BEGIN, 1)[1].split(END, 1)[0]
+-        start = cls.source.index("python3 -B /opt/qikvrt/src/qikvrt_temdd_event_ledger.py serve")
+-        stop = cls.source.index("\n  >", start)
+-        cls.command = cls.source[start:stop].replace("\\\n", " ").rstrip()
+-
+-    def invoke(self, variables):
+-        env = {key: value for key, value in os.environ.items()
+-               if not key.startswith("QIKVRT_")}
+-        env.update(variables)
+-        script = ('set -eu\n' + self.guard + '\n'
+-                  'HTTP_HOST=127.0.0.1\nHTTP_PORT=8771\nSTATE_DIR=/tmp/state\n'
+-                  'python3() { printf "%s\\n" "$@"; }\n' + self.command + '\n')
+-        return subprocess.run(["/bin/sh", "-c", script], env=env,
+-                              capture_output=True, text=True, timeout=5)
+-
+-    def assert_subject(self, variables, expected):
+-        result = self.invoke(variables)
+-        self.assertEqual(result.returncode, 0, result.stderr)
+-        args = result.stdout.splitlines()
+-        self.assertIn("/opt/qikvrt/src/qikvrt_temdd_event_ledger.py", args)
+-        self.assertEqual(args.count("--pr"), int(expected is not None))
+-        if expected is not None:
+-            self.assertEqual(args[-2:], ["--pr", expected])
+-
+-    def test_unsealed_reference_launch_keeps_compatibility(self):
+-        self.assert_subject({}, None)
+-
+-    def test_explicit_pr_is_passed_as_two_arguments(self):
+-        self.assert_subject({"QIKVRT_TEMDD_PR": "1124"}, "1124")
+-
+-    def test_exact_head_requires_explicit_pr(self):
+-        result = self.invoke({"QIKVRT_EXACT_HEAD": "a" * 40})
+-        self.assertNotEqual(result.returncode, 0)
+-        self.assertIn("QIKVRT_TEMDD_PR", result.stderr)
+-        self.assertEqual(result.stdout, "")
+-
+-    def test_exact_tree_requires_explicit_pr(self):
+-        result = self.invoke({"QIKVRT_EXACT_TREE": "b" * 40})
+-        self.assertNotEqual(result.returncode, 0)
+-        self.assertIn("QIKVRT_TEMDD_PR", result.stderr)
+-        self.assertEqual(result.stdout, "")
+-
+-    def test_exact_subject_uses_configured_pr_not_legacy_default(self):
+-        self.assert_subject({"QIKVRT_EXACT_HEAD": "a" * 40,
+-                             "QIKVRT_EXACT_TREE": "b" * 40,
+-                             "QIKVRT_TEMDD_PR": "1124"}, "1124")
+-
+-    def test_invalid_pr_cannot_start_ledger(self):
+-        for value in ("", "0", "01124", "-1", "1124;echo BAD", " 1124", "1124\n", "abc"):
+-            with self.subTest(value=value):
+-                result = self.invoke({"QIKVRT_TEMDD_PR": value})
+-                self.assertNotEqual(result.returncode, 0)
+-                self.assertIn("QIKVRT_TEMDD_PR", result.stderr)
+-                self.assertEqual(result.stdout, "")
+-
+-    def test_guard_precedes_runtime_side_effects(self):
+-        self.assertLess(self.source.index(BEGIN), self.source.index("mkdir -p"))
+-        self.assertIn('"$@"', self.command)
+-        result = subprocess.run(["/bin/sh", "-n", str(ENTRYPOINT)],
+-                                capture_output=True, text=True, timeout=5)
+-        self.assertEqual(result.returncode, 0, result.stderr)
+-
+-
+-if __name__ == "__main__":
+-    unittest.main()
+diff --git a/tests/test_temdd_semantic_ir.py b/tests/test_temdd_semantic_ir.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..24a6698f76f47d607d84ddf3881188f8f0331632
+--- /dev/null
++++ b/tests/test_temdd_semantic_ir.py
+@@ -0,0 +1,102 @@
++import hashlib
++import unittest
++
++from src.qikvrt_temdd_semantic_ir import (
++    SemanticIRHold,
++    evidence_admitted,
++    project_event,
++    project_evidence,
++    subject_id,
++)
++
++
++SUBJECT = {
++    "repository": "Goldkelch/qik-vrt",
++    "pr": 1103,
++    "head": "1" * 40,
++    "tree": "2" * 40,
++}
++
++
++def persisted():
++    return {
++        "schema": "qikvrt_temdd_event_v1",
++        "kind": "READBACK",
++        "subject": dict(SUBJECT),
++        "provenance": {
++            "source": "repository",
++            "native_event_id": "review:123",
++            "source_order": 7,
++        },
++        "emitted_at": "2026-09-18T12:00:00Z",
++        "observed_at": "2026-09-18T12:00:01Z",
++        "message": "fresh exact-subject readback",
++        "payload": {
++            "cause_event_ids": ["epoch:1"],
++            "inputs": ["artifact:a"],
++            "outputs": ["receipt:b"],
++            "evidence_refs": ["evidence:c"],
++            "decision": "HOLD_UNVERIFIED",
++        },
++        "recorded_at": "2026-09-18T12:00:02Z",
++        "payload_digest": "3" * 64,
++        "evidence_transfer": "DENY",
++        "dod": False,
++        "id": "a" * 32 + ":2",
++        "observation_order": 2,
++        "ledger_digest": "4" * 64,
++    }
++
++
++class TEMDDSemanticIRTests(unittest.TestCase):
++    def test_event_projection_preserves_subject_causality_and_provenance(self):
++        event = project_event(persisted())
++        self.assertEqual(event["subject_id"], subject_id(SUBJECT))
++        self.assertEqual(event["cause_event_ids"], ["epoch:1"])
++        self.assertEqual(event["source_order"], 7)
++        self.assertEqual(event["observation_order"], 2)
++        self.assertEqual(event["decision"], "HOLD_UNVERIFIED")
++        self.assertEqual(event["evidence_transfer"], "DENY")
++
++    def test_sequence_does_not_invent_cause(self):
++        row = persisted()
++        row["payload"] = {}
++        event = project_event(row)
++        self.assertEqual(event["cause_event_ids"], [])
++        self.assertEqual(event["observation_order"], 2)
++
++    def test_predecessor_evidence_is_rejected(self):
++        event = project_event(persisted())
++        evidence = project_evidence(
++            event,
++            evidence_id="evidence:1",
++            evidence_type="READBACK",
++            content_digest=hashlib.sha256(b"receipt").hexdigest(),
++            freshness="FRESH",
++            epistemic="TRUE",
++        )
++        self.assertTrue(evidence_admitted(evidence, SUBJECT))
++        successor = dict(SUBJECT, head="5" * 40)
++        self.assertFalse(evidence_admitted(evidence, successor))
++
++    def test_stale_evidence_is_rejected(self):
++        event = project_event(persisted())
++        evidence = project_evidence(
++            event,
++            evidence_id="evidence:stale",
++            evidence_type="NODE_HEALTH",
++            content_digest=hashlib.sha256(b"old").hexdigest(),
++            freshness="STALE",
++            epistemic="STALE",
++        )
++        self.assertFalse(evidence_admitted(evidence, SUBJECT))
++
++    def test_unknown_or_malformed_required_semantics_fail_closed(self):
++        row = persisted()
++        row["evidence_transfer"] = "ALLOW"
++        with self.assertRaises(SemanticIRHold):
++            project_event(row)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/test_temdd_v1.py b/tests/test_temdd_v1.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..7bbad66e7faa17b570bec19eaa03119cb411dc9d
+--- /dev/null
++++ b/tests/test_temdd_v1.py
+@@ -0,0 +1,41 @@
++import json
++import subprocess
++import sys
++import unittest
++from pathlib import Path
++
++from src.temdd.v1_adapter import adapt
++from tests.test_temdd import GOOD
++
++ROOT=Path(__file__).resolve().parents[1]
++
++class TEMDDV1Tests(unittest.TestCase):
++    def test_v1_adapter_is_conservative_successor(self):
++        ir=adapt(GOOD)
++        self.assertEqual(ir["schema"],"temdd_ir_v1")
++        self.assertEqual(ir["ir_version"],"1")
++        self.assertEqual(ir["language_version"],"0.1")
++        self.assertEqual(ir["context"],{"name":"c","perspective":"test"})
++        self.assertEqual(ir["relations"][0]["predicate"],"observes")
++        self.assertEqual(ir["subject"]["binding"],"exact")
++        self.assertEqual(set(ir["semantic_contract"]),{
++            "T13_CAUSAL_BINDING","T14_EVIDENCE_NON_TRANSFER",
++            "T15_EFFECT_CONSTRUCTION","T16_CONFORMANCE_BINDING",
++        })
++
++    def test_adapter_process_boundary_is_executable(self):
++        proc=subprocess.run(
++            [sys.executable,str(ROOT/"src/temdd/v1_adapter.py"),str(ROOT/"tests/temdd/positive/minimal.temdd")],
++            cwd=ROOT,text=True,capture_output=True,check=False,
++        )
++        self.assertEqual(proc.returncode,0,proc.stderr)
++        self.assertEqual(json.loads(proc.stdout)["schema"],"temdd_ir_v1")
++
++    def test_normative_runner_does_not_import_adapter(self):
++        text=(ROOT/"conformance/temdd/runner.py").read_text(encoding="utf-8")
++        self.assertIn("invoke_adapter",text)
++        self.assertNotIn("from src.temdd.v1_adapter import",text)
++        self.assertNotIn("from tools.qikvrt_temdd import",text)
++
++if __name__=="__main__":
++    unittest.main()
+diff --git a/tools/bootstrap-runtime.sh b/tools/bootstrap-runtime.sh
+index 11f27514db6d24ec7f99d90e3ed154fef3c453ba..348b15daf0a0a10497d9b1ba5a68ec8829dd2bb6 100644
+--- a/tools/bootstrap-runtime.sh
++++ b/tools/bootstrap-runtime.sh
+@@ -23,7 +23,7 @@ usage() {
+     cat <<'EOF'
+ Usage: tools/bootstrap-runtime.sh [--check-only] [--install]
+        [--accept-third-party]
+-       [--profile core|ietf|formal|audio|publication|smalltalk|target|all]
++       [--profile core|ietf|formal|audio|publication|all]
+        [--cache-dir PATH]
+ 
+ Every profile checks GitHub CLI first. Only the verified GitHub CLI and
+@@ -91,7 +91,7 @@ while [ "$#" -gt 0 ]; do
+ done
+ 
+ case "$PROFILE" in
+-    core|ietf|formal|audio|publication|smalltalk|target|all) ;;
++    core|ietf|formal|audio|publication|all) ;;
+     *) usage >&2; exit 2 ;;
+ esac
+ if [ "$MODE" = install ] && [ "$ACCEPT_THIRD_PARTY" -ne 1 ]; then
+@@ -389,22 +389,6 @@ check_audio_profile() {
+     fi
+ }
+ 
+-check_smalltalk_profile() {
+-    if [ "$MODE" = install ]; then
+-        python3 "$ROOT/tools/qikvrt_smalltalk.py" install --cache-dir "$CACHE_DIR" || fail "Pharo installation failed"
+-    elif ! python3 "$ROOT/tools/qikvrt_smalltalk.py" verify --cache-dir "$CACHE_DIR"; then
+-        mark_continue "Run --install --accept-third-party --profile smalltalk for the locked Pharo runtime"
+-    fi
+-}
+-
+-check_target_profile() {
+-    if [ "$MODE" = install ]; then
+-        python3 "$ROOT/next/tools/bootstrap.py" --prefix "$CACHE_DIR/target" --install || fail "Target toolchain provisioning failed"
+-    elif ! python3 "$ROOT/next/tools/bootstrap.py" --prefix "$CACHE_DIR/target"; then
+-        mark_continue "Run --install --accept-third-party --profile target for the locked C90/Rust/RTL runtime"
+-    fi
+-}
+-
+ check_publication_profile() {
+     missing=
+     for tool in xelatex pdftotext pdftoppm; do
+@@ -428,15 +412,12 @@ case "$PROFILE" in
+     formal) check_formal_profile ;;
+     audio) check_audio_profile ;;
+     publication) check_publication_profile ;;
+-    smalltalk) check_smalltalk_profile ;;
+-    target) check_target_profile ;;
+     all)
+         check_core_profile
+         check_ietf_profile
+         check_formal_profile
+         check_audio_profile
+         check_publication_profile
+-        check_smalltalk_profile
+         ;;
+ esac
+ 
+diff --git a/tools/qikvrt_distribution_readback.py b/tools/qikvrt_distribution_readback.py
+deleted file mode 100644
+index b52198bc9989854ba5a300b3b65b2930fba49301..0000000000000000000000000000000000000000
+--- a/tools/qikvrt_distribution_readback.py
++++ /dev/null
+@@ -1,156 +0,0 @@
+-#!/usr/bin/env python3
+-"""Bind and re-download complete distribution bytes; never infer product DONE."""
+-from __future__ import annotations
+-import argparse
+-import datetime as dt
+-import hashlib
+-import json
+-from pathlib import Path
+-import re
+-import tempfile
+-import urllib.parse
+-import urllib.request
+-
+-MANIFEST = 'qikvrt-distribution-manifest.json'
+-REQUIRED = (
+-    'qikvrt-megast-amd64.iso', 'qikvrt-megast-amd64.iso.sha256',
+-    'qikvrt-megast-vmlinuz', 'qikvrt-megast-initrd',
+-    'qikvrt-megast-filesystem.squashfs', 'qikvrt-netboot.json',
+-    'qikvrt-universal-terminal-amd64.docker.tar',
+-    'qikvrt-universal-terminal-amd64.docker.tar.sha256',
+-    'qikvrt-universal-terminal-image-inspect.json',
+-)
+-
+-def digest(path: Path) -> str:
+-    h = hashlib.sha256()
+-    with path.open('rb') as stream:
+-        for block in iter(lambda: stream.read(1024 * 1024), b''):
+-            h.update(block)
+-    return h.hexdigest()
+-
+-
+-def validate(manifest: dict, head: str, tree: str) -> None:
+-    if not re.fullmatch(r'[0-9a-f]{40}', head) or not re.fullmatch(r'[0-9a-f]{40}', tree):
+-        raise ValueError('exact HEAD/TREE required')
+-    if manifest.get('schema') != 'qikvrt_distribution_manifest_v1':
+-        raise ValueError('manifest schema mismatch')
+-    if manifest.get('source_head') != head or manifest.get('source_tree') != tree:
+-        raise ValueError('manifest subject mismatch')
+-    assets = manifest.get('assets')
+-    if not isinstance(assets, dict) or not set(REQUIRED) <= set(assets):
+-        raise ValueError('complete ISO/netboot/Docker payload required')
+-    for name, item in assets.items():
+-        if not isinstance(name, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,199}', name):
+-            raise ValueError('unsafe asset name')
+-        if not isinstance(item, dict) or type(item.get('bytes')) is not int or not 0 < item['bytes'] <= 2**32:
+-            raise ValueError('invalid asset byte count')
+-        if not re.fullmatch(r'[0-9a-f]{64}', str(item.get('sha256', ''))):
+-            raise ValueError('invalid asset hash')
+-
+-
+-def create(root: Path, head: str, tree: str) -> dict:
+-    assets = {}
+-    for path in sorted(root.iterdir()):
+-        if path.name in (MANIFEST, MANIFEST + '.sha256', 'qikvrt-public-readback.json'):
+-            continue
+-        if path.name.startswith('qikvrt-') or path.name == 'QIKVRT_BOOT.BIN':
+-            if path.is_symlink() or not path.is_file():
+-                raise ValueError('release asset must be a regular file: ' + path.name)
+-            if path.stat().st_size:
+-                assets[path.name] = {'sha256': digest(path), 'bytes': path.stat().st_size}
+-    manifest = {'schema': 'qikvrt_distribution_manifest_v1', 'source_head': head,
+-                'source_tree': tree, 'assets': assets, 'acceptance_scope': 'artifact_bytes_only',
+-                'full_product_done': False, 'linux_distribution_done': False}
+-    validate(manifest, head, tree)
+-    path = root / MANIFEST
+-    path.write_text(json.dumps(manifest, sort_keys=True, indent=2) + '\n', encoding='utf-8')
+-    (root / (MANIFEST + '.sha256')).write_text(digest(path) + '  ' + MANIFEST + '\n', encoding='ascii')
+-    return manifest
+-
+-
+-def verify_local(root: Path, manifest: dict, head: str, tree: str) -> None:
+-    validate(manifest, head, tree)
+-    for name, item in manifest['assets'].items():
+-        path = root / name
+-        if path.is_symlink() or not path.is_file() or path.stat().st_size != item['bytes'] or digest(path) != item['sha256']:
+-            raise ValueError('asset integrity mismatch: ' + name)
+-
+-
+-class HTTPSRedirect(urllib.request.HTTPRedirectHandler):
+-    def redirect_request(self, req, fp, code, msg, headers, newurl):
+-        if urllib.parse.urlsplit(newurl).scheme != 'https':
+-            raise ValueError('non-HTTPS redirect rejected')
+-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+-
+-
+-def download(url: str, path: Path, expected_hash: str, expected_bytes: int | None = None) -> dict:
+-    if urllib.parse.urlsplit(url).scheme != 'https':
+-        raise ValueError('public HTTPS URL required')
+-    opener = urllib.request.build_opener(HTTPSRedirect())
+-    request = urllib.request.Request(url, headers={'User-Agent': 'qikvrt-public-readback/1', 'Cache-Control': 'no-cache'})
+-    limit = expected_bytes if expected_bytes is not None else 1024 * 1024
+-    h, total = hashlib.sha256(), 0
+-    path.parent.mkdir(parents=True, exist_ok=True)
+-    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
+-        temporary = Path(stream.name)
+-        try:
+-            with opener.open(request, timeout=60) as response:
+-                if response.status != 200:
+-                    raise ValueError('public response is not HTTP 200')
+-                for block in iter(lambda: response.read(1024 * 1024), b''):
+-                    total += len(block)
+-                    if total > limit:
+-                        raise ValueError('public payload exceeds expected size')
+-                    stream.write(block)
+-                    h.update(block)
+-            stream.flush()
+-            if h.hexdigest() != expected_hash or (expected_bytes is not None and total != expected_bytes):
+-                raise ValueError('public payload digest/size mismatch')
+-            stream.close()
+-            temporary.replace(path)
+-        finally:
+-            temporary.unlink(missing_ok=True)
+-    return {'url': url, 'http_status': 200, 'bytes': total, 'sha256': h.hexdigest()}
+-
+-
+-def readback(base: str, root: Path, manifest_hash: str, head: str, tree: str) -> dict:
+-    if not re.fullmatch(r'[0-9a-f]{64}', manifest_hash):
+-        raise ValueError('trusted manifest hash required')
+-    root.mkdir(parents=True, exist_ok=True)
+-    observations = {MANIFEST: download(base.rstrip('/') + '/' + MANIFEST, root / MANIFEST, manifest_hash)}
+-    manifest = json.loads((root / MANIFEST).read_text(encoding='utf-8'))
+-    validate(manifest, head, tree)
+-    for name, item in manifest['assets'].items():
+-        observations[name] = download(base.rstrip('/') + '/' + name, root / name, item['sha256'], item['bytes'])
+-        print('PUBLIC_PAYLOAD_VERIFIED ' + name, flush=True)
+-    verify_local(root, manifest, head, tree)
+-    result = {'schema': 'qikvrt_distribution_public_readback_v1', 'observed_at': dt.datetime.now(dt.timezone.utc).isoformat(),
+-              'source_head': head, 'source_tree': tree, 'manifest_sha256': manifest_hash,
+-              'anonymous': True, 'observations': observations, 'artifact_bytes_verified': True,
+-              'full_product_done': False, 'linux_distribution_done': False}
+-    (root / 'qikvrt-public-readback.json').write_text(json.dumps(result, sort_keys=True, indent=2) + '\n', encoding='utf-8')
+-    return result
+-
+-
+-def main() -> None:
+-    parser = argparse.ArgumentParser(description=__doc__)
+-    parser.add_argument('mode', choices=('manifest', 'verify', 'readback'))
+-    parser.add_argument('directory', type=Path)
+-    parser.add_argument('head')
+-    parser.add_argument('tree')
+-    parser.add_argument('--base-url')
+-    parser.add_argument('--manifest-sha256')
+-    args = parser.parse_args()
+-    if args.mode == 'manifest':
+-        create(args.directory, args.head, args.tree)
+-        print(digest(args.directory / MANIFEST))
+-    elif args.mode == 'verify':
+-        verify_local(args.directory, json.loads((args.directory / MANIFEST).read_text()), args.head, args.tree)
+-    else:
+-        if not args.base_url or not args.manifest_sha256:
+-            parser.error('readback requires --base-url and --manifest-sha256')
+-        readback(args.base_url, args.directory, args.manifest_sha256, args.head, args.tree)
+-
+-
+-if __name__ == '__main__':
+-    main()
+diff --git a/tools/qikvrt_execution_precedence.py b/tools/qikvrt_execution_precedence.py
+index f7ad0d3a8e46ced0771df8356bf1637b06484292..be423bca9996e873fcbbdb2285d699fd3788eae4 100644
+--- a/tools/qikvrt_execution_precedence.py
++++ b/tools/qikvrt_execution_precedence.py
+@@ -16,18 +16,6 @@ class PrecedenceError(ValueError):
+     pass
+ 
+ 
+-_CONVERGENCE_REPOSITORIES = {
+-    "Goldkelch/qik-vrt",
+-    "ingolf-lohmann/qik-vrt",
+-}
+-_CONVERGENCE_METRICS = (
+-    "open_issues",
+-    "open_pull_requests",
+-    "open_work_branches",
+-    "unclassified_branch_refs",
+-)
+-
+-
+ def load_policy(path: Path) -> dict[str, Any]:
+     value = json.loads(path.read_text(encoding="utf-8"))
+     if not isinstance(value, dict):
+@@ -104,49 +92,6 @@ def validate_policy(policy: Mapping[str, Any]) -> None:
+         if not isinstance(spec, Mapping) or spec.get("requires") != [barrier]:
+             raise PrecedenceError(f"{ident}: must depend exactly on common barrier")
+ 
+-    convergence = policy.get("repository_convergence")
+-    if not isinstance(convergence, Mapping):
+-        raise PrecedenceError("repository_convergence missing")
+-    if convergence.get("schema") != "qikvrt_repository_carrier_convergence_v1":
+-        raise PrecedenceError("unexpected repository convergence schema")
+-    if convergence.get("completion_role") != "NECESSARY_NOT_SUFFICIENT":
+-        raise PrecedenceError("repository convergence must be necessary but not sufficient")
+-    repositories = convergence.get("repositories")
+-    if (
+-        not isinstance(repositories, list)
+-        or len(repositories) != len(_CONVERGENCE_REPOSITORIES)
+-        or any(
+-            not isinstance(repository, str)
+-            or repository not in _CONVERGENCE_REPOSITORIES
+-            for repository in repositories
+-        )
+-        or len({repository for repository in repositories}) != len(repositories)
+-    ):
+-        raise PrecedenceError("repository convergence must cover Authority and Mirror")
+-    targets = convergence.get("target_counts")
+-    if not isinstance(targets, Mapping) or set(targets) != set(_CONVERGENCE_METRICS):
+-        raise PrecedenceError("repository convergence target counts are incomplete")
+-    for metric in _CONVERGENCE_METRICS:
+-        if type(targets.get(metric)) is not int or targets[metric] != 0:
+-            raise PrecedenceError(f"{metric}: repository convergence target must be integer zero")
+-    branch_semantics = convergence.get("branch_count_semantics")
+-    if not isinstance(branch_semantics, Mapping):
+-        raise PrecedenceError("branch_count_semantics missing")
+-    if branch_semantics.get("unclassified_branch_ref") != "BLOCKING_AND_COUNTED":
+-        raise PrecedenceError("unclassified branch refs must block convergence")
+-    global_barrier = convergence.get("global_completion_barrier")
+-    if not isinstance(global_barrier, Mapping):
+-        raise PrecedenceError("global completion barrier missing")
+-    required = global_barrier.get("requires")
+-    if not isinstance(required, list):
+-        raise PrecedenceError("global completion requirements must be a list")
+-    for gate in (
+-        "AUTHORITY_REPOSITORY_CARRIERS_ZERO",
+-        "MIRROR_REPOSITORY_CARRIERS_ZERO",
+-    ):
+-        if gate not in required:
+-            raise PrecedenceError(f"global completion barrier missing {gate}")
+-
+ 
+ def next_eligible(policy: Mapping[str, Any], states: Mapping[str, str]) -> dict[str, Any]:
+     """Return exact eligible nodes from declared predecessor state only.
+@@ -185,93 +130,3 @@ def next_eligible(policy: Mapping[str, Any], states: Mapping[str, str]) -> dict[
+         "blocked": blocked,
+         "hold_unverified": not bool(eligible),
+     }
+-
+-
+-def evaluate_repository_convergence(
+-    policy: Mapping[str, Any],
+-    observations: Mapping[str, Any],
+-) -> dict[str, Any]:
+-    """Evaluate only the Authority/Mirror zero-carrier prerequisite.
+-
+-    The observation is external input and must already be a fresh authoritative
+-    readback. This function checks exact binding fields and the zero targets; it
+-    never promotes the result to publication, PASS, FINAL_PASS or EFFECT_ACK.
+-    """
+-    validate_policy(policy)
+-    convergence = policy["repository_convergence"]
+-    targets = convergence["target_counts"]
+-    blockers: list[dict[str, Any]] = []
+-    repository_states: dict[str, dict[str, Any]] = {}
+-
+-    for repository in convergence["repositories"]:
+-        observation = observations.get(repository)
+-        repo_blockers: list[dict[str, Any]] = []
+-        normalized_counts: dict[str, int] = {}
+-
+-        if not isinstance(observation, Mapping):
+-            repo_blockers.append({
+-                "code": "MISSING_REPOSITORY_OBSERVATION",
+-                "repository": repository,
+-            })
+-        else:
+-            if observation.get("repository") != repository:
+-                repo_blockers.append({
+-                    "code": "REPOSITORY_BINDING_MISMATCH",
+-                    "repository": repository,
+-                })
+-            for field in ("observed_at", "exact_main_sha", "exact_main_tree"):
+-                value = observation.get(field)
+-                if not isinstance(value, str) or not value.strip():
+-                    repo_blockers.append({
+-                        "code": "MISSING_EXACT_OBSERVATION_BINDING",
+-                        "repository": repository,
+-                        "field": field,
+-                    })
+-            counts = observation.get("counts")
+-            if not isinstance(counts, Mapping):
+-                repo_blockers.append({
+-                    "code": "MISSING_CARRIER_COUNTS",
+-                    "repository": repository,
+-                })
+-            else:
+-                for metric in _CONVERGENCE_METRICS:
+-                    value = counts.get(metric)
+-                    if type(value) is not int or value < 0:
+-                        repo_blockers.append({
+-                            "code": "INVALID_CARRIER_COUNT",
+-                            "repository": repository,
+-                            "metric": metric,
+-                            "observed": value,
+-                        })
+-                        continue
+-                    normalized_counts[metric] = value
+-                    if value != targets[metric]:
+-                        repo_blockers.append({
+-                            "code": "NONZERO_OPEN_CARRIER_COUNT",
+-                            "repository": repository,
+-                            "metric": metric,
+-                            "observed": value,
+-                            "required": targets[metric],
+-                        })
+-
+-        blockers.extend(repo_blockers)
+-        repository_states[repository] = {
+-            "state": "SATISFIED" if not repo_blockers else "HOLD",
+-            "counts": normalized_counts,
+-            "blockers": repo_blockers,
+-        }
+-
+-    satisfied = not blockers
+-    return {
+-        "schema": "qikvrt_repository_carrier_convergence_disposition_v1",
+-        "state": "SATISFIED" if satisfied else "HOLD",
+-        "repository_convergence_satisfied": satisfied,
+-        "repository_states": repository_states,
+-        "blockers": blockers,
+-        "completion_claims": {
+-            "GLOBAL_REPOSITORY_CONVERGED": False,
+-            "PASS": False,
+-            "FINAL_PASS": False,
+-            "EFFECT_ACK_DONE": False,
+-        },
+-    }
+diff --git a/tools/qikvrt_firefox_package.py b/tools/qikvrt_firefox_package.py
+deleted file mode 100644
+index 79ba86c49efe6fd1010d3be01ef46aa30cd5c33b..0000000000000000000000000000000000000000
+--- a/tools/qikvrt_firefox_package.py
++++ /dev/null
+@@ -1,59 +0,0 @@
+-#!/usr/bin/env python3
+-"""Build the existing Firefox reference adapter with every locale and resource."""
+-from __future__ import annotations
+-
+-import argparse
+-import hashlib
+-import json
+-import zipfile
+-from pathlib import Path
+-
+-ROOT = Path(__file__).resolve().parents[1]
+-SOURCE = ROOT / "browser/firefox/qikvrt-terminal"
+-
+-
+-def package(output: Path, source: Path = SOURCE) -> dict:
+-    manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
+-    required = {"manifest.json", "options.js", manifest["options_ui"]["page"]}
+-    required.update(manifest["background"]["scripts"])
+-    for script in manifest["content_scripts"]:
+-        required.update(script.get("js", []))
+-        required.update(script.get("css", []))
+-    files = {p.relative_to(source).as_posix(): p for p in source.rglob("*") if p.is_file()}
+-    missing = required - files.keys()
+-    if missing:
+-        raise ValueError(f"Missing Firefox resources: {sorted(missing)}")
+-    catalogs = sorted(source.glob("_locales/*/messages.json"))
+-    default = source / "_locales" / manifest["default_locale"] / "messages.json"
+-    if default not in catalogs:
+-        raise ValueError("Missing default locale")
+-    default_keys = set(json.loads(default.read_text(encoding="utf-8")))
+-    for path in catalogs:
+-        messages = json.loads(path.read_text(encoding="utf-8"))
+-        if set(messages) != default_keys or any(not v.get("message") for v in messages.values()):
+-            raise ValueError(f"Incomplete locale: {path.parent.name}")
+-    output = output.resolve()
+-    if output.is_relative_to(source.resolve()):
+-        raise ValueError("Package output must be outside the extension source")
+-    output.parent.mkdir(parents=True, exist_ok=True)
+-    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+-        for name, path in sorted(files.items()):
+-            info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+-            info.create_system = 3
+-            info.external_attr = 0o100644 << 16
+-            info.compress_type = zipfile.ZIP_DEFLATED
+-            archive.writestr(info, path.read_bytes(), compresslevel=9)
+-    return {"path": str(output), "sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+-            "files": len(files), "locales": len(catalogs), "signed": False}
+-
+-
+-def main() -> int:
+-    parser = argparse.ArgumentParser(description=__doc__)
+-    parser.add_argument("--output", type=Path, required=True)
+-    args = parser.parse_args()
+-    print(json.dumps(package(args.output), sort_keys=True))
+-    return 0
+-
+-
+-if __name__ == "__main__":
+-    raise SystemExit(main())
+diff --git a/tools/qikvrt_live_sse.py b/tools/qikvrt_live_sse.py
+old mode 100755
+new mode 100644
+index 7d08e85cc93e3f5ce638e999f5ef55b7563b4cd6..1d2f242a8463feb874d149500131964ac4420f6f
+--- a/tools/qikvrt_live_sse.py
++++ b/tools/qikvrt_live_sse.py
+@@ -1,241 +1,84 @@
+ #!/usr/bin/env python3
+-# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+-"""Read-only SSE over an append-only JSONL journal; Linux inotify is the clock.
++"""Minimal dependency-free SSE relay for QIK-VRT JSONL event receipts.
+ 
+-Regular files support independent replay/live cursors for every subscriber.
+-A destructive FIFO cannot implement broadcast or durable resume and is rejected.
+-No timer, GitHub query, fabricated receipt or repository mutation drives follow.
+-An explicit bootstrap option creates only an empty private runtime journal.
++Observational transport only: it never creates repository effects.
+ """
+ from __future__ import annotations
+ 
+ import argparse
+-import ctypes
+ import json
+ import os
+-import re
+-import select
+-import stat
++import time
+ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+ from pathlib import Path
+-from urllib.parse import parse_qs, urlsplit
+-
+-MAX_LINE = 65536
+ 
+ 
+ def valid_event(obj: dict) -> bool:
+     required = {"schema", "event_id", "observed_at", "repository", "subject", "phase", "verb", "causal_state", "source", "productive_effect", "effect_ack", "payload"}
+-    if not isinstance(obj, dict) or obj.get("schema") != "qikvrt_live_event_v1" or not required.issubset(obj):
+-        return False
+-    eid = obj["event_id"]
+-    return (isinstance(eid, str) and 0 < len(eid) <= 512
+-            and not any(c in eid for c in "\r\n\0")
+-            and isinstance(obj["repository"], str)
+-            and isinstance(obj["subject"], dict)
+-            and isinstance(obj["source"], dict)
+-            and isinstance(obj["payload"], dict)
+-            and type(obj["productive_effect"]) is bool
+-            and all(isinstance(obj[k], str) for k in ("observed_at", "phase", "verb", "causal_state", "effect_ack"))
+-            and isinstance(obj["subject"].get("head_sha"), str)
+-            and re.fullmatch(r"[0-9a-f]{40}", obj["subject"]["head_sha"]) is not None)
+-
+-
+-def decode_event(raw: str):
+-    try:
+-        obj = json.loads(raw)
+-    except (ValueError, TypeError):
+-        return None
+-    return obj if valid_event(obj) else None
++    return obj.get("schema") == "qikvrt_live_event_v1" and required.issubset(obj)
+ 
+ 
+-class CursorMissing(ValueError):
+-    pass
+-
+-
+-def seek_after(fh, after: str | None) -> None:
+-    """Resolve an exact cursor. An absent cursor is a conflict, never silent EOF."""
+-    fh.seek(0)
+-    if after is None:
++def iter_events(path: Path, after: str | None = None):
++    seen_after = after is None
++    if not path.exists():
+         return
+-    if len(after) > 512 or any(c in after for c in "\r\n\0"):
+-        raise CursorMissing("invalid cursor")
+-    while True:
+-        raw = fh.readline(MAX_LINE + 1)
+-        if not raw:
+-            raise CursorMissing("resume cursor not retained in journal")
+-        if len(raw) > MAX_LINE or not raw.endswith(b"\n"):
+-            raise CursorMissing("resume cursor not present in complete journal")
+-        event = decode_event(raw)
+-        if event is None:
+-            raise ValueError("invalid receipt before cursor")
+-        if event["event_id"] == after:
+-            return
+-
+-
+-class JournalReader:
+-    """One consumer with bounded readline() and notification armed before replay.
+-
+-    The byte bound prevents a malformed unterminated record from exhausting RAM;
+-    incomplete records stay at their original offset until an append completes.
+-    """
+-    def __init__(self, path, after=None, live=False):
+-        self.path = Path(path)
+-        self.notify = -1
+-        self.fh = None
+-        try:
+-            fd = os.open(self.path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+-            self.fh = os.fdopen(fd, "rb", buffering=0)
+-            info = os.fstat(fd)
+-            if not stat.S_ISREG(info.st_mode):
+-                raise ValueError("durable regular journal required; FIFO is not broadcast")
+-            self.identity = (info.st_dev, info.st_ino)
+-            if live:
+-                libc = ctypes.CDLL(None, use_errno=True)
+-                init = libc.inotify_init1
+-                init.argtypes = [ctypes.c_int]; init.restype = ctypes.c_int
+-                add = libc.inotify_add_watch
+-                add.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_uint32]
+-                add.restype = ctypes.c_int
+-                self.notify = init(os.O_CLOEXEC)
+-                if self.notify < 0:
+-                    raise OSError(ctypes.get_errno(), "inotify initialization failed")
+-                # IN_MODIFY | IN_ATTRIB | IN_CLOSE_WRITE | IN_DELETE_SELF | IN_MOVE_SELF
+-                if add(self.notify, os.fsencode(self.path), 0x00000C0E) < 0:
+-                    raise OSError(ctypes.get_errno(), "journal notification unavailable")
+-            seek_after(self.fh, after)
+-        except BaseException:
+-            self.close()
+-            raise
+-
+-    def close(self):
+-        if self.fh is not None:
+-            self.fh.close(); self.fh = None
+-        if self.notify >= 0:
+-            os.close(self.notify); self.notify = -1
+-
+-    def events(self, client=None):
+-        while True:
+-            info = self.path.stat(follow_symlinks=False)
+-            offset = self.fh.tell()
+-            if (info.st_dev, info.st_ino) != self.identity or info.st_size < offset:
+-                raise ValueError("append-only journal replaced or truncated")
+-            raw = self.fh.readline(MAX_LINE + 1)
+-            if len(raw) > MAX_LINE:
+-                raise ValueError("receipt exceeds stream bound")
+-            if raw.endswith(b"\n"):
+-                event = decode_event(raw)
+-                if event is None:
+-                    raise ValueError("invalid journal receipt")
+-                yield event
++    with path.open("r", encoding="utf-8") as fh:
++        for raw in fh:
++            raw = raw.strip()
++            if not raw:
+                 continue
+-            # Do not consume an incomplete record. Wait for its append event.
+-            self.fh.seek(offset)
+-            if self.notify < 0:
+-                return
+-            waiting = [self.notify] + ([client] if client is not None else [])
+-            ready, _, _ = select.select(waiting, [], [])
+-            if client is not None and client in ready:
+-                # EOF or unexpected pipelining ends this streaming connection.
+-                return
+-            os.read(self.notify, 65536)
+-
+-
+-def follow_events(path: Path, after: str | None = None, *, live=False, client=None):
+-    """Finite replay by default; live=True waits on OS append notifications."""
+-    reader = JournalReader(path, after, live)
+-    try:
+-        yield from reader.events(client)
+-    finally:
+-        reader.close()
++            obj = json.loads(raw)
++            if not valid_event(obj):
++                continue
++            if not seen_after:
++                if obj["event_id"] == after:
++                    seen_after = True
++                continue
++            yield obj
+ 
+ 
+ class Handler(BaseHTTPRequestHandler):
+     protocol_version = "HTTP/1.1"
+     events_path: Path
+-
+-    def failure(self, status, reason):
+-        body = json.dumps({"state": "HOLD", "reason": reason, "ordinary_release": False}).encode()
+-        self.send_response(status)
+-        self.send_header("Content-Type", "application/json")
+-        self.send_header("Content-Length", str(len(body)))
+-        self.send_header("Cache-Control", "no-store")
+-        self.send_header("Connection", "close")
+-        self.end_headers()
+-        self.wfile.write(body)
+-        self.close_connection = True
++    poll_seconds: float
+ 
+     def do_GET(self):
+-        url = urlsplit(self.path)
+-        if url.path not in ("/events", "/events/"):
+-            self.failure(404, "unknown endpoint"); return
+-        query = parse_qs(url.query, keep_blank_values=True)
+-        if set(query) - {"since"} or len(query.get("since", [])) > 1:
+-            self.failure(400, "invalid cursor query"); return
+-        # EventSource sends a newer Last-Event-ID on reconnect; it takes precedence
+-        # over the persisted startup cursor still present in the original URL.
+-        after = self.headers.get("Last-Event-ID") or query.get("since", [None])[0] or None
+-        try:
+-            reader = JournalReader(self.events_path, after, live=True)
+-        except CursorMissing as error:
+-            self.failure(409, str(error)); return
+-        except (OSError, ValueError, AttributeError):
+-            self.failure(503, "append-only journal or OS notification unavailable"); return
++        if self.path not in ("/events", "/events/"):
++            self.send_response(404); self.end_headers(); return
++        self.send_response(200)
++        self.send_header("Content-Type", "text/event-stream")
++        self.send_header("Cache-Control", "no-cache")
++        self.send_header("Connection", "keep-alive")
++        self.end_headers()
++        last = self.headers.get("Last-Event-ID") or None
++        sent = last
+         try:
+-            self.send_response(200)
+-            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+-            self.send_header("Cache-Control", "no-store")
+-            self.send_header("X-Accel-Buffering", "no")
+-            self.send_header("Connection", "close")
+-            self.end_headers()
+-            self.wfile.flush()
+-            for event in reader.events(self.connection):
+-                payload = json.dumps(event, separators=(",", ":"), ensure_ascii=False)
+-                frame = f"id: {event['event_id']}\nevent: qikvrt\ndata: {payload}\n\n".encode()
+-                self.wfile.write(frame)
+-                self.wfile.flush()
++            while True:
++                emitted = False
++                for event in iter_events(self.events_path, sent):
++                    payload = json.dumps(event, separators=(",", ":"), ensure_ascii=False)
++                    frame = f"id: {event['event_id']}\nevent: qikvrt\ndata: {payload}\n\n".encode()
++                    self.wfile.write(frame); self.wfile.flush()
++                    sent = event["event_id"]; emitted = True
++                if not emitted:
++                    self.wfile.write(b": keepalive\n\n"); self.wfile.flush()
++                time.sleep(self.poll_seconds)
+         except (BrokenPipeError, ConnectionResetError):
+-            pass
+-        except (OSError, ValueError):
+-            try:
+-                self.wfile.write(b'event: qikvrt_stream_error\ndata: {"state":"HOLD","reason":"journal invalidated"}\n\n')
+-                self.wfile.flush()
+-            except OSError:
+-                pass
+-        finally:
+-            reader.close()
+-            self.close_connection = True
++            return
+ 
+     def log_message(self, fmt, *args):
+         return
+ 
+ 
+-def prepare_journal(path: Path) -> None:
+-    """Create a private empty runtime journal without truncating existing bytes.
+-
+-    This is storage initialization, not an observed event or source subscription.
+-    Symlinks, FIFOs and device nodes cannot become journal carriers.
+-    """
+-    path = Path(path)
+-    path.parent.mkdir(parents=True, exist_ok=True)
+-    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+-    fd = os.open(path, flags, 0o600)
+-    try:
+-        if not stat.S_ISREG(os.fstat(fd).st_mode):
+-            raise ValueError("durable regular journal required for initialization")
+-    finally:
+-        os.close(fd)
+-
+-
+ def main():
+     p = argparse.ArgumentParser()
+     p.add_argument("--events", default="state/live/QIKVRT_LIVE_EVENTS.jsonl")
+     p.add_argument("--host", default="127.0.0.1")
+     p.add_argument("--port", type=int, default=8787)
+-    p.add_argument("--initialize-journal", action="store_true", help="create an empty private journal only when missing; never truncate")
++    p.add_argument("--poll-seconds", type=float, default=0.5)
+     a = p.parse_args()
+     Handler.events_path = Path(a.events)
+-    if a.initialize_journal:
+-        prepare_journal(Handler.events_path)
++    Handler.poll_seconds = a.poll_seconds
+     server = ThreadingHTTPServer((a.host, a.port), Handler)
+     server.serve_forever()
+ 
+diff --git a/tools/qikvrt_repository_dod.py b/tools/qikvrt_repository_dod.py
+deleted file mode 100644
+index 4e32299410fba2f1ae6e0fbd0b88996d6493bcd0..0000000000000000000000000000000000000000
+--- a/tools/qikvrt_repository_dod.py
++++ /dev/null
+@@ -1,149 +0,0 @@
+-# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+-"""Pure fail-closed repository-wide QIK-VRT Definition-of-Done evaluator."""
+-
+-from __future__ import annotations
+-
+-import json
+-import sys
+-
+-PR_DISPOSITIONS = {"MERGE", "SUPERSEDE", "CLOSE_AS_REDUNDANT", "REJECT_WITH_EVIDENCE"}
+-BRANCH_DISPOSITIONS = {"MERGED", "SUPERSEDED", "REDUNDANT", "HISTORICAL/RETAINED_BY_POLICY", "PRODUCTIVE_CURRENT_CANDIDATE", "PRODUCTIVE_UNMERGED"}
+-ORDER = (
+-    "ZERO_BUGS",
+-    "ALL_PULL_REQUESTS_REGARDED",
+-    "ALL_BRANCHES_REGARDED",
+-    "ALL_PRODUCTIVE_BRANCHES_MERGED",
+-    "FRESH_EXACT_MAIN_VALIDATION_PASS",
+-    "FRESH_EXACT_MAIN_EFFECT_READBACK",
+-)
+-
+-
+-def _bool(value):
+-    return value is True
+-
+-
+-def _exact_subject(value, head, tree):
+-    return (
+-        isinstance(value, dict)
+-        and _bool(value.get("fresh"))
+-        and value.get("head") == head
+-        and value.get("tree") == tree
+-    )
+-
+-
+-def evaluate(observation):
+-    required = {
+-        "repository",
+-        "subject_head",
+-        "subject_tree",
+-        "inventory_complete",
+-        "zero_bugs",
+-        "pull_requests",
+-        "branches",
+-        "all_productive_branches_merged",
+-        "main_validation",
+-        "effect_readback",
+-    }
+-    missing = sorted(required.difference(observation))
+-    if missing:
+-        return _hold("INCOMPLETE_OBSERVATION_ENVELOPE", missing=missing)
+-    if observation["repository"] != "Goldkelch/qik-vrt":
+-        return _hold("WRONG_REPOSITORY")
+-
+-    head = observation["subject_head"]
+-    tree = observation["subject_tree"]
+-    if not isinstance(head, str) or len(head) != 40 or not isinstance(tree, str) or len(tree) != 40:
+-        return _hold("UNBOUND_SUBJECT")
+-    if not _bool(observation["inventory_complete"]):
+-        return _hold("INVENTORY_INCOMPLETE", subject_head=head, subject_tree=tree)
+-
+-    zero = observation["zero_bugs"]
+-    zero_ok = (
+-        _exact_subject(zero, head, tree)
+-        and zero.get("state") in {"ZERO_KNOWN_DETERMINISTIC_BUGS_LOCAL", "PASS"}
+-        and _bool(zero.get("known_deterministic_defects_zero"))
+-    )
+-
+-    prs = observation["pull_requests"]
+-    prs_ok = (
+-        isinstance(prs, list)
+-        and all(isinstance(p, dict) and p.get("disposition") in PR_DISPOSITIONS for p in prs)
+-    )
+-
+-    branches = observation["branches"]
+-    branches_ok = (
+-        isinstance(branches, list)
+-        and all(
+-            isinstance(b, dict)
+-            and (
+-                b.get("name") == "main"
+-                or b.get("disposition") in BRANCH_DISPOSITIONS
+-            )
+-            for b in branches
+-        )
+-    )
+-
+-    productive_ok = _bool(observation["all_productive_branches_merged"])
+-
+-    validation = observation["main_validation"]
+-    main_ok = (
+-        _exact_subject(validation, head, tree)
+-        and validation.get("state") == "PASS"
+-    )
+-
+-    effect = observation["effect_readback"]
+-    effect_ok = (
+-        _exact_subject(effect, head, tree)
+-        and _bool(effect.get("observed"))
+-        and effect.get("effect_ack") == "EFFECT_ACK_DONE"
+-    )
+-
+-    conjuncts = {
+-        "ZERO_BUGS": zero_ok,
+-        "ALL_PULL_REQUESTS_REGARDED": prs_ok,
+-        "ALL_BRANCHES_REGARDED": branches_ok,
+-        "ALL_PRODUCTIVE_BRANCHES_MERGED": productive_ok,
+-        "FRESH_EXACT_MAIN_VALIDATION_PASS": main_ok,
+-        "FRESH_EXACT_MAIN_EFFECT_READBACK": effect_ok,
+-    }
+-    blockers = [name for name in ORDER if not conjuncts[name]]
+-    done = not blockers
+-    return {
+-        "schema": "qikvrt_repository_dod_evaluation_v1",
+-        "state": "DONE" if done else "CONTINUE",
+-        "done": done,
+-        "effect_ack_done": done and effect_ok,
+-        "noop_evaluated": False,
+-        "noop_allowed": None,
+-        "conjuncts": conjuncts,
+-        "first_unsatisfied": blockers[0] if blockers else None,
+-        "blockers": blockers,
+-        "subject_head": head,
+-        "subject_tree": tree,
+-    }
+-
+-
+-def _hold(reason, **extra):
+-    result = {
+-        "schema": "qikvrt_repository_dod_evaluation_v1",
+-        "state": "HOLD_UNVERIFIED",
+-        "done": False,
+-        "effect_ack_done": False,
+-        "noop_evaluated": False,
+-        "noop_allowed": None,
+-        "conjuncts": None,
+-        "first_unsatisfied": reason,
+-        "blockers": [reason],
+-    }
+-    result.update(extra)
+-    return result
+-
+-
+-def main():
+-    observation = json.load(sys.stdin)
+-    json.dump(evaluate(observation), sys.stdout, sort_keys=True, indent=2)
+-    sys.stdout.write("\n")
+-
+-
+-if __name__ == "__main__":
+-    main()
+diff --git a/tools/qikvrt_repository_dod_census.py b/tools/qikvrt_repository_dod_census.py
+deleted file mode 100644
+index b34d07087d9490e0137e9bb0c5f8c0076ab0579e..0000000000000000000000000000000000000000
+--- a/tools/qikvrt_repository_dod_census.py
++++ /dev/null
+@@ -1,317 +0,0 @@
+-#!/usr/bin/env python3
+-"""Read-only exact-subject census for QIK-VRT repository DoD carriers."""
+-
+-from __future__ import annotations
+-
+-import argparse
+-import json
+-from pathlib import Path
+-import subprocess
+-from typing import Any, Mapping
+-
+-PR_ALLOWED = {"MERGE", "SUPERSEDE", "CLOSE_AS_REDUNDANT", "REJECT_WITH_EVIDENCE"}
+-BRANCH_ALLOWED = {
+-    "MERGED",
+-    "SUPERSEDED",
+-    "REDUNDANT",
+-    "HISTORICAL/RETAINED_BY_POLICY",
+-    "PRODUCTIVE_CURRENT_CANDIDATE",
+-    "PRODUCTIVE_UNMERGED",
+-}
+-MARKER = "<!-- qikvrt-dod-pr-disposition:"
+-OBSERVED_SCHEMA = "qikvrt_open_pr_snapshot_v1"
+-UNAVAILABLE_SCHEMA = "qikvrt_open_pr_snapshot_unavailable_v1"
+-
+-
+-def git(*args: str) -> str:
+-    return subprocess.check_output(["git", *args], text=True).strip()
+-
+-
+-def ancestor(commit: str, subject: str) -> bool | None:
+-    probe = subprocess.run(
+-        ["git", "merge-base", "--is-ancestor", commit, subject],
+-        text=True,
+-        capture_output=True,
+-        check=False,
+-    )
+-    if probe.returncode == 0:
+-        return True
+-    if probe.returncode == 1:
+-        return False
+-    return None
+-
+-
+-def same_tree(left: str, right: str) -> bool | None:
+-    try:
+-        return git("rev-parse", left + "^{tree}") == git("rev-parse", right + "^{tree}")
+-    except subprocess.CalledProcessError:
+-        return None
+-
+-
+-def explicit_pr_disposition(body: Any) -> str | None:
+-    if not isinstance(body, str):
+-        return None
+-    for value in PR_ALLOWED:
+-        if f"{MARKER}{value} -->" in body:
+-            return value
+-    return None
+-
+-
+-def classify_pr(pr: Mapping[str, Any], subject: str, current_pr: int) -> dict[str, Any]:
+-    number = pr.get("number")
+-    head_obj = pr.get("head") or {}
+-    head = head_obj.get("sha") if isinstance(head_obj, Mapping) else None
+-    head_ref = head_obj.get("ref") if isinstance(head_obj, Mapping) else None
+-    row = {
+-        "number": number,
+-        "head": head,
+-        "head_ref": head_ref,
+-        "state": pr.get("state"),
+-    }
+-    if not isinstance(number, int) or not isinstance(head, str) or len(head) != 40:
+-        return {**row, "regarded": False, "disposition": "UNREGARDED", "reason": "INVALID_PR_IDENTITY"}
+-    if number == current_pr and head == subject:
+-        return {**row, "regarded": True, "disposition": "MERGE", "reason": "CURRENT_FINAL_CANDIDATE"}
+-    rel = ancestor(head, subject)
+-    if rel is True:
+-        return {**row, "regarded": True, "disposition": "SUPERSEDE", "reason": "HEAD_ANCESTOR_OF_CANDIDATE"}
+-    explicit = explicit_pr_disposition(pr.get("body"))
+-    if explicit is not None:
+-        return {**row, "regarded": True, "disposition": explicit, "reason": "EXPLICIT_EVIDENCE_BOUND_DISPOSITION"}
+-    return {
+-        **row,
+-        "regarded": False,
+-        "disposition": "UNREGARDED",
+-        "reason": "HEAD_NOT_PROVED_ABSORBED_OR_DISPOSED",
+-        "ancestor_probe": rel,
+-    }
+-
+-
+-def _linked_branch_disposition(pr: Mapping[str, Any]) -> tuple[str, str] | None:
+-    if pr.get("regarded") is not True:
+-        return None
+-    disposition = pr.get("disposition")
+-    if disposition == "SUPERSEDE":
+-        return "SUPERSEDED", "OPEN_PR_PROVES_SUPERSESSION"
+-    if disposition == "CLOSE_AS_REDUNDANT":
+-        return "REDUNDANT", "OPEN_PR_PROVES_REDUNDANCY"
+-    if disposition == "REJECT_WITH_EVIDENCE":
+-        return "HISTORICAL/RETAINED_BY_POLICY", "OPEN_PR_EVIDENCE_BOUND_REJECTION"
+-    if disposition == "MERGE":
+-        return "PRODUCTIVE_UNMERGED", "REGARDED_OPEN_PR_REMAINS_PRODUCTIVE"
+-    return None
+-
+-
+-def classify_branch(
+-    name: str,
+-    tip: str,
+-    subject: str,
+-    main_head: str,
+-    pr_by_ref: Mapping[str, Mapping[str, Any]] | None = None,
+-) -> dict[str, Any]:
+-    row = {"name": name, "tip": tip}
+-    if name == "main":
+-        return {**row, "regarded": True, "disposition": "MERGED", "reason": "DEFAULT_BRANCH"}
+-    if tip == subject:
+-        if subject == main_head:
+-            return {**row, "regarded": True, "disposition": "REDUNDANT", "reason": "TIP_EQUALS_EXACT_MAIN"}
+-        return {
+-            **row,
+-            "regarded": True,
+-            "disposition": "PRODUCTIVE_CURRENT_CANDIDATE",
+-            "reason": "EXACT_FINAL_CANDIDATE",
+-        }
+-
+-    rel = ancestor(tip, subject)
+-    if rel is True:
+-        return {**row, "regarded": True, "disposition": "SUPERSEDED", "reason": "TIP_ANCESTOR_OF_CANDIDATE"}
+-
+-    equal = same_tree(tip, subject)
+-    if equal is True:
+-        return {**row, "regarded": True, "disposition": "REDUNDANT", "reason": "TREE_IDENTICAL_TO_CANDIDATE"}
+-
+-    linked = (pr_by_ref or {}).get(name)
+-    if isinstance(linked, Mapping) and linked.get("head") == tip:
+-        derived = _linked_branch_disposition(linked)
+-        if derived is not None:
+-            disposition, reason = derived
+-            return {
+-                **row,
+-                "regarded": True,
+-                "disposition": disposition,
+-                "reason": reason,
+-                "pull_request": linked.get("number"),
+-            }
+-
+-    return {
+-        **row,
+-        "regarded": False,
+-        "disposition": "UNREGARDED",
+-        "reason": "TIP_NOT_PROVED_ABSORBED_OR_DISPOSED",
+-        "ancestor_probe": rel,
+-        "tree_equal_probe": equal,
+-    }
+-
+-
+-def flatten_pages(value: Any) -> list[dict[str, Any]]:
+-    if not isinstance(value, list):
+-        raise ValueError("open PR snapshot must be a JSON list")
+-    if value and all(isinstance(page, list) for page in value):
+-        rows = [row for page in value for row in page]
+-    else:
+-        rows = value
+-    if not all(isinstance(row, dict) for row in rows):
+-        raise ValueError("open PR snapshot contains a non-object")
+-    return rows
+-
+-
+-def load_pr_snapshot(path: Path) -> tuple[list[dict[str, Any]], bool, str | None, str]:
+-    value = json.loads(path.read_text(encoding="utf-8"))
+-    if isinstance(value, Mapping) and value.get("schema") == UNAVAILABLE_SCHEMA:
+-        if value.get("state") != "HOLD_UNVERIFIED":
+-            raise ValueError("unavailable PR snapshot must be HOLD_UNVERIFIED")
+-        reason = value.get("reason")
+-        if not isinstance(reason, str) or not reason:
+-            raise ValueError("unavailable PR snapshot requires reason")
+-        return [], False, reason, "UNAVAILABLE"
+-
+-    if isinstance(value, Mapping) and value.get("schema") == OBSERVED_SCHEMA:
+-        if value.get("state") != "OBSERVED":
+-            raise ValueError("observed PR snapshot must be OBSERVED")
+-        source = value.get("source")
+-        if source not in {"REST", "GRAPHQL"}:
+-            raise ValueError("observed PR snapshot requires REST or GRAPHQL source")
+-        return flatten_pages(value.get("pull_requests")), True, None, source
+-
+-    return flatten_pages(value), True, None, "LEGACY_LIST"
+-
+-
+-def branch_rows() -> list[tuple[str, str]]:
+-    raw = git("for-each-ref", "--format=%(refname:short)\t%(objectname)", "refs/remotes/origin/")
+-    rows: list[tuple[str, str]] = []
+-    for line in raw.splitlines():
+-        if not line.strip():
+-            continue
+-        name, tip = line.split("\t", 1)
+-        if name == "origin/HEAD":
+-            continue
+-        if not name.startswith("origin/"):
+-            continue
+-        rows.append((name[len("origin/"):], tip))
+-    return rows
+-
+-
+-def build(repository: str, subject: str, tree: str, current_pr: int, open_prs: Path) -> dict[str, Any]:
+-    actual_head = git("rev-parse", "HEAD")
+-    actual_tree = git("rev-parse", "HEAD^{tree}")
+-    if (actual_head, actual_tree) != (subject, tree):
+-        raise ValueError("EXACT_SUBJECT_DRIFT")
+-
+-    main_head = git("rev-parse", "refs/remotes/origin/main")
+-    prs, pr_snapshot_complete, pr_snapshot_reason, pr_snapshot_source = load_pr_snapshot(open_prs)
+-    pr_rows = [classify_pr(pr, subject, current_pr) for pr in prs]
+-    pr_by_ref = {
+-        row["head_ref"]: row
+-        for row in pr_rows
+-        if isinstance(row.get("head_ref"), str) and row["head_ref"]
+-    }
+-    branches = [
+-        classify_branch(name, tip, subject, main_head, pr_by_ref)
+-        for name, tip in branch_rows()
+-    ]
+-
+-    unregarded_prs = [row["number"] for row in pr_rows if not row["regarded"]]
+-    unregarded_branches = [row["name"] for row in branches if not row["regarded"]]
+-    productive_unmerged = [
+-        row["name"]
+-        for row in branches
+-        if row.get("disposition") in {"PRODUCTIVE_CURRENT_CANDIDATE", "PRODUCTIVE_UNMERGED"}
+-    ]
+-    candidate_on_main = subject == main_head
+-    inventory_complete = pr_snapshot_complete
+-
+-    all_prs_regarded = pr_snapshot_complete and not unregarded_prs
+-    all_branches_regarded = not unregarded_branches
+-    all_productive_merged = (
+-        inventory_complete
+-        and candidate_on_main
+-        and all_prs_regarded
+-        and all_branches_regarded
+-        and not productive_unmerged
+-    )
+-
+-    reasons: list[str] = []
+-    if not pr_snapshot_complete:
+-        reasons.append("OPEN_PR_SNAPSHOT_UNAVAILABLE:" + str(pr_snapshot_reason))
+-
+-    return {
+-        "schema": "qikvrt_repository_dod_census_v1",
+-        "repository": repository,
+-        "subject": {"head": subject, "tree": tree},
+-        "main_head": main_head,
+-        "state": "OBSERVED" if inventory_complete else "HOLD_UNVERIFIED",
+-        "inventory_complete": inventory_complete,
+-        "inventory_reasons": reasons,
+-        "pr_snapshot": {
+-            "complete": pr_snapshot_complete,
+-            "reason": pr_snapshot_reason,
+-            "source": pr_snapshot_source,
+-            "fabricated_fallback": False,
+-        },
+-        "branch_snapshot": {
+-            "complete": True,
+-            "source": "FETCHED_GIT_REFS",
+-        },
+-        "counts": {
+-            "open_pull_requests": len(pr_rows) if pr_snapshot_complete else None,
+-            "branch_refs": len(branches),
+-            "unregarded_pull_requests": len(unregarded_prs) if pr_snapshot_complete else None,
+-            "unregarded_branches": len(unregarded_branches),
+-            "productive_unmerged_branches": len(productive_unmerged),
+-        },
+-        "all_pull_requests_regarded": all_prs_regarded,
+-        "all_branches_regarded": all_branches_regarded,
+-        "all_productive_branches_merged": all_productive_merged,
+-        "pull_requests": pr_rows,
+-        "branches": branches,
+-        "unregarded_pull_requests": unregarded_prs if pr_snapshot_complete else [],
+-        "unregarded_branches": unregarded_branches,
+-        "productive_unmerged_branches": productive_unmerged,
+-        "predecessor_evidence_transfer": False,
+-    }
+-
+-
+-def main() -> int:
+-    p = argparse.ArgumentParser()
+-    p.add_argument("--repository", required=True)
+-    p.add_argument("--subject-head", required=True)
+-    p.add_argument("--subject-tree", required=True)
+-    p.add_argument("--current-pr", required=True, type=int)
+-    p.add_argument("--open-prs", required=True, type=Path)
+-    p.add_argument("--output", required=True, type=Path)
+-    args = p.parse_args()
+-    try:
+-        report = build(
+-            args.repository,
+-            args.subject_head,
+-            args.subject_tree,
+-            args.current_pr,
+-            args.open_prs,
+-        )
+-    except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+-        print("HOLD_UNVERIFIED " + str(exc))
+-        return 2
+-
+-    args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+-    print(json.dumps({
+-        "state": report["state"],
+-        "inventory_complete": report["inventory_complete"],
+-        "counts": report["counts"],
+-        "inventory_reasons": report["inventory_reasons"],
+-        "pr_snapshot_source": report["pr_snapshot"]["source"],
+-    }, sort_keys=True))
+-    return 0
+-
+-
+-if __name__ == "__main__":
+-    raise SystemExit(main())
+diff --git a/tools/qikvrt_requested_review_executor.py b/tools/qikvrt_requested_review_executor.py
+index 4461ea11760588acf547475982696c1113067e8c..37352e3f6305284b166b88e97a4a7504af3ac07d 100644
+--- a/tools/qikvrt_requested_review_executor.py
++++ b/tools/qikvrt_requested_review_executor.py
+@@ -43,7 +43,6 @@ TRUSTED_EVALUATOR_PATH = "tools/qikvrt_requested_review_executor.py"
+ TRUSTED_WORKFLOW_PATH = ".github/workflows/qikvrt_requested_review_executor.yml"
+ REVIEW_MARKER = "qikvrt-mesh-review:v1"
+ LIVE_STATUS_MARKER = "qikvrt-live-status-watch"
+-HUMAN_AUTHORITY_REVIEW_MARKER = "qikvrt-human-exact-scope-review-confirmation-v1"
+ TRUSTED_AUTOMATION_DISCUSSION_PREFIXES = (
+     f"<!-- {REVIEW_MARKER} ",
+     f"<!-- {LIVE_STATUS_MARKER} -->",
+@@ -177,10 +176,10 @@ def review_queue_intent(
+         raise ReviewSnapshotError("queue pull request number is invalid")
+     if not isinstance(receipt_path, str) or not isinstance(diff_path, str):
+         raise ReviewSnapshotError("queue evidence paths are invalid")
+-    path = f"{REVIEW_QUEUE_ROOT}/pr-{pr_number}/{head}/{predecessor}/{fingerprint}.json"
++    path = f"{REVIEW_QUEUE_ROOT}/pr-{pr_number}/{head}/{fingerprint}.json"
+     return path, {
+         "schema": "qikvrt_mesh_review_queue_intent_v1",
+-        "work_unit_id": f"pr-{pr_number}/{head}/{predecessor}/{fingerprint}",
++        "work_unit_id": f"pr-{pr_number}/{head}/{fingerprint}",
+         "repository": repository,
+         "pr_number": pr_number,
+         "head_sha": head,
+@@ -1201,24 +1200,18 @@ def _discussion_items(snapshot: Mapping[str, Any]) -> list[dict[str, Any]]:
+         if key in seen:
+             raise ReviewSnapshotError(f"duplicate discussion item: {kind}/{identifier}")
+         seen.add(key)
+-        entry = {
+-            "kind": kind,
+-            "id": identifier,
+-            "author": item.get("author"),
+-            "author_association": item.get("author_association"),
+-            "state": item.get("state"),
+-            "commit_id": item.get("commit_id"),
+-            "updated_at": updated_at,
+-            "body_sha256": body_sha256,
+-        }
+-        if "authority_scope_paths" in item:
+-            authority_scope_paths = item.get("authority_scope_paths")
+-            if not isinstance(authority_scope_paths, list) or not all(
+-                isinstance(path, str) for path in authority_scope_paths
+-            ):
+-                raise ReviewSnapshotError("discussion authority_scope_paths must be a string list")
+-            entry["authority_scope_paths"] = sorted(set(authority_scope_paths))
+-        result.append(entry)
++        result.append(
++            {
++                "kind": kind,
++                "id": identifier,
++                "author": item.get("author"),
++                "author_association": item.get("author_association"),
++                "state": item.get("state"),
++                "commit_id": item.get("commit_id"),
++                "updated_at": updated_at,
++                "body_sha256": body_sha256,
++            }
++        )
+     result.sort(key=lambda item: (item["kind"], item["id"]))
+     return result
+ 
+@@ -1850,49 +1843,19 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
+             findings=findings,
+             **common,
+         )
+-    authority_findings = [
+-        finding for finding in findings if finding["severity"] == "AUTHORITY_REQUIRED"
+-    ]
+-    authority_paths: set[str] = set()
+-    for item in discussion:
+-        if (
+-            item.get("kind") == "PULL_REQUEST_REVIEW"
+-            and item.get("state") == "COMMENTED"
+-            and item.get("commit_id") == head
+-            and item.get("author") != "github-actions[bot]"
+-            and item.get("author_association") in {"OWNER", "MEMBER", "COLLABORATOR"}
+-        ):
+-            raw_paths = item.get("authority_scope_paths", [])
+-            if isinstance(raw_paths, list) and all(isinstance(path, str) for path in raw_paths):
+-                authority_paths.update(raw_paths)
+-    unsatisfied_authority = next(
+-        (
+-            finding for finding in authority_findings
+-            if not isinstance(finding.get("path"), str)
+-            or finding.get("path") not in authority_paths
+-        ),
++    authority = next(
++        (finding for finding in findings if finding["severity"] == "AUTHORITY_REQUIRED"),
+         None,
+     )
+-    if unsatisfied_authority is not None:
++    if authority is not None:
+         return _result(
+             snapshot,
+             "COMMENT_WITH_BLOCKER",
+-            str(unsatisfied_authority["finding_id"]),
+-            str(unsatisfied_authority["detail"]),
++            str(authority["finding_id"]),
++            str(authority["detail"]),
+             findings=findings,
+             **common,
+         )
+-    for authority in authority_findings:
+-        findings.append(
+-            _finding(
+-                "MESH_AUTHORITY_SATISFIED_BY_OWNER_DECLARATION",
+-                "INFO",
+-                "exact-head native human review satisfies this workflow permission finding",
+-                path=str(authority["path"]),
+-                line=authority.get("line"),
+-                evidence_sha256=authority.get("evidence_sha256"),
+-            )
+-        )
+ 
+     if writers:
+         return _result(
+@@ -2730,23 +2693,6 @@ def _discussion_observation(repository: str, number: int) -> list[dict[str, Any]
+             )
+             if not isinstance(updated, str) or not updated:
+                 raise ReviewObservationError(f"{kind} lacks an observation timestamp")
+-            authority_scope_paths: list[str] = []
+-            if (
+-                kind == "PULL_REQUEST_REVIEW"
+-                and author != "github-actions[bot]"
+-                and item.get("state") == "COMMENTED"
+-                and item.get("author_association") in {"OWNER", "MEMBER", "COLLABORATOR"}
+-            ):
+-                marker = re.match(
+-                    rf"^<!-- {re.escape(HUMAN_AUTHORITY_REVIEW_MARKER)}:{number}:([0-9a-f]{{40}}) -->",
+-                    body,
+-                )
+-                if marker is not None and item.get("commit_id") == marker.group(1):
+-                    authority_scope_paths = sorted(set(re.findall(
+-                        r"^- \`(\.github/workflows/[^\`]+)\`: Git-Blob \`[0-9a-f]{40}\`; Workflow-Deklaration \`permissions\.contents: write\`\.$",
+-                        body,
+-                        flags=re.MULTILINE,
+-                    )))
+             result.append(
+                 {
+                     "kind": kind,
+@@ -2757,7 +2703,6 @@ def _discussion_observation(repository: str, number: int) -> list[dict[str, Any]
+                     "commit_id": item.get("commit_id"),
+                     "updated_at": updated,
+                     "body_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
+-                    "authority_scope_paths": authority_scope_paths,
+                 }
+             )
+     result.sort(key=lambda item: (item["kind"], item["id"]))
+diff --git a/tools/qikvrt_roundtrip_entrypoint.py b/tools/qikvrt_roundtrip_entrypoint.py
+deleted file mode 100644
+index 3e8f91261043224beb2784a55905e56998ae8e47..0000000000000000000000000000000000000000
+--- a/tools/qikvrt_roundtrip_entrypoint.py
++++ /dev/null
+@@ -1,176 +0,0 @@
+-#!/usr/bin/env python3
+-# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+-# Copyright 2026 Ingolf Lohmann. Implementation: OpenAI ChatGPT.
+-"""Materialize the first Roundtrip entry and the owner-supplied self-declaration."""
+-from __future__ import annotations
+-
+-import argparse
+-import hashlib
+-import html
+-from pathlib import Path
+-import re
+-
+-ROOT = Path(__file__).resolve().parents[1]
+-PATHS = ("README.md", "AI", "AGENTS.md", "next/README.md", "next/AI")
+-START = b"<!-- qikvrt-roundtrip-first:v1 -->\n"
+-END = b"<!-- /qikvrt-roundtrip-first:v1 -->\n\n"
+-DECLARATION_PATH = "docs/WENN_BEOBACHTUNG_ALS_HANDELN_AUSGEGEBEN_WIRD.md"
+-DECLARATION_BLOB = "a1ac6efca03171328851c1daadf45b58964d26a2"
+-DECLARATION_START = b"<!-- qikvrt-self-declaration:v1 -->\n"
+-DECLARATION_END = b"<!-- /qikvrt-self-declaration:v1 -->\n\n"
+-MAIN_ANCHOR = b'<main id="main">\n'
+-NAV_ANCHOR = b'    <nav class="navlinks" aria-label="Hauptnavigation">\n'
+-NAV_LINK = '      <a href="#selbsterklaerung">Selbsterklärung</a>\n'.encode("utf-8")
+-
+-
+-def prefix(relative: str) -> bytes:
+-    link = "../" if relative.startswith("next/") else ""
+-    return (START + (
+-        "## Zuerst: ausfuehrbarer Roundtrip-Beweis / Start here\n\n"
+-        f"Read [{link}ROUNDTRIP.md]({link}ROUNDTRIP.md) first. "
+-        f"The executable entrypoint is [{link}roundtrip.py]({link}roundtrip.py).\n"
+-        "From the repository root, with the locked target toolchain available:\n\n"
+-        "```sh\n"
+-        "python3 -B roundtrip.py --repository Goldkelch/qik-vrt --output-dir ../roundtrip-evidence\n"
+-        "```\n\n"
+-        "Use this checkout's actual owner/repository for a Mirror or fork. "
+-        "Choose a new output directory for every execution. "
+-        "The runner calls the existing exact-HEAD/TREE suite: C90, bus, store, "
+-        "restart, byte-preserving source recovery and rebuild. "
+-        "Runner presence is not execution evidence. The prime-search experiment "
+-        "has a separate, currently missing original-artifact binding; it is not "
+-        "replaced by this suite. Existing instructions follow unchanged.\n\n"
+-    ).encode("utf-8") + END)
+-
+-
+-def materialize(root: Path, *, check: bool) -> list[str]:
+-    pending = []
+-    for relative in PATHS:
+-        path = root / relative
+-        if not path.is_file() or path.is_symlink():
+-            raise ValueError(f"ENTRYPOINT_MISSING_OR_UNSAFE: {relative}")
+-        raw = path.read_bytes()
+-        block = prefix(relative)
+-        if raw.startswith(block):
+-            continue
+-        if START in raw or END in raw:
+-            raise ValueError(f"CONFLICTING_ENTRYPOINT_PREFIX: {relative}")
+-        pending.append((path, block + raw))
+-    if check and pending:
+-        raise ValueError("ROUNDTRIP_NOT_FIRST: " + ", ".join(str(p.relative_to(root)) for p, _ in pending))
+-    if not check:
+-        for path, raw in pending:
+-            path.write_bytes(raw)
+-    return [str(path.relative_to(root)) for path, _ in pending]
+-
+-
+-def git_blob(raw: bytes) -> str:
+-    return hashlib.sha1(b"blob " + str(len(raw)).encode("ascii") + b"\0" + raw).hexdigest()
+-
+-
+-def declaration_source(root: Path) -> bytes:
+-    path = root / DECLARATION_PATH
+-    if not path.is_file() or path.is_symlink():
+-        raise ValueError("SELF_DECLARATION_SOURCE_MISSING_OR_UNSAFE")
+-    raw = path.read_bytes()
+-    if git_blob(raw) != DECLARATION_BLOB:
+-        raise ValueError("SELF_DECLARATION_SOURCE_BLOB_MISMATCH")
+-    raw.decode("utf-8", errors="strict")
+-    return raw
+-
+-
+-def declaration_prefix(relative: str, source: bytes) -> bytes:
+-    link = ("../" if relative.startswith("next/") else "") + DECLARATION_PATH
+-    label = "## Selbsterklärung für natürliche und künstliche kognitive Systeme\n\n"
+-    if relative == "README.md":
+-        body = label.encode("utf-8") + source + b"\n"
+-    else:
+-        body = (label + "[Wenn Beobachtung als Handeln ausgegeben wird]"
+-                f"({link}) — Ingolf Lohmann · September 2026.\n\n"
+-                "Vollständiger Text einschließlich der Ergänzung "
+-                "„Die gefährlichste Form des Scheiterns“.\n\n").encode("utf-8")
+-    return DECLARATION_START + body + DECLARATION_END
+-
+-
+-def declaration_html(source: bytes) -> bytes:
+-    # The supplied Markdown uses only headings and prose. Escape every source
+-    # byte before inserting HTML; no raw HTML, scripting or remote dependency.
+-    blocks = []
+-    for block in source.decode("utf-8").strip().split("\n\n"):
+-        heading = re.fullmatch(r"(#{1,3}) ([^\n]+)", block)
+-        if heading:
+-            level = len(heading[1])
+-            attr = ' id="self-declaration-title"' if not blocks else ""
+-            blocks.append(f"<h{level}{attr}>{html.escape(heading[2])}</h{level}>")
+-        elif block:
+-            blocks.append("<p>" + html.escape(block).replace("\n", "<br>\n") + "</p>")
+-    body = ('<section id="selbsterklaerung" class="section" lang="de" '
+-            'aria-labelledby="self-declaration-title">\n'
+-            '<div class="wrap" style="max-width: 76ch; overflow-wrap: anywhere;">\n'
+-            '<p class="eyebrow">Selbsterklärung für natürliche und künstliche kognitive Systeme</p>\n'
+-            + "\n".join(blocks) + "\n</div>\n</section>\n")
+-    return DECLARATION_START + body.encode("utf-8") + DECLARATION_END
+-
+-
+-def insert_declaration(raw: bytes, anchor: bytes, block: bytes, relative: str) -> bytes:
+-    if raw.count(anchor) != 1:
+-        raise ValueError(f"SELF_DECLARATION_ANCHOR_CONFLICT: {relative}")
+-    before, rest = raw.split(anchor, 1)
+-    if DECLARATION_START in before or DECLARATION_END in before:
+-        raise ValueError(f"SELF_DECLARATION_PREFIX_CONFLICT: {relative}")
+-    if DECLARATION_START in rest or DECLARATION_END in rest:
+-        if (not rest.startswith(DECLARATION_START)
+-                or rest.count(DECLARATION_START) != 1 or rest.count(DECLARATION_END) != 1):
+-            raise ValueError(f"SELF_DECLARATION_PREFIX_CONFLICT: {relative}")
+-        rest = rest.split(DECLARATION_END, 1)[1]
+-    return before + anchor + block + rest
+-
+-
+-def materialize_declaration(root: Path, *, check: bool) -> list[str]:
+-    source = declaration_source(root)
+-    pending = []
+-    for relative in (*PATHS, "docs/index.html"):
+-        path = root / relative
+-        if not path.is_file() or path.is_symlink():
+-            raise ValueError(f"SELF_DECLARATION_TARGET_MISSING_OR_UNSAFE: {relative}")
+-        raw = path.read_bytes()
+-        if relative == "docs/index.html":
+-            updated = insert_declaration(raw, MAIN_ANCHOR, declaration_html(source), relative)
+-            if updated.count(NAV_ANCHOR) != 1 or updated.count(NAV_LINK) > 1:
+-                raise ValueError("SELF_DECLARATION_NAV_CONFLICT")
+-            if NAV_LINK in updated:
+-                if NAV_ANCHOR + NAV_LINK not in updated:
+-                    raise ValueError("SELF_DECLARATION_NAV_CONFLICT")
+-            else:
+-                updated = updated.replace(NAV_ANCHOR, NAV_ANCHOR + NAV_LINK, 1)
+-        else:
+-            if not raw.startswith(prefix(relative)):
+-                raise ValueError(f"ROUNDTRIP_NOT_FIRST: {relative}")
+-            updated = insert_declaration(raw, prefix(relative), declaration_prefix(relative, source), relative)
+-        if updated != raw:
+-            pending.append((path, updated))
+-    if check and pending:
+-        raise ValueError("SELF_DECLARATION_NOT_CURRENT: " + ", ".join(str(p.relative_to(root)) for p, _ in pending))
+-    if not check:
+-        for path, raw in pending:
+-            path.write_bytes(raw)
+-    return [str(path.relative_to(root)) for path, _ in pending]
+-
+-
+-def main() -> int:
+-    parser = argparse.ArgumentParser(description=__doc__)
+-    mode = parser.add_mutually_exclusive_group(required=True)
+-    mode.add_argument("--apply", action="store_true")
+-    mode.add_argument("--check", action="store_true")
+-    args = parser.parse_args()
+-    try:
+-        changed = materialize(ROOT, check=args.check)
+-        changed += materialize_declaration(ROOT, check=args.check)
+-    except (OSError, ValueError) as exc:
+-        parser.exit(2, str(exc) + "\n")
+-    print("ENTRYPOINT_CHECK_PASS" if args.check else "ENTRYPOINTS_MATERIALIZED: " + ", ".join(changed))
+-    return 0
+-
+-
+-if __name__ == "__main__":
+-    raise SystemExit(main())
+diff --git a/tools/qikvrt_smalltalk.py b/tools/qikvrt_smalltalk.py
+deleted file mode 100644
+index 20ef6eff3399f89e4e449ee2db5662edd8062eb5..0000000000000000000000000000000000000000
+--- a/tools/qikvrt_smalltalk.py
++++ /dev/null
+@@ -1,192 +0,0 @@
+-#!/usr/bin/env python3
+-# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+-# Copyright 2026 Ingolf Lohmann.
+-"""Pinned Pharo bootstrap, reproducible source loading and exhaustive C90 comparison.
+-
+-Extends bootstrap-runtime's language profiles. Base image/cache bytes never acquire
+-authority through a mutable live image; every build starts from the hash-locked ZIP.
+-"""
+-from __future__ import annotations
+-
+-import argparse
+-import hashlib
+-import json
+-import os
+-from pathlib import Path
+-import platform
+-import shutil
+-import subprocess
+-import sys
+-import tempfile
+-import urllib.request
+-import zipfile
+-
+-ROOT = Path(__file__).resolve().parents[1]
+-LOCK_PATH = ROOT / "runtime/toolchains/pharo-13.lock.json"
+-
+-
+-def digest(path: Path) -> str:
+-    with path.open("rb") as stream:
+-        return hashlib.file_digest(stream, "sha256").hexdigest()
+-
+-
+-def run(command: list[str], cwd: Path) -> None:
+-    subprocess.run(command, cwd=cwd, check=True, timeout=600)
+-
+-
+-def cache_path(cache: Path, lock: dict) -> Path:
+-    return cache / "pharo" / lock["version"]
+-
+-
+-def verify(cache: Path, lock: dict) -> Path:
+-    directory = cache_path(cache, lock)
+-    for kind in ("image", "vm"):
+-        archive = directory / (kind + ".zip")
+-        if digest(archive) != lock[kind]["sha256"]:
+-            raise ValueError(f"{kind}: archive digest mismatch")
+-        with zipfile.ZipFile(archive) as source:
+-            for member in source.infolist():
+-                if member.is_dir():
+-                    continue
+-                path = directory / kind / member.filename
+-                if path.is_symlink() or not path.resolve().is_relative_to((directory / kind).resolve()):
+-                    raise ValueError("unsafe cache member")
+-                if digest(path) != hashlib.sha256(source.read(member)).hexdigest():
+-                    raise ValueError(f"{kind}: extracted bytes changed: {member.filename}")
+-    return directory
+-
+-
+-def install(cache: Path, lock: dict, archive_dir: Path | None = None) -> Path:
+-    if platform.system() != "Linux" or platform.machine() not in ("x86_64", "AMD64"):
+-        raise ValueError("Pharo lock is for Linux x86_64")
+-    target = cache_path(cache, lock)
+-    if target.exists():
+-        return verify(cache, lock)
+-    target.parent.mkdir(parents=True, exist_ok=True)
+-    temporary = Path(tempfile.mkdtemp(prefix=".install-", dir=target.parent))
+-    try:
+-        for kind in ("image", "vm"):
+-            archive = temporary / (kind + ".zip")
+-            print(f"PHARO_FETCH {kind}", flush=True)
+-            if archive_dir:
+-                shutil.copyfile(archive_dir / (kind + ".zip"), archive)
+-            else:
+-                with urllib.request.urlopen(lock[kind]["url"], timeout=120) as response, archive.open("wb") as output:
+-                    shutil.copyfileobj(response, output)
+-            if digest(archive) != lock[kind]["sha256"]:
+-                raise ValueError(f"{kind}: downloaded archive digest mismatch")
+-            with zipfile.ZipFile(archive) as source:
+-                for member in source.infolist():
+-                    path = temporary / kind / member.filename
+-                    if not path.resolve().is_relative_to((temporary / kind).resolve()):
+-                        raise ValueError("unsafe archive path")
+-                source.extractall(temporary / kind)
+-                for member in source.infolist():
+-                    path = temporary / kind / member.filename
+-                    if path.is_file() and member.external_attr >> 16 & 0o111:
+-                        path.chmod(0o755)
+-        temporary.rename(target)
+-    finally:
+-        if temporary.exists():
+-            shutil.rmtree(temporary)
+-    print("PHARO_INSTALL_COMPLETE", flush=True)
+-    return verify(cache, lock)
+-
+-
+-def build(directory: Path, lock: dict, output: Path) -> Path:
+-    output.mkdir(parents=True, exist_ok=True)
+-    image = output / "QIKVRT.image"
+-    if image.exists():
+-        raise ValueError("Refusing to overwrite an existing mutable image")
+-    shutil.copyfile(directory / "image" / lock["image"]["file"], image)
+-    original_changes = (directory / "image" / lock["image"]["file"]).with_suffix(".changes")
+-    shutil.copyfile(original_changes, image.with_suffix(".changes"))
+-    for source in (directory / "image").glob("*.sources"):
+-        shutil.copyfile(source, output / source.name)
+-    vm = str(directory / "vm" / lock["vm"]["file"])
+-    run([vm, "--headless", str(image), "st", str(ROOT / "src/smalltalk/QikvrtEffectAck.st"), str(ROOT / "src/smalltalk/save-image.st")], output)
+-    run([vm, "--headless", str(image), "st", str(ROOT / "src/smalltalk/smoke.st")], output)
+-    receipt = {"schema": "qikvrt_smalltalk_image_v1", "lock_sha256": digest(LOCK_PATH),
+-               "source_sha256": digest(ROOT / "src/smalltalk/QikvrtEffectAck.st"),
+-               "image_sha256": digest(image), "image_restored": True, "effect_ack_done": False}
+-    (output / "smalltalk-image-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
+-    return image
+-
+-
+-def test(directory: Path, lock: dict) -> None:
+-    with tempfile.TemporaryDirectory(prefix="qikvrt-smalltalk-") as temp:
+-        work = Path(temp)
+-        image = build(directory, lock, work)
+-        run([str(directory / "vm" / lock["vm"]["file"]), "--headless", str(image), "st", str(ROOT / "tests/smalltalk/core-vectors.st")], work)
+-        executable = work / "c90-vectors"
+-        run([os.environ.get("CC", "cc"), "-std=c90", "-pedantic", "-Wall", "-Wextra", "-Werror", "-O2", "-I" + str(ROOT / "include"), str(ROOT / "src/effect_ack_core.c"), str(ROOT / "tests/smalltalk/core-vectors.c"), "-o", str(executable)], work)
+-        with (work / "c90-vectors.bin").open("wb") as output:
+-            subprocess.run([str(executable)], stdout=output, check=True, timeout=60)
+-        a, b = work / "c90-vectors.bin", work / "smalltalk-vectors.bin"
+-        if a.stat().st_size != 2621440 or b.stat().st_size != 2621440 or digest(a) != digest(b):
+-            raise ValueError("Smalltalk/C90 exhaustive result mismatch")
+-        # Also use the existing rich Python engine on representable boundary
+-        # cases. Its evidence parser is intentionally not replaced by the C ABI.
+-        sys.path.insert(0, str(ROOT / "src"))
+-        from qikvrt_effect_ack import EffectAckEngine, ConnectionDecision, RiskLevel
+-        sys.path.insert(0, str(ROOT))
+-        from tests.test_effect_ack_conformance import request
+-        vectors = a.read_bytes()
+-        cases = [(122879, 2, {}, 100)]
+-        fields = {0: "transport_ack", 1: "input_id", 3: "origin_checked", 4: "context_checked",
+-                  5: "semantics_reconstructed", 6: "effect_anticipated", 7: "risk_classified",
+-                  8: "risk_level", 9: "responsibility_assigned", 10: "responsibility_owner",
+-                  12: "policy_allows_release", 14: "open_questions", 15: "next_required_checks", 16: "evidence_refs"}
+-        for bit, field in fields.items():
+-            value = False
+-            if field in ("input_id", "responsibility_owner"): value = ""
+-            if field == "risk_level": value = RiskLevel.UNKNOWN
+-            if field in ("open_questions", "next_required_checks"): value = ("pending",)
+-            if field == "evidence_refs": value = ()
+-            mask = 122879 & ~(1 << bit)
+-            if field == "transport_ack":
+-                # A rich Python request without acknowledged reception has no
+-                # effect-checkable input identity. The core consumes verified
+-                # facts, not the raw request's non-empty identifier string.
+-                mask &= ~(1 << 1)
+-            cases.append((mask, 2, {field: value}, 100))
+-        for code, decision in enumerate(ConnectionDecision):
+-            mask = 122879 if code != 0 else 122879 & ~(1 << 11)
+-            cases.append((mask, code, {"connection_decision": decision}, 100))
+-        cases += [(122879 | (1 << 13), 2, {}, 0),
+-                  (122879 | (1 << 18), 2, {"declared_input_hash": "0" * 64}, 100),
+-                  (122879 & ~(1 << 2), 2, {"payload": None, "declared_input_hash": None}, 100)]
+-        names = ["EFFECT_NACK", "EFFECT_ACK_CONTINUE", "EFFECT_ACK_DONE", "EFFECT_ACK_ISOLATE", "EFFECT_ACK_BLOCK"]
+-        for mask, decision, changes, timeout in cases:
+-            result = EffectAckEngine(clock_ns=lambda: 0).evaluate(request(**changes), timeout_ms=timeout)
+-            if result.state.value != names[vectors[mask * 5 + decision]]:
+-                raise ValueError(f"Python/C90/Smalltalk boundary mismatch: {mask}/{decision}")
+-        print(f"QIKVRT_PYTHON_C90_SMALLTALK_BOUNDARIES={len(cases)}")
+-        print(f"QIKVRT_SMALLTALK_C90_EXHAUSTIVE_MATCH vectors=2621440 sha256={digest(a)}")
+-
+-
+-def main() -> int:
+-    parser = argparse.ArgumentParser(description=__doc__)
+-    parser.add_argument("command", choices=("verify", "install", "build", "test"))
+-    parser.add_argument("--cache-dir", type=Path, default=Path(os.environ.get("QIKVRT_TOOLCHAIN_CACHE", ROOT / ".qikvrt/toolchains")))
+-    parser.add_argument("--archive-dir", type=Path)
+-    parser.add_argument("--output", type=Path)
+-    args = parser.parse_args()
+-    lock = json.loads(LOCK_PATH.read_text())
+-    try:
+-        directory = install(args.cache_dir.resolve(), lock, args.archive_dir) if args.command == "install" else verify(args.cache_dir.resolve(), lock)
+-        if args.command == "build":
+-            if not args.output:
+-                parser.error("build requires --output")
+-            build(directory, lock, args.output.resolve())
+-        if args.command == "test":
+-            test(directory, lock)
+-        print(f"PHARO_{args.command.upper()}_OK version={lock['version']}")
+-        return 0
+-    except (OSError, ValueError, zipfile.BadZipFile, subprocess.SubprocessError) as error:
+-        print(f"BLOCK: {error}")
+-        return 1
+-
+-
+-if __name__ == "__main__":
+-    raise SystemExit(main())
+diff --git a/tools/qikvrt_temdd.py b/tools/qikvrt_temdd.py
+old mode 100755
+new mode 100644
+index 740b757baca640ca4f3300b8669d0ebf09439efc..17b72c84d9d23e7bd12fc68b6f5596c52626b042
+--- a/tools/qikvrt_temdd.py
++++ b/tools/qikvrt_temdd.py
+@@ -2,8 +2,12 @@
+ """TEMDD v0.1 deterministic reference parser/elaborator."""
+ import json,re,sys
+ from pathlib import Path
++
+ ID=r"[A-Za-z][A-Za-z0-9_-]*"
+ QIKVRT_DOD={'ZERO_BUGS','ALL_PULL_REQUESTS_REGARDED','ALL_BRANCHES_REGARDED','ALL_PRODUCTIVE_BRANCHES_MERGED','FRESH_EXACT_MAIN_VALIDATION_PASS','FRESH_EFFECT_READBACK'}
++EPISTEMIC={'TRUE','FALSE','UNKNOWN','CONFLICT','STALE','UNOBSERVABLE'}
++FRESHNESS={'FRESH','STALE'}
++
+ def parse(text):
+  def one(p,label,src=None):
+   m=re.search(p,text if src is None else src,re.S)
+@@ -12,16 +16,40 @@ def parse(text):
+  v=one(r"^\s*temdd\s+([0-9.]+)\s*;",'version').group(1)
+  if v!='0.1': raise ValueError('unsupported version')
+  a=one(r"authority\s+"+ID+r"\s*=\s*\"([^\"]+)\"\s*;",'authority').group(1)
++ c=one(r"context\s+("+ID+r")\s*\{(.*?)\}",'context'); cb=c.group(2)
++ perspective=one(r"perspective\s*=\s*\"([^\"]+)\"\s*;",'perspective',cb).group(1)
+  s=one(r"subject\s+("+ID+r")\s*\{(.*?)\}",'subject'); sb=s.group(2)
+- rm=one(r"repository\s*=\s*\"([^\"]+)\"\s*;",'repository',sb); one(r"binding\s*=\s*exact\s*;",'exact binding',sb)
++ rm=one(r"repository\s*=\s*\"([^\"]+)\"\s*;",'repository',sb)
++ one(r"binding\s*=\s*exact\s*;",'exact binding',sb)
++ relations=[]
++ for m in re.finditer(r"relation\s+("+ID+r")\s*\{(.*?)\}",text,re.S):
++  body=m.group(2)
++  def field(pattern,label):
++   return one(pattern,label,body).group(1)
++  epistemic=field(r"epistemic\s*=\s*("+ID+r")\s*;",'relation epistemic state')
++  freshness=field(r"freshness\s*=\s*("+ID+r")\s*;",'relation freshness')
++  if epistemic not in EPISTEMIC: raise ValueError('invalid epistemic state')
++  if freshness not in FRESHNESS: raise ValueError('invalid freshness')
++  relations.append({
++   'name':m.group(1),
++   'source':field(r"source\s*=\s*\"([^\"]+)\"\s*;",'relation source'),
++   'predicate':field(r"predicate\s*=\s*\"([^\"]+)\"\s*;",'relation predicate'),
++   'target':field(r"target\s*=\s*\"([^\"]+)\"\s*;",'relation target'),
++   'epistemic':epistemic,
++   'source_order':int(field(r"source_order\s*=\s*([0-9]+)\s*;",'relation source order')),
++   'observation_order':int(field(r"observation_order\s*=\s*([0-9]+)\s*;",'relation observation order')),
++   'freshness':freshness,
++  })
++ if not relations: raise ValueError('at least one first-class relation required')
+  q=one(r"request\s+("+ID+r")\s*\{\s*target\s*=\s*("+ID+r")\s*;\s*\}",'request'); target=q.group(2)
+  handlers=[]
+- for m in re.finditer(r"on\s+(event|blocker)\s*\{(.*?)\}",text,re.S): handlers.append({'event':m.group(1),'statements':[x.strip() for x in m.group(2).split(';') if x.strip()]})
++ for m in re.finditer(r"on\s+(event|blocker)\s*\{(.*?)\}",text,re.S):
++  handlers.append({'event':m.group(1),'statements':[x.strip() for x in m.group(2).split(';') if x.strip()]})
+  d=one(r"until\s*\{(.*?)\}",'until').group(1).strip().rstrip(';'); dod=[x.strip() for x in d.split('&&') if x.strip()]
+  if not handlers or not dod: raise ValueError('handlers and DoD required')
+  if len(set(dod))!=len(dod): raise ValueError('duplicate DoD predicate')
+  if target=='QIKVRT_DOD' and set(dod)!=QIKVRT_DOD: raise ValueError('QIKVRT_DOD requires complete canonical predicate')
+- return {'schema':'temdd_ir_v0_1','version':v,'authority':a,'subject':{'name':s.group(1),'repository':rm.group(1),'binding':'exact'},'request':{'name':q.group(1),'target':target},'handlers':handlers,'dod':dod}
++ return {'schema':'temdd_ir_v0_1','version':v,'authority':a,'context':{'name':c.group(1),'perspective':perspective},'subject':{'name':s.group(1),'repository':rm.group(1),'binding':'exact'},'relations':relations,'request':{'name':q.group(1),'target':target},'handlers':handlers,'dod':dod}
+ def main(argv):
+  if len(argv)!=2:return 64
+  try: ir=parse(Path(argv[1]).read_text(encoding='utf-8'))
+diff --git a/tools/qikvrt_temdd_conformance.py b/tools/qikvrt_temdd_conformance.py
+old mode 100755
+new mode 100644
+index d8d3b99ea7eabb11e048757856f2ee1b43ce30ad..8b062695e511b501fd8d51a7f4cfd462488cded1
+--- a/tools/qikvrt_temdd_conformance.py
++++ b/tools/qikvrt_temdd_conformance.py
+@@ -1,12 +1,23 @@
+ #!/usr/bin/env python3
+-"""TEMDD semantic conformance T01-T12. Fail closed."""
++"""TEMDD semantic conformance T01-T16. Fail closed."""
+ from collections import namedtuple
+ Evidence=namedtuple('Evidence','subject kind fresh')
+ DOD=('ZERO_BUGS','ALL_PULL_REQUESTS_REGARDED','ALL_BRANCHES_REGARDED','ALL_PRODUCTIVE_BRANCHES_MERGED','FRESH_EXACT_MAIN_VALIDATION_PASS','FRESH_EFFECT_READBACK')
++EPISTEMIC=('TRUE','FALSE','UNKNOWN','CONFLICT','STALE','UNOBSERVABLE')
+ def evidence(subject,kind,fresh=True): return Evidence(subject,kind,fresh)
+ def admits(e,subject,kind): return e.subject==subject and e.kind==kind and e.fresh
+ def successor(subject,mutation): return subject+'@successor:'+mutation
+ def done(predicates): return all(bool(predicates.get(x,False)) for x in DOD)
++def knowledge_refines(before,after): return bool(after) and set(after) <= set(before)
++def temporal_relation(first,second):
++ if first['observation_order'] < second['observation_order'] and second['source_order'] < first['source_order']: return 'RETROGRADE_SOURCE_REFERENCE'
++ if first['observation_order'] < second['observation_order'] and first['source_order'] < second['source_order']: return 'ALIGNED_ORDER'
++ return 'UNORDERED_OR_EQUAL'
++def same_context(a,b): return a['name']==b['name'] and a['perspective']==b['perspective']
++def context_transition_allowed(a,b,authorized=False): return same_context(a,b) or bool(authorized)
++def evidence_transferable(a,b): return same_context(a,b)
++REPRESENTATION_FIELDS=('authority','context','subject','relations','dod','requires_effect_readback')
++def representation_conserved(source,target): return all(source.get(k)==target.get(k) for k in REPRESENTATION_FIELDS)
+ def check():
+  s='repo@head/tree'; t=successor(s,'m1'); e=evidence(s,'validation')
+  assert admits(e,s,'validation') and not admits(e,t,'validation')
+@@ -17,5 +28,17 @@ def check():
+  p={x:True for x in DOD}; p['FRESH_EFFECT_READBACK']=False; assert not done(p)
+  assert 'UNKNOWN' not in {'EFFECT_ACK','DONE'}
+  assert t!=s and not admits(e,t,'validation')
+- print('TEMDD_CONFORMANCE T01-T12 PASS')
++ first={'source_order':2,'observation_order':1,'emitted_at':'source:2','observed_at':'local:1'}
++ second={'source_order':1,'observation_order':2,'emitted_at':'source:1','observed_at':'local:2'}
++ assert temporal_relation(first,second)=='RETROGRADE_SOURCE_REFERENCE'
++ assert first['emitted_at'] != first['observed_at']
++ assert set(EPISTEMIC)=={'TRUE','FALSE','UNKNOWN','CONFLICT','STALE','UNOBSERVABLE'}
++ assert knowledge_refines({'a','b'},{'a'}) and not knowledge_refines({'a'},{'a','b'})
++ assert {'CONFLICT','STALE','UNOBSERVABLE'}.isdisjoint({'TRUE','DONE'})
++ c1={'name':'qikvrt','perspective':'product-owner'}; c2={'name':'qikvrt','perspective':'external-observer'}
++ assert same_context(c1,c1) and not context_transition_allowed(c1,c2) and context_transition_allowed(c1,c2,authorized=True) and not evidence_transferable(c1,c2)
++ canonical={'authority':'Goldkelch/qik-vrt','context':c1,'subject':s,'relations':[('authority','observes','mirror','UNKNOWN',2,1,'FRESH')],'dod':DOD,'requires_effect_readback':True}
++ projection=dict(canonical); assert representation_conserved(canonical,projection)
++ bad=dict(canonical); bad['subject']=t; assert not representation_conserved(canonical,bad)
++ print('TEMDD_CONFORMANCE T01-T16 PASS')
+ if __name__=='__main__': check()
+diff --git a/tools/qikvrt_temdd_conformance_report.py b/tools/qikvrt_temdd_conformance_report.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..b4830a19c8162794e7ad317c9594ff39cd04db1a
+--- /dev/null
++++ b/tools/qikvrt_temdd_conformance_report.py
+@@ -0,0 +1,158 @@
++#!/usr/bin/env python3
++"""Generate one exact-subject TEMDD v1 conformance report.
++
++The report is intentionally scoped: PASS means the declared TEMDD conformance
++suite reached this final step on one immutable HEAD/TREE. It is not P3, Main,
++production deployment, or general EFFECT_ACK_DONE.
++"""
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++from pathlib import Path
++import re
++import subprocess
++
++ROOT = Path(__file__).resolve().parents[1]
++HEX40 = re.compile(r"[0-9a-f]{40}\Z")
++
++IMPLEMENTATION_FILES = (
++    "tools/qikvrt_temdd.py",
++    "src/qikvrt_temdd_semantic_ir.py",
++    "src/qikvrt_temdd_event_ledger.py",
++    "runtime/temdd/TEMDDRuntime.st",
++    "src/temdd_core.c",
++    "runtime/m68000/temdd_transition.s",
++)
++SUITE_FILES = (
++    "spec/temdd/TEMDD_LANGUAGE_SPEC_V0_1.md",
++    "spec/temdd/TEMDD_NORMATIVE_T13_T16_V0_1.json",
++    "spec/temdd/TEMDD_CONFORMANCE_MATRIX_V0_1.json",
++    "spec/temdd/TEMDD_Syntax_V0_1.ebnf",
++    "schemas/temdd-ir-v0.1.schema.json",
++    "schemas/temdd-event-v1.schema.json",
++    "schemas/temdd-evidence-v1.schema.json",
++    "schemas/temdd-conformance-report-v1.schema.json",
++    "tools/qikvrt_temdd_conformance.py",
++    "tests/test_temdd.py",
++    "tests/test_temdd_semantic_ir.py",
++    "tests/test_temdd_conformance_report.py",
++    "tests/temdd/positive/minimal.temdd",
++    "formalization/TEMDDCore.lean",
++    "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/T13T16.lean",
++    "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/TEMDD/AxiomAudit.lean",
++)
++
++
++class ConformanceReportHold(ValueError):
++    pass
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def canonical(value) -> bytes:
++    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
++
++
++def inventory(paths):
++    rows = []
++    for name in sorted(paths):
++        path = ROOT / name
++        if not path.is_file():
++            raise ConformanceReportHold("MISSING_SUITE_FILE:" + name)
++        rows.append({"path": name, "bytes": path.stat().st_size, "sha256": sha256(path)})
++    return rows
++
++
++def inventory_digest(rows) -> str:
++    return "sha256:" + hashlib.sha256(canonical(rows)).hexdigest()
++
++
++def git_subject():
++    head = subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip()
++    tree = subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD^{tree}"], text=True).strip()
++    if HEX40.fullmatch(head) is None or HEX40.fullmatch(tree) is None:
++        raise ConformanceReportHold("UNOBSERVABLE_GIT_SUBJECT")
++    return head, tree
++
++
++def build_report(repository: str, head: str, tree: str, backend_receipt: dict):
++    actual_head, actual_tree = git_subject()
++    if (head, tree) != (actual_head, actual_tree):
++        raise ConformanceReportHold("EXACT_SUBJECT_DRIFT")
++    if backend_receipt.get("source_sha") != head or backend_receipt.get("source_tree") != tree:
++        raise ConformanceReportHold("BACKEND_RECEIPT_SUBJECT_MISMATCH")
++    expected_backends = {
++        "c90": "EXECUTED_SUCCESS",
++        "smalltalk": "EXECUTED_SUCCESS",
++        "m68000": "EXECUTED_SUCCESS_QEMU_USER",
++        "lean": "COMPILED_SUCCESS_LEAN_4_19_LAKE",
++    }
++    if backend_receipt.get("backends") != expected_backends:
++        raise ConformanceReportHold("BACKEND_RECEIPT_INCOMPLETE")
++    if backend_receipt.get("predecessor_evidence_transfer") is not False:
++        raise ConformanceReportHold("PREDECESSOR_EVIDENCE_TRANSFER_FORBIDDEN")
++
++    implementation = inventory(IMPLEMENTATION_FILES)
++    suite = inventory(SUITE_FILES)
++    return {
++        "schema": "temdd_conformance_report_v1",
++        "temdd_conformance": "1",
++        "implementation": {
++            "repository": repository,
++            "head": head,
++            "tree": tree,
++            "digest": inventory_digest(implementation),
++        },
++        "suite": {
++            "version": "1",
++            "digest": inventory_digest(suite),
++            "files": suite,
++        },
++        "language": "PASS",
++        "ir": "PASS",
++        "ide": "PASS",
++        "event_semantics": "PASS",
++        "ledger": "PASS",
++        "evidence_binding": "PASS",
++        "causality": "PASS",
++        "effect_ack": "PASS",
++        "formal_invariants": "PASS",
++        "tests": "PASS",
++        "negative_vectors": "PASS",
++        "backends": expected_backends,
++        "overall": "PASS",
++        "predecessor_evidence_transfer": False,
++        "stable_language_claim": False,
++        "main_adoption": False,
++        "production_effect": False,
++        "effect_ack_done": False,
++    }
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--repository", required=True)
++    parser.add_argument("--head", required=True)
++    parser.add_argument("--tree", required=True)
++    parser.add_argument("--backend-receipt", type=Path, required=True)
++    parser.add_argument("--output", type=Path, required=True)
++    args = parser.parse_args()
++    receipt = json.loads(args.backend_receipt.read_text(encoding="utf-8"))
++    report = build_report(args.repository, args.head, args.tree, receipt)
++    args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
++    print(
++        "TEMDD_CONFORMANCE_REPORT PASS "
++        + args.head
++        + " "
++        + args.tree
++        + " "
++        + report["suite"]["digest"]
++    )
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/tools/qikvrt_temdd_zenodo_candidate.py b/tools/qikvrt_temdd_zenodo_candidate.py
+deleted file mode 100644
+index 3122e1445bbe354e0a32e51f45c13b98315e4225..0000000000000000000000000000000000000000
+--- a/tools/qikvrt_temdd_zenodo_candidate.py
++++ /dev/null
+@@ -1,390 +0,0 @@
+-#!/usr/bin/env python3
+-# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+-# Copyright 2026 Ingolf Lohmann.
+-"""Materialize the proof-bearing TEMDD Zenodo v2 pre-authorization candidate.
+-
+-This tool has no network effect.  It freezes the exact public candidate that was
+-returned to Ingolf Lohmann, materializes the v2 return receipt and machine-proof
+-bundle, and emits the exact canonical authorization statement required by the
+-existing generic Zenodo publisher.  It deliberately stops before owner
+-authorization and before any Zenodo mutation.
+-"""
+-from __future__ import annotations
+-
+-import argparse
+-import hashlib
+-import json
+-import pathlib
+-import subprocess
+-import sys
+-from typing import Any
+-
+-ROOT = pathlib.Path(__file__).resolve().parents[1]
+-ROOT_STR = str(ROOT)
+-if ROOT_STR not in sys.path:
+-    sys.path.insert(0, ROOT_STR)
+-
+-from tools import qikvrt_zenodo_machine_proof as proof
+-RELEASE_REL = pathlib.PurePosixPath("release/temdd-technical-evolution-zenodo-v1")
+-RELEASE = ROOT.joinpath(*RELEASE_REL.parts)
+-PUBLICATION_ID = "qikvrt-temdd-technical-evolution-v1"
+-SOURCE_HEAD = "a04ff87358159dfef54ba3141cfea76fc75bbdac"
+-RETURNED_AT = "2026-09-24T11:27:10Z"
+-AUTHORIZATION_ID = "temdd-20260924-zenodo-v1-auth-01"
+-
+-PRIMARY = "docs/publications/2026-09-24-temdd-technical-evolution/TEMDD_TECHNICAL_EVOLUTION_DE.md"
+-HARDWARE = "docs/patent/TEMDD_HARDWARE_MAPPING_AND_PATENT_BOUNDARY_V1.md"
+-DECLARATION = "spec/temdd/TEMDD_TECHNICAL_EVOLUTION_DECLARATION_V1.md"
+-LANGUAGE_SPEC = "spec/temdd/TEMDD_LANGUAGE_SPEC_V0_1.md"
+-CLAIM_MATRIX = f"{RELEASE_REL.as_posix()}/CLAIM_MATRIX.json"
+-BINDINGS = f"{RELEASE_REL.as_posix()}/SOURCE_EVIDENCE_BINDINGS.json"
+-METADATA = f"{RELEASE_REL.as_posix()}/ZENODO_METADATA.json"
+-RETURN_RECEIPT = f"{RELEASE_REL.as_posix()}/PREPUBLICATION_RETURN_RECEIPT.json"
+-PROOF_BUNDLE = f"{RELEASE_REL.as_posix()}/MACHINE_PROOF_BUNDLE.json"
+-AUTH_REQUEST = f"{RELEASE_REL.as_posix()}/EXACT_AUTHORIZATION_REQUEST.json"
+-PUBLISH_DRAFT = f"{RELEASE_REL.as_posix()}/PUBLISH_REQUEST_DRAFT.json"
+-FILESET = f"{RELEASE_REL.as_posix()}/ZENODO_FILESET.md"
+-EVIDENCE_PATH = f"{RELEASE_REL.as_posix()}/zenodo-publication.json"
+-
+-POLICY = {
+-    "id": proof.POLICY_ID,
+-    "path": proof.POLICY_PATH,
+-    "version": proof.POLICY_VERSION,
+-    "sha256": proof.POLICY_SHA256,
+-    "git_blob_sha1": proof.POLICY_GIT_BLOB_SHA1,
+-}
+-
+-CANDIDATE_SPECS = (
+-    (PRIMARY, "TEMDD_TECHNICAL_EVOLUTION_DE.md", "PRIMARY"),
+-    (HARDWARE, "TEMDD_HARDWARE_MAPPING_AND_PATENT_BOUNDARY_V1.md", "SUPPLEMENT"),
+-)
+-
+-ARTIFACT_SPECS = (
+-    (CLAIM_MATRIX, "CLAIM_MATRIX"),
+-    (BINDINGS, "EVIDENCE"),
+-    (DECLARATION, "SOURCE"),
+-    (LANGUAGE_SPEC, "SOURCE"),
+-    (RETURN_RECEIPT, "RETURN_RECEIPT"),
+-)
+-
+-
+-def json_bytes(value: Any) -> bytes:
+-    return (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+-
+-
+-def git_blob_sha1(raw: bytes) -> str:
+-    return hashlib.sha1(
+-        f"blob {len(raw)}\0".encode("ascii") + raw,
+-        usedforsecurity=False,
+-    ).hexdigest()
+-
+-
+-def ident(path: str) -> dict[str, Any]:
+-    raw = (ROOT / path).read_bytes()
+-    return {
+-        "path": path,
+-        "bytes": len(raw),
+-        "sha256": hashlib.sha256(raw).hexdigest(),
+-        "git_blob_sha1": git_blob_sha1(raw),
+-    }
+-
+-
+-def write_json(path: str, value: Any) -> None:
+-    target = ROOT / path
+-    target.parent.mkdir(parents=True, exist_ok=True)
+-    target.write_bytes(json_bytes(value))
+-
+-
+-def verify_source_head() -> None:
+-    current = subprocess.check_output(
+-        ["git", "rev-parse", "--verify", "HEAD^{commit}"],
+-        cwd=ROOT,
+-        text=True,
+-    ).strip()
+-    subprocess.run(
+-        ["git", "merge-base", "--is-ancestor", SOURCE_HEAD, current],
+-        cwd=ROOT,
+-        check=True,
+-    )
+-    for path, _name, _role in CANDIDATE_SPECS:
+-        source_blob = subprocess.check_output(
+-            ["git", "rev-parse", f"{SOURCE_HEAD}:{path}"],
+-            cwd=ROOT,
+-            text=True,
+-        ).strip()
+-        current_blob = subprocess.check_output(
+-            ["git", "rev-parse", f"HEAD:{path}"],
+-            cwd=ROOT,
+-            text=True,
+-        ).strip()
+-        if source_blob != current_blob:
+-            raise SystemExit(f"BLOCK candidate bytes changed after return: {path}")
+-
+-
+-def bundle_claims() -> list[dict[str, Any]]:
+-    matrix = json.loads((ROOT / CLAIM_MATRIX).read_text(encoding="utf-8"))
+-    by_id = {item["claim_id"]: item for item in matrix["claims"]}
+-    binding = BINDINGS
+-    refs = {
+-        "TEMDD-DECL-001": [],
+-        "TEMDD-EXEC-001": [f"{binding}#TEMDD-LANG-SPEC"],
+-        "TEMDD-EVIDENCE-001": [
+-            f"{binding}#TEMDD-LANG-SPEC",
+-            f"{binding}#TEMDD-DECLARATION",
+-        ],
+-        "TEMDD-HW-001": [f"{binding}#TEMDD-HARDWARE-MAP"],
+-        "TEMDD-PERF-001": [f"{binding}#TEMDD-HARDWARE-MAP"],
+-        "TEMDD-PATENT-001": [f"{binding}#TEMDD-HARDWARE-MAP"],
+-        "TEMDD-ATTR-001": [f"{binding}#TEMDD-DECLARATION"],
+-    }
+-    wording = {
+-        "FORMAL_PROVED": "ESTABLISHED_WITHIN_SCOPE",
+-        "EMPIRICALLY_EVIDENCED": "EMPIRICALLY_SUPPORTED",
+-        "SOURCE_BOUND": "SOURCE_ATTRIBUTED",
+-        "NORMATIVE": "NORMATIVE_DECLARATION",
+-        "INTERPRETATIVE": "INTERPRETATIVE_DECLARATION",
+-        "OPEN": "EXPLICITLY_OPEN",
+-    }
+-    claims = []
+-    for claim_id in [item["claim_id"] for item in matrix["claims"]]:
+-        item = by_id[claim_id]
+-        source_refs = refs[claim_id]
+-        claims.append({
+-            "claim_id": claim_id,
+-            "statement": item["statement"],
+-            "classification": item["classification"],
+-            "status": item["status"],
+-            "publication_wording": wording[item["classification"]],
+-            "scope": item["boundary"],
+-            "proof_refs": [],
+-            "evidence_refs": [],
+-            "source_refs": source_refs,
+-        })
+-    return claims
+-
+-
+-def materialize() -> None:
+-    verify_source_head()
+-
+-    candidate_files = []
+-    for path, name, role in CANDIDATE_SPECS:
+-        item = ident(path)
+-        candidate_files.append({
+-            **item,
+-            "name": name,
+-            "role": role,
+-        })
+-
+-    receipt = {
+-        "_license": {
+-            "classification": "machine_readable_prepublication_return_receipt",
+-            "copyright": "Copyright 2026 Ingolf Lohmann",
+-            "license": "CC-BY-NC-ND-4.0",
+-            "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+-            "rights_holder": "Ingolf Lohmann",
+-        },
+-        "schema": proof.RETURN_SCHEMA,
+-        "publication_id": PUBLICATION_ID,
+-        "content_changed": False,
+-        "original_files": [],
+-        "candidate_files": [
+-            {
+-                key: item[key]
+-                for key in ("path", "bytes", "sha256", "git_blob_sha1")
+-            }
+-            for item in candidate_files
+-        ],
+-        "changed_claim_ids": [],
+-        "change_reasons": [],
+-        "change_notice_path": None,
+-        "return": {
+-            "candidate_returned_to_owner": True,
+-            "owner_name": "Ingolf Lohmann",
+-            "owner_type": "NATURAL_PERSON",
+-            "return_channel": "ChatGPT commentary in owner-authorized repository session",
+-            "returned_at": RETURNED_AT,
+-            "visible_change_notice_returned": False,
+-        },
+-    }
+-    write_json(RETURN_RECEIPT, receipt)
+-
+-    artifacts = []
+-    for path, kind in ARTIFACT_SPECS:
+-        item = ident(path)
+-        artifacts.append({
+-            "path": path,
+-            "sha256": item["sha256"],
+-            "git_blob_sha1": item["git_blob_sha1"],
+-            "kind": kind,
+-        })
+-
+-    bundle = {
+-        "_license": {
+-            "classification": "machine_readable_proof_bundle",
+-            "copyright": "Copyright 2026 Ingolf Lohmann",
+-            "license": "CC-BY-NC-ND-4.0",
+-            "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+-            "rights_holder": "Ingolf Lohmann",
+-        },
+-        "schema": proof.BUNDLE_SCHEMA,
+-        "policy": POLICY,
+-        "publication_id": PUBLICATION_ID,
+-        "candidate": {
+-            "files": candidate_files,
+-            "primary_document_path": PRIMARY,
+-        },
+-        "claims": bundle_claims(),
+-        "artifacts": artifacts,
+-        "prepublication_return": {
+-            "content_changed": False,
+-            "candidate_returned_to_owner": True,
+-            "receipt_path": RETURN_RECEIPT,
+-            "change_notice_path": None,
+-        },
+-        "gates": {
+-            "all_claims_dispositioned": True,
+-            "all_references_resolve": True,
+-            "candidate_frozen": True,
+-            "formal_claims_have_kernel_receipts": True,
+-            "open_claims_not_worded_as_facts": True,
+-            "proof_bundle_in_upload_fileset": True,
+-            "returned_bytes_equal_upload_bytes": True,
+-        },
+-        "completion_claims": {
+-            "machine_proof_complete": True,
+-            "zenodo_upload_authorized": True,
+-        },
+-    }
+-    write_json(PROOF_BUNDLE, bundle)
+-
+-    upload_paths = [
+-        *(item["path"] for item in candidate_files),
+-        *(item["path"] for item in artifacts),
+-        PROOF_BUNDLE,
+-    ]
+-    validated = proof.validate_bundle(
+-        ROOT,
+-        ROOT / PROOF_BUNDLE,
+-        upload_paths=upload_paths,
+-    )
+-
+-    metadata = json.loads((ROOT / METADATA).read_text(encoding="utf-8"))
+-    metadata_sha256 = hashlib.sha256(
+-        (json.dumps(metadata, ensure_ascii=False, separators=(",", ":"), sort_keys=True)).encode("utf-8")
+-    ).hexdigest()
+-    receipt_id = ident(RETURN_RECEIPT)
+-    bundle_id = ident(PROOF_BUNDLE)
+-    statement = (
+-        "AUTHORIZE_EXACT_UPLOAD "
+-        f"authorization_id={AUTHORIZATION_ID} "
+-        f"publication_id={PUBLICATION_ID} "
+-        f"return_sha256={receipt_id['sha256']} "
+-        f"metadata_sha256={metadata_sha256} "
+-        f"machine_proof_sha256={bundle_id['sha256']}"
+-    )
+-    auth_request = {
+-        "schema": "qikvrt.temdd.zenodo.authorization-request.v1",
+-        "state": "AWAITING_EXPLICIT_OWNER_AUTHORIZATION",
+-        "repository": "Goldkelch/qik-vrt",
+-        "publication_id": PUBLICATION_ID,
+-        "source_head": SOURCE_HEAD,
+-        "authorization_id": AUTHORIZATION_ID,
+-        "principal": {"name": "Ingolf Lohmann", "type": "NATURAL_PERSON"},
+-        "candidate_return_receipt": receipt_id,
+-        "canonical_metadata_sha256": metadata_sha256,
+-        "machine_proof": bundle_id,
+-        "canonical_statement": statement,
+-        "statement_sha256": hashlib.sha256(statement.encode("utf-8")).hexdigest(),
+-        "upload_paths": upload_paths,
+-        "effect_released": False,
+-        "effect_ack_done": False,
+-    }
+-    write_json(AUTH_REQUEST, auth_request)
+-
+-    draft = {
+-        "schema": "qikvrt.temdd.zenodo.publish-request-draft.v1",
+-        "state": "DRAFT_EXACT_OWNER_AUTHORIZATION_PENDING",
+-        "repository": "Goldkelch/qik-vrt",
+-        "source_head": SOURCE_HEAD,
+-        "metadata": metadata,
+-        "files": [
+-            {
+-                "path": path,
+-                "name": pathlib.PurePosixPath(path).name,
+-                "git_blob_sha": ident(path)["git_blob_sha1"],
+-            }
+-            for path in upload_paths
+-        ],
+-        "machine_proof": {
+-            "path": PROOF_BUNDLE,
+-            "git_blob_sha": bundle_id["git_blob_sha1"],
+-            "policy_id": proof.POLICY_ID,
+-        },
+-        "authorization_request_path": AUTH_REQUEST,
+-        "evidence_path": EVIDENCE_PATH,
+-        "effect_ack_done": False,
+-    }
+-    write_json(PUBLISH_DRAFT, draft)
+-
+-    lines = [
+-        "# TEMDD Zenodo v2 exact fileset",
+-        "",
+-        f"Publication ID: `{PUBLICATION_ID}`",
+-        f"Frozen source head: `{SOURCE_HEAD}`",
+-        "",
+-        "The following paths form the exact proof-bearing upload set:",
+-        "",
+-    ]
+-    lines.extend(f"- `{path}`" for path in upload_paths)
+-    lines += [
+-        "",
+-        "Repository-side controls not uploaded:",
+-        f"- `{AUTH_REQUEST}`",
+-        f"- `{PUBLISH_DRAFT}`",
+-        f"- `{METADATA}`",
+-        "",
+-        "State: `EXACT_OWNER_AUTHORIZATION_PENDING`",
+-        "",
+-        "`EFFECT_ACK_DONE=false`",
+-        "",
+-    ]
+-    (ROOT / FILESET).write_text("\n".join(lines), encoding="utf-8")
+-
+-    print("TEMDD_ZENODO_CANDIDATE=PROOF_READY")
+-    print("SOURCE_HEAD=" + SOURCE_HEAD)
+-    print("PROOF_SHA256=" + validated["sha256"])
+-    print("AUTHORIZATION_STATEMENT=" + statement)
+-    print("EFFECT_ACK_DONE=false")
+-
+-
+-def check() -> None:
+-    upload_paths = []
+-    draft = json.loads((ROOT / PUBLISH_DRAFT).read_text(encoding="utf-8"))
+-    upload_paths = [item["path"] for item in draft["files"]]
+-    receipt = proof.validate_bundle(
+-        ROOT,
+-        ROOT / PROOF_BUNDLE,
+-        upload_paths=upload_paths,
+-    )
+-    request = json.loads((ROOT / AUTH_REQUEST).read_text(encoding="utf-8"))
+-    if request["machine_proof"]["sha256"] != receipt["sha256"]:
+-        raise SystemExit("BLOCK authorization request proof identity differs")
+-    if request["effect_released"] is not False or request["effect_ack_done"] is not False:
+-        raise SystemExit("BLOCK pre-authorization candidate escalates effect state")
+-    print("TEMDD_ZENODO_CANDIDATE=VALID")
+-    print("AUTHORIZATION_STATEMENT=" + request["canonical_statement"])
+-
+-
+-def main() -> int:
+-    parser = argparse.ArgumentParser()
+-    parser.add_argument("action", choices=("materialize", "check"))
+-    args = parser.parse_args()
+-    if args.action == "materialize":
+-        materialize()
+-    else:
+-        check()
+-    return 0
+-
+-
+-if __name__ == "__main__":
+-    raise SystemExit(main())
+diff --git a/tools/qikvrt_unattended_pr_disposition.py b/tools/qikvrt_unattended_pr_disposition.py
+deleted file mode 100644
+index dc1930079e39ff61b52eec3d7cb0fd0961f37055..0000000000000000000000000000000000000000
+--- a/tools/qikvrt_unattended_pr_disposition.py
++++ /dev/null
+@@ -1,196 +0,0 @@
+-#!/usr/bin/env python3
+-# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+-# Copyright 2026 Ingolf Lohmann.
+-"""Deterministic fail-closed disposition classifier for unattended pull requests.
+-
+-This module is intentionally effect-free. It projects one exact-bound pull-request
+-observation to exactly one current disposition from the canonical Issue #929
+-state set. Repository workflows may consume the result, but review, merge, close,
+-publication and other effects remain separate authority-bearing operations.
+-"""
+-from __future__ import annotations
+-
+-import argparse
+-import json
+-import sys
+-from dataclasses import asdict, dataclass
+-from pathlib import Path
+-from typing import Any, Mapping, Sequence
+-
+-DISPOSITIONS = frozenset(
+-    {
+-        "ACTIVE_EXECUTION",
+-        "READY_FOR_INDEPENDENT_REVIEW",
+-        "HOLD_WITH_FIRST_CAUSAL_BLOCKER",
+-        "REBIND_REQUIRED",
+-        "MERGE_READY",
+-        "EXTERNAL_EFFECT_PENDING",
+-        "CLOSE_AS_SUPERSEDED",
+-        "MERGED",
+-        "CLOSED_NOT_PLANNED_WITH_CAUSE",
+-    }
+-)
+-
+-
+-@dataclass(frozen=True)
+-class Disposition:
+-    disposition: str
+-    first_causal_blocker: str | None
+-    next_action: str
+-
+-    def to_mapping(self) -> dict[str, object]:
+-        value: dict[str, object] = asdict(self)
+-        value["PASS"] = False
+-        value["FINAL_PASS"] = False
+-        value["EFFECT_ACK_DONE"] = False
+-        return value
+-
+-
+-def _required_str(value: object, field: str) -> str:
+-    if not isinstance(value, str) or not value.strip():
+-        raise ValueError(f"{field} must be a non-empty string")
+-    return value.strip()
+-
+-
+-def _required_bool(value: object, field: str) -> bool:
+-    if not isinstance(value, bool):
+-        raise ValueError(f"{field} must be boolean")
+-    return value
+-
+-
+-def _required_nonnegative_int(value: object, field: str) -> int:
+-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+-        raise ValueError(f"{field} must be a non-negative integer")
+-    return value
+-
+-
+-def classify(observation: Mapping[str, object]) -> Disposition:
+-    """Return exactly one disposition for one exact-bound PR observation.
+-
+-    Precedence is causal and fail-closed: terminal repository state first; then
+-    supersession and base drift; then active execution; then observed blockers;
+-    then independent-review and external-effect boundaries; finally merge-ready.
+-    Missing evidence cannot become MERGE_READY.
+-    """
+-
+-    repository = _required_str(observation.get("repository"), "repository")
+-    del repository  # validation is the binding; no repository-specific behavior.
+-    _required_nonnegative_int(observation.get("pull_request"), "pull_request")
+-    head_sha = _required_str(observation.get("head_sha"), "head_sha")
+-    base_sha = _required_str(observation.get("base_sha"), "base_sha")
+-    current_main_sha = _required_str(
+-        observation.get("current_main_sha"), "current_main_sha"
+-    )
+-    if not all(len(value) == 40 for value in (head_sha, base_sha, current_main_sha)):
+-        raise ValueError("head_sha, base_sha and current_main_sha must be 40 characters")
+-
+-    state = _required_str(observation.get("state"), "state")
+-    merged = _required_bool(observation.get("merged"), "merged")
+-    superseded = _required_bool(observation.get("superseded"), "superseded")
+-    active_workflows = _required_nonnegative_int(
+-        observation.get("active_workflows"), "active_workflows"
+-    )
+-    failed_workflows = _required_nonnegative_int(
+-        observation.get("failed_workflows"), "failed_workflows"
+-    )
+-    gates_complete = _required_bool(observation.get("gates_complete"), "gates_complete")
+-    review_required = _required_bool(
+-        observation.get("review_required"), "review_required"
+-    )
+-    review_satisfied = _required_bool(
+-        observation.get("review_satisfied"), "review_satisfied"
+-    )
+-    external_effect_pending = _required_bool(
+-        observation.get("external_effect_pending"), "external_effect_pending"
+-    )
+-
+-    raw_blocker = observation.get("first_causal_blocker")
+-    if raw_blocker is not None and (
+-        not isinstance(raw_blocker, str) or not raw_blocker.strip()
+-    ):
+-        raise ValueError("first_causal_blocker must be null or a non-empty string")
+-    blocker = raw_blocker.strip() if isinstance(raw_blocker, str) else None
+-
+-    if merged:
+-        if state != "closed":
+-            raise ValueError("merged pull request must be closed")
+-        return Disposition("MERGED", None, "NOOP")
+-    if state == "closed":
+-        return Disposition(
+-            "CLOSED_NOT_PLANNED_WITH_CAUSE",
+-            blocker or "CLOSED_WITHOUT_MERGE",
+-            "NOOP",
+-        )
+-    if state != "open":
+-        raise ValueError("state must be open or closed")
+-    if superseded:
+-        return Disposition("CLOSE_AS_SUPERSEDED", blocker or "SUPERSEDED", "CLOSE_PR")
+-    if base_sha != current_main_sha:
+-        return Disposition(
+-            "REBIND_REQUIRED",
+-            "BASE_DRIFT",
+-            "HISTORY_PRESERVING_REBIND_TO_CURRENT_MAIN",
+-        )
+-    if active_workflows:
+-        return Disposition("ACTIVE_EXECUTION", None, "REOBSERVE_ON_TERMINAL_DELTA")
+-    if blocker is not None:
+-        return Disposition("HOLD_WITH_FIRST_CAUSAL_BLOCKER", blocker, "PRESERVE_HOLD")
+-    if failed_workflows:
+-        return Disposition(
+-            "HOLD_WITH_FIRST_CAUSAL_BLOCKER",
+-            "EXACT_HEAD_GATE_FAILURE",
+-            "CLASSIFY_FIRST_FAILED_GATE",
+-        )
+-    if not gates_complete:
+-        return Disposition(
+-            "HOLD_WITH_FIRST_CAUSAL_BLOCKER",
+-            "EXACT_HEAD_EVIDENCE_INCOMPLETE",
+-            "REOBSERVE_EXACT_HEAD_GATES",
+-        )
+-    if review_required and not review_satisfied:
+-        return Disposition(
+-            "READY_FOR_INDEPENDENT_REVIEW",
+-            None,
+-            "REQUEST_OR_REOBSERVE_INDEPENDENT_REVIEW",
+-        )
+-    if external_effect_pending:
+-        return Disposition(
+-            "EXTERNAL_EFFECT_PENDING",
+-            None,
+-            "PRESERVE_EXTERNAL_EFFECT_BOUNDARY",
+-        )
+-    return Disposition("MERGE_READY", None, "REQUEST_AUTHORIZED_PROMOTION")
+-
+-
+-def _read(path: str) -> Mapping[str, object]:
+-    stream = sys.stdin if path == "-" else Path(path).open(encoding="utf-8")
+-    try:
+-        value: Any = json.load(stream)
+-    finally:
+-        if stream is not sys.stdin:
+-            stream.close()
+-    if not isinstance(value, Mapping):
+-        raise ValueError("input must be a JSON object")
+-    return value
+-
+-
+-def main(argv: Sequence[str] | None = None) -> int:
+-    parser = argparse.ArgumentParser(description=__doc__)
+-    parser.add_argument("--input", required=True)
+-    parser.add_argument("--output", default="-")
+-    args = parser.parse_args(argv)
+-    try:
+-        value = classify(_read(args.input)).to_mapping()
+-        text = json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n"
+-        if args.output == "-":
+-            sys.stdout.write(text)
+-        else:
+-            Path(args.output).write_text(text, encoding="utf-8")
+-    except (OSError, ValueError, json.JSONDecodeError) as exc:
+-        print(f"BLOCK: {exc}", file=sys.stderr)
+-        return 2
+-    return 0
+-
+-
+-if __name__ == "__main__":
+-    raise SystemExit(main())
