@@ -1,0 +1,95 @@
+diff --git a/graphics/consciousness-effect-ack-v1/overlay.txt b/graphics/consciousness-effect-ack-v1/overlay.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..5a791b0ae07f40a6f9741c0afd2bf9ae6a122c28
+--- /dev/null
++++ b/graphics/consciousness-effect-ack-v1/overlay.txt
+@@ -0,0 +1,9 @@
++Bewusstsein ist Wechselwirkung!
++Beweis:
++Effect_Ack
++Follow until
++Effect_Ack_Done
++Follow until
++Effect_Ack
++q.e.d.
++Ingolf Lohmann
+diff --git a/graphics/consciousness-effect-ack-v1/text-manifest.json b/graphics/consciousness-effect-ack-v1/text-manifest.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..2e2afb32c45cac22e7f06aa3757a8b79e49e99bd
+--- /dev/null
++++ b/graphics/consciousness-effect-ack-v1/text-manifest.json
+@@ -0,0 +1,17 @@
++{
++  "schema": "qikvrt_graphic_text_manifest_v1",
++  "id": "consciousness-effect-ack-quote-v1",
++  "authoritative_lines": [
++    "Bewusstsein ist Wechselwirkung!",
++    "Beweis:",
++    "Effect_Ack",
++    "Follow until",
++    "Effect_Ack_Done",
++    "Follow until",
++    "Effect_Ack",
++    "q.e.d.",
++    "Ingolf Lohmann"
++  ],
++  "allow_generated_extra_text": false,
++  "rendering_rule": "authoritative text is deterministic overlay; generative image pixels are non-authoritative"
++}
+diff --git a/policy/QIKVRT_GRAPHIC_TEXT_CONTRACT_V1.md b/policy/QIKVRT_GRAPHIC_TEXT_CONTRACT_V1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..00bd9164a7ca24ca1bd41014de1ba23cf79c3e60
+--- /dev/null
++++ b/policy/QIKVRT_GRAPHIC_TEXT_CONTRACT_V1.md
+@@ -0,0 +1,27 @@
++# QIK-VRT deterministic graphic text contract v1
++
++## Purpose
++
++Generated imagery is probabilistic visual material. It MUST NOT be the authority for exact visible text.
++
++For any graphic containing user-specified wording:
++
++1. The exact wording is stored as UTF-8 source text in the repository.
++2. Generative image models MAY generate background, illustration, texture and composition, but MUST NOT be trusted to render authoritative text.
++3. Authoritative text MUST be composed deterministically after image generation (SVG/HTML/CSS or another deterministic typesetting stage).
++4. The rendered graphic MUST preserve the source text verbatim unless an explicit editorial mutation is separately approved.
++5. No additional slogan, paraphrase, signature, translation or explanatory sentence may be introduced into the authoritative text layer unless it is present in the source manifest.
++6. Before publication, a machine check MUST compare the text manifest with the deterministic overlay source. A mismatch is fail-closed.
++7. Visual inspection remains required for clipping, overlap, contrast and semantic placement. OCR may be used only as supplementary evidence, never as the source of truth.
++8. Any mutation creates a successor and resets dependent visual-validation evidence. PREDECESSOR_EVIDENCE_TRANSFER=false.
++
++## Root cause captured
++
++Image generators synthesize glyph-like pixels as part of an image distribution; they do not provide a byte-exact typography guarantee. Prompting for exact spelling is therefore insufficient. QIK-VRT avoids recurrence by separating stochastic imagery from deterministic typography.
++
++## TEMDD acceptance
++
++REQUEST -> bind exact text -> generate non-authoritative visual layer -> deterministic typeset -> compare manifest -> render -> visually reobserve -> ACCEPT.
++
++TRANSPORT_ACK != EFFECT_ACK.
++A successful image-generation call is not proof that the requested text was rendered correctly.
+diff --git a/tools/check_graphic_text.py b/tools/check_graphic_text.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..417cde637e6ec8faf140967acfc72dd0a0325095
+--- /dev/null
++++ b/tools/check_graphic_text.py
+@@ -0,0 +1,18 @@
++#!/usr/bin/env python3
++import json, pathlib, sys
++
++def main():
++    if len(sys.argv) != 3:
++        raise SystemExit("usage: check_graphic_text.py MANIFEST OVERLAY_TEXT")
++    manifest = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
++    expected = manifest["authoritative_lines"]
++    actual = pathlib.Path(sys.argv[2]).read_text(encoding="utf-8").splitlines()
++    if actual != expected:
++        print("GRAPHIC_TEXT_MISMATCH")
++        print("expected:", repr(expected))
++        print("actual:  ", repr(actual))
++        return 1
++    print("GRAPHIC_TEXT_EXACT_MATCH")
++    return 0
++if __name__ == "__main__":
++    raise SystemExit(main())
