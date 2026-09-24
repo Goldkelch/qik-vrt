@@ -4,6 +4,7 @@ on:
     branches: [patent/meta-transistor-application-candidate-v1]
     paths:
       - 'patent/meta-transistor/application-candidate-v1/**'
+      - 'tools/qikvrt_patent_filing_gate.py'
       - '.github/workflows/meta-transistor-patent-candidate-integrity.yml'
 permissions:
   contents: write
@@ -15,11 +16,34 @@ jobs:
         with:
           ref: patent/meta-transistor-application-candidate-v1
       - run: python3 tools/qikvrt_integrity.py generate
-      - name: Persist deterministic metadata
+      - id: persist
+        name: Persist deterministic metadata
         run: |
-          if git diff --quiet -- REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt; then exit 0; fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
-          git commit -m "chore(integrity): bind patent application candidate"
-          git push origin HEAD:patent/meta-transistor-application-candidate-v1
+          if ! git diff --quiet -- REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+            git commit -m "chore(integrity): bind patent application candidate"
+            git push origin HEAD:patent/meta-transistor-application-candidate-v1
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - id: readback
+        name: Fresh successor readback
+        run: |
+          remote_sha="$(git ls-remote origin refs/heads/patent/meta-transistor-application-candidate-v1 | cut -f1)"
+          test -n "$remote_sha"
+          test "$remote_sha" = "${{ steps.persist.outputs.sha }}"
+          echo "sha=$remote_sha" >> "$GITHUB_OUTPUT"
+      - name: Validate filing package on exact successor
+        env:
+          QIKVRT_VALIDATED_SUBJECT: ${{ steps.persist.outputs.sha }}
+          QIKVRT_REMOTE_READBACK_SHA: ${{ steps.readback.outputs.sha }}
+        run: |
+          python3 tools/qikvrt_patent_filing_gate.py > submission-readiness-receipt.json
+          cat submission-readiness-receipt.json
+      - name: Persist exact-successor readiness receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: meta-transistor-exact-successor-readiness
+          path: submission-readiness-receipt.json
+          if-no-files-found: error

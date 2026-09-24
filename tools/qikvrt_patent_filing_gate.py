@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import os
 import pathlib
 import sys
 
@@ -53,10 +54,19 @@ for entry in sources:
     if not path or not blob or len(blob) != 40:
         fail("source entry missing repository path or 40-character blob SHA")
 
+validated_subject = os.environ.get("QIKVRT_VALIDATED_SUBJECT") or os.environ.get("GITHUB_SHA")
+remote_readback_sha = os.environ.get("QIKVRT_REMOTE_READBACK_SHA")
+if remote_readback_sha and validated_subject and remote_readback_sha != validated_subject:
+    fail("remote branch readback does not match validated subject")
+
 state = "UPLOAD_READY" if all_required_true else "NOT_UPLOAD_READY"
 receipt = {
     "schema": "qikvrt_submission_readiness_receipt_v1",
     "state": state,
+    "validated_subject": validated_subject,
+    "remote_readback_sha": remote_readback_sha,
+    "repository": os.environ.get("GITHUB_REPOSITORY"),
+    "workflow_run_id": os.environ.get("GITHUB_RUN_ID"),
     "all_required_conditions_explicitly_true": all_required_true,
     "unresolved_required_conditions": sorted(k for k, v in required.items() if v is not True),
     "filed": bool(derived.get("filed", False)),
