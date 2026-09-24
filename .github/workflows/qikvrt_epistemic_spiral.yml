@@ -1,0 +1,38 @@
+name: QIKVRT epistemic spiral terminal roundtrip
+on:
+  pull_request:
+    paths:
+      - 'docs/terminal/epistemic-spiral/**'
+      - 'tools/qikvrt_epistemic_spiral_roundtrip.py'
+      - 'tests/test_qikvrt_epistemic_spiral.py'
+      - 'AI'
+      - 'deploy/universal-terminal/**'
+      - 'distribution/qikvrt-megast/**'
+      - '.github/workflows/qikvrt_epistemic_spiral.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  roundtrip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Bind exact subject
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha || github.sha }}'
+          git rev-parse HEAD
+          git rev-parse 'HEAD^{tree}'
+      - name: Test vector surface and carriers
+        run: python3 -B -m unittest -v tests.test_qikvrt_epistemic_spiral
+      - name: Serialize and deserialize exact state
+        run: python3 -B tools/qikvrt_epistemic_spiral_roundtrip.py --receipt /tmp/qikvrt-epistemic-spiral-receipt.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qikvrt-epistemic-spiral-${{ github.event.pull_request.head.sha || github.sha }}
+          path: /tmp/qikvrt-epistemic-spiral-receipt.json
+          retention-days: 30
