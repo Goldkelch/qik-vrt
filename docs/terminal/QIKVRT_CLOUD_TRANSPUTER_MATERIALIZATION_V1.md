@@ -25,3 +25,15 @@ The persistent `/var/lib/qikvrt/personal-posix` volume is the owner source slot.
 The four operational D0 values answer only: **what may happen next?** They are not the five EFFECT_ACK protocol states. The latter answer a different question about the effect-verification lifecycle. Keeping both machines separate prevents `EFFECT_ACK_DONE=4` from being misread as a fifth D0 boundary decision.
 
 `TRANSPORT_ACK != EFFECT_ACK`. Container build, network reachability, emulator execution, authorization and physical effect remain independently observable facts. A public deployment, physical MC68000 execution, physical effect, or general EFFECT_ACK_DONE requires its own readback.
+
+
+## Recursive interface progression
+
+Marker: `QIKVRT_RECURSIVE_EXECUTION_ACCELERATION_V1`.
+
+The Cloud Transputer / Universal Terminal boundary inherits the canonical
+recursive-execution policy. After any repository, container, bus or runtime
+mutation, the newly observed exact state is rebound before further claims are
+made. A blocker on one service/effect path is the next work unit for that path
+and MUST NOT idle unrelated service lanes. Only conflicting writers serialize;
+all release/effect gates remain unchanged.
