@@ -1,0 +1,196 @@
+name: QIKVRT dual-repository final idle benchmark
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 */6 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-dual-repository-final-idle-benchmark
+  cancel-in-progress: false
+
+jobs:
+  gate-and-benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      AUTHORITY_REPO: Goldkelch/qik-vrt
+      MIRROR_REPO: ingolf-lohmann/qik-vrt
+    steps:
+      - name: Check out Authority main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prepare complete Authority and Mirror censuses
+        id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-idle-gate"
+          mkdir -p "$root"
+          git fetch --no-tags origin '+refs/heads/*:refs/remotes/origin/*'
+          auth_head="$(git rev-parse --verify origin/main^{commit})"
+          auth_tree="$(git rev-parse --verify origin/main^{tree})"
+          git checkout --detach "$auth_head"
+
+          gh api --paginate --slurp "repos/$AUTHORITY_REPO/pulls?state=open&per_page=100" > "$root/auth-pr-pages.json"
+          python3 - "$root/auth-pr-pages.json" "$root/auth-prs.json" <<'PY'
+          import json,sys
+          pages=json.load(open(sys.argv[1],encoding='utf-8'))
+          json.dump({"schema":"qikvrt_open_pr_snapshot_v1","state":"OBSERVED","source":"REST","pull_requests":pages},open(sys.argv[2],'w',encoding='utf-8'),indent=2,sort_keys=True)
+          PY
+          python3 -B tools/qikvrt_repository_dod_census.py             --repository "$AUTHORITY_REPO"             --subject-head "$auth_head"             --subject-tree "$auth_tree"             --current-pr 0             --open-prs "$root/auth-prs.json"             --output "$root/auth-census.json"
+
+          rm -rf "$root/mirror"
+          git clone --filter=blob:none --no-tags "https://github.com/$MIRROR_REPO.git" "$root/mirror"
+          git -C "$root/mirror" fetch --no-tags origin '+refs/heads/*:refs/remotes/origin/*'
+          mirror_head="$(git -C "$root/mirror" rev-parse --verify origin/main^{commit})"
+          mirror_tree="$(git -C "$root/mirror" rev-parse --verify origin/main^{tree})"
+          git -C "$root/mirror" checkout --detach "$mirror_head"
+          mkdir -p "$root/mirror/tools"
+          cp tools/qikvrt_repository_dod_census.py "$root/mirror/tools/qikvrt_repository_dod_census.py"
+
+          gh api --paginate --slurp "repos/$MIRROR_REPO/pulls?state=open&per_page=100" > "$root/mirror-pr-pages.json"
+          python3 - "$root/mirror-pr-pages.json" "$root/mirror-prs.json" <<'PY'
+          import json,sys
+          pages=json.load(open(sys.argv[1],encoding='utf-8'))
+          json.dump({"schema":"qikvrt_open_pr_snapshot_v1","state":"OBSERVED","source":"REST","pull_requests":pages},open(sys.argv[2],'w',encoding='utf-8'),indent=2,sort_keys=True)
+          PY
+          (
+            cd "$root/mirror"
+            python3 -B tools/qikvrt_repository_dod_census.py               --repository "$MIRROR_REPO"               --subject-head "$mirror_head"               --subject-tree "$mirror_tree"               --current-pr 0               --open-prs "$root/mirror-prs.json"               --output "$root/mirror-census.json"
+          )
+
+          auth_issues="$(gh api -X GET search/issues -f q="repo:$AUTHORITY_REPO is:open is:issue" --jq '.total_count')"
+          mirror_issues="$(gh api -X GET search/issues -f q="repo:$MIRROR_REPO is:open is:issue" --jq '.total_count')"
+
+          set +e
+          python3 -B tools/qikvrt_mesh_idle_gate.py             --authority-census "$root/auth-census.json"             --mirror-census "$root/mirror-census.json"             --authority-open-issues "$auth_issues"             --mirror-open-issues "$mirror_issues"             --output "$root/pre-idle-gate.json"
+          idle_status=$?
+          set -e
+
+          echo "auth_head=$auth_head" >> "$GITHUB_OUTPUT"
+          echo "auth_tree=$auth_tree" >> "$GITHUB_OUTPUT"
+          echo "mirror_head=$mirror_head" >> "$GITHUB_OUTPUT"
+          echo "mirror_tree=$mirror_tree" >> "$GITHUB_OUTPUT"
+          if [ "$idle_status" -eq 0 ]; then
+            echo "idle=true" >> "$GITHUB_OUTPUT"
+          elif [ "$idle_status" -eq 3 ]; then
+            echo "idle=false" >> "$GITHUB_OUTPUT"
+          else
+            exit "$idle_status"
+          fi
+
+      - name: Record non-idle observation only
+        if: steps.gate.outputs.idle != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat "$RUNNER_TEMP/qikvrt-idle-gate/pre-idle-gate.json"
+          echo "FINAL_IDLE_BENCHMARK=BLOCKED"
+          echo "REPOSITORY_EFFECT_ACK_DONE=false"
+
+      - name: Execute Authority final-idle benchmark
+        if: steps.gate.outputs.idle == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-idle-gate"
+          mkdir -p "$root/results"
+          python3 -B tools/qikvrt_mesh_fanout_benchmark.py             --source-head '${{ steps.gate.outputs.auth_head }}'             --source-tree '${{ steps.gate.outputs.auth_tree }}'             --messages 20 --repeats 3             --json "$root/results/AUTHORITY_REPORT.json"             --markdown "$root/results/AUTHORITY_REPORT.md"
+
+      - name: Execute Mirror final-idle benchmark
+        if: steps.gate.outputs.idle == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-idle-gate"
+          cp tools/qikvrt_mesh_fanout_benchmark.py "$root/mirror/tools/qikvrt_mesh_fanout_benchmark.py"
+          (
+            cd "$root/mirror"
+            PYTHONPATH="$root/mirror" python3 -B tools/qikvrt_mesh_fanout_benchmark.py               --source-head '${{ steps.gate.outputs.mirror_head }}'               --source-tree '${{ steps.gate.outputs.mirror_tree }}'               --messages 20 --repeats 3               --json "$root/results/MIRROR_REPORT.json"               --markdown "$root/results/MIRROR_REPORT.md"
+          )
+
+      - name: Fresh post-benchmark dual-repository readback
+        if: steps.gate.outputs.idle == 'true'
+        id: post
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-idle-gate"
+
+          git fetch --no-tags origin '+refs/heads/*:refs/remotes/origin/*'
+          auth_head="$(git rev-parse --verify origin/main^{commit})"
+          auth_tree="$(git rev-parse --verify origin/main^{tree})"
+          test "$auth_head" = '${{ steps.gate.outputs.auth_head }}'
+          test "$auth_tree" = '${{ steps.gate.outputs.auth_tree }}'
+          git checkout --detach "$auth_head"
+          gh api --paginate --slurp "repos/$AUTHORITY_REPO/pulls?state=open&per_page=100" > "$root/auth-pr-pages-post.json"
+          python3 - "$root/auth-pr-pages-post.json" "$root/auth-prs-post.json" <<'PY'
+          import json,sys
+          pages=json.load(open(sys.argv[1],encoding='utf-8'))
+          json.dump({"schema":"qikvrt_open_pr_snapshot_v1","state":"OBSERVED","source":"REST","pull_requests":pages},open(sys.argv[2],'w',encoding='utf-8'),indent=2,sort_keys=True)
+          PY
+          python3 -B tools/qikvrt_repository_dod_census.py             --repository "$AUTHORITY_REPO" --subject-head "$auth_head" --subject-tree "$auth_tree"             --current-pr 0 --open-prs "$root/auth-prs-post.json" --output "$root/auth-census-post.json"
+
+          git -C "$root/mirror" fetch --no-tags origin '+refs/heads/*:refs/remotes/origin/*'
+          mirror_head="$(git -C "$root/mirror" rev-parse --verify origin/main^{commit})"
+          mirror_tree="$(git -C "$root/mirror" rev-parse --verify origin/main^{tree})"
+          test "$mirror_head" = '${{ steps.gate.outputs.mirror_head }}'
+          test "$mirror_tree" = '${{ steps.gate.outputs.mirror_tree }}'
+          git -C "$root/mirror" checkout --detach "$mirror_head"
+          gh api --paginate --slurp "repos/$MIRROR_REPO/pulls?state=open&per_page=100" > "$root/mirror-pr-pages-post.json"
+          python3 - "$root/mirror-pr-pages-post.json" "$root/mirror-prs-post.json" <<'PY'
+          import json,sys
+          pages=json.load(open(sys.argv[1],encoding='utf-8'))
+          json.dump({"schema":"qikvrt_open_pr_snapshot_v1","state":"OBSERVED","source":"REST","pull_requests":pages},open(sys.argv[2],'w',encoding='utf-8'),indent=2,sort_keys=True)
+          PY
+          (
+            cd "$root/mirror"
+            python3 -B tools/qikvrt_repository_dod_census.py               --repository "$MIRROR_REPO" --subject-head "$mirror_head" --subject-tree "$mirror_tree"               --current-pr 0 --open-prs "$root/mirror-prs-post.json" --output "$root/mirror-census-post.json"
+          )
+
+          auth_issues="$(gh api -X GET search/issues -f q="repo:$AUTHORITY_REPO is:open is:issue" --jq '.total_count')"
+          mirror_issues="$(gh api -X GET search/issues -f q="repo:$MIRROR_REPO is:open is:issue" --jq '.total_count')"
+          python3 -B tools/qikvrt_mesh_idle_gate.py             --authority-census "$root/auth-census-post.json"             --mirror-census "$root/mirror-census-post.json"             --authority-open-issues "$auth_issues"             --mirror-open-issues "$mirror_issues"             --output "$root/post-idle-gate.json"
+          echo "post_idle=true" >> "$GITHUB_OUTPUT"
+
+      - name: Persist immutable final-idle release
+        if: steps.gate.outputs.idle == 'true' && steps.post.outputs.post_idle == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-idle-gate"
+          tag="qikvrt-mesh-final-idle-a${{ steps.gate.outputs.auth_head }}"
+          tag="${tag:0:37}-m${{ steps.gate.outputs.mirror_head }}"
+          tag="${tag:0:64}"
+          if gh release view "$tag" --repo "$AUTHORITY_REPO" >/dev/null 2>&1; then
+            echo "FINAL_IDLE_RELEASE_ALREADY_EXISTS=$tag"
+            exit 0
+          fi
+          cp "$root/pre-idle-gate.json" "$root/results/PRE_IDLE_GATE.json"
+          cp "$root/post-idle-gate.json" "$root/results/POST_IDLE_GATE.json"
+          cp "$root/auth-census-post.json" "$root/results/AUTHORITY_CENSUS.json"
+          cp "$root/mirror-census-post.json" "$root/results/MIRROR_CENSUS.json"
+          sha256sum "$root/results/"* > "$root/results/SHA256SUMS.txt"
+          gh release create "$tag" "$root/results/"*             --repo "$AUTHORITY_REPO"             --target '${{ steps.gate.outputs.auth_head }}'             --title "QIK-VRT dual-repository final idle benchmark"             --notes "Fresh dual-repository HUMAN_DOD_IDLE before and after measurement. Authority and Mirror exact main identities are contained in the attached receipts. TRANSPORT_ACK != EFFECT_ACK; physical silicon performance and patentability are not claimed."
+          echo "FINAL_IDLE_RELEASE=$tag"
+          echo "FINAL_IDLE_BENCHMARK=PASS"
+          echo "PREDECESSOR_EVIDENCE_TRANSFER=false"
+          echo "REPOSITORY_EFFECT_ACK_DONE=false"
+
+      - name: Preserve gate evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-dual-repository-idle-gate-${{ github.run_id }}
+          path: ${{ runner.temp }}/qikvrt-idle-gate/
+          if-no-files-found: error
+          retention-days: 30
