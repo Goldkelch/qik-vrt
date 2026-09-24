@@ -140,3 +140,25 @@ SOURCE <-> IR <-> EVENT GRAPH <-> LEDGER <-> CONFORMANCE
 `DONE` requires fresh, exact-subject-bound required evidence and successful
 conformance. Repository review, protected promotion, exact-Main reobservation
 and external EFFECT readback remain separate later gates.
+
+
+## T17 — RECURSIVE_EXECUTION_ACCELERATION
+
+Marker: `QIKVRT_RECURSIVE_EXECUTION_ACCELERATION_V1`.
+
+TEMDD progress is successor-driven rather than activity-driven.
+
+```text
+OBSERVED_SUCCESSOR -> VALIDATE_IDENTITY_PROVENANCE -> NEXT_BOUND_INPUT
+FIRST_CAUSAL_BLOCKER -> NEXT_WORK_UNIT
+ACTION_REQUIRED(0 jobs) != JOBS_EXECUTED
+QUEUED != EXECUTED
+PENDING != EXECUTED
+FAIL_CLOSED != GLOBAL_IDLE
+PREDECESSOR_EVIDENCE_TRANSFER = false
+```
+
+Independent work units MAY execute concurrently. Only effects that compete for
+the same writer, protected ref, external resource or exact mutation boundary
+MUST serialize. Missing authority blocks that exact effect, not unrelated
+authorized work. Every mutation still requires fresh readback before ACCEPT.
