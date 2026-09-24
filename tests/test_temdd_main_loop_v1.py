@@ -6,6 +6,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "spec/temdd/TEMDD_MAIN_LOOP_V1.json"
+CONTEXT = ROOT / "AI_CONTEXT.json"
 PY_IMPL = ROOT / "runtime/temdd/main_loop.py"
 
 def load_py():
@@ -62,6 +63,13 @@ class TEMDDMainLoopV1Tests(unittest.TestCase):
         full = E(True, True, True, True, True, True, True, True)
         completed, subject = self.mod.run_bounded(FakeRuntime(self.mod, full), 0, 3)
         self.assertEqual((completed, subject), (3, 3))
+
+    def test_every_node_inherits_main_loop_contract(self):
+        context = json.loads(CONTEXT.read_text(encoding="utf-8"))
+        self.assertIn("spec/temdd/TEMDD_MAIN_LOOP_V1.md", context["required_read_order"])
+        self.assertIn("spec/temdd/TEMDD_MAIN_LOOP_V1.json", context["required_read_order"])
+        self.assertTrue(context["temdd_main_loop"]["production_main_potentially_unbounded"])
+        self.assertFalse(context["temdd_main_loop"]["predecessor_evidence_transfer"])
 
     def test_all_declared_carriers_exist_and_preserve_core_markers(self):
         carriers = self.contract["carriers"]
