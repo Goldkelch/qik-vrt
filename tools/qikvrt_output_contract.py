@@ -21,12 +21,16 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 POLICY_PATH = ROOT / "policy/QIKVRT_UNIVERSAL_PROOF_THOUGHT_SCHEMA_V1.json"
 ARTICLE_PATH = ROOT / "docs/QIKVRT_UNIVERSAL_PROOF_AND_THOUGHT_SCHEMA_DE.md"
 ORIGIN_PROOF_PATH = ROOT / "docs/ONTOLOGICAL_ORIGIN_OF_DIFFERENCE_DE.md"
+KNOWLEDGE_MANIFEST_PATH = (
+    ROOT / "state/mesh/QIKVRT_REQUIRED_KNOWLEDGE_ARTIFACTS_20260925_V1.json"
+)
 
 BINDING_KEY = "_qikvrt_epistemic_output"
 BINDING_SCHEMA = "qikvrt_epistemic_output_binding_v1"
 POLICY_ID = "QIKVRT-UNIVERSAL-PROOF-THOUGHT-SCHEMA-V1"
 ARTICLE_GIT_BLOB_SHA1 = "339ad05606ee4d74185c72d006608cff7aea5f37"
 ORIGIN_PROOF_GIT_BLOB_SHA1 = "d128c6fecf672abfd0fee1d1ef3cfa5dcf20fb33"
+KNOWLEDGE_MANIFEST_GIT_BLOB_SHA1 = "302a0ac6741bcd6665a2551052269e693808be65"
 ORIGIN_STATEMENT = (
     "Am Anfang muss ein Unterschied gewesen sein, denn sonst wäre alles nichts."
 )
@@ -108,6 +112,25 @@ def canonical_origin_proof_identity() -> dict[str, Any]:
     }
 
 
+def canonical_knowledge_artifacts_identity() -> dict[str, Any]:
+    identity = _bound_file_identity(
+        KNOWLEDGE_MANIFEST_PATH, KNOWLEDGE_MANIFEST_GIT_BLOB_SHA1
+    )
+    value = json.loads(KNOWLEDGE_MANIFEST_PATH.read_text(encoding="utf-8"))
+    if value.get("manifest_id") != "QIKVRT-REQUIRED-KNOWLEDGE-ARTIFACTS-20260925-V1":
+        raise OutputContractError("required knowledge manifest id mismatch")
+    if value.get("mandatory_for_current_and_future_repository_nodes") is not True:
+        raise OutputContractError("required knowledge artifacts are not mandatory")
+    artifacts = value.get("artifacts")
+    if not isinstance(artifacts, list) or len(artifacts) != 3:
+        raise OutputContractError("required knowledge artifact count mismatch")
+    return {
+        **identity,
+        "manifest_id": value["manifest_id"],
+        "artifact_ids": [item["id"] for item in artifacts],
+    }
+
+
 def load_policy() -> dict[str, Any]:
     value = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
     if value.get("schema") != "qikvrt_universal_proof_thought_schema_v1":
@@ -142,6 +165,18 @@ def load_policy() -> dict[str, Any]:
         raise OutputContractError(
             "origin proof is not mandatory for every node output"
         )
+    required = value.get("required_knowledge_artifacts")
+    if not isinstance(required, dict):
+        raise OutputContractError("required knowledge artifact binding missing")
+    expected_knowledge = canonical_knowledge_artifacts_identity()
+    if required.get("manifest_path") != expected_knowledge["path"]:
+        raise OutputContractError("required knowledge manifest path mismatch")
+    if required.get("manifest_git_blob_sha1") != expected_knowledge["git_blob_sha1"]:
+        raise OutputContractError("required knowledge manifest blob mismatch")
+    if required.get("mandatory_for_every_node") is not True:
+        raise OutputContractError("required knowledge is not mandatory for every node")
+    if required.get("mandatory_for_every_node_output") is not True:
+        raise OutputContractError("required knowledge is not mandatory for every output")
     return value
 
 
@@ -222,6 +257,9 @@ def make_binding(
         "ontological_origin_proof_binding": (
             canonical_origin_proof_identity()
         ),
+        "knowledge_artifacts_binding": (
+            canonical_knowledge_artifacts_identity()
+        ),
     }
 
 
@@ -271,6 +309,14 @@ def validate_output(value: Mapping[str, Any]) -> dict[str, Any]:
     ):
         raise OutputContractError(
             "output ontological-origin proof binding mismatch"
+        )
+
+    if (
+        binding.get("knowledge_artifacts_binding")
+        != canonical_knowledge_artifacts_identity()
+    ):
+        raise OutputContractError(
+            "output required-knowledge artifact binding mismatch"
         )
 
     claim = binding.get("claim")
@@ -346,6 +392,9 @@ def main() -> int:
                 "article": canonical_article_identity(),
                 "ontological_origin_proof": (
                     canonical_origin_proof_identity()
+                ),
+                "required_knowledge_artifacts": (
+                    canonical_knowledge_artifacts_identity()
                 ),
                 "status": "PASS",
                 "effect_ack_done": False,
