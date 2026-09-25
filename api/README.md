@@ -96,6 +96,56 @@ Conditionally used:
 
 The local loopback adapter additionally permits an optional `responsibility_owner` field and requires it, when supplied, to match the authenticated principal. In the GitHub Actions path, responsibility is bound to `github.actor`; caller-supplied `responsibility_owner` is not used by the workflow.
 
+## Work-order submission
+
+QIK-VRT now has a canonical work-order operation for submitting an implementation request without pretending that submission equals execution.
+
+Example work order: [examples/QIK_VRT_MESH.work-order.json](examples/QIK_VRT_MESH.work-order.json)
+
+Prepare exact bytes:
+
+```bash
+WORK_ORDER=api/examples/QIK_VRT_MESH.work-order.json
+PAYLOAD_B64="$(base64 < "$WORK_ORDER" | tr -d '\n')"
+EXPECTED_SHA256="$(sha256sum "$WORK_ORDER" | awk '{print $1}')"
+```
+
+Submit through `workflow_dispatch`:
+
+```bash
+curl -L \
+  -X POST \
+  -H "Accept: application/vnd.github+json" \
+  -H "Authorization: Bearer $GITHUB_TOKEN" \
+  -H "X-GitHub-Api-Version: 2026-03-10" \
+  https://api.github.com/repos/Goldkelch/qik-vrt/actions/workflows/qikvrt_mesh_api.yml/dispatches \
+  -d "$(jq -n \
+    --arg payload "$PAYLOAD_B64" \
+    --arg sha "$EXPECTED_SHA256" \
+    '{
+      ref: "main",
+      inputs: {
+        operation: "work_order",
+        artifact_id: "QIK_VRT_MESH_HTML",
+        payload_b64: $payload,
+        expected_sha256: $sha,
+        dry_run: "false",
+        request_id: "qik-vrt-mesh-html-001",
+        effect_accepted: "true"
+      }
+    }')"
+```
+
+Or use `repository_dispatch` with `event_type=qikvrt_mesh_api` and the same fields in `client_payload`.
+
+The accepted work order is validated, hash-bound and persisted in the QIK-VRT API state artifact as a content-addressed registration. It does **not** itself execute an implementation agent.
+
+```text
+WORK_ORDER_ACCEPTED
+!= TASK_EXECUTED
+!= TASK_EFFECT_ACK_DONE
+```
+
 ## Effect boundary
 
 ```text
