@@ -1,0 +1,206 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: Publish ontological priority of difference to Zenodo
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type PUBLISH_ONTOLOGICAL_PRIORITY_DIFFERENCE_ZENODO_V1
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: qikvrt-ontological-priority-difference-zenodo-v1
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'Goldkelch' &&
+      github.triggering_actor == 'Goldkelch' &&
+      inputs.confirmation == 'PUBLISH_ONTOLOGICAL_PRIORITY_DIFFERENCE_ZENODO_V1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: zenodo-production
+    env:
+      MANIFEST_PATH: release/ontological-priority-of-difference-zenodo-v1/publish-request.json
+      AUTH_PATH: release/ontological-priority-of-difference-zenodo-v1/OWNER_ZENODO_AUTHORIZATION.json
+      PROOF_PATH: release/ontological-priority-of-difference-zenodo-v1/MACHINE_PROOF_BUNDLE.json
+      RETURN_PATH: release/ontological-priority-of-difference-zenodo-v1/PREPUBLICATION_RETURN_RECEIPT.json
+      EVIDENCE_PATH: release/ontological-priority-of-difference-zenodo-v1/zenodo-publication.json
+      ZENODO_API_BASE: https://zenodo.org/api
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONNOUSERSITE: '1'
+    steps:
+      - name: Check out exact main dispatch head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate final publication controls without network effect
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_ACTOR" = 'Goldkelch'
+          test "$GITHUB_TRIGGERING_ACTOR" = 'Goldkelch'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -f "$MANIFEST_PATH"
+          test -f "$AUTH_PATH"
+          test -f "$PROOF_PATH"
+          test -f "$RETURN_PATH"
+          test ! -e "$EVIDENCE_PATH"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          GITHUB_REPOSITORY="$GITHUB_REPOSITORY" GITHUB_SHA="$GITHUB_SHA"           python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = Path.cwd().resolve()
+          manifest_path = root / os.environ["MANIFEST_PATH"]
+          manifest = publish.load_manifest(manifest_path, root)
+          execution_head = publish._validate_repository_source_head(
+              root, manifest_path, manifest
+          )
+          publish._validate_origin_repository(root, manifest["repository"])
+          if execution_head != os.environ["GITHUB_SHA"]:
+              raise SystemExit("BLOCK: manifest execution head differs")
+          if manifest.get("schema") != "qikvrt_zenodo_publication_manifest_v2":
+              raise SystemExit("BLOCK: final manifest schema differs")
+          if manifest.get("state") != "publish":
+              raise SystemExit("BLOCK: final manifest is not publish state")
+          if manifest.get("confirm") != "PUBLISH_TO_PRODUCTION_ZENODO":
+              raise SystemExit("BLOCK: final manifest confirmation differs")
+          title = (manifest.get("metadata") or {}).get("title")
+          expected = (
+              "Der ontologische Vorrang des Unterschieds: Ein "
+              "maschinenprüfbares Minimaltheorem über Bestimmbarkeit, "
+              "Information und den Geltungsbereich formaler Welterklärungen"
+          )
+          if title != expected:
+              raise SystemExit("BLOCK: publication title differs")
+          print("ZENODO_FINAL_PREFLIGHT=VALID")
+          PY
+          python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Run repository gates before external effect
+        shell: bash
+        run: |
+          set -euo pipefail
+          make test
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Reobserve remote main immediately before effect
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_head="$(
+            git ls-remote --heads origin refs/heads/main |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_head" = "$GITHUB_SHA"
+          test ! -e "$EVIDENCE_PATH"
+
+      - name: Consume candidate-bound authorization and publish
+        id: publish
+        continue-on-error: true
+        timeout-minutes: 20
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set +e
+          umask 077
+          GITHUB_SHA="$GITHUB_SHA" python3 -B tools/qikvrt_zenodo_publish.py             --manifest "$MANIFEST_PATH"
+          status=$?
+          printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Persist publication or recovery receipt on separate PR
+        id: persist
+        if: always()
+        shell: bash
+        env:
+          RECEIPT_BRANCH: receipt/ontological-priority-difference-zenodo-v1-${{ github.run_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if test ! -f "$EVIDENCE_PATH"; then
+            printf 'persisted=false\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          state="$(
+            python3 -B - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path(os.environ["EVIDENCE_PATH"])
+          value = json.loads(path.read_text(encoding="utf-8"))
+          state = value.get("state")
+          if state not in {
+              "published",
+              "EFFECT_RELEASED/AWAITING_REMOTE_RECONCILIATION",
+          }:
+              raise SystemExit("BLOCK: publication evidence state differs")
+          print(state)
+          PY
+          )"
+          python3 -B tools/qikvrt_integrity.py generate
+          git config user.name 'qik-vrt-zenodo-publication[bot]'
+          git config user.email 'qik-vrt-zenodo-publication[bot]@users.noreply.github.com'
+          git switch -c "$RECEIPT_BRANCH"
+          git add --             REPOSITORY_FILE_MANIFEST.json             REPOSITORY_FILE_MANIFEST.json.sha256             SHA256SUMS.txt             "$EVIDENCE_PATH"
+          git diff --cached --check
+          git commit -m "zenodo: persist ontological-priority publication receipt"
+          push_auth="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $push_auth"             push origin "HEAD:refs/heads/$RECEIPT_BRANCH"
+          GITHUB_REPOSITORY="$GITHUB_REPOSITORY" RECEIPT_BRANCH="$RECEIPT_BRANCH" STATE="$state"           python3 -B - <<'PY'
+          import os
+          from tools import qikvrt_zenodo_publish as publish
+          publish._github_api_request(
+              "POST",
+              "/repos/Goldkelch/qik-vrt/pulls",
+              os.environ["GITHUB_TOKEN"],
+              payload={
+                  "title": "Persist ontological-priority Zenodo receipt",
+                  "head": os.environ["RECEIPT_BRANCH"],
+                  "base": "main",
+                  "body": (
+                      "Zenodo publication/recovery receipt state: `"
+                      + os.environ["STATE"]
+                      + "`. This PR is evidence persistence only."
+                  ),
+              },
+              accept=(201,),
+          )
+          PY
+          printf 'persisted=true\n' >> "$GITHUB_OUTPUT"
+          printf 'state=%s\n' "$state" >> "$GITHUB_OUTPUT"
+
+      - name: Upload publication evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ontological-priority-zenodo-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: ignore
+          path: ${{ env.EVIDENCE_PATH }}
+
+      - name: Enforce publication result
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.publish.outputs.status }}" = "0"
+          test "${{ steps.persist.outputs.persisted }}" = "true"
+          test "${{ steps.persist.outputs.state }}" = "published"
