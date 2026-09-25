@@ -19,8 +19,7 @@
   },
   "canonical_article": {
     "path": "docs/QIKVRT_UNIVERSAL_PROOF_AND_THOUGHT_SCHEMA_DE.md",
-    "sha256": "3179af0c1a7c16bf63208a1c91e23213b7746f61f6a0d60ed100728c6064d392",
-    "bytes": 21501,
+    "git_blob_sha1": "339ad05606ee4d74185c72d006608cff7aea5f37",
     "role": "EXPLANATION_RATIONALE_AND_BOUNDARY_WITNESS"
   },
   "formal_roots": [
@@ -96,7 +95,8 @@
       "epistemic_status",
       "effect_status",
       "new_difference",
-      "article_binding"
+      "article_binding",
+      "ontological_origin_proof_binding"
     ],
     "claim_fields": [
       "statement",
@@ -122,12 +122,22 @@
     ],
     "article_binding": {
       "path": "docs/QIKVRT_UNIVERSAL_PROOF_AND_THOUGHT_SCHEMA_DE.md",
-      "sha256": "3179af0c1a7c16bf63208a1c91e23213b7746f61f6a0d60ed100728c6064d392"
+      "git_blob_sha1": "339ad05606ee4d74185c72d006608cff7aea5f37"
     },
     "binding_mode": "ADDITIVE_RESERVED_MEMBER",
-    "reserved_member": "_qikvrt_epistemic_output"
+    "reserved_member": "_qikvrt_epistemic_output",
+    "ontological_origin_proof_binding": {
+      "path": "docs/ONTOLOGICAL_ORIGIN_OF_DIFFERENCE_DE.md",
+      "git_blob_sha1": "d128c6fecf672abfd0fee1d1ef3cfa5dcf20fb33",
+      "proof_constants": [
+        "QIKVRT.UniversalOntology.determinateReality_requires_difference",
+        "QIKVRT.UniversalOntology.noDifference_excludes_determinateReality",
+        "QIKVRT.UniversalOntology.noDifference_excludes_information"
+      ]
+    }
   },
   "fail_closed_rules": [
+    "Reject any node identity, ledger record or node output that does not bind the canonical ontological-origin proof.",
     "Reject output with missing or mismatched canonical article binding.",
     "Reject output whose claim kind is absent or unknown.",
     "Reject promotion from FORMAL_THEOREM to EMPIRICAL_CLAIM without separately bound empirical evidence.",
@@ -143,7 +153,9 @@
     "every_node_run_must_persist_binding_in_its_receipt_or_ledger": true,
     "historical_outputs_are_not_rewritten": true,
     "successor_outputs_must_rebind_current_subject": true,
-    "unregistered_future_output_carrier": "BLOCK"
+    "unregistered_future_output_carrier": "BLOCK",
+    "every_node_must_bind_ontological_origin_proof": true,
+    "every_node_output_must_bind_ontological_origin_proof": true
   },
   "succession": {
     "policy_is_append_only_by_version": true,
@@ -160,5 +172,21 @@
     "this_policy_does_not_claim_scientific_consensus": true,
     "this_policy_does_not_claim_general_effect_ack_done": true
   },
-  "output_carrier_registry": "state/mesh/QIKVRT_NODE_OUTPUT_CARRIER_REGISTRY_V1.json"
+  "output_carrier_registry": "state/mesh/QIKVRT_NODE_OUTPUT_CARRIER_REGISTRY_V1.json",
+  "ontological_origin_proof": {
+    "statement": "Am Anfang muss ein Unterschied gewesen sein, denn sonst wäre alles nichts.",
+    "author": "Ingolf Lohmann",
+    "interpretation": "ONTOLOGICAL_PRIORITY_NOT_FIRST_PHYSICAL_TIME",
+    "document_path": "docs/ONTOLOGICAL_ORIGIN_OF_DIFFERENCE_DE.md",
+    "document_git_blob_sha1": "d128c6fecf672abfd0fee1d1ef3cfa5dcf20fb33",
+    "lean_path": "formalization/QIKVRT_Formalization_v2.0/QIKVRTUniversalOntology/Core.lean",
+    "proof_constants": [
+      "QIKVRT.UniversalOntology.determinateReality_requires_difference",
+      "QIKVRT.UniversalOntology.noDifference_excludes_determinateReality",
+      "QIKVRT.UniversalOntology.noDifference_excludes_information"
+    ],
+    "mandatory_for_every_node": true,
+    "mandatory_for_every_node_output": true,
+    "physical_cosmogony_claimed": false
+  }
 }
