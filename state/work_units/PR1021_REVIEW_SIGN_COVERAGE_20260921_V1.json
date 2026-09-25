@@ -1,0 +1,82 @@
+{
+  "schema": "qikvrt_work_unit_v1",
+  "work_unit_id": "PR1021_REVIEW_SIGN_COVERAGE_20260921_V1",
+  "created_at": "2026-09-21T02:07:36.084Z",
+  "source_repository": "Goldkelch/qik-vrt",
+  "source_ref": "copilot/main",
+  "source_commit": "03c112cbd2c77004e4f080a8342ec9a050466bba",
+  "source_tree": "9bcb7fdec578e23c16d0a57f7588e5eb096f01ff",
+  "human_actor": {
+    "name": "Ingolf Lohmann"
+  },
+  "artificial_cognitive_actor": {
+    "provider": "OpenAI",
+    "system_family": "Codex",
+    "model_or_build": "UNAVAILABLE"
+  },
+  "human_contributions": [
+    "Work through open pull requests and their unresolved review findings."
+  ],
+  "artificial_cognitive_contributions": [
+    "Read unresolved review thread PRRT_kwDOS8giZs6fsU-i.",
+    "Restrict the stable series to the two cancellation-prone tiny fractions and restore direct asin(x)-x sign assertions for representable residuals.",
+    "Verify that replacing asin with the identity makes the corrected test fail."
+  ],
+  "joint_components": [],
+  "unresolved_origin": [],
+  "inputs": [
+    {
+      "review_thread": "PRRT_kwDOS8giZs6fsU-i",
+      "comment_database_id": 3944199418,
+      "path": "tests/test_planck_tick_gap_law_v1.py"
+    }
+  ],
+  "outputs": [
+    {
+      "path": "tests/test_planck_tick_gap_law_v1.py"
+    },
+    {
+      "path": "REPOSITORY_FILE_MANIFEST.json"
+    },
+    {
+      "path": "REPOSITORY_FILE_MANIFEST.json.sha256"
+    },
+    {
+      "path": "SHA256SUMS.txt"
+    }
+  ],
+  "verification": {
+    "targeted_module": {
+      "name": "tests.test_planck_tick_gap_law_v1",
+      "tests": 6,
+      "result": "PASS"
+    },
+    "negative_control": {
+      "mutation": "math.asin(value) returns value",
+      "expected": "AssertionError",
+      "observed": "AssertionError",
+      "result": "PASS"
+    },
+    "local_make_test": {
+      "result": "PASS",
+      "log_sha256": "28ca7b30675c4b68479701617c60cc85560580aed8bb3d000fd257dbc3681a8a"
+    },
+    "successor_native_checks": "PENDING_FRESH_EXACT_HEAD",
+    "successor_native_review": "PENDING"
+  },
+  "git_history": {
+    "method": "append-only successor",
+    "predecessor_evidence_transfer": false
+  },
+  "external_effects": {
+    "scope": "existing pull-request branch and addressed review thread",
+    "merge_to_main": false,
+    "publication": false,
+    "deployment": false
+  },
+  "release_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
