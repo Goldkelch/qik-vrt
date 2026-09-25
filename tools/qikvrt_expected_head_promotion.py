@@ -387,6 +387,21 @@ def evaluate_promotion(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     if review_blocker is not None:
         return _blocked(snapshot, *review_blocker)
 
+    full_automation = snapshot.get("full_automation")
+    if not isinstance(full_automation, bool):
+        raise PromotionBlock("full_automation must be boolean")
+    if not full_automation:
+        result = _decision(
+            snapshot,
+            "BLOCK",
+            "HEAD1_BASE_CAS_UNAVAILABLE",
+            "legacy self-heal promotion remains non-mutating; exact-head merge requires the explicit full-automation marker",
+            phase="REQUEST_EXACT_BASE_CAS_AUTHORITY",
+            latest=latest,
+        )
+        result["next_action"] = "REQUEST_HISTORY_PRESERVING_EXACT_BASE_CAS_AUTHORITY"
+        return result
+
     result = _decision(
         snapshot,
         "PROMOTABLE",

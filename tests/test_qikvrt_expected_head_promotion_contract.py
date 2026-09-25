@@ -53,20 +53,28 @@ class ExpectedHeadPromotionContractTests(unittest.TestCase):
         self.assertIn("tests.test_qikvrt_expected_head_promotion", workflow)
         self.assertIn("This proposal workflow never promotes or merges", workflow)
 
-    def test_executor_is_bounded_and_fails_closed_before_merge(self) -> None:
+    def test_executor_is_bounded_and_fail_closed_around_exact_head_merge(self) -> None:
         workflow = PROMOTION_WORKFLOW.read_text(encoding="utf-8")
+        decision = pathlib.Path(
+            ROOT / "tools/qikvrt_expected_head_promotion.py"
+        ).read_text(encoding="utf-8")
         self.assertIn('cron: "*/10 * * * *"', workflow)
         self.assertIn("cancel-in-progress: false", workflow)
-        self.assertIn("READY_RECLASSIFICATION_CAS_UNAVAILABLE", pathlib.Path(
-            ROOT / "tools/qikvrt_expected_head_promotion.py"
-        ).read_text(encoding="utf-8"))
-        self.assertIn('exit 0', workflow)
+        self.assertIn("READY_RECLASSIFICATION_CAS_UNAVAILABLE", decision)
+        self.assertIn("HEAD1_BASE_CAS_UNAVAILABLE", decision)
+        self.assertIn("EXECUTE_EXACT_HEAD_MERGE", decision)
         self.assertIn("require_unchanged_promotion_marker", workflow)
-        self.assertIn("HEAD^1", workflow)
-        self.assertNotIn('-f sha="$EXPECTED_HEAD"', workflow)
-        self.assertNotIn("repos/${REPOSITORY}/pulls/${PR_NUMBER}/merge", workflow)
+        self.assertIn('-f sha="$EXPECTED_HEAD"', workflow)
+        self.assertIn("-f merge_method=merge", workflow)
+        self.assertIn("repos/${REPOSITORY}/pulls/${PR_NUMBER}/merge", workflow)
+        self.assertIn("pull-requests: write", workflow)
+        self.assertIn("contents: write", workflow)
+        self.assertIn("statuses: write", workflow)
         self.assertNotIn("gh pr ready", workflow)
-        self.assertNotIn("pull-requests: write", workflow)
+        self.assertIn("qikvrt_repository_main_integration_effect_ack_v1", workflow)
+        self.assertIn("REPOSITORY_MAIN_INTEGRATION", workflow)
+        self.assertIn("merge_parents", workflow)
+        self.assertIn("global_release_effect_ack_done", workflow)
         compact = workflow.replace(" ", "")
         self.assertIn("other.get('base',{}).get('sha')!=current_main", compact)
         self.assertIn("other.get('head',{}).get('sha')==head", compact)

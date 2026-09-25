@@ -65,6 +65,7 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
             "draft": False,
             "mergeable": True,
             "external_effect": "NONE",
+            "full_automation": True,
             "required_gates": [
                 "QIKVRT CI",
                 "QIKVRT repository evidence materialization",
@@ -189,6 +190,13 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
             ]
         )
         result = MODULE.evaluate_promotion(snapshot)
+        self.assertEqual(result["state"], "PROMOTABLE")
+        self.assertIsNone(result["first_blocker"])
+
+    def test_legacy_self_heal_remains_non_mutating(self):
+        result = MODULE.evaluate_promotion(self.snapshot(full_automation=False))
+        self.assertEqual(result["state"], "BLOCK")
+        self.assertEqual(result["phase"], "REQUEST_EXACT_BASE_CAS_AUTHORITY")
         self.assertEqual(result["first_blocker"], "HEAD1_BASE_CAS_UNAVAILABLE")
 
     def test_ready_candidate_without_bot_review_gate_blocks(self):
@@ -334,7 +342,7 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
         )
         self.assertLess(
             workflow.rindex("tools/qikvrt_requested_review_executor.py','verify'"),
-            workflow.index("HOLD_UNVERIFIED: no repository mutation follows"),
+            workflow.index('pulls/${PR_NUMBER}/merge'),
         )
         self.assertIn('pulls/${PR_NUMBER}/merge', workflow)
         self.assertIn('-f sha="$EXPECTED_HEAD"', workflow)

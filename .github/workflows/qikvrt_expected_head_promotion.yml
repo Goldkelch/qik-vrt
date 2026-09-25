@@ -125,7 +125,9 @@ jobs:
           print(f"state={v['state']}")
           print(f"pr={v.get('pr_number') or ''}")
           print(f"main_sha={v['current_main_sha']}")
-          print(f"marker_sha256={(v.get('marker_binding') or {}).get('body_sha256') or ''}")
+          binding=v.get('marker_binding') or {}
+          print(f"marker_sha256={binding.get('body_sha256') or ''}")
+          print(f"full_automation={'true' if binding.get('marker') == '<!-- qikvrt-full-automation:v1 external_effect=REPOSITORY_MAIN_INTEGRATION -->' else 'false'}")
           PY
 
       - name: Materialize exact live promotion snapshot with separated review authority
@@ -133,6 +135,7 @@ jobs:
         id: decision
         env:
           PR_NUMBER: ${{ steps.candidate.outputs.pr }}
+          FULL_AUTOMATION: ${{ steps.candidate.outputs.full_automation }}
         shell: bash
         run: |
           set -euo pipefail
@@ -214,6 +217,7 @@ jobs:
               'draft':bool(pr.get('draft')),
               'mergeable':pr.get('mergeable') is True,
               'external_effect':'NONE',
+              'full_automation':os.environ.get('FULL_AUTOMATION','false').lower() == 'true',
               'required_gates':required,
               'workflow_runs':workflow_runs,
               'code_owner_review_gate':code_owner_review_gate,
@@ -273,7 +277,7 @@ jobs:
           PY
 
           test "$draft" = false
-          test "$EXPECTED_PHASE" = REQUEST_EXACT_BASE_CAS_AUTHORITY
+          test "$EXPECTED_PHASE" = EXECUTE_EXACT_HEAD_MERGE
 
           python3 -B - <<'PY'
           import base64, json, os, pathlib, subprocess, sys, urllib.parse
@@ -300,7 +304,7 @@ jobs:
 
           pr=gh_json(f'repos/{repo}/pulls/{pr_number}')
           if pr['head']['sha'] != expected_head:
-              raise SystemExit('BLOCK: head drift before exact-base-CAS authority continuation')
+              raise SystemExit('BLOCK: head drift before full-automation merge continuation')
           rules=gh_json(f'repos/{repo}/rules/branches/main')
           reviews=gh_pages(f'repos/{repo}/pulls/{pr_number}/reviews?per_page=100')
           gate=evaluate_required_review(pr, rules, reviews, required_code_owners=('Goldkelch','ingolf-lohmann'))
