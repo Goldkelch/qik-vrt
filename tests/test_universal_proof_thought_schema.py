@@ -11,13 +11,15 @@ from tools import qikvrt_mesh_node_receipt as mesh_node_receipt
 from tools import qikvrt_workflow_executor as workflow_executor
 
 from tools.qikvrt_output_contract import (  # noqa: E402
-    ARTICLE_BYTES,
+    ARTICLE_GIT_BLOB_SHA1,
     ARTICLE_PATH,
-    ARTICLE_SHA256,
+    ORIGIN_PROOF_GIT_BLOB_SHA1,
+    ORIGIN_PROOF_PATH,
     BINDING_KEY,
     OutputContractError,
     bind_output,
     canonical_article_identity,
+    canonical_origin_proof_identity,
     load_policy,
     validate_output,
 )
@@ -44,11 +46,17 @@ class UniversalProofThoughtSchemaTests(unittest.TestCase):
             new_difference="FORMAL_RESULT_MATERIALIZED",
         )
 
-    def test_article_identity_is_exact(self):
-        raw = ARTICLE_PATH.read_bytes()
-        self.assertEqual(len(raw), ARTICLE_BYTES)
-        self.assertEqual(hashlib.sha256(raw).hexdigest(), ARTICLE_SHA256)
-        self.assertEqual(canonical_article_identity()["sha256"], ARTICLE_SHA256)
+    def test_article_and_origin_proof_identities_are_exact(self):
+        self.assertTrue(ARTICLE_PATH.is_file())
+        self.assertTrue(ORIGIN_PROOF_PATH.is_file())
+        self.assertEqual(
+            canonical_article_identity()["git_blob_sha1"],
+            ARTICLE_GIT_BLOB_SHA1,
+        )
+        self.assertEqual(
+            canonical_origin_proof_identity()["git_blob_sha1"],
+            ORIGIN_PROOF_GIT_BLOB_SHA1,
+        )
 
     def test_policy_is_mandatory_and_binds_article(self):
         policy = load_policy()
@@ -56,7 +64,17 @@ class UniversalProofThoughtSchemaTests(unittest.TestCase):
         self.assertTrue(policy["applies_to"]["current_and_future_node_outputs"])
         self.assertTrue(policy["persistence"]["every_node_run_must_persist_binding_in_its_receipt_or_ledger"])
         self.assertFalse(policy["invariants"]["predecessor_evidence_transfer"])
-        self.assertEqual(policy["canonical_article"]["sha256"], ARTICLE_SHA256)
+        self.assertEqual(
+            policy["canonical_article"]["git_blob_sha1"],
+            ARTICLE_GIT_BLOB_SHA1,
+        )
+        self.assertEqual(
+            policy["ontological_origin_proof"]["document_git_blob_sha1"],
+            ORIGIN_PROOF_GIT_BLOB_SHA1,
+        )
+        self.assertTrue(
+            policy["persistence"]["every_node_must_bind_ontological_origin_proof"]
+        )
 
     def test_valid_bound_output_passes(self):
         value = self.base()
@@ -69,7 +87,15 @@ class UniversalProofThoughtSchemaTests(unittest.TestCase):
 
     def test_article_rebinding_fails_closed(self):
         value = self.base()
-        value[BINDING_KEY]["article_binding"]["sha256"] = "0" * 64
+        value[BINDING_KEY]["article_binding"]["git_blob_sha1"] = "0" * 40
+        with self.assertRaises(OutputContractError):
+            validate_output(value)
+
+    def test_origin_proof_rebinding_fails_closed(self):
+        value = self.base()
+        value[BINDING_KEY]["ontological_origin_proof_binding"][
+            "git_blob_sha1"
+        ] = "0" * 40
         with self.assertRaises(OutputContractError):
             validate_output(value)
 
@@ -102,6 +128,7 @@ class UniversalProofThoughtSchemaTests(unittest.TestCase):
         order = context["required_read_order"]
         self.assertIn("policy/QIKVRT_UNIVERSAL_PROOF_THOUGHT_SCHEMA_V1.json", order)
         self.assertIn("docs/QIKVRT_UNIVERSAL_PROOF_AND_THOUGHT_SCHEMA_DE.md", order)
+        self.assertIn("docs/ONTOLOGICAL_ORIGIN_OF_DIFFERENCE_DE.md", order)
         ai = (ROOT / "AI").read_text(encoding="utf-8")
         self.assertIn("QIKVRT-UNIVERSAL-PROOF-THOUGHT-SCHEMA-V1", ai)
         self.assertIn("every node-generated output", ai)
@@ -167,6 +194,7 @@ class UniversalProofThoughtSchemaTests(unittest.TestCase):
             self.assertEqual(carrier["policy_id"], "QIKVRT-UNIVERSAL-PROOF-THOUGHT-SCHEMA-V1")
             self.assertEqual(carrier["enforcement"], "FAIL_CLOSED")
             self.assertTrue(carrier["article_binding_required"])
+            self.assertTrue(carrier["ontological_origin_proof_binding_required"])
 
 
 if __name__ == "__main__":
