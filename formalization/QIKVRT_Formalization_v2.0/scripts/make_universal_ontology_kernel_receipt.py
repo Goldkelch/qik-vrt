@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create an exact-head receipt for the consolidated 32-theorem kernel."""
+"""Create an exact-head receipt for the consolidated 35-theorem kernel."""
 from __future__ import annotations
 
 import argparse
@@ -120,7 +120,7 @@ def main() -> int:
             "imports": ["Std"],
         },
         "sources": [identity(path) for path in SOURCES],
-        "theorem_count": 32,
+        "theorem_count": 35,
         "axioms_by_theorem": observed,
         "foundational_axiom_allowlist": sorted(FOUNDATIONAL),
         "project_axioms": [],
@@ -142,7 +142,7 @@ def main() -> int:
         json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     print(
-        f"KERNEL_RECEIPT_CREATED theorems=32 commit={args.commit} tree={args.tree}"
+        f"KERNEL_RECEIPT_CREATED theorems=35 commit={args.commit} tree={args.tree}"
     )
     return 0
 
