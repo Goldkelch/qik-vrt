@@ -6,6 +6,10 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
+from tools import qikvrt_authority_mirror_mesh_instance as authority_mirror_mesh
+from tools import qikvrt_mesh_node_receipt as mesh_node_receipt
+from tools import qikvrt_workflow_executor as workflow_executor
+
 from tools.qikvrt_output_contract import (  # noqa: E402
     ARTICLE_BYTES,
     ARTICLE_PATH,
@@ -101,6 +105,68 @@ class UniversalProofThoughtSchemaTests(unittest.TestCase):
         ai = (ROOT / "AI").read_text(encoding="utf-8")
         self.assertIn("QIKVRT-UNIVERSAL-PROOF-THOUGHT-SCHEMA-V1", ai)
         self.assertIn("every node-generated output", ai)
+
+    def test_authority_mirror_terminal_projection_is_bound(self):
+        observation = {
+            "schema": authority_mirror_mesh.INPUT_SCHEMA,
+            "observation_id": "proof-schema-test-observation",
+            "observed_at": "2026-09-25T06:00:00Z",
+            "authority": {
+                "repository": "Goldkelch/qik-vrt",
+                "role": "AUTHORITY",
+                "ref_name": "main",
+                "head_sha": "1" * 40,
+                "root_tree_sha": "2" * 40,
+                "inventory": {"open_issues": 0, "open_pull_requests": 0, "branches": 1},
+                "integrity": None,
+            },
+            "mirror": {
+                "repository": "ingolf-lohmann/qik-vrt",
+                "role": "MIRROR",
+                "ref_name": "main",
+                "head_sha": "3" * 40,
+                "root_tree_sha": "4" * 40,
+                "inventory": {"open_issues": 0, "open_pull_requests": 0, "branches": 1},
+                "integrity": None,
+            },
+        }
+        instance = authority_mirror_mesh.build_mesh_instance(observation)
+        projection = authority_mirror_mesh.terminal_projection(instance, "FULL")
+        validate_output(projection)
+        self.assertIn(BINDING_KEY, projection)
+        self.assertFalse(
+            projection[BINDING_KEY]["scope"]["predecessor_evidence_transfer"]
+        )
+
+    def test_future_node_receipt_requires_bound_wrapper(self):
+        bound = mesh_node_receipt.build_bound_node_receipt(
+            "example/node", "main", ROOT
+        )
+        validate_output(bound)
+        validation = mesh_node_receipt.validate_bound_node_receipt(
+            bound, "example/node", "main", ROOT
+        )
+        validate_output(validation)
+        legacy_unbound = workflow_executor.build_node_receipt(
+            "example/node", "main", ROOT
+        )
+        with self.assertRaises(mesh_node_receipt.NodeReceiptContractError):
+            mesh_node_receipt.validate_bound_node_receipt(
+                legacy_unbound, "example/node", "main", ROOT
+            )
+
+    def test_output_carrier_registry_is_closed_for_current_declared_carriers(self):
+        registry = json.loads(
+            (ROOT / "state/mesh/QIKVRT_NODE_OUTPUT_CARRIER_REGISTRY_V1.json")
+            .read_text(encoding="utf-8")
+        )
+        self.assertTrue(registry["coverage_complete_for_declared_current_carriers"])
+        self.assertTrue(registry["future_carriers_require_registration_before_admission"])
+        self.assertGreaterEqual(len(registry["carriers"]), 4)
+        for carrier in registry["carriers"]:
+            self.assertEqual(carrier["policy_id"], "QIKVRT-UNIVERSAL-PROOF-THOUGHT-SCHEMA-V1")
+            self.assertEqual(carrier["enforcement"], "FAIL_CLOSED")
+            self.assertTrue(carrier["article_binding_required"])
 
 
 if __name__ == "__main__":
