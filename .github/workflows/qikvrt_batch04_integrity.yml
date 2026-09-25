@@ -285,6 +285,17 @@ jobs:
           set -euo pipefail
           python3 tools/qikvrt_integrity.py generate
           python3 tools/qikvrt_integrity.py verify
+      - name: Upload generated integrity successor
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-generated-integrity-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            REPOSITORY_FILE_MANIFEST.json
+            REPOSITORY_FILE_MANIFEST.json.sha256
+            SHA256SUMS.txt
+
       - name: Run complete repository gates before persistence
         shell: bash
         run: |
