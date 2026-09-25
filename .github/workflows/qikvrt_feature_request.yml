@@ -1,0 +1,104 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT Interactive Evidence Sphere
+
+on:
+  repository_dispatch:
+    types: [qikvrt_feature_request]
+  workflow_dispatch:
+    inputs:
+      task:
+        required: true
+        type: choice
+        default: build_qik_vrt_mesh_html
+        options: [build_qik_vrt_mesh_html]
+      request_json_b64:
+        required: false
+        default: ''
+        description: Optional base64 UTF-8 JSON client_payload; empty selects the canonical request
+        type: string
+      subject_sha:
+        required: false
+        default: ''
+        description: Optional exact lowercase 40-hex commit binding; mismatch fails closed
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: qikvrt-interactive-evidence-sphere-${{ github.repository }}-${{ github.sha }}-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  materialize-test-receipt:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact dispatch subject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v6.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Bind and validate exact request
+        shell: bash
+        run: |
+          set -euo pipefail
+          head_sha="$(git rev-parse --verify HEAD^{commit})"
+          test "$head_sha" = "$GITHUB_SHA"
+          python3 -B tools/qikvrt_mesh_html.py validate-event \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --event-name "$GITHUB_EVENT_NAME" \
+            --head "$head_sha" \
+            > /tmp/qikvrt-mesh-request-receipt.json
+          cat /tmp/qikvrt-mesh-request-receipt.json
+
+      - name: Materialize deterministic single-file HTML
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          python3 -B tools/qikvrt_mesh_html.py generate --output dist/QIK_VRT_MESH.html
+          python3 -B tools/qikvrt_mesh_html.py check --path QIK_VRT_MESH.html
+          cmp -- QIK_VRT_MESH.html dist/QIK_VRT_MESH.html
+          sha256sum -- dist/QIK_VRT_MESH.html
+
+      - name: Execute feature contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v tests.test_qikvrt_mesh_html
+
+      - name: Emit exact-head build receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          head_sha="$(git rev-parse --verify HEAD^{commit})"
+          tree_sha="$(git rev-parse --verify HEAD^{tree})"
+          python3 -B tools/qikvrt_mesh_html.py receipt \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --event-name "$GITHUB_EVENT_NAME" \
+            --head "$head_sha" \
+            --tree "$tree_sha" \
+            --artifact dist/QIK_VRT_MESH.html \
+            --output dist/QIK_VRT_MESH.receipt.json
+          cat dist/QIK_VRT_MESH.receipt.json
+
+      - name: Upload exact build artifact and receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-interactive-evidence-sphere-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            dist/QIK_VRT_MESH.html
+            dist/QIK_VRT_MESH.receipt.json
+          if-no-files-found: error
+          retention-days: 30
