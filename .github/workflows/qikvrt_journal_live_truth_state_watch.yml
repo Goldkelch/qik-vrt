@@ -1,0 +1,273 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT journal live truth-state candidate watch
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened, review_requested]
+    paths:
+      - ".github/workflows/qikvrt_journal_live_truth_state_watch.yml"
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: qikvrt-journal-live-truth-state-watch-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      WATCH_ISSUE: "1229"
+      QIKVRT_SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      QIKVRT_ISSUE_MUTATION_ENABLED: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - name: Observe bounded public-source candidates
+        id: observe
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP}/qikvrt-journal-live-watch.json"
+          md="${RUNNER_TEMP}/qikvrt-journal-live-watch.md"
+          python3 -B - "$out" "$md" <<'PY'
+          import datetime as dt, hashlib, html, json, os, re, sys
+          import urllib.error, urllib.request, xml.etree.ElementTree as ET
+
+          out, md = sys.argv[1:3]
+          now=dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00","Z")
+          subject_sha=os.environ.get("QIKVRT_SUBJECT_SHA","").strip()
+          issue_mutation_enabled=os.environ.get("QIKVRT_ISSUE_MUTATION_ENABLED","false").lower()=="true"
+          # id, domain, class, kind, url. Feed order is discovery order, never importance.
+          S=[
+            ("SEED_MSN_UAE","world_history_geopolitics","OCCASION_SECONDARY_NEWS","probe","https://www.msn.com/de-de/nachrichten/other/newsblog-zum-ukraine-krieg-usa-ukraine-und-russland-sollen-sich-in-den-vae-treffen/ar-AA2cSx4K?ocid=edgemobile"),
+            ("UN_NEWS","world_history_geopolitics","PRIMARY_INSTITUTIONAL_NEWS","feed","https://news.un.org/feed/subscribe/en/news/all/rss.xml"),
+            ("NATURE","science_general","SCIENTIFIC_JOURNAL_FEED","feed","https://www.nature.com/nature.rss"),
+            ("UNESCO_UNEVOC","ethics","PRIMARY_INSTITUTIONAL_NEWS","feed","https://connect.unevoc.unesco.org/unevoc_news.xml"),
+            ("SEP","philosophy","SCHOLARLY_REFERENCE_FEED","feed","https://plato.stanford.edu/rss/sep.xml"),
+            ("WHO_AFRO","medicine_public_health","PRIMARY_INSTITUTIONAL_HEALTH","feed","https://www.afro.who.int/rss/emergencies.xml"),
+            ("ARXIV_Q_BIO","biology_life_sciences","PREPRINT_DISCOVERY_FEED","feed","https://export.arxiv.org/rss/q-bio"),
+            ("ARXIV_MATH","mathematics","PREPRINT_DISCOVERY_FEED","feed","https://export.arxiv.org/rss/math"),
+            ("ARXIV_PHYSICS","physics","PREPRINT_DISCOVERY_FEED","feed","https://export.arxiv.org/rss/physics"),
+            ("ARXIV_EESS","engineering_technology","PREPRINT_DISCOVERY_FEED","feed","https://export.arxiv.org/rss/eess"),
+            ("UNESCO_UNEVOC_SOCIAL","humanities_social_sciences","PRIMARY_INSTITUTIONAL_NEWS","feed","https://connect.unevoc.unesco.org/unevoc_rss.xml"),
+          ]
+          UA="QIKVRT-Journal-Watch/1.0 (+https://github.com/Goldkelch/qik-vrt/issues/1229)"
+          def clean(x): return re.sub(r"\s+"," ",html.unescape(x or "")).strip()
+          def fetch(url):
+              q=urllib.request.Request(url,headers={"User-Agent":UA,"Accept":"application/rss+xml,application/atom+xml,application/xml,text/xml,text/html;q=0.8,*/*;q=0.1"})
+              with urllib.request.urlopen(q,timeout=20) as r:
+                  b=r.read(2*1024*1024+1)
+                  if len(b)>2*1024*1024: raise ValueError("response exceeds 2 MiB")
+                  return b, {"status":str(getattr(r,"status",200)),"final_url":r.geturl(),"etag":r.headers.get("ETag",""),"last_modified":r.headers.get("Last-Modified","")}
+          def text(n,name):
+              for c in list(n):
+                  if c.tag.rsplit("}",1)[-1].lower()==name: return clean(c.text)
+              return ""
+          def feed(raw):
+              root=ET.fromstring(raw); rows=[]
+              nodes=[n for n in root.iter() if n.tag.rsplit("}",1)[-1].lower() in {"item","entry"}]
+              for n in nodes[:5]:
+                  title=text(n,"title"); published=text(n,"pubdate") or text(n,"published") or text(n,"updated") or text(n,"date")
+                  link=text(n,"link")
+                  if not link:
+                      for c in list(n):
+                          if c.tag.rsplit("}",1)[-1].lower()=="link" and clean(c.attrib.get("href")):
+                              link=clean(c.attrib.get("href")); break
+                  guid=text(n,"guid") or text(n,"id")
+                  if not link and guid.startswith(("http://","https://")): link=guid
+                  if title or link: rows.append((title,link,published))
+              return rows
+          states=[]; candidates=[]
+          for sid,domain,sclass,kind,url in S:
+              state={"source_id":sid,"domain":domain,"source_class":sclass,"source_url":url,"status":"SOURCE_UNAVAILABLE"}
+              try:
+                  raw,meta=fetch(url); state.update(meta); state["status"]="OBSERVED"
+                  if kind=="feed":
+                      items=feed(raw); state["item_count"]=len(items)
+                      for title,link,published in items:
+                          candidates.append({"domain":domain,"source_id":sid,"source_class":sclass,"title":title,"url":link,"published":published,"classification":"UNVERIFIED_CANDIDATE","truth_authority":False,"effect_ack_done":False})
+                  else:
+                      state["candidate_claim_created"]=False
+              except Exception as e:
+                  state["error"]=clean(str(e))[:400]
+              states.append(state)
+          candidates.sort(key=lambda r:(r["domain"],r["source_id"],r["published"],r["title"],r["url"]))
+          stable={"schema":"qikvrt.journal-live-truth-state-candidate-set.v1","candidates":candidates,"source_states":[{"source_id":s["source_id"],"status":s["status"],"final_url":s.get("final_url",""),"etag":s.get("etag",""),"last_modified":s.get("last_modified",""),"item_count":s.get("item_count",0)} for s in states]}
+          digest=hashlib.sha256(json.dumps(stable,ensure_ascii=False,sort_keys=True,separators=(",",":")).encode()).hexdigest()
+          ok=sum(s["status"]=="OBSERVED" for s in states)
+          receipt={"schema":"qikvrt.journal-live-truth-state-watch-receipt.v1","observed_at":now,"subject_sha":subject_sha,"watch_issue":1229,"candidate_set_sha256":digest,"source_count":len(S),"source_observed_count":ok,"candidate_count":len(candidates),"source_states":states,"candidates":candidates,"boundaries":{"candidate_is_verified_claim":False,"feed_order_is_importance_ranking":False,"source_is_truth_authority":False,"legal_readiness":"HOLD","publication_promotion":"HOLD","predecessor_evidence_transfer":False,"issue_mutation_enabled_for_run":issue_mutation_enabled,"issue_mutation_performed_by_observe_step":False,"effect_ack_done":False}}
+          open(out,"w",encoding="utf-8").write(json.dumps(receipt,ensure_ascii=False,sort_keys=True,indent=2)+"\n")
+          lines=[f"<!-- qikvrt-journal-live-watch:{digest} -->","## Journal live truth-state — candidate observation","",f"- Observed at: `{now}`",f"- Candidate-set SHA-256: `{digest}`",f"- Sources observed: `{ok}/{len(S)}`",f"- Candidate records: `{len(candidates)}`",f"- Subject SHA: `{subject_sha}`",f"- Issue #1229 mutation enabled for run: `{str(issue_mutation_enabled).lower()}`","","`UNVERIFIED_CANDIDATE != VERIFIED_CLAIM != EFFECT_ACK_DONE`","","Source/feed order is not a QIK-VRT importance ranking, truth judgment, political preference, or outcome recommendation.",""]
+          current=None
+          for r in candidates:
+              if r["domain"]!=current: current=r["domain"]; lines += [f"### {current}",""]
+              title=r["title"] or "(untitled source item)"
+              suffix=f" — {r['published']}" if r["published"] else ""
+              lines.append((f"- [{title}]({r['url']})" if r["url"] else f"- {title}")+suffix+f" · `{r['source_id']}` · `UNVERIFIED_CANDIDATE`")
+          gaps=[s for s in states if s["status"]!="OBSERVED"]
+          if gaps:
+              lines += ["","### Source availability gaps",""]
+              lines += [f"- `{s['source_id']}`: `SOURCE_UNAVAILABLE` — {s.get('error','unknown')}" for s in gaps]
+          lines += ["","Discovery/provenance only. No motive inference, scientific validation, legal readiness, publication promotion, deployment, or external effect is established.","","`LEGAL_READINESS=HOLD` · `PUBLICATION_PROMOTION=HOLD` · `EFFECT_ACK_DONE=FALSE`"]
+          open(md,"w",encoding="utf-8").write("\n".join(lines)+"\n")
+          print(digest)
+          if ok==0: raise SystemExit("BLOCK: no source observable")
+          PY
+          digest="$(python3 -B -c 'import json,sys; print(json.load(open(sys.argv[1],encoding="utf-8"))["candidate_set_sha256"])' "$out")"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Persist material candidate-set transition
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          DIGEST: ${{ steps.observe.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "${QIKVRT_ISSUE_MUTATION_ENABLED}" = "true" ] || { echo "BLOCK: issue mutation disabled for this run" >&2; exit 2; }
+          marker="<!-- qikvrt-journal-live-watch:${DIGEST} -->"
+          existing="$(gh api --paginate "repos/${REPOSITORY}/issues/${WATCH_ISSUE}/comments?per_page=100" --jq ".[] | select((.body // \"\") | contains(\"${marker}\")) | .id" | head -n 1)"
+          if [ -n "$existing" ]; then
+            echo "NO_MUTATION candidate_set_already_persisted comment=$existing"
+            exit 0
+          fi
+          body="$(cat "${RUNNER_TEMP}/qikvrt-journal-live-watch.md")"
+          id="$(gh api --method POST "repos/${REPOSITORY}/issues/${WATCH_ISSUE}/comments" --raw-field "body=${body}" --jq '.id')"
+          readback="$(gh api "repos/${REPOSITORY}/issues/comments/${id}" --jq '.body')"
+          [ "$readback" = "$body" ] || { echo "BLOCK: comment readback mismatch" >&2; exit 2; }
+
+      - name: Preserve observation receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-journal-live-truth-state-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/qikvrt-journal-live-watch.json
+            ${{ runner.temp }}/qikvrt-journal-live-watch.md
+          if-no-files-found: warn
+          retention-days: 30
+
+  materialize-pr-self-test-integrity:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action != 'review_requested' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'github-actions[bot]'
+    needs: observe
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Check out exact PR head for deterministic integrity only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_HEAD }}
+          fetch-depth: 2
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Regenerate and verify only canonical repository integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          python3 -B - <<'PY'
+          import subprocess
+          allowed={
+              "REPOSITORY_FILE_MANIFEST.json",
+              "REPOSITORY_FILE_MANIFEST.json.sha256",
+              "SHA256SUMS.txt",
+          }
+          changed=set(subprocess.check_output(
+              ["git","diff","--name-only","--"], text=True
+          ).splitlines())
+          if not changed:
+              raise SystemExit("BLOCK: self-test successor produced no integrity delta")
+          if not changed <= allowed:
+              raise SystemExit(f"BLOCK: out-of-scope self-test materialization: {sorted(changed-allowed)}")
+          PY
+
+      - name: Persist exact-head integrity successor only
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_head="$(git rev-parse --verify HEAD^{commit})"
+          test "$source_head" = "$EXPECTED_HEAD"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
+          test "$remote_head" = "$source_head"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --             REPOSITORY_FILE_MANIFEST.json             REPOSITORY_FILE_MANIFEST.json.sha256             SHA256SUMS.txt
+          test -z "$(git diff --name-only --)"
+          staged="$(git diff --cached --name-only)"
+          test -n "$staged"
+          if printf '%s\n' "$staged" | grep -Ev '^(REPOSITORY_FILE_MANIFEST\.json|REPOSITORY_FILE_MANIFEST\.json\.sha256|SHA256SUMS\.txt)$'; then
+            echo "BLOCK: staged path outside integrity trio" >&2
+            exit 2
+          fi
+          git commit -m "ci: materialize journal watch self-test integrity"
+          remote_head_after_commit="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
+          test "$remote_head_after_commit" = "$source_head"
+          git push origin "HEAD:$HEAD_REF"
+
+      - name: Dispatch exact integrity successor to trusted verifier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          successor="$(git rev-parse --verify HEAD^{commit})"
+          parent="$(git rev-parse --verify HEAD^1)"
+          test "$parent" = "$EXPECTED_HEAD"
+          live_main="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 {print $1}')"
+          test "$live_main" = "$BASE_SHA"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
+          test "$remote_head" = "$successor"
+          root="$RUNNER_TEMP/qikvrt-journal-live-watch-self-test"
+          mkdir -p "$root"
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg pr "$PR_NUMBER" \
+            --arg ref "$HEAD_REF" \
+            --arg head "$successor" \
+            --arg base "$BASE_SHA" \
+            '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base,d0:2,causal_state:"REOBSERVE",reason:"JOURNAL_WATCH_PR_SAFE_INTEGRITY_SUCCESSOR"}}' \
+            > "$root/dispatch-envelope.json"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" \
+            --input "$root/dispatch-envelope.json"
+          jq -n \
+            --arg source "$EXPECTED_HEAD" \
+            --arg successor "$successor" \
+            --arg base "$BASE_SHA" \
+            '{schema:"qikvrt.journal-watch-direct-exact-head-dispatch.v1",source_head:$source,integrity_successor_head:$successor,base_sha:$base,dispatch:"ACKNOWLEDGED",issue_1229_mutation:"DISABLED",journal_source_mutation:"NOT_PERFORMED",publication_promotion:"HOLD",legal_readiness:"HOLD",effect_ack_done:false,predecessor_evidence_transfer:false}' \
+            > "$root/dispatch-receipt.json"
+
+      - name: Preserve direct exact-head dispatch receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-journal-live-watch-direct-dispatch-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qikvrt-journal-live-watch-self-test
+          if-no-files-found: warn
+          retention-days: 30
