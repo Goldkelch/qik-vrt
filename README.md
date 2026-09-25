@@ -12,6 +12,23 @@ Use this checkout's actual owner/repository for a Mirror or fork. Choose a new o
 
 <!-- /qikvrt-roundtrip-first:v1 -->
 
+<!-- qikvrt-public-api:v1 -->
+## Öffentliche API / Public API
+
+Der kanonische GitHub-Dispatch-Vertrag ist öffentlich und ausführbar dokumentiert:
+
+- [API Quickstart](api/README.md)
+- [OpenAPI 3.0.3](api/qikvrt_github_api.openapi.yaml)
+- [QIKVRT Mesh API Workflow](.github/workflows/qikvrt_mesh_api.yml)
+
+Authority: `POST https://api.github.com/repos/Goldkelch/qik-vrt/actions/workflows/qikvrt_mesh_api.yml/dispatches`
+
+Event-Alternative: `POST https://api.github.com/repos/Goldkelch/qik-vrt/dispatches` mit `event_type=qikvrt_mesh_api`.
+
+Authentifizierter Dispatch ist Transportzulassung, nicht Wirkungsbestätigung: `TRANSPORT_ACK != EFFECT_ACK`.
+
+<!-- /qikvrt-public-api:v1 -->
+
 <!-- qikvrt-machine-verifiable-science-charter-binding:v1 -->
 ## Charta einer maschinenprüfbaren Wissenschaft
 
