@@ -115,10 +115,29 @@ components:
       additionalProperties: false
       required: [operation, artifact_id, dry_run, request_id, effect_accepted]
       properties:
-        operation: { type: string, enum: [ingest, verify, stage, release_status] }
+        operation: { type: string, enum: [ingest, verify, stage, work_order, release_status] }
         artifact_id: { type: string, pattern: '^[A-Za-z0-9_.=-]{1,128}$' }
-        payload_b64: { type: string }
-        expected_sha256: { type: string, pattern: '^[0-9a-fA-F]{64}$' }
+        payload_b64: { type: string, description: Base64 payload; for work_order this is a qikvrt_work_order_v1 JSON document. }
+        expected_sha256: { type: string, pattern: '^[0-9a-fA-F]{64}
+        dry_run: { oneOf: [{ type: boolean }, { type: string, enum: ['true', 'false'] }] }
+        request_id: { type: string, pattern: '^[A-Za-z0-9_.=-]{1,128}$' }
+        effect_accepted: { oneOf: [{ type: boolean }, { type: string, enum: ['true', 'false'] }] }
+        responsibility_owner: { type: string, minLength: 1, maxLength: 256 }
+        state_run_id: { type: string, pattern: '^[0-9]{1,32}$' }
+        remote_evidence_b64: { type: string, description: HMAC-authenticated qikvrt_remote_release_attestation_v1 JSON encoded as base64. }
+  securitySchemes:
+    bearerToken:
+      type: http
+      scheme: bearer
+      description: >
+        Bearer credential. For the local adapter this is the explicitly configured
+        QIKVRT_API_TOKEN with server-side expiry and canonical b64url encoding
+        (32--128 decoded bytes). For GitHub, use a GitHub bearer token scoped to
+        the target repository; workflow_dispatch requires Actions write and
+        repository_dispatch requires Contents write for fine-grained tokens.
+security:
+  - bearerToken: []
+, description: SHA-256 of the decoded payload; mandatory for ingest and work_order. }
         dry_run: { oneOf: [{ type: boolean }, { type: string, enum: ['true', 'false'] }] }
         request_id: { type: string, pattern: '^[A-Za-z0-9_.=-]{1,128}$' }
         effect_accepted: { oneOf: [{ type: boolean }, { type: string, enum: ['true', 'false'] }] }
