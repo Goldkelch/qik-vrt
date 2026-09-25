@@ -12,6 +12,7 @@ import unittest
 from pathlib import Path
 
 from tools import qikvrt_workflow_executor as workflow_executor
+from tools import qikvrt_mesh_node_receipt as mesh_node_receipt
 from tools.qikvrt_seed_common import (
     FetchedJson,
     MAX_INPUT_BYTES,
@@ -113,7 +114,7 @@ def remote_documents() -> dict[str, dict[str, object]]:
             "repository": SOURCE,
             "seed_repository": SEED,
         },
-        workflow_executor.expected_node_receipt_url(SOURCE, "main"): workflow_executor.build_node_receipt(
+        workflow_executor.expected_node_receipt_url(SOURCE, "main"): mesh_node_receipt.build_bound_node_receipt(
             SOURCE,
             "main",
         ),

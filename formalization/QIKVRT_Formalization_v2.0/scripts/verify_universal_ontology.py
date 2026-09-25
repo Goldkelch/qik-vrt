@@ -239,8 +239,8 @@ def main(argv: list[str] | None = None) -> int:
         ids = [claim.get("claim_id") for claim in all_claims]
         if any(not isinstance(item, str) or not item for item in ids) or len(ids) != len(set(ids)):
             raise ValueError("claim IDs are invalid or non-unique")
-        if expected_count != 32 or len(expected_constants) != 32:
-            raise ValueError("consolidated theorem inventory must contain exactly 32 constants")
+        if expected_count != 35 or len(expected_constants) != 35:
+            raise ValueError("consolidated theorem inventory must contain exactly 35 constants")
         audit_constants = {
             line.strip().removeprefix("#print axioms ")
             for line in AUDIT.read_text(encoding="utf-8").splitlines()

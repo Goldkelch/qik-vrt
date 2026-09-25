@@ -42,6 +42,12 @@ class RealMeshPureContractTests(unittest.TestCase):
                     "repository": repository,
                     "instance_id": f"instance-{index}",
                     "root_tree_sha": ("a" if role == "AUTHORITY" else "b") * 40,
+                    "proof_contract": {
+                        "policy_id": mesh.OUTPUT_POLICY_ID,
+                        "article_binding": mesh.canonical_article_identity(),
+                        "ontological_origin_proof_binding": mesh.canonical_origin_proof_identity(),
+                        "knowledge_artifacts_binding": mesh.canonical_knowledge_artifacts_identity(),
+                    },
                     "host": "127.0.0.1",
                     "port": 20000 + index,
                 }
@@ -81,6 +87,21 @@ class RealMeshPureContractTests(unittest.TestCase):
         with self.assertRaises(mesh.MeshRuntimeError):
             mesh.normalize_topology(topology)
 
+    def test_node_missing_or_tampered_origin_proof_is_rejected(self) -> None:
+        missing = self.synthetic_topology()
+        missing["nodes"][0].pop("proof_contract")
+        with self.assertRaises(mesh.MeshRuntimeError):
+            mesh.normalize_topology(missing)
+
+        tampered = self.synthetic_topology()
+        tampered["nodes"][0]["proof_contract"][
+            "ontological_origin_proof_binding"
+        ]["git_blob_sha1"] = "0" * 40
+        with self.assertRaisesRegex(
+            mesh.MeshRuntimeError, "canonical proof contract"
+        ):
+            mesh.normalize_topology(tampered)
+
     def test_route_must_cross_pairs_and_follow_declared_links(self) -> None:
         topology = mesh.normalize_topology(self.synthetic_topology())
         with self.assertRaises(mesh.MeshRuntimeError):
@@ -103,6 +124,11 @@ class RealMeshNetworkTests(unittest.TestCase):
                 source_tree=SOURCE_TREE,
             )
         self.assertEqual(receipt["schema"], mesh.EXECUTION_RECEIPT_SCHEMA)
+        mesh.validate_output(receipt)
+        self.assertEqual(
+            receipt["_qikvrt_epistemic_output"]["ontological_origin_proof_binding"],
+            mesh.canonical_origin_proof_identity(),
+        )
         self.assertEqual(receipt["pair_count"], 2)
         self.assertEqual(receipt["node_process_count"], 4)
         self.assertEqual(receipt["transport"], "TCP")
@@ -218,6 +244,13 @@ class RealMeshRepositoryContractTests(unittest.TestCase):
         self.assertEqual(contract["transport"]["network_scope"], mesh.NETWORK_SCOPE)
         self.assertFalse(contract["effect_boundary"]["general_effect_ack_done"])
         self.assertFalse(contract["effect_boundary"]["authority_mirror_synchronization"])
+        self.assertTrue(contract["node_contract"]["proof_contract_required"])
+        self.assertTrue(
+            contract["node_contract"]["every_ledger_record_binds_proof_contract"]
+        )
+        self.assertTrue(
+            contract["node_contract"]["every_network_output_binds_proof_contract"]
+        )
         workflow = (
             root / ".github" / "workflows" / "qikvrt_real_mesh.yml"
         ).read_text(encoding="utf-8")

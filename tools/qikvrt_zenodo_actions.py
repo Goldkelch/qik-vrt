@@ -647,6 +647,22 @@ def _id_from_api_url(url: str, base_url: str, marker: str) -> int:
     return int(match.group(1))
 
 
+def _legacy_metadata_text(value: str) -> str:
+    """Normalize only punctuation the Zenodo legacy deposit API rewrites.
+
+    The legacy endpoint canonicalizes typographic quotation marks in free-text
+    metadata. No whitespace, case, wording, identifier, URL or other character
+    is weakened by this normalization.
+    """
+    return (
+        value.replace("\u201e", '"')
+        .replace("\u201c", '"')
+        .replace("\u201d", '"')
+        .replace("\u2018", "'")
+        .replace("\u2019", "'")
+    )
+
+
 def _metadata_matches(actual: Any, expected: Any) -> bool:
     """Compare every client-controlled value while allowing server-added keys."""
     if isinstance(expected, dict):
@@ -657,6 +673,11 @@ def _metadata_matches(actual: Any, expected: Any) -> bool:
     if isinstance(expected, list):
         return isinstance(actual, list) and len(actual) == len(expected) and all(
             _metadata_matches(left, right) for left, right in zip(actual, expected)
+        )
+    if isinstance(expected, str):
+        return isinstance(actual, str) and (
+            actual == expected
+            or _legacy_metadata_text(actual) == _legacy_metadata_text(expected)
         )
     return actual == expected
 

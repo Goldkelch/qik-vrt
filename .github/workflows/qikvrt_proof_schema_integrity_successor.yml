@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT proof-schema integrity successor
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize-integrity-successor:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact branch head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Materialize deterministic integrity only
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_head="$(git rev-parse HEAD)"
+          test "$source_head" = "$GITHUB_SHA"
+
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+
+          observed="$(
+            git status --porcelain=v1 --untracked-files=all |
+              sed -E 's/^...//' |
+              LC_ALL=C sort
+          )"
+          expected="$(
+            printf '%s\n'               REPOSITORY_FILE_MANIFEST.json               REPOSITORY_FILE_MANIFEST.json.sha256               SHA256SUMS.txt |
+              LC_ALL=C sort
+          )"
+          test "$observed" = "$expected"
+
+          remote_head="$(
+            git ls-remote --heads origin refs/heads/policy/universal-proof-thought-schema-v1 |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_head" = "$source_head"
+
+          git config user.name 'qik-vrt-integrity[bot]'
+          git config user.email 'qik-vrt-integrity[bot]@users.noreply.github.com'
+          git add --             REPOSITORY_FILE_MANIFEST.json             REPOSITORY_FILE_MANIFEST.json.sha256             SHA256SUMS.txt
+          git diff --cached --check
+          git commit -m 'ci: materialize proof-schema integrity successor'
+
+          remote_head="$(
+            git ls-remote --heads origin refs/heads/policy/universal-proof-thought-schema-v1 |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_head" = "$source_head"
+          git push origin HEAD:refs/heads/policy/universal-proof-thought-schema-v1

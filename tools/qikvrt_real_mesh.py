@@ -45,6 +45,16 @@ from src.qikvrt_effect_ack import (  # noqa: E402
     sha256_identifier,
 )
 
+from tools.qikvrt_output_contract import (  # noqa: E402
+    POLICY_ID as OUTPUT_POLICY_ID,
+    bind_output,
+    canonical_article_identity,
+    canonical_origin_proof_identity,
+    canonical_knowledge_artifacts_identity,
+    strip_output_binding,
+    validate_output,
+)
+
 MESH_ID = "QIKVRT_REAL_MULTI_PAIR_MESH_V1"
 TOPOLOGY_SCHEMA = "qikvrt_real_mesh_topology_v1"
 MESSAGE_SCHEMA = "qikvrt_real_mesh_message_v1"
@@ -77,6 +87,52 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace(
         "+00:00", "Z"
     )
+
+
+def _output_effect_state(response: Mapping[str, Any]) -> str:
+    raw = response.get("effect_state")
+    if raw == EffectState.EFFECT_ACK_BLOCK.value:
+        return "BLOCK"
+    if raw == EffectState.EFFECT_ACK_ISOLATE.value:
+        return "ISOLATE"
+    if raw == EffectState.EFFECT_ACK_CONTINUE.value:
+        return "CONTINUE"
+    return "NONE"
+
+
+def _bind_runtime_output(
+    response: Mapping[str, Any],
+    identity: "NodeIdentity",
+) -> dict[str, Any]:
+    bound = bind_output(
+        response,
+        node_id=identity.node_id,
+        repository=identity.repository,
+        subject={
+            "root_tree_sha": identity.root_tree_sha,
+            "instance_id": identity.instance_id,
+            "response_schema": response.get("schema", "UNSPECIFIED"),
+            "message_id": response.get("message_id", "UNAVAILABLE"),
+        },
+        claim_kind="SOURCE_BOUND",
+        statement="Repository/Mesh node output bound to exact node identity, declared scope and canonical proof-and-thought schema.",
+        assumptions=[],
+        definitions=["QIKVRT-UNIVERSAL-PROOF-THOUGHT-SCHEMA-V1"],
+        dependencies=[],
+        exclusions=[
+            "physical correspondence",
+            "independent empirical confirmation",
+            "scientific consensus",
+            "general EFFECT_ACK_DONE",
+        ],
+        evidence_refs=[],
+        epistemic_state="RUNTIME_EVIDENCE",
+        effect_state=_output_effect_state(response),
+        transport_ack=bool(response.get("transport_ack", False)),
+        effect_ack_done=False,
+        new_difference="NODE_OUTPUT_MATERIALIZED",
+    )
+    return validate_output(bound)
 
 
 def _normalize_json(value: Any) -> Any:
@@ -158,6 +214,19 @@ def _port(value: Any, label: str) -> int:
     return value
 
 
+def _proof_contract(value: Any, label: str) -> dict[str, Any]:
+    contract = _mapping(value, label)
+    expected = {
+        "policy_id": OUTPUT_POLICY_ID,
+        "article_binding": canonical_article_identity(),
+        "ontological_origin_proof_binding": canonical_origin_proof_identity(),
+        "knowledge_artifacts_binding": canonical_knowledge_artifacts_identity(),
+    }
+    if contract != expected:
+        raise MeshRuntimeError(f"{label} does not bind the canonical proof contract")
+    return copy.deepcopy(expected)
+
+
 def normalize_node(value: Any, label: str = "node") -> dict[str, Any]:
     node = _mapping(value, label)
     _exact_keys(
@@ -169,6 +238,7 @@ def normalize_node(value: Any, label: str = "node") -> dict[str, Any]:
             "repository",
             "instance_id",
             "root_tree_sha",
+            "proof_contract",
             "host",
             "port",
         },
@@ -190,6 +260,9 @@ def normalize_node(value: Any, label: str = "node") -> dict[str, Any]:
         "repository": repository,
         "instance_id": _identifier(node["instance_id"], f"{label}.instance_id"),
         "root_tree_sha": _sha1(node["root_tree_sha"], f"{label}.root_tree_sha"),
+        "proof_contract": _proof_contract(
+            node["proof_contract"], f"{label}.proof_contract"
+        ),
         "host": host,
         "port": _port(node["port"], f"{label}.port"),
     }
@@ -538,6 +611,16 @@ class AppendOnlyNodeLedger:
                     raise MeshRuntimeError(
                         f"ledger line {line_number} identity mismatch"
                     )
+                expected_proof_binding = {
+                    "policy_id": OUTPUT_POLICY_ID,
+                    "article_binding": canonical_article_identity(),
+                    "ontological_origin_proof_binding": canonical_origin_proof_identity(),
+                    "knowledge_artifacts_binding": canonical_knowledge_artifacts_identity(),
+                }
+                if record.get("proof_thought_schema_binding") != expected_proof_binding:
+                    raise MeshRuntimeError(
+                        f"ledger line {line_number} proof binding mismatch"
+                    )
                 if record.get("sequence") != expected_sequence:
                     raise MeshRuntimeError(
                         f"ledger line {line_number} sequence mismatch"
@@ -590,6 +673,12 @@ class AppendOnlyNodeLedger:
             "recorded_utc": utc_now(),
             "event": event,
             "message_id": message_id,
+            "proof_thought_schema_binding": {
+                "policy_id": OUTPUT_POLICY_ID,
+                "article_binding": canonical_article_identity(),
+                "ontological_origin_proof_binding": canonical_origin_proof_identity(),
+                "knowledge_artifacts_binding": canonical_knowledge_artifacts_identity(),
+            },
             **fields,
         }
         record = {**projection, "record_sha256": canonical_sha256(projection)}
@@ -616,6 +705,7 @@ class NodeIdentity:
     repository: str
     instance_id: str
     root_tree_sha: str
+    proof_contract: dict[str, Any]
 
     @classmethod
     def from_json(cls, value: Mapping[str, Any]) -> "NodeIdentity":
@@ -626,6 +716,7 @@ class NodeIdentity:
             "repository",
             "instance_id",
             "root_tree_sha",
+            "proof_contract",
         }
         _exact_keys(value, required, "node identity")
         synthetic = {**value, "host": "127.0.0.1", "port": 1}
@@ -641,6 +732,7 @@ class NodeIdentity:
                 "repository": self.repository,
                 "instance_id": self.instance_id,
                 "root_tree_sha": self.root_tree_sha,
+                "proof_contract": self.proof_contract,
                 "host": host,
                 "port": port,
             }
@@ -694,6 +786,7 @@ class NodeRuntime:
             "repository",
             "instance_id",
             "root_tree_sha",
+            "proof_contract",
         )
         if any(
             topology_node[field] != getattr(self.identity, field)
@@ -871,6 +964,12 @@ async def send_message_async(
         response = json.loads(response_bytes)
         if not isinstance(response, dict):
             raise MeshTransportError("mesh response is not an object")
+        try:
+            validate_output(response)
+        except Exception as exc:
+            raise MeshTransportError(
+                f"mesh response violates proof/output contract: {exc}"
+            ) from exc
         return response
     finally:
         writer.close()
@@ -918,6 +1017,7 @@ async def serve_node(
                 except json.JSONDecodeError:
                     decoded = None
                 response = await runtime.handle(decoded)
+            response = _bind_runtime_output(response, identity)
             writer.write(canonical_json_bytes(response) + b"\n")
             await asyncio.wait_for(
                 writer.drain(), timeout=SOCKET_TIMEOUT_SECONDS
@@ -935,19 +1035,17 @@ async def serve_node(
         handle_connection, host, port, limit=MAX_FRAME_BYTES + 1
     )
     bound = server.sockets[0].getsockname()
-    print(
-        json.dumps(
-            {
-                "event": "READY",
-                "node_id": identity.node_id,
-                "host": bound[0],
-                "port": bound[1],
-                "ledger": str(ledger_path),
-            },
-            sort_keys=True,
-        ),
-        flush=True,
+    ready_output = _bind_runtime_output(
+        {
+            "event": "READY",
+            "node_id": identity.node_id,
+            "host": bound[0],
+            "port": bound[1],
+            "ledger": str(ledger_path),
+        },
+        identity,
     )
+    print(json.dumps(ready_output, sort_keys=True), flush=True)
     async with server:
         await server.serve_forever()
 
@@ -972,6 +1070,7 @@ class NodeProcess:
             "repository": self.identity.repository,
             "instance_id": self.identity.instance_id,
             "root_tree_sha": self.identity.root_tree_sha,
+            "proof_contract": self.identity.proof_contract,
         }
         command = [
             sys.executable,
@@ -1018,6 +1117,14 @@ class NodeProcess:
                 f"node {self.identity.node_id} exited before READY: {diagnostics}"
             )
         ready = json.loads(line)
+        try:
+            validate_output(ready)
+        except Exception as exc:
+            diagnostics = self.stop()
+            raise MeshTransportError(
+                f"node {self.identity.node_id} READY violates proof/output contract: "
+                f"{exc}; {diagnostics}"
+            ) from exc
         if (
             ready.get("event") != "READY"
             or ready.get("node_id") != self.identity.node_id
@@ -1078,6 +1185,12 @@ class MeshHarness:
                 repository="Goldkelch/qik-vrt",
                 instance_id="authority-instance-a",
                 root_tree_sha=authority_tree,
+                proof_contract={
+                    "policy_id": OUTPUT_POLICY_ID,
+                    "article_binding": canonical_article_identity(),
+                    "ontological_origin_proof_binding": canonical_origin_proof_identity(),
+                    "knowledge_artifacts_binding": canonical_knowledge_artifacts_identity(),
+                },
             ),
             NodeIdentity(
                 node_id="pair-a-mirror",
@@ -1086,6 +1199,12 @@ class MeshHarness:
                 repository="ingolf-lohmann/qik-vrt",
                 instance_id="mirror-instance-a",
                 root_tree_sha=mirror_tree,
+                proof_contract={
+                    "policy_id": OUTPUT_POLICY_ID,
+                    "article_binding": canonical_article_identity(),
+                    "ontological_origin_proof_binding": canonical_origin_proof_identity(),
+                    "knowledge_artifacts_binding": canonical_knowledge_artifacts_identity(),
+                },
             ),
             NodeIdentity(
                 node_id="pair-b-authority",
@@ -1094,6 +1213,12 @@ class MeshHarness:
                 repository="Goldkelch/qik-vrt",
                 instance_id="authority-instance-b",
                 root_tree_sha=authority_tree,
+                proof_contract={
+                    "policy_id": OUTPUT_POLICY_ID,
+                    "article_binding": canonical_article_identity(),
+                    "ontological_origin_proof_binding": canonical_origin_proof_identity(),
+                    "knowledge_artifacts_binding": canonical_knowledge_artifacts_identity(),
+                },
             ),
             NodeIdentity(
                 node_id="pair-b-mirror",
@@ -1102,6 +1227,12 @@ class MeshHarness:
                 repository="ingolf-lohmann/qik-vrt",
                 instance_id="mirror-instance-b",
                 root_tree_sha=mirror_tree,
+                proof_contract={
+                    "policy_id": OUTPUT_POLICY_ID,
+                    "article_binding": canonical_article_identity(),
+                    "ontological_origin_proof_binding": canonical_origin_proof_identity(),
+                    "knowledge_artifacts_binding": canonical_knowledge_artifacts_identity(),
+                },
             ),
         ]
         self.nodes = {
@@ -1207,7 +1338,7 @@ def reobserve_route(
             raise MeshRuntimeError(
                 f"node {node_id} hop receipt hash mismatch"
             )
-        if completed != terminal:
+        if strip_output_binding(completed) != strip_output_binding(terminal):
             raise MeshRuntimeError(
                 f"node {node_id} terminal response mismatch"
             )
@@ -1413,7 +1544,36 @@ def run_demo(
             "external_effect": "NONE",
             "receipt_created_utc": utc_now(),
         }
+        receipt = bind_output(
+            receipt,
+            node_id="real-mesh-harness",
+            repository="Goldkelch/qik-vrt",
+            subject={"source_head": source_head, "source_tree": source_tree},
+            claim_kind="SOURCE_BOUND",
+            statement="Bounded real-mesh execution receipt with explicit epistemic and effect boundaries.",
+            assumptions=["LOOPBACK_TCP_ONLY"],
+            definitions=["QIKVRT_REAL_MULTI_PAIR_MESH_V1"],
+            dependencies=[],
+            exclusions=[
+                "general internet reachability",
+                "production deployment",
+                "physical hardware execution",
+                "authority/mirror synchronization",
+                "general EFFECT_ACK_DONE",
+            ],
+            evidence_refs=[
+                item
+                for route in receipt["routes"]
+                for item in route["observation"]["hop_receipt_sha256s"]
+            ],
+            epistemic_state="RUNTIME_EVIDENCE",
+            effect_state="CONTINUE",
+            transport_ack=True,
+            effect_ack_done=False,
+            new_difference="REAL_MESH_EXECUTION_REOBSERVED",
+        )
         receipt["receipt_sha256"] = canonical_sha256(receipt)
+        validate_output(receipt)
         return receipt
 
 

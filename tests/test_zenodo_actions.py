@@ -38,6 +38,33 @@ def json_response(status: int, value: object) -> zenodo.HttpResponse:
     )
 
 
+
+class LegacyMetadataNormalizationTests(unittest.TestCase):
+    def test_legacy_curly_quote_normalization_is_accepted(self) -> None:
+        self.assertTrue(
+            zenodo._metadata_matches(
+                {"description": 'A "difference" and \'effect\''},
+                {"description": "A “difference” and ‘effect’"},
+            )
+        )
+
+    def test_legacy_german_low_quote_normalization_is_accepted(self) -> None:
+        self.assertTrue(
+            zenodo._metadata_matches(
+                {"description": 'Der Satz "Am Anfang" bleibt gebunden.'},
+                {"description": "Der Satz „Am Anfang“ bleibt gebunden."},
+            )
+        )
+
+    def test_legacy_quote_normalization_does_not_weaken_wording(self) -> None:
+        self.assertFalse(
+            zenodo._metadata_matches(
+                {"description": 'A "different" claim'},
+                {"description": "A “difference” claim"},
+            )
+        )
+
+
 class FakeZenodoTransport:
     """Small stateful legacy-API simulation; it never uses the network."""
 

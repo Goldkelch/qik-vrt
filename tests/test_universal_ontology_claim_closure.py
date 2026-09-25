@@ -62,7 +62,7 @@ class UniversalOntologyClaimClosureTests(unittest.TestCase):
             if claim["kind"] == "FORMAL_THEOREM"
         ]
         constants = [claim["proof_constant"] for claim in formal]
-        self.assertEqual(len(constants), 32)
+        self.assertEqual(len(constants), 35)
         self.assertEqual(len(constants), len(set(constants)))
         self.assertEqual(set(constants), self.audited_constants(AUDIT))
 
@@ -70,8 +70,8 @@ class UniversalOntologyClaimClosureTests(unittest.TestCase):
         core = self.audited_constants(AUDIT)
         extended = self.audited_constants(EXTENDED_AUDIT)
         extra = extended - core
-        self.assertEqual(len(core), 32)
-        self.assertEqual(len(extended), 71)
+        self.assertEqual(len(core), 35)
+        self.assertEqual(len(extended), 74)
         self.assertEqual(len(extra), 39)
         self.assertEqual(
             sum(name.startswith("QIKVRT.V2.QuantumFoundations.") for name in extra),

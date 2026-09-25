@@ -16,6 +16,9 @@ import QIKVRTFormalization
 #print axioms QIKVRT.UniversalOntology.ontologyPrecedes_irrefl
 #print axioms QIKVRT.UniversalOntology.ontologyPrecedes_trans
 #print axioms QIKVRT.UniversalOntology.information_preserves_difference
+#print axioms QIKVRT.UniversalOntology.determinateReality_requires_difference
+#print axioms QIKVRT.UniversalOntology.noDifference_excludes_determinateReality
+#print axioms QIKVRT.UniversalOntology.noDifference_excludes_information
 #print axioms QIKVRT.UniversalOntology.causalModel_is_relational
 #print axioms QIKVRT.UniversalOntology.epistemicChain_length
 #print axioms QIKVRT.UniversalOntology.epistemicChain_pairwise
