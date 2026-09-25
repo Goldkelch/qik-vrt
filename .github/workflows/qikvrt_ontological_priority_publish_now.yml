@@ -3,6 +3,7 @@
 # retry-self-disclosure-v2
 
 name: Publish ontological priority to Zenodo now
+# publication-trigger: 2026-09-25T08:50Z
 
 on:
   push:
@@ -31,6 +32,7 @@ jobs:
       SOURCE_HEAD: 8225b8238b592d61b4d7c7e45e4cf804c1354843
       KERNEL_ARTIFACT_ID: "10854405579"
       PREPUBLICATION_ARTIFACT_ID: "10853874569"
+      ZENODO_API_BASE: https://zenodo.org/api
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONNOUSERSITE: "1"
 
@@ -91,7 +93,7 @@ jobs:
 
           git config user.name 'qik-vrt-zenodo-publication[bot]'
           git config user.email 'qik-vrt-zenodo-publication[bot]@users.noreply.github.com'
-          git add --             "$RELEASE/UNIVERSAL_ONTOLOGY_KERNEL_RECEIPT.json"             "$RELEASE/PREPUBLICATION_GATE_RECEIPT.json"             "$RELEASE/KERNEL_RECEIPT.json"             "$RELEASE/SOURCE_EVIDENCE_BINDINGS_V2.json"             "$RELEASE/CLAIM_MATRIX_V2.json"             "$RELEASE/PREPUBLICATION_RETURN_RECEIPT_V2.json"             "$RELEASE/MACHINE_PROOF_BUNDLE.json"             "$RELEASE/OWNER_ZENODO_AUTHORIZATION.json"             "$RELEASE/publish-request.json"             REPOSITORY_FILE_MANIFEST.json             REPOSITORY_FILE_MANIFEST.json.sha256             SHA256SUMS.txt
+          git add --             "$RELEASE/UNIVERSAL_ONTOLOGY_KERNEL_RECEIPT.json"             "$RELEASE/PREPUBLICATION_GATE_RECEIPT.json"             "$RELEASE/KERNEL_RECEIPT.json"             "$RELEASE/SOURCE_EVIDENCE_BINDINGS_V2.json"             "$RELEASE/CLAIM_MATRIX_V2.json"             "$RELEASE/PREPUBLICATION_RETURN_RECEIPT_V2.json"             "$RELEASE/MACHINE_PROOF_BUNDLE.json"             "$RELEASE/OWNER_ZENODO_AUTHORIZATION.json"             "$RELEASE/publish-request.json"             "$RELEASE/FINAL_UPLOAD_AUTHORIZATION.json"             REPOSITORY_FILE_MANIFEST.json             REPOSITORY_FILE_MANIFEST.json.sha256             SHA256SUMS.txt
           git diff --cached --check
           git commit -m 'zenodo: materialize ontological-priority execution subject'
           execution_head="$(git rev-parse HEAD)"
