@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression coverage for the consolidated 32-theorem kernel."""
+"""Regression coverage for the consolidated 35-theorem kernel."""
 from __future__ import annotations
 
 import json
@@ -19,7 +19,7 @@ class UnifiedWorldFormulaConsolidationTests(unittest.TestCase):
     def load(self, path: pathlib.Path):
         return json.loads(path.read_text(encoding="utf-8"))
 
-    def test_union_contains_exactly_32_unique_theorem_constants(self):
+    def test_union_contains_exactly_35_unique_theorem_constants(self):
         matrices = [self.load(ONTOLOGY), self.load(WORLD)]
         constants = [
             claim["proof_constant"]
@@ -27,7 +27,7 @@ class UnifiedWorldFormulaConsolidationTests(unittest.TestCase):
             for claim in matrix["claims"]
             if claim["kind"] == "FORMAL_THEOREM"
         ]
-        self.assertEqual(len(constants), 32)
+        self.assertEqual(len(constants), 35)
         self.assertEqual(len(constants), len(set(constants)))
         audited = {
             line.strip().removeprefix("#print axioms ")
