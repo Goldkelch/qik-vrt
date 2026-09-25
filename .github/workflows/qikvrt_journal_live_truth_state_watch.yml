@@ -157,39 +157,73 @@ jobs:
           retention-days: 30
 
   materialize-pr-self-test-integrity:
-    if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'github-actions[bot]'
     needs: observe
     permissions:
-      actions: write
-      contents: read
+      contents: write
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
+    env:
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
     steps:
-      - name: Dispatch canonical repository integrity materializer
-        env:
-          GH_TOKEN: ${{ github.token }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      - name: Check out exact PR head for deterministic integrity only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_HEAD }}
+          fetch-depth: 2
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Regenerate and verify only canonical repository integrity
         shell: bash
         run: |
           set -euo pipefail
-          live_head="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${HEAD_REF}" --jq '.object.sha')"
-          test "$live_head" = "$EXPECTED_HEAD"
-          gh api --method POST \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_batch04_integrity.yml/dispatches" \
-            -f ref="$HEAD_REF"
-          mkdir -p "$RUNNER_TEMP/qikvrt-journal-live-watch-self-test"
-          jq -n \
-            --arg repository "$GITHUB_REPOSITORY" \
-            --arg head_ref "$HEAD_REF" \
-            --arg head_sha "$EXPECTED_HEAD" \
-            '{schema:"qikvrt.journal-live-truth-state-self-test-dispatch.v1",repository:$repository,head_ref:$head_ref,head_sha:$head_sha,state:"INTEGRITY_MATERIALIZATION_DISPATCH_REQUESTED",issue_1229_mutation:"DISABLED",journal_source_mutation:"NOT_PERFORMED",publication_promotion:"HOLD",legal_readiness:"HOLD",effect_ack_done:false}' \
-            > "$RUNNER_TEMP/qikvrt-journal-live-watch-self-test/integrity-dispatch-receipt.json"
-      - name: Preserve self-test dispatch receipt
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: qikvrt-journal-live-watch-self-test-dispatch-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/qikvrt-journal-live-watch-self-test/integrity-dispatch-receipt.json
-          if-no-files-found: error
-          retention-days: 30
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          python3 -B - <<'PY'
+          import subprocess
+          allowed={
+              "REPOSITORY_FILE_MANIFEST.json",
+              "REPOSITORY_FILE_MANIFEST.json.sha256",
+              "SHA256SUMS.txt",
+          }
+          changed=set(subprocess.check_output(
+              ["git","diff","--name-only","--"], text=True
+          ).splitlines())
+          if not changed:
+              raise SystemExit("BLOCK: self-test successor produced no integrity delta")
+          if not changed <= allowed:
+              raise SystemExit(f"BLOCK: out-of-scope self-test materialization: {sorted(changed-allowed)}")
+          PY
+
+      - name: Persist exact-head integrity successor only
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_head="$(git rev-parse --verify HEAD^{commit})"
+          test "$source_head" = "$EXPECTED_HEAD"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
+          test "$remote_head" = "$source_head"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --             REPOSITORY_FILE_MANIFEST.json             REPOSITORY_FILE_MANIFEST.json.sha256             SHA256SUMS.txt
+          test -z "$(git diff --name-only --)"
+          staged="$(git diff --cached --name-only)"
+          test -n "$staged"
+          if printf '%s\n' "$staged" | grep -Ev '^(REPOSITORY_FILE_MANIFEST\.json|REPOSITORY_FILE_MANIFEST\.json\.sha256|SHA256SUMS\.txt)$'; then
+            echo "BLOCK: staged path outside integrity trio" >&2
+            exit 2
+          fi
+          git commit -m "ci: materialize journal watch self-test integrity"
+          remote_head_after_commit="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
+          test "$remote_head_after_commit" = "$source_head"
+          git push origin "HEAD:$HEAD_REF"
