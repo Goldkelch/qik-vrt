@@ -81,7 +81,24 @@ def _minimal_receipt(*, overrides: dict | None = None) -> dict:
     }
     if overrides:
         base.update(overrides)
-    return base
+    return mesh.bind_output(
+        base,
+        node_id="test-mesh-harness",
+        repository="Goldkelch/qik-vrt",
+        subject={"source_head": SOURCE_HEAD, "source_tree": SOURCE_TREE},
+        claim_kind="SOURCE_BOUND",
+        statement="Synthetic bounded mesh receipt for system-verification contract tests.",
+        assumptions=["LOOPBACK_TCP_ONLY"],
+        definitions=["QIKVRT_REAL_MULTI_PAIR_MESH_V1"],
+        dependencies=[],
+        exclusions=["general EFFECT_ACK_DONE", "physical correspondence"],
+        evidence_refs=[],
+        epistemic_state="RUNTIME_EVIDENCE",
+        effect_state="CONTINUE",
+        transport_ack=True,
+        effect_ack_done=False,
+        new_difference="TEST_RECEIPT_MATERIALIZED",
+    )
 
 
 class VerifyReceiptPureContractTests(unittest.TestCase):
