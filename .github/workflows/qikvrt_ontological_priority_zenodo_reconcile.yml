@@ -30,6 +30,7 @@ jobs:
       EXPECTED_DOI: 10.5281/zenodo.22955727
       CONSUMPTION_REF: refs/tags/qikvrt-zenodo-auth/c4531212abf09363c5eb1e82042d73a41c7d959de9f9254f7b9b2f3d79690ddf
       EXPECTED_TAG_OBJECT: 41cca9fb908bd818e5eb6dc9ae616151619c73b7
+      EXPECTED_RECOVERY_TRANSPORT_BLOB: 3810f2764b04dc8f468f596e74caa141d56272e7
       MANIFEST_PATH: release/ontological-priority-of-difference-zenodo-v1/publish-request.json
       EVIDENCE_PATH: release/ontological-priority-of-difference-zenodo-v1/zenodo-publication.json
       ZENODO_API_BASE: https://zenodo.org/api
@@ -92,6 +93,12 @@ jobs:
           chmod 600 "$target/$EVIDENCE_PATH"
           test "$(sha256sum "$target/$EVIDENCE_PATH" | awk '{print $1}')" = "$EXPECTED_EVIDENCE_SHA256"
           test -f "$target/$MANIFEST_PATH"
+
+          # Recovery-only transport overlay: exact committed quote-normalization fix.
+          test "$(git hash-object tools/qikvrt_zenodo_actions.py)" = "$EXPECTED_RECOVERY_TRANSPORT_BLOB"
+          cp tools/qikvrt_zenodo_actions.py "$target/tools/qikvrt_zenodo_actions.py"
+          test "$(git -C "$target" hash-object tools/qikvrt_zenodo_actions.py)" = "$EXPECTED_RECOVERY_TRANSPORT_BLOB"
+
           echo "path=$target" >> "$GITHUB_OUTPUT"
 
       - name: Probe current Zenodo draft normalization
