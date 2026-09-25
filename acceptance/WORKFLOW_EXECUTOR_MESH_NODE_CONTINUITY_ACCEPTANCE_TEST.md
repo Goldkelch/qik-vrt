@@ -14,21 +14,27 @@ controller and preserves the same boundaries at the node edge.
 
 1. Bind the node to the Authority contract at
    `state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json`.
-2. Materialize, in the new node, the receipt at
-   `state/autonomy/WORKFLOW_EXECUTOR_MESH_NODE_RECEIPT_V1.json` from:
+2. Bind the node to the canonical proof-and-thought policy, article and output
+   carrier registry, then materialize the node receipt through the mandatory
+   fail-closed wrapper:
 
    ```sh
-   python3 -B tools/qikvrt_workflow_executor.py node-receipt-template \
-     --node-repository OWNER/REPOSITORY --node-branch BRANCH --json
+   python3 -B tools/qikvrt_mesh_node_receipt.py build \
+     --node-repository OWNER/REPOSITORY --node-branch BRANCH \
+     > state/autonomy/WORKFLOW_EXECUTOR_MESH_NODE_RECEIPT_V1.json
    ```
 
-3. Run the structural node receipt check:
+3. Run the combined structural and proof/thought binding check:
 
    ```sh
-   python3 -B tools/qikvrt_workflow_executor.py validate-node-receipt \
+   python3 -B tools/qikvrt_mesh_node_receipt.py validate \
      --receipt state/autonomy/WORKFLOW_EXECUTOR_MESH_NODE_RECEIPT_V1.json \
-     --node-repository OWNER/REPOSITORY --node-branch BRANCH --json
+     --node-repository OWNER/REPOSITORY --node-branch BRANCH
    ```
+
+   The underlying workflow-executor payload remains unchanged; the wrapper adds
+   and validates the reserved `_qikvrt_epistemic_output` binding. An unbound
+   legacy receipt is not admissible for a newly accepted Mesh node.
 
 4. Add the node only through the declared queue.  Its registration request
    must contain the `workflow_executor_continuity` declaration, whose receipt
@@ -44,8 +50,8 @@ contract, executor bindings, dynamic workflow-inventory delta, safe dispatch
 envelope, receipt validation, and watcher boundaries.
 
 `tests/test_seed_workflows.py` proves that a future queue node without the
-continuity declaration is blocked and that an exact, structurally valid receipt
-is required before Seed acceptance.
+continuity declaration is blocked and that an exact, structurally valid,
+canonically article-bound receipt is required before Seed acceptance.
 
 The `workflow-executor-mesh-contract` Make target runs both tests and an
 exact-head snapshot.  The watchdog runs them again on a candidate pull request
