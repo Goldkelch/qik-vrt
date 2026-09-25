@@ -33,7 +33,9 @@ import urllib.request
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
-from qikvrt_transfer_parts import DEFAULT_PART_BYTES, describe, part_size, receive_file
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from qikvrt_transfer_parts import (DEFAULT_PART_BYTES, MAX_MANIFEST_BYTES, MIB,
+                                   describe, part_size, receive_file, validate_file)
 
 FILES = {"kernel": "qikvrt-megast-vmlinuz", "initrd": "qikvrt-megast-initrd",
          "rootfs": "qikvrt-megast-filesystem.squashfs", "m68000": "QIKVRT_BOOT.BIN"}
@@ -295,17 +297,17 @@ def validate_manifest(manifest: dict, max_part_bytes: int = DEFAULT_PART_BYTES) 
         raise ValueError("invalid exact source tree")
     if manifest.get("boot_method") != "linux-live-http" or set(manifest.get("files", {})) != set(FILES):
         raise ValueError("unsupported boot method/files")
+    part_size(max_part_bytes)
+    limit = part_size(manifest.get("part_bytes")) if manifest["schema"] == "qikvrt_netboot_v2" else DEFAULT_PART_BYTES
+    if limit > max_part_bytes:
+        raise ValueError("sender part size exceeds receiver limit")
     for kind, name in FILES.items():
         entry = manifest["files"][kind]
         if entry.get("name") != name or not HEX64.fullmatch(entry.get("sha256", "")):
             raise ValueError("unbound file identity")
-        size = entry.get("bytes")
-        if type(size) is not int or size <= 0:
-            raise ValueError("file size outside contract")
-        if manifest.get("schema") == "qikvrt_netboot_v2":
-            if manifest.get("part_bytes") != max_part_bytes:
-                raise ValueError("sender part profile exceeds receiver contract")
-            part_size(max_part_bytes)
+        if manifest["schema"] == "qikvrt_netboot_v1" and "parts" in entry:
+            raise ValueError("legacy manifest cannot describe parts")
+        validate_file(name, entry, limit)
 
 
 def make_manifest(directory: Path, source_sha: str, source_tree: str | None = None,
@@ -418,19 +420,20 @@ def install_codex(lock_path: Path, destination: Path, cache: Path) -> dict:
     return receipt
 
 
-def receive(url: str, expected: str, directory: Path) -> dict:
+def receive(url: str, expected: str, directory: Path, max_part_bytes: int = DEFAULT_PART_BYTES) -> dict:
     if not HEX64.fullmatch(expected):
         raise ValueError("supply the expected manifest SHA256")
     safe_url(url)
     directory.mkdir(parents=True, exist_ok=True)
     with urllib.request.urlopen(url, timeout=30) as response:
-        raw = response.read(65537)
-    if len(raw) > 65536 or hashlib.sha256(raw).hexdigest() != expected:
+        raw = response.read(MAX_MANIFEST_BYTES + 1)
+    if len(raw) > MAX_MANIFEST_BYTES or hashlib.sha256(raw).hexdigest() != expected:
         raise ValueError("manifest digest/size mismatch")
     manifest = json.loads(raw)
-    validate_manifest(manifest)
+    validate_manifest(manifest, max_part_bytes)
     for entry in manifest["files"].values():
-        download(urllib.parse.urljoin(url, entry["name"]), directory / entry["name"], entry["sha256"], entry["bytes"])
+        receive_file(url.rsplit("/", 1)[0], entry["name"], entry, directory, download,
+                     manifest.get("part_bytes", DEFAULT_PART_BYTES))
     (directory / "qikvrt-netboot.json").write_bytes(raw)
     return manifest
 
@@ -499,13 +502,14 @@ class ImageHTTPHandler(http.server.SimpleHTTPRequestHandler):
 
 
 def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bool = False,
+         max_part_bytes: int = DEFAULT_PART_BYTES,
          ssh_public_key: Path | None = None, ssh_identity: Path | None = None,
          ssh_port: int = 2222, ssh_reject_identity: Path | None = None) -> dict:
     # These fixed paths describe the current attempt, never an earlier boot.
     for name in ("qikvrt-netboot-receipt.json", "qikvrt-netboot-failure.json",
                  "qikvrt-netboot-ssh-receipt.json", "qikvrt-netboot-known-hosts"):
         (directory / name).unlink(missing_ok=True)
-    validate_manifest(manifest)
+    validate_manifest(manifest, max_part_bytes)
     netdev = "user,id=network"
     firmware = []
     if ssh_public_key is not None:
@@ -610,9 +614,11 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("chatgpt-connect")
     make = sub.add_parser("manifest"); make.add_argument("directory", type=Path); make.add_argument("source_sha"); make.add_argument("--source-tree")
+    make.add_argument("--part-mib", type=int, default=2048, help="application transfer part size; default 2048 MiB")
     client = sub.add_parser("receive"); client.add_argument("url"); client.add_argument("sha256"); client.add_argument("directory", type=Path); client.add_argument("--boot", action="store_true"); client.add_argument("--verify-only", action="store_true")
     execute = sub.add_parser("boot"); execute.add_argument("directory", type=Path); execute.add_argument("--verify-only", action="store_true")
     for command in (client, execute):
+        command.add_argument("--max-part-mib", type=int, default=2048, help="maximum accepted sender part size")
         command.add_argument("--ssh-public-key", type=Path)
         command.add_argument("--ssh-identity", type=Path)
         command.add_argument("--ssh-reject-identity", type=Path)
@@ -636,13 +642,15 @@ def main() -> int:
         directory = args.directory.resolve()
         ssh_options = {key: getattr(args, key) for key in ("ssh_public_key", "ssh_identity", "ssh_reject_identity", "ssh_port")} if args.command in ("receive", "boot") else {}
         if args.command == "manifest":
-            make_manifest(directory, args.source_sha, args.source_tree)
+            make_manifest(directory, args.source_sha, args.source_tree, args.part_mib * MIB)
         elif args.command == "receive":
-            manifest = receive(args.url, args.sha256, directory)
+            manifest = receive(args.url, args.sha256, directory, args.max_part_mib * MIB)
             if args.boot:
-                boot(directory, manifest, verify_only=args.verify_only, **ssh_options)
+                boot(directory, manifest, verify_only=args.verify_only,
+                     max_part_bytes=args.max_part_mib * MIB, **ssh_options)
         elif args.command == "boot":
-            boot(directory, json.loads((directory / "qikvrt-netboot.json").read_text()), verify_only=args.verify_only, **ssh_options)
+            boot(directory, json.loads((directory / "qikvrt-netboot.json").read_text()),
+                 verify_only=args.verify_only, max_part_bytes=args.max_part_mib * MIB, **ssh_options)
         else:
             with BootDatagramServer((args.host, args.port), (directory / "QIKVRT_BOOT.BIN").read_bytes()) as server:
                 server.serve_forever()
