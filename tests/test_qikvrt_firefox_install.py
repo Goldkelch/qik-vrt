@@ -48,7 +48,7 @@ class FirefoxLicenseAcceptanceTest(unittest.TestCase):
             self.assertFalse(result["activation_claimed"])
 
     def test_notice_explains_scope_and_reason_for_acceptance(self):
-        notice = render_notice()
+        notice = " ".join(render_notice().split())
         self.assertIn("Free private/personal use", notice)
         self.assertIn("Ordinary commercial use is not licensed", notice)
         self.assertIn("Why this acceptance gate exists", notice)
