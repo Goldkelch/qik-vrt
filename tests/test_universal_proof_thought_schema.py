@@ -143,6 +143,18 @@ class UniversalProofThoughtSchemaTests(unittest.TestCase):
         self.assertIn("policy/QIKVRT_UNIVERSAL_PROOF_THOUGHT_SCHEMA_V1.json", order)
         self.assertIn("docs/QIKVRT_UNIVERSAL_PROOF_AND_THOUGHT_SCHEMA_DE.md", order)
         self.assertIn("docs/ONTOLOGICAL_ORIGIN_OF_DIFFERENCE_DE.md", order)
+        self.assertIn(
+            "state/mesh/QIKVRT_REQUIRED_KNOWLEDGE_ARTIFACTS_20260925_V1.json",
+            order,
+        )
+        self.assertIn(
+            "docs/publications/2026-09-25-leibniz-qikvrt/PROSA_VOM_UNTERSCHIED_ZU_QIKVRT_DE.md",
+            order,
+        )
+        self.assertIn(
+            "docs/publications/2026-09-25-leibniz-qikvrt/SCIENTIFIC_ARTICLE_LEIBNIZ_QIKVRT_DE.md",
+            order,
+        )
         ai = (ROOT / "AI").read_text(encoding="utf-8")
         self.assertIn("QIKVRT-UNIVERSAL-PROOF-THOUGHT-SCHEMA-V1", ai)
         self.assertIn("every node-generated output", ai)
@@ -209,6 +221,7 @@ class UniversalProofThoughtSchemaTests(unittest.TestCase):
             self.assertEqual(carrier["enforcement"], "FAIL_CLOSED")
             self.assertTrue(carrier["article_binding_required"])
             self.assertTrue(carrier["ontological_origin_proof_binding_required"])
+            self.assertTrue(carrier["required_knowledge_artifacts_binding_required"])
 
 
 if __name__ == "__main__":
