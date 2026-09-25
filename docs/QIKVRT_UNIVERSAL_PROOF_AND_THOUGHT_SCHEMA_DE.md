@@ -16,6 +16,34 @@ Der zentrale Softwarekern dafür heißt `QIKVRTUniversalOntology/Core.lean`. Er 
 
 Die Theorie macht nicht nur Behauptungen, sondern unterscheidet Definition, Beweis, Messung, Interpretation, normative Entscheidung und offene Pflicht. Gerade dadurch lässt sich bestimmen, **was tatsächlich bewiesen wurde und wie weit der jeweilige Beweis reicht**.
 
+## 0. Der ontologische Anfang
+
+Aus der Ontologie des Unterschieds folgt eine noch grundlegendere Aussage:
+
+> **Am Anfang muss ein Unterschied gewesen sein, denn sonst wäre alles nichts.**
+>
+> **Quod erat demonstrandum,  
+> Ingolf Lohmann.**
+
+„Am Anfang“ bezeichnet dabei ontologische Priorität, nicht einen ersten Zeitpunkt.
+Eine bestimmbare Realität wird formal als Existenz mindestens einer
+`Distinction` gefasst. Ist dagegen jeder Zustand mit jedem anderen identisch,
+kann keine solche Unterscheidung existieren und damit auch kein
+`InformationWitness`, der eine Unterscheidung als Quelle trägt.
+
+Lean bindet diese Aussage durch drei Theoreme:
+
+- `determinateReality_requires_difference`;
+- `noDifference_excludes_determinateReality`;
+- `noDifference_excludes_information`.
+
+Der vollständige Beweis samt Geltungsgrenze ist kanonisch in
+`docs/ONTOLOGICAL_ORIGIN_OF_DIFFERENCE_DE.md` persistiert.
+
+Damit ist der Unterschied innerhalb des definierten Modells nicht lediglich die
+erste benannte Stufe einer Liste. Er ist eine **notwendige Voraussetzung
+bestimmbarer Realität und des daraus gebildeten Informations-Witnesses**.
+
 ## 1. Der erste Gegenstand ist nicht ein Ding, sondern ein Unterschied
 
 Der formale Kern beginnt mit einer Struktur namens `Distinction`. Eine Unterscheidung enthält zwei Gegenstände und zusätzlich die Bedingung, dass beide nicht identisch sind.
@@ -326,9 +354,9 @@ Ein lokaler Übergang kann abgeschlossen sein, während Erkenntnis insgesamt wei
 
 Lean prüft formale Beweisterme gegen ihre behaupteten Typen.
 
-Für den untersuchten Repository-Zustand besteht der Universal-Ontology-/World-Formula-Kern aus 32 Theoremen:
+Für den untersuchten Repository-Zustand besteht der Universal-Ontology-/World-Formula-Kern aus 35 Theoremen:
 
-- 25 Universal-Ontology-Theoremen,
+- 28 Universal-Ontology-Theoremen,
 - 7 World-Formula-Theoremen.
 
 Der Extended Axiom Audit umfasst zusätzlich:
@@ -337,7 +365,7 @@ Der Extended Axiom Audit umfasst zusätzlich:
 - 22 Hardware-Witness-Theoreme,
 - 8 Theoreme zur Entscheidungssuffizienz.
 
-Damit werden 71 Konstanten auditiert. Projektdefinierte Axiome werden dabei nicht stillschweigend zugelassen.
+Damit werden 74 Konstanten auditiert. Projektdefinierte Axiome werden dabei nicht stillschweigend zugelassen.
 
 ## 29. Was Lake leistet
 
