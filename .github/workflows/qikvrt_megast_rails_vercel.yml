@@ -160,14 +160,7 @@ jobs:
           python3 -B tools/qikvrt_integrity.py verify
 
           mapfile -t changed < <(git diff --name-only)
-          allowed='^(REPOSITORY_FILE_MANIFEST\.json|REPOSITORY_FILE_MANIFEST\.json\.sha256|SHA256SUMS\.txt)        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: qikvrt-megast-rails-vercel-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ env.EVIDENCE_ROOT }}
-          retention-days: 30
-          if-no-files-found: error
-
+          allowed='^(REPOSITORY_FILE_MANIFEST\.json|REPOSITORY_FILE_MANIFEST\.json\.sha256|SHA256SUMS\.txt)$'
           for changed_path in "${changed[@]}"; do
             printf '%s\n' "$changed_path" | grep -Eq "$allowed" || {
               echo "BLOCK: unexpected materializer delta: $changed_path" >&2
