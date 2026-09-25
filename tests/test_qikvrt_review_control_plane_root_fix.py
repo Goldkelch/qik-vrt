@@ -35,6 +35,9 @@ class RequestedReviewControlPlaneRootFixTests(unittest.TestCase):
         self.assertIn("SUBJECT_HEAD_SHA: ${{ steps.decision.outputs.head }}", text)
         self.assertIn("str(intent.get('pr_number')) != os.environ['SUBJECT_PR_NUMBER']", text)
         self.assertIn("intent.get('head_sha') != os.environ['SUBJECT_HEAD_SHA']", text)
+        self.assertIn("subject_queue_prefix=(", text)
+        self.assertIn("path.startswith(subject_queue_prefix)", text)
+        self.assertNotIn("path.startswith(f'{REVIEW_QUEUE_ROOT}/') and path.endswith('.json')", text)
 
     def test_transport_does_not_bind_moving_base_tip(self):
         text=(ROOT/".github/workflows/qikvrt_requested_review_executor.yml").read_text()
