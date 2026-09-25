@@ -46,6 +46,7 @@ class RealMeshPureContractTests(unittest.TestCase):
                         "policy_id": mesh.OUTPUT_POLICY_ID,
                         "article_binding": mesh.canonical_article_identity(),
                         "ontological_origin_proof_binding": mesh.canonical_origin_proof_identity(),
+                        "knowledge_artifacts_binding": mesh.canonical_knowledge_artifacts_identity(),
                     },
                     "host": "127.0.0.1",
                     "port": 20000 + index,
