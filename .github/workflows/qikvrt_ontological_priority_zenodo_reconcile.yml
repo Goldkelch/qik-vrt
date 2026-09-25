@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   reconcile:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     timeout-minutes: 45
     env:
       TARGET_EXECUTION_HEAD: 0763f0cc7d1a62e465c730d3e6786ae4cddf0287
@@ -62,7 +62,7 @@ jobs:
             find "$RUNNER_TEMP/recovery" -type f               -path "*/release/ontological-priority-of-difference-zenodo-v1/zenodo-publication.json"               -print -quit
           )"
           test -n "$recovery"
-          test "$(sha256sum "$recovery" | awk '{print $1}')" = "$EXPECTED_EVIDENCE_SHA256"
+          test "$(shasum -a 256 "$recovery" | awk '{print $1}')" = "$EXPECTED_EVIDENCE_SHA256"
           echo "RECOVERY_EVIDENCE=$recovery" >> "$GITHUB_ENV"
 
       - name: Verify immutable recovery boundary
@@ -91,7 +91,7 @@ jobs:
           mkdir -p "$target/$(dirname "$EVIDENCE_PATH")"
           cp "$RECOVERY_EVIDENCE" "$target/$EVIDENCE_PATH"
           chmod 600 "$target/$EVIDENCE_PATH"
-          test "$(sha256sum "$target/$EVIDENCE_PATH" | awk '{print $1}')" = "$EXPECTED_EVIDENCE_SHA256"
+          test "$(shasum -a 256 "$target/$EVIDENCE_PATH" | awk '{print $1}')" = "$EXPECTED_EVIDENCE_SHA256"
           test -f "$target/$MANIFEST_PATH"
 
           # Recovery-only transport overlay: exact committed quote-normalization fix.
