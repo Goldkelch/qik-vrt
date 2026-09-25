@@ -42,6 +42,11 @@ class RealMeshPureContractTests(unittest.TestCase):
                     "repository": repository,
                     "instance_id": f"instance-{index}",
                     "root_tree_sha": ("a" if role == "AUTHORITY" else "b") * 40,
+                    "proof_contract": {
+                        "policy_id": mesh.OUTPUT_POLICY_ID,
+                        "article_binding": mesh.canonical_article_identity(),
+                        "ontological_origin_proof_binding": mesh.canonical_origin_proof_identity(),
+                    },
                     "host": "127.0.0.1",
                     "port": 20000 + index,
                 }
@@ -103,6 +108,11 @@ class RealMeshNetworkTests(unittest.TestCase):
                 source_tree=SOURCE_TREE,
             )
         self.assertEqual(receipt["schema"], mesh.EXECUTION_RECEIPT_SCHEMA)
+        mesh.validate_output(receipt)
+        self.assertEqual(
+            receipt["_qikvrt_epistemic_output"]["ontological_origin_proof_binding"],
+            mesh.canonical_origin_proof_identity(),
+        )
         self.assertEqual(receipt["pair_count"], 2)
         self.assertEqual(receipt["node_process_count"], 4)
         self.assertEqual(receipt["transport"], "TCP")
