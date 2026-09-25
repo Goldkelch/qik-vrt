@@ -45,7 +45,7 @@ def main():
    rec=fetch_json(f"{API}/{rid}");(verified if creator_matches(rec) else mismatches).append(rid)
   except Exception as exc:errors.append({"record_id":rid,"error":str(exc)})
  discovered=set()
- for q in ('"Ingolf Lohmann"','"Lohmann, Ingolf"'):
+ for q in ('Ingolf Lohmann','Lohmann Ingolf'):
   try:
    for rec in search(q):discovered.add(record_id(rec))
   except Exception as exc:errors.append({"search_query":q,"error":str(exc)})
