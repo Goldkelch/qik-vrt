@@ -1,0 +1,105 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT ontological priority prepublication
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "docs/QIKVRT_UNIVERSAL_PROOF_AND_THOUGHT_SCHEMA_DE.md"
+      - "docs/ONTOLOGICAL_ORIGIN_OF_DIFFERENCE_DE.md"
+      - "docs/publications/2026-09-25-ontological-priority-of-difference/**"
+      - "formalization/QIKVRT_Formalization_v2.0/QIKVRTUniversalOntology/**"
+      - "formalization/QIKVRT_Formalization_v2.0/universal_ontology/CLAIM_MATRIX.json"
+      - "release/ontological-priority-of-difference-zenodo-v1/**"
+      - ".github/workflows/qikvrt_ontological_priority_prepublication.yml"
+  push:
+    branches-ignore: [main]
+    paths:
+      - "docs/QIKVRT_UNIVERSAL_PROOF_AND_THOUGHT_SCHEMA_DE.md"
+      - "docs/ONTOLOGICAL_ORIGIN_OF_DIFFERENCE_DE.md"
+      - "docs/publications/2026-09-25-ontological-priority-of-difference/**"
+      - "formalization/QIKVRT_Formalization_v2.0/QIKVRTUniversalOntology/**"
+      - "formalization/QIKVRT_Formalization_v2.0/universal_ontology/CLAIM_MATRIX.json"
+      - "release/ontological-priority-of-difference-zenodo-v1/**"
+      - ".github/workflows/qikvrt_ontological_priority_prepublication.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-ontological-priority-prepublication-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exact-head-prepublication:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact successor
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact HEAD and TREE
+        id: subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
+          head="$(git rev-parse HEAD)"
+          tree="$(git rev-parse HEAD^{tree})"
+          test "$head" = "$expected"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: formalization/QIKVRT_Formalization_v2.0
+          test: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Build universal ontology target
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        run: lake build QIKVRTUniversalOntology
+
+      - name: Execute 35-constant core axiom audit
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .lake/build
+          lake env lean QIKVRTUniversalOntology/AxiomAudit.lean             > .lake/build/ontological-priority-core-axioms.txt 2>&1
+          cat .lake/build/ontological-priority-core-axioms.txt
+
+      - name: Execute 74-constant extended axiom audit
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          lake env lean QIKVRTUniversalOntology/ExtendedAxiomAudit.lean             > .lake/build/ontological-priority-extended-axioms.txt 2>&1
+          cat .lake/build/ontological-priority-extended-axioms.txt
+
+      - name: Verify scientific and Zenodo content candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B             docs/publications/2026-09-25-ontological-priority-of-difference/verify_package.py             --core-axiom-output formalization/QIKVRT_Formalization_v2.0/.lake/build/ontological-priority-core-axioms.txt             --extended-axiom-output formalization/QIKVRT_Formalization_v2.0/.lake/build/ontological-priority-extended-axioms.txt             --output release/ontological-priority-of-difference-zenodo-v1/PREPUBLICATION_GATE_RECEIPT.json
+
+      - name: Upload prepublication evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ontological-priority-prepublication-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: error
+          path: |
+            release/ontological-priority-of-difference-zenodo-v1/PREPUBLICATION_GATE_RECEIPT.json
+            formalization/QIKVRT_Formalization_v2.0/.lake/build/ontological-priority-core-axioms.txt
+            formalization/QIKVRT_Formalization_v2.0/.lake/build/ontological-priority-extended-axioms.txt
