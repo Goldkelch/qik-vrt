@@ -98,7 +98,7 @@ class ExpectedHeadPromotionContractTests(unittest.TestCase):
         self.assertIn("qikvrt_ci.yml", workflow)
         self.assertIn("qikvrt_collective_review.yml", workflow)
         self.assertIn("qikvrt_global_completion.yml", workflow)
-        self.assertIn('"event":"workflow_dispatch"', workflow)
+        self.assertIn('event:"workflow_dispatch"', workflow)
         self.assertIn("FULL_AUTOMATION_INTEGRITY_SUCCESSOR", workflow)
         self.assertIn("steps.persist.outputs.successor", workflow)
         self.assertIn("REOBSERVE_DISPATCHED", workflow)
