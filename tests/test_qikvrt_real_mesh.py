@@ -163,7 +163,7 @@ class RealMeshNetworkTests(unittest.TestCase):
         self.assertEqual(receipt["effect_ack_scope"], mesh.EFFECT_ACK_SCOPE)
         self.assertEqual(receipt["external_effect"], "NONE")
         self.assertTrue(all(pair["state"] == "DIVERGED" for pair in receipt["pair_states"]))
-        projection = mesh.strip_output_binding(receipt)
+        projection = dict(receipt)
         stored_hash = projection.pop("receipt_sha256")
         self.assertEqual(stored_hash, mesh.canonical_sha256(projection))
 

@@ -4,7 +4,7 @@ Publication ID: `qikvrt-ontological-priority-of-difference-2026-v1`
 
 Frozen content aggregate:
 
-`d87d01654bd6d97b2d7509f066e39d5abb253754bfb75ba30e875ac38d09b715`
+`0549cff6cb8883fd3f75abc3002d0fe7917c5d6139adac2252bf1febd45cd1e1`
 
 Content files: **17**  
 Content bytes: **201710**
