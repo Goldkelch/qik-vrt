@@ -1,0 +1,98 @@
+name: QIKVRT Firefox MVP integrity carrier
+
+on:
+  push:
+    branches:
+      - work/firefox-mvp-main-successor-20260925
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-firefox-mvp-integrity-carrier
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      BOOTSTRAP: .github/workflows/qikvrt_firefox_mvp_integrity_carrier.yml
+      CARRIER_BRANCH: materialized/firefox-mvp-integrity-cbecb9e1
+      SOURCE_HEAD: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Bind exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$SOURCE_HEAD"
+          remote="$(git ls-remote --heads origin 'refs/heads/work/firefox-mvp-main-successor-20260925' | awk 'NR==1 {print $1}')"
+          test "$remote" = "$SOURCE_HEAD"
+      - name: Generate exact product-tree integrity projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -- "$BOOTSTRAP"
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py generate
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+          mkdir -p "$RUNNER_TEMP/qikvrt-firefox-integrity"
+          cp REPOSITORY_FILE_MANIFEST.json "$RUNNER_TEMP/qikvrt-firefox-integrity/manifest.json"
+          cp REPOSITORY_FILE_MANIFEST.json.sha256 "$RUNNER_TEMP/qikvrt-firefox-integrity/manifest.sha256"
+          cp SHA256SUMS.txt "$RUNNER_TEMP/qikvrt-firefox-integrity/SHA256SUMS.txt"
+          git add -A -- "$BOOTSTRAP" REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          tmp = pathlib.Path(os.environ['RUNNER_TEMP']) / 'qikvrt-firefox-integrity'
+          def sh(*args):
+              return subprocess.check_output(args, text=True).strip()
+          receipt = {
+              'schema': 'qikvrt_firefox_mvp_integrity_projection_v1',
+              'source_head': os.environ['SOURCE_HEAD'],
+              'source_tree_with_ephemeral_carrier': sh('git','rev-parse','HEAD^{tree}'),
+              'bootstrap_path_removed_before_generation': os.environ['BOOTSTRAP'],
+              'manifest_blob': sh('git','hash-object','REPOSITORY_FILE_MANIFEST.json'),
+              'detached_blob': sh('git','hash-object','REPOSITORY_FILE_MANIFEST.json.sha256'),
+              'index_blob': sh('git','hash-object','SHA256SUMS.txt'),
+              'projected_product_tree': sh('git','write-tree'),
+              'manifest_sha256': hashlib.sha256((tmp/'manifest.json').read_bytes()).hexdigest(),
+              'predecessor_evidence_transfer': False,
+              'effect_ack_done': False,
+          }
+          (tmp/'receipt.json').write_text(json.dumps(receipt, sort_keys=True, indent=2)+'\n', encoding='utf-8')
+          PY
+      - name: Persist projection blobs on bounded carrier branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote="$(git ls-remote --heads origin 'refs/heads/work/firefox-mvp-main-successor-20260925' | awk 'NR==1 {print $1}')"
+          test "$remote" = "$SOURCE_HEAD"
+          git reset --hard "$SOURCE_HEAD"
+          rm -f .qikvrt-integrity.lock
+          mkdir -p state/materialized/firefox-mvp-integrity
+          cp "$RUNNER_TEMP/qikvrt-firefox-integrity/manifest.json" state/materialized/firefox-mvp-integrity/REPOSITORY_FILE_MANIFEST.json
+          cp "$RUNNER_TEMP/qikvrt-firefox-integrity/manifest.sha256" state/materialized/firefox-mvp-integrity/REPOSITORY_FILE_MANIFEST.json.sha256
+          cp "$RUNNER_TEMP/qikvrt-firefox-integrity/SHA256SUMS.txt" state/materialized/firefox-mvp-integrity/SHA256SUMS.txt
+          cp "$RUNNER_TEMP/qikvrt-firefox-integrity/receipt.json" state/materialized/firefox-mvp-integrity/RECEIPT.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add state/materialized/firefox-mvp-integrity
+          git diff --cached --check
+          git commit -m 'ci(mvp): materialize Firefox successor integrity projection'
+          candidate="$(git rev-parse --verify HEAD^{commit})"
+          if [ -n "$(git ls-remote --heads origin "refs/heads/$CARRIER_BRANCH")" ]; then
+            echo 'BLOCK: carrier branch already exists' >&2
+            exit 2
+          fi
+          git push origin "$candidate:refs/heads/$CARRIER_BRANCH"
+          readback="$(git ls-remote --heads origin "refs/heads/$CARRIER_BRANCH" | awk 'NR==1 {print $1}')"
+          test "$readback" = "$candidate"
+          printf 'CARRIER_HEAD=%s\n' "$candidate"
+          cat "$RUNNER_TEMP/qikvrt-firefox-integrity/receipt.json"
+          printf 'PREDECESSOR_EVIDENCE_TRANSFER=false\nEFFECT_ACK_DONE=false\n'
