@@ -25,7 +25,7 @@ jobs:
     env:
       HEAD_REF: ${{ github.event.pull_request.head.ref }}
       EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
-      RECEIPT: ${{ runner.temp }}/qikvrt-full-automation-candidate-integrity.json
+      RECEIPT: /tmp/qikvrt-full-automation-candidate-integrity.json
     steps:
       - name: Check out exact full-automation candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -143,6 +143,6 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: qikvrt-full-automation-candidate-integrity-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/qikvrt-full-automation-candidate-integrity.json
+          path: /tmp/qikvrt-full-automation-candidate-integrity.json
           if-no-files-found: warn
           retention-days: 30
