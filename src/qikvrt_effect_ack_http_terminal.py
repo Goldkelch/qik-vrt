@@ -22,6 +22,10 @@ import time
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+try:
+    import qikvrt_multimedia
+except ModuleNotFoundError:
+    from src import qikvrt_multimedia
 
 MAX_BODY = 2 * 1024 * 1024
 TOKEN_TTL_SECONDS = 120
@@ -101,6 +105,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self)->None:
         self.send_response(204); self.send_header("Access-Control-Allow-Origin","https://github.com"); self.send_header("Access-Control-Allow-Headers","Content-Type, Effect-Ack-Request"); self.send_header("Access-Control-Allow-Methods","GET, POST, OPTIONS"); self.send_header("Content-Length","0"); self.end_headers()
     def do_GET(self)->None:
+        if qikvrt_multimedia.handle(self): return
         if self.path=="/.well-known/effect-ack": self._json(200,{"schema":"qikvrt_effect_ack_http_capability_v1","versions":[1],"modes":["prepare","commit"],"protected_effects":["terminal_input"],"external_effects":"NONE","record_template":"/effect-ack/records/{sha256}"}); return
         if self.path=="/terminal/state":
             head=git_read("rev-parse","HEAD"); tree=git_read("rev-parse","HEAD^{tree}")
@@ -115,6 +120,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._json(404,{"state":"HOLD","reason":"not found"})
     def do_POST(self)->None:
+        if qikvrt_multimedia.handle(self): return
         try:
             request_binding=parse_effect_ack_request(self.headers.get("Effect-Ack-Request")); body=self._read_body()
             if self.path=="/terminal/prepare":

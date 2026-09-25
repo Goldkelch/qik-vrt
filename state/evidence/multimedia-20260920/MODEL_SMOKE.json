@@ -1,0 +1,78 @@
+{
+  "schema": "qikvrt_multimedia_live_smoke_v1",
+  "state": "PASS",
+  "source_files": {
+    "src/qikvrt_multimedia.py": "d18482dca45d98275e5992794932c3718d5aca5ba6b71d31b57263b53ecf2b40",
+    "src/qikvrt_effect_ack_http_terminal.py": "4dfd76f10664d4d8e16b917bd7bc0059d0405dc9edddeb5c09f92f816dbee9db",
+    "runtime/toolchains/multimedia.lock.json": "a9a0b4aa99fc11f1c85134c4ec56eda4703b87ae0a8677f5cae0a9e5733b56a8",
+    "tests/run_multimedia_model_smoke.py": "872dbff2f25f9c5f12e55fb15a6cdec4c611230ce1e27155ba9245bcc837d92d"
+  },
+  "cases": [
+    {
+      "case": "text",
+      "http_status": 200,
+      "elapsed_seconds": 0.166,
+      "result": {
+        "audio_included": false,
+        "effect_ack_done": false,
+        "finish_reason": "stop",
+        "images": [],
+        "input_sha256": "7b7a1a5f54269f0b2bd746ae35226d63e9485325ff11e03bae462a09c1f095be",
+        "lock_sha256": "a9a0b4aa99fc11f1c85134c4ec56eda4703b87ae0a8677f5cae0a9e5733b56a8",
+        "model": "qikvrt-smolvlm2-500m",
+        "model_identity": "LOCAL_PROVIDER_REPORTED_ALIAS",
+        "ordinary_release": false,
+        "output_sha256": "d0fd08657050f97580908ca3cbc8fc5743456b636f84a6ead547b6353f8c5983",
+        "schema": "qikvrt_multimedia_proposal_v1",
+        "state": "UNVERIFIED_PROPOSAL",
+        "text": " Two plus two is four.",
+        "tools_executed": []
+      }
+    },
+    {
+      "case": "image",
+      "http_status": 200,
+      "elapsed_seconds": 2.628,
+      "result": {
+        "audio_included": false,
+        "effect_ack_done": false,
+        "finish_reason": "stop",
+        "images": [
+          {
+            "bytes": 80,
+            "height": 16,
+            "label": "synthetic red control image",
+            "sha256": "5503ff8fef5a4d87e1fe0bdc07254b11153a86debfa97500641c7abbf93357ef",
+            "width": 16
+          }
+        ],
+        "input_sha256": "e070a39f782dfab86b440b7efccb587d10a38ea9713a7644f42039f740e329b6",
+        "lock_sha256": "a9a0b4aa99fc11f1c85134c4ec56eda4703b87ae0a8677f5cae0a9e5733b56a8",
+        "model": "qikvrt-smolvlm2-500m",
+        "model_identity": "LOCAL_PROVIDER_REPORTED_ALIAS",
+        "ordinary_release": false,
+        "output_sha256": "293365a97c7b6da28e10c282ea2157f09af323cf451d968877ad135fdce76403",
+        "schema": "qikvrt_multimedia_proposal_v1",
+        "state": "UNVERIFIED_PROPOSAL",
+        "text": " The dominant color in the image is red.",
+        "tools_executed": []
+      }
+    },
+    {
+      "case": "digital-silence",
+      "http_status": 200,
+      "elapsed_seconds": 0.077,
+      "result": {
+        "duration_seconds": 1.0,
+        "effect_ack_done": false,
+        "engine": "bounded PCM decoder; Whisper not invoked for exact digital silence",
+        "input_sha256": "643f8a8dc8bd9c19225afffad2becfec5426180b3749cb208abdf1a6c8354efc",
+        "model_generation_performed": false,
+        "state": "NO_AUDIO_ENERGY",
+        "text": ""
+      }
+    }
+  ],
+  "scope": "Actual local CPU inference and HTTP transport. Synthetic image; optional silent WAV checks zero-energy rejection only, not recognition accuracy. No browser/ISO/deployment/full-system acceptance.",
+  "effect_ack_done": false
+}
