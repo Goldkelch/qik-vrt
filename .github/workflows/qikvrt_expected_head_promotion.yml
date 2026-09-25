@@ -27,9 +27,9 @@ on:
 
 permissions:
   actions: read
-  contents: read
-  pull-requests: read
-  statuses: read
+  contents: write
+  pull-requests: write
+  statuses: write
 
 concurrency:
   group: qikvrt-expected-head-promotion-${{ github.repository }}
@@ -44,6 +44,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       REPOSITORY: ${{ github.repository }}
       PROMOTION_MARKER: "<!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->"
+      FULL_AUTOMATION_MARKER: "<!-- qikvrt-full-automation:v1 external_effect=REPOSITORY_MAIN_INTEGRATION -->"
+      FULL_AUTOMATION_AUTHORIZATION: state/authorization/delegations/OWNER_REPOSITORY_FULL_AUTOMATION_V1.json
       REVIEW_STATUS_CONTEXT: "QIKVRT requested review execution"
       MESH_REVIEW_LEDGER_REF: refs/heads/qikvrt/mesh-review-ledger-v1
       MESH_REVIEW_REQUIRED_GATES_JSON: >-
@@ -83,7 +85,6 @@ jobs:
           import json, os, subprocess
           from tools.qikvrt_expected_head_promotion import PromotionBlock, trusted_promotion_marker
           repo = os.environ['REPOSITORY']
-          marker = os.environ['PROMOTION_MARKER']
           requested = os.environ.get('REQUESTED_PR', '').strip()
 
           def gh_json(path):
@@ -104,7 +105,7 @@ jobs:
               if pr.get('base',{}).get('sha') != current_main:
                   continue
               try:
-                  marker_binding=trusted_promotion_marker(pr,repo,marker)
+                  marker_binding=trusted_promotion_marker(pr,repo)
               except PromotionBlock:
                   continue
               candidates.append((pr,marker_binding))
@@ -235,8 +236,8 @@ jobs:
           PY
           exit 0
 
-      - name: Reobserve exact subject and derive one bounded promotion continuation
-        if: steps.decision.outputs.blocker == 'HEAD1_BASE_CAS_UNAVAILABLE'
+      - name: Reobserve exact subject and execute bounded full-automation merge
+        if: steps.decision.outputs.state == 'PROMOTABLE'
         env:
           PR_NUMBER: ${{ steps.candidate.outputs.pr }}
           EXPECTED_HEAD: ${{ steps.decision.outputs.head }}
@@ -267,7 +268,7 @@ jobs:
               ['gh','api',f'repos/{repo}/pulls/{number}'],text=True
           ))
           require_unchanged_promotion_marker(
-              os.environ['EXPECTED_MARKER_SHA256'],pr,repo,os.environ['PROMOTION_MARKER']
+              os.environ['EXPECTED_MARKER_SHA256'],pr,repo
           )
           PY
 
@@ -483,14 +484,79 @@ jobs:
               raise SystemExit('BLOCK: final Mesh receipt crossed its verification boundary')
           final_marker_pr=gh_json(f'repos/{repo}/pulls/{pr_number}')
           require_unchanged_promotion_marker(
-              os.environ['EXPECTED_MARKER_SHA256'],final_marker_pr,repo,
-              os.environ['PROMOTION_MARKER'],
+              os.environ['EXPECTED_MARKER_SHA256'],final_marker_pr,repo
           )
           PY
 
-          echo 'HOLD_UNVERIFIED: no repository mutation follows. The GitHub pull-merge head precondition does not compare-and-swap the reobserved base, so it cannot prove EXPECTED_BASE as merge HEAD^1.'
-          echo 'Next action: REQUEST_HISTORY_PRESERVING_EXACT_BASE_CAS_AUTHORITY.'
-          exit 1
+          test "$(jq -r .state "$FULL_AUTOMATION_AUTHORIZATION")" = ACTIVE
+          test "$(jq -r .repository "$FULL_AUTOMATION_AUTHORIZATION")" = "$REPOSITORY"
+          test "$(jq -r .merge.authorization "$FULL_AUTOMATION_AUTHORIZATION")" = EXACT_HEAD_GATED
+          test "$(jq -r .branch_protection_weakening_allowed "$FULL_AUTOMATION_AUTHORIZATION")" = false
+
+          expected_tree="$(gh api "repos/${REPOSITORY}/git/commits/${EXPECTED_HEAD}" --jq .tree.sha)"
+          test -n "$expected_tree"
+
+          gh api --method PUT "repos/${REPOSITORY}/pulls/${PR_NUMBER}/merge" \
+            -f sha="$EXPECTED_HEAD" \
+            -f merge_method=merge \
+            > /tmp/qikvrt-promotion-merge-result.json
+          test "$(jq -r .merged /tmp/qikvrt-promotion-merge-result.json)" = true
+          merge_sha="$(jq -r .sha /tmp/qikvrt-promotion-merge-result.json)"
+          test -n "$merge_sha"
+
+          gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" > /tmp/qikvrt-promotion-post-pr.json
+          post_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"
+          test "$(jq -r .merged /tmp/qikvrt-promotion-post-pr.json)" = true
+          test "$(jq -r .merge_commit_sha /tmp/qikvrt-promotion-post-pr.json)" = "$merge_sha"
+          test "$post_main" = "$merge_sha"
+
+          gh api "repos/${REPOSITORY}/git/commits/${merge_sha}" > /tmp/qikvrt-promotion-merge-commit.json
+          MERGE_SHA="$merge_sha" EXPECTED_TREE="$expected_tree" python3 -B - <<'PY'
+          import json, os, pathlib
+          commit=json.load(open('/tmp/qikvrt-promotion-merge-commit.json',encoding='utf-8'))
+          parents=[item.get('sha') for item in commit.get('parents',[])]
+          expected=[os.environ['EXPECTED_BASE'],os.environ['EXPECTED_HEAD']]
+          if parents != expected:
+              raise SystemExit(f'BLOCK: merge parents differ after effect: {parents} != {expected}')
+          tree=commit.get('tree',{}).get('sha')
+          if tree != os.environ['EXPECTED_TREE']:
+              raise SystemExit(f'BLOCK: merge tree differs after effect: {tree}')
+          receipt={
+              'schema':'qikvrt_repository_main_integration_effect_ack_v1',
+              'repository':os.environ['REPOSITORY'],
+              'pull_request':int(os.environ['PR_NUMBER']),
+              'expected_base':os.environ['EXPECTED_BASE'],
+              'expected_head':os.environ['EXPECTED_HEAD'],
+              'expected_tree':os.environ['EXPECTED_TREE'],
+              'merge_commit':os.environ['MERGE_SHA'],
+              'merge_parents':parents,
+              'post_readback_main':os.environ['MERGE_SHA'],
+              'effect_scope':'REPOSITORY_MAIN_INTEGRATION',
+              'effect_ack_done':True,
+              'global_release_effect_ack_done':False,
+              'public_deployment_effect_ack_done':False,
+              'predecessor_evidence_transfer':False,
+          }
+          pathlib.Path('/tmp/qikvrt-main-integration-effect-ack.json').write_text(
+              json.dumps(receipt,sort_keys=True,indent=2)+'\n',encoding='utf-8'
+          )
+          print(json.dumps(receipt,sort_keys=True))
+          PY
+
+          gh api --method POST "repos/${REPOSITORY}/statuses/${merge_sha}" \
+            -f state=success \
+            -f context='QIKVRT repository main integration effect ack' \
+            -f description='EFFECT_ACK_DONE scope=REPOSITORY_MAIN_INTEGRATION' \
+            -f target_url="${GITHUB_SERVER_URL}/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+      - name: Preserve repository-main integration effect receipt
+        if: always() && steps.decision.outputs.state == 'PROMOTABLE'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-main-integration-effect-ack-${{ steps.candidate.outputs.pr }}-${{ steps.decision.outputs.head }}-${{ github.run_id }}
+          path: /tmp/qikvrt-main-integration-effect-ack.json
+          if-no-files-found: warn
+          retention-days: 90
 
       - name: Persist bounded decision summary
         if: always()

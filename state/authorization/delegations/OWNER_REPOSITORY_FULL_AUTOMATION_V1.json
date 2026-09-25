@@ -1,0 +1,75 @@
+{
+  "schema": "qikvrt_owner_repository_full_automation_v1",
+  "delegation_id": "OWNER-REPOSITORY-FULL-AUTOMATION-V1",
+  "state": "ACTIVE",
+  "effective_at": "2026-09-25",
+  "owner": {
+    "name": "Ingolf Lohmann",
+    "role": "Product Owner",
+    "type": "NATURAL_PERSON"
+  },
+  "repository": "Goldkelch/qik-vrt",
+  "source_instruction": "Implementiere nun den Vollautomatismus.",
+  "purpose": "Continue explicitly marked repository-internal pull requests without further human interaction once all existing exact-subject technical and native-review gates are satisfied.",
+  "opt_in_marker": "<!-- qikvrt-full-automation:v1 external_effect=REPOSITORY_MAIN_INTEGRATION -->",
+  "eligible_subject": {
+    "base_ref": "main",
+    "head_repository": "Goldkelch/qik-vrt",
+    "allowed_authors": [
+      "Goldkelch",
+      "ingolf-lohmann",
+      "github-actions[bot]"
+    ],
+    "draft": false,
+    "external_effect": "REPOSITORY_MAIN_INTEGRATION"
+  },
+  "merge": {
+    "authorization": "EXACT_HEAD_GATED",
+    "method": "merge",
+    "required_preconditions": [
+      "CURRENT_MAIN_EQUALS_REOBSERVED_PR_BASE",
+      "PR_HEAD_UNCHANGED",
+      "PR_MERGEABLE",
+      "ALL_APPLICABLE_EXACT_HEAD_GATES_TERMINAL_GREEN",
+      "REQUESTED_REVIEW_EXECUTION_SUCCESS",
+      "NATIVE_CODE_OWNER_REVIEW_SUCCESS_ON_EXACT_HEAD",
+      "NO_SEMANTIC_COMPETING_WRITER",
+      "FULL_AUTOMATION_MARKER_UNCHANGED"
+    ],
+    "effect_call": "GitHub pull merge API with sha=EXPECTED_HEAD and merge_method=merge",
+    "required_postconditions": [
+      "PR_MERGED_TRUE",
+      "MAIN_EQUALS_RETURNED_MERGE_COMMIT",
+      "MERGE_PARENT_1_EQUALS_EXPECTED_BASE",
+      "MERGE_PARENT_2_EQUALS_EXPECTED_HEAD",
+      "MERGE_TREE_EQUALS_EXPECTED_HEAD_TREE",
+      "FRESH_POST_EFFECT_GITHUB_READBACK"
+    ]
+  },
+  "native_review": {
+    "synthesized": false,
+    "delegated_account_automation_may_satisfy_existing_native_rule": true,
+    "configured_counterpart_model": "state/authorization/delegations/OWNER_NATIVE_ACCOUNT_REVIEW_AUTOMATION_V1.json",
+    "missing_or_invalid_credential": "HOLD_WITHOUT_MERGE"
+  },
+  "branch_protection_weakening_allowed": false,
+  "force_push_allowed": false,
+  "history_rewrite_allowed": false,
+  "effect_ack": {
+    "scope": "REPOSITORY_MAIN_INTEGRATION",
+    "done_requires_all_merge_postconditions": true,
+    "status_context": "QIKVRT repository main integration effect ack",
+    "global_release_implied": false,
+    "public_deployment_implied": false,
+    "publication_implied": false,
+    "scientific_confirmation_implied": false
+  },
+  "external_effects": {
+    "deployment": "SEPARATE_AUTHORIZATION_REQUIRED",
+    "publication": "SEPARATE_AUTHORIZATION_REQUIRED",
+    "zenodo": "SEPARATE_AUTHORIZATION_REQUIRED",
+    "vercel": "SEPARATE_AUTHORIZATION_REQUIRED",
+    "physical_effect": "SEPARATE_AUTHORIZATION_REQUIRED"
+  },
+  "predecessor_evidence_transfer": false
+}

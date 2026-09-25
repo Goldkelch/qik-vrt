@@ -5,13 +5,15 @@
 
 Promotion is phase-qualified:
 - REQUEST_READY_RECLASSIFICATION_AUTHORITY: a marked draft has all
-  repository-internal exact-head gates, but no automatic draft mutation follows
-  because GitHub offers no expected-base-and-head compare-and-swap for it.
-- REQUEST_EXACT_BASE_CAS_AUTHORITY: a non-draft candidate may be reobserved,
-  but no merge mutation follows because GitHub's head precondition does not
-  compare-and-swap the checked base as immediate first parent.
+  repository-internal exact-head gates, but draft reclassification remains a
+  separate history-preserving transition.
+- EXECUTE_EXACT_HEAD_MERGE: a non-draft candidate has a current base, unchanged
+  head, favorable technical gates, exact native Code-Owner approval and no
+  semantic competing writer. The trusted-main workflow may then execute the
+  bounded GitHub merge effect with an exact-head precondition and mandatory
+  post-effect parent/tree/main readback.
 
-Bot review execution and Code-Owner authority are distinct inputs. Integrity
+Bot review execution and Code-Owner authority remain distinct inputs. Integrity
 projection overlap is not treated as semantic competing-writer overlap.
 """
 from __future__ import annotations
@@ -25,6 +27,7 @@ import sys
 from typing import Any, Iterable, Mapping, Sequence
 
 PROMOTION_MARKER = "<!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->"
+FULL_AUTOMATION_MARKER = "<!-- qikvrt-full-automation:v1 external_effect=REPOSITORY_MAIN_INTEGRATION -->"
 REVIEW_GATE = "QIKVRT requested review execution"
 INTEGRITY_PROJECTION_PATHS = frozenset(
     {
@@ -99,15 +102,13 @@ def require_unchanged_mesh_review_status(
 def trusted_promotion_marker(
     pull_request: Mapping[str, Any],
     repository: str,
-    marker: str = PROMOTION_MARKER,
+    marker: str | None = None,
 ) -> dict[str, str]:
-    """Bind promotion opt-in to the repository's own self-heal PR body."""
+    """Bind promotion opt-in to one trusted role-local pull-request body."""
     if not isinstance(pull_request, Mapping):
         raise PromotionBlock("promotion marker subject is not a pull request")
     if not isinstance(repository, str) or repository.count("/") != 1:
         raise PromotionBlock("promotion marker repository is invalid")
-    if not isinstance(marker, str) or not marker:
-        raise PromotionBlock("promotion marker is missing")
     head = pull_request.get("head")
     base = pull_request.get("base")
     if not isinstance(head, Mapping) or not isinstance(base, Mapping):
@@ -116,31 +117,55 @@ def trusted_promotion_marker(
     if not isinstance(head_repository, Mapping) or head_repository.get("full_name") != repository:
         raise PromotionBlock("promotion marker is not role-local")
     head_ref = head.get("ref")
-    if not isinstance(head_ref, str) or not head_ref.startswith("automation/self-heal-"):
-        raise PromotionBlock("promotion marker is not bound to a self-heal branch")
+    if not isinstance(head_ref, str) or not head_ref or head_ref == "main":
+        raise PromotionBlock("promotion marker head ref is invalid")
     if pull_request.get("state") != "open" or base.get("ref") != "main":
         raise PromotionBlock("promotion marker subject is not an open main pull request")
     author = pull_request.get("user")
-    if not isinstance(author, Mapping) or author.get("login") != "github-actions[bot]":
-        raise PromotionBlock("promotion marker author is not the repository workflow identity")
+    author_login = author.get("login") if isinstance(author, Mapping) else None
     body = pull_request.get("body")
-    if not isinstance(body, str) or marker not in body:
+    if not isinstance(body, str):
+        raise PromotionBlock("trusted pull-request body is missing")
+
+    accepted_marker = marker
+    if accepted_marker is None:
+        if PROMOTION_MARKER in body:
+            accepted_marker = PROMOTION_MARKER
+        elif FULL_AUTOMATION_MARKER in body:
+            accepted_marker = FULL_AUTOMATION_MARKER
+        else:
+            raise PromotionBlock("trusted pull-request body has no promotion marker")
+    if accepted_marker not in {PROMOTION_MARKER, FULL_AUTOMATION_MARKER}:
+        raise PromotionBlock("promotion marker is not a trusted repository marker")
+    if accepted_marker not in body:
         raise PromotionBlock("trusted pull-request body has no promotion marker")
+
+    if accepted_marker == PROMOTION_MARKER:
+        if not head_ref.startswith("automation/self-heal-"):
+            raise PromotionBlock("promotion marker is not bound to a self-heal branch")
+        if author_login != "github-actions[bot]":
+            raise PromotionBlock("promotion marker author is not the repository workflow identity")
+        source = "TRUSTED_AUTONOMOUS_SELF_HEAL_PR_BODY"
+    else:
+        if author_login not in {"Goldkelch", "ingolf-lohmann", "github-actions[bot]"}:
+            raise PromotionBlock("full-automation marker author is not a configured repository actor")
+        source = "TRUSTED_REPOSITORY_FULL_AUTOMATION_PR_BODY"
+
     return {
-        "source": "TRUSTED_AUTONOMOUS_SELF_HEAL_PR_BODY",
-        "author": "github-actions[bot]",
+        "source": source,
+        "author": str(author_login),
         "head_ref": head_ref,
+        "marker": accepted_marker,
         "body_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
     }
-
 
 def require_unchanged_promotion_marker(
     expected_body_sha256: str,
     pull_request: Mapping[str, Any],
     repository: str,
-    marker: str = PROMOTION_MARKER,
+    marker: str | None = None,
 ) -> dict[str, str]:
-    """Fail if the trusted marker body changed before a repository mutation."""
+    """Fail if the trusted marker body or trusted marker class changed before mutation."""
     if (
         not isinstance(expected_body_sha256, str)
         or len(expected_body_sha256) != 64
@@ -364,13 +389,13 @@ def evaluate_promotion(snapshot: Mapping[str, Any]) -> dict[str, Any]:
 
     result = _decision(
         snapshot,
-        "BLOCK",
-        "HEAD1_BASE_CAS_UNAVAILABLE",
-        "technical and authority gates are favorable, but the GitHub pull-merge head precondition cannot bind the reobserved base as the immediate first parent; automated merge remains disabled",
-        phase="REQUEST_EXACT_BASE_CAS_AUTHORITY",
+        "PROMOTABLE",
+        None,
+        "technical and authority gates are favorable; execute one exact-head GitHub merge and require immediate post-effect main/parent/tree readback",
+        phase="EXECUTE_EXACT_HEAD_MERGE",
         latest=latest,
     )
-    result["next_action"] = "REQUEST_HISTORY_PRESERVING_EXACT_BASE_CAS_AUTHORITY"
+    result["next_action"] = "MERGE_WITH_EXACT_HEAD_AND_POST_READBACK"
     return result
 
 
