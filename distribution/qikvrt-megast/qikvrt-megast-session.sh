@@ -62,9 +62,9 @@ cat > "$HOME/.config/qikvrt/session-receipt.json" <<EOF
 }
 EOF
 
-# Start the actual client in the graphical session, then observe its window and
-# the locally executed C90/Smalltalk/MC68000 paths before reporting runtime ready.
-firefox-esr --new-window http://127.0.0.1:8771/.well-known/effect-ack \
+# Preserve the current-main Hatari startup while moving Firefox to the
+# repository-grounded cognition surface from the MVP delta.
+firefox-esr --new-window http://127.0.0.1:8771/multimedia \
   > "$HOME/.config/qikvrt/firefox.log" 2>&1 &
 hatari --machine st --tos /usr/share/qikvrt/emutos/etos256de.img \
   > "$HOME/.config/qikvrt/hatari.log" 2>&1 &
