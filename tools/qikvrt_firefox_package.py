@@ -10,6 +10,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "browser/firefox/qikvrt-terminal"
+LICENSE_PAYLOADS = {
+    "licenses/PolyForm-Noncommercial-1.0.0.txt": ROOT / "LICENSES/PolyForm-Noncommercial-1.0.0.txt",
+    "licenses/CC-BY-NC-ND-4.0.txt": ROOT / "LICENSES/CC-BY-NC-ND-4.0.txt",
+    "licenses/QIKVRT-LICENSE-GUIDE.md": ROOT / "LICENSE.md",
+    "licenses/QIKVRT-COMMERCIAL-USE-POLICY.md": ROOT / "COMMERCIAL_USE_POLICY.md",
+}
 
 
 def package(output: Path, source: Path = SOURCE) -> dict:
@@ -32,6 +38,10 @@ def package(output: Path, source: Path = SOURCE) -> dict:
         messages = json.loads(path.read_text(encoding="utf-8"))
         if set(messages) != default_keys or any(not v.get("message") for v in messages.values()):
             raise ValueError(f"Incomplete locale: {path.parent.name}")
+    for archive_name, path in LICENSE_PAYLOADS.items():
+        if not path.is_file():
+            raise ValueError(f"Missing license payload: {path}")
+        files[archive_name] = path
     output = output.resolve()
     if output.is_relative_to(source.resolve()):
         raise ValueError("Package output must be outside the extension source")
@@ -44,7 +54,8 @@ def package(output: Path, source: Path = SOURCE) -> dict:
             info.compress_type = zipfile.ZIP_DEFLATED
             archive.writestr(info, path.read_bytes(), compresslevel=9)
     return {"path": str(output), "sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
-            "files": len(files), "locales": len(catalogs), "signed": False}
+            "files": len(files), "license_files": len(LICENSE_PAYLOADS),
+            "locales": len(catalogs), "signed": False}
 
 
 def main() -> int:

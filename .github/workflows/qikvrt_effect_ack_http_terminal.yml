@@ -12,7 +12,14 @@ on:
       - "tests/test_qikvrt_requirement_delivery_gate.py"
       - "browser/firefox/qikvrt-terminal/**"
       - "tools/qikvrt_firefox_package.py"
+      - "tools/qikvrt_firefox_install.py"
       - "tests/test_qikvrt_firefox_i18n.py"
+      - "tests/test_qikvrt_firefox_install.py"
+      - "docs/terminal/FIREFOX_INSTALL_LICENSE_ACCEPTANCE_V1.md"
+      - "LICENSES/PolyForm-Noncommercial-1.0.0.txt"
+      - "LICENSES/CC-BY-NC-ND-4.0.txt"
+      - "LICENSE.md"
+      - "COMMERCIAL_USE_POLICY.md"
       - "tests/firefox_i18n_behavior.cjs"
       - "src/qikvrt_effect_ack_http_terminal.py"
       - ".github/workflows/qikvrt_effect_ack_http_terminal.yml"
@@ -26,7 +33,14 @@ on:
       - "tests/test_qikvrt_requirement_delivery_gate.py"
       - "browser/firefox/qikvrt-terminal/**"
       - "tools/qikvrt_firefox_package.py"
+      - "tools/qikvrt_firefox_install.py"
       - "tests/test_qikvrt_firefox_i18n.py"
+      - "tests/test_qikvrt_firefox_install.py"
+      - "docs/terminal/FIREFOX_INSTALL_LICENSE_ACCEPTANCE_V1.md"
+      - "LICENSES/PolyForm-Noncommercial-1.0.0.txt"
+      - "LICENSES/CC-BY-NC-ND-4.0.txt"
+      - "LICENSE.md"
+      - "COMMERCIAL_USE_POLICY.md"
       - "tests/firefox_i18n_behavior.cjs"
       - "docs/terminal/QIKVRT_TERMINAL_FRAME_V1.schema.json"
       - "docs/terminal/FIREFOX_EFFECT_ACK_TERMINAL_PROXY_V1.md"
@@ -109,8 +123,10 @@ jobs:
           python3 -m py_compile \
             src/qikvrt_effect_ack_http_terminal.py \
             tools/qikvrt_requirement_delivery_gate.py \
+            tools/qikvrt_firefox_install.py \
             tests/test_qikvrt_effect_ack_http_terminal.py \
-            tests/test_qikvrt_requirement_delivery_gate.py
+            tests/test_qikvrt_requirement_delivery_gate.py \
+            tests/test_qikvrt_firefox_install.py
 
       - name: Check Firefox JavaScript syntax
         run: |
@@ -126,7 +142,8 @@ jobs:
           python3 -B -m unittest -v \
             tests.test_qikvrt_effect_ack_http_terminal \
             tests.test_qikvrt_requirement_delivery_gate \
-            tests.test_qikvrt_firefox_i18n
+            tests.test_qikvrt_firefox_i18n \
+            tests.test_qikvrt_firefox_install
 
       - name: Package verified Firefox reference client
         shell: bash
@@ -139,6 +156,14 @@ jobs:
             > /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi.sha256
           test -s /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi
           test -s /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi.sha256
+          cp tools/qikvrt_firefox_install.py /tmp/qikvrt-firefox-package/
+          python3 -B tools/qikvrt_firefox_install.py \
+            --xpi /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi \
+            --profile /tmp/qikvrt-firefox-license-test-profile \
+            --accept-license \
+            > /tmp/qikvrt-firefox-package/install-test.json
+          cmp /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi \
+            /tmp/qikvrt-firefox-license-test-profile/extensions/qikvrt-ai-terminal@goldkelch.local.xpi
 
       - name: Preserve verified Firefox package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
