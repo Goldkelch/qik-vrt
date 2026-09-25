@@ -1,0 +1,163 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: Publish ontological priority to Zenodo now
+
+on:
+  push:
+    branches:
+      - policy/universal-proof-thought-schema-v1
+    paths:
+      - .github/workflows/qikvrt_ontological_priority_publish_now.yml
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: qikvrt-ontological-priority-publish-now-v1
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: zenodo-production
+    env:
+      RELEASE: release/ontological-priority-of-difference-zenodo-v1
+      MANIFEST: release/ontological-priority-of-difference-zenodo-v1/publish-request.json
+      EVIDENCE: release/ontological-priority-of-difference-zenodo-v1/zenodo-publication.json
+      SOURCE_HEAD: 8225b8238b592d61b4d7c7e45e4cf804c1354843
+      KERNEL_ARTIFACT_ID: "10854405579"
+      PREPUBLICATION_ARTIFACT_ID: "10853874569"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONNOUSERSITE: "1"
+
+    steps:
+      - name: Check out exact authorized execution precursor
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Bind proof source and download fresh successful receipts
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor "$SOURCE_HEAD" HEAD
+          mkdir -p "$RUNNER_TEMP/ontology-proof" "$RUNNER_TEMP/prepublication"
+          curl --fail --silent --show-error --location             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$KERNEL_ARTIFACT_ID/zip"             -o "$RUNNER_TEMP/ontology-proof.zip"
+          curl --fail --silent --show-error --location             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$PREPUBLICATION_ARTIFACT_ID/zip"             -o "$RUNNER_TEMP/prepublication.zip"
+          unzip -q "$RUNNER_TEMP/ontology-proof.zip" -d "$RUNNER_TEMP/ontology-proof"
+          unzip -q "$RUNNER_TEMP/prepublication.zip" -d "$RUNNER_TEMP/prepublication"
+          test -f "$RUNNER_TEMP/ontology-proof/UNIVERSAL_ONTOLOGY_KERNEL_RECEIPT.json"
+          test -f "$RUNNER_TEMP/prepublication/$RELEASE/PREPUBLICATION_GATE_RECEIPT.json"
+
+      - name: Materialize and validate final v2 controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B "$RELEASE/finalize_authorized_controls.py"             --kernel-artifact "$RUNNER_TEMP/ontology-proof/UNIVERSAL_ONTOLOGY_KERNEL_RECEIPT.json"             --prepublication-artifact "$RUNNER_TEMP/prepublication/$RELEASE/PREPUBLICATION_GATE_RECEIPT.json"             | tee "$RUNNER_TEMP/final-controls.json"
+
+      - name: Regenerate repository integrity and run complete gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Commit and push exact execution subject
+        id: execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          precursor="$(git rev-parse HEAD)"
+          remote="$(
+            git ls-remote --heads origin refs/heads/policy/universal-proof-thought-schema-v1 |
+              awk 'NR == 1 {print $1}'
+          )"
+          test "$remote" = "$precursor"
+
+          git config user.name 'qik-vrt-zenodo-publication[bot]'
+          git config user.email 'qik-vrt-zenodo-publication[bot]@users.noreply.github.com'
+          git add --             "$RELEASE/UNIVERSAL_ONTOLOGY_KERNEL_RECEIPT.json"             "$RELEASE/PREPUBLICATION_GATE_RECEIPT.json"             "$RELEASE/KERNEL_RECEIPT.json"             "$RELEASE/SOURCE_EVIDENCE_BINDINGS_V2.json"             "$RELEASE/CLAIM_MATRIX_V2.json"             "$RELEASE/PREPUBLICATION_RETURN_RECEIPT_V2.json"             "$RELEASE/MACHINE_PROOF_BUNDLE.json"             "$RELEASE/OWNER_ZENODO_AUTHORIZATION.json"             "$RELEASE/publish-request.json"             REPOSITORY_FILE_MANIFEST.json             REPOSITORY_FILE_MANIFEST.json.sha256             SHA256SUMS.txt
+          git diff --cached --check
+          git commit -m 'zenodo: materialize ontological-priority execution subject'
+          execution_head="$(git rev-parse HEAD)"
+          remote="$(
+            git ls-remote --heads origin refs/heads/policy/universal-proof-thought-schema-v1 |
+              awk 'NR == 1 {print $1}'
+          )"
+          test "$remote" = "$precursor"
+          git push origin HEAD:refs/heads/policy/universal-proof-thought-schema-v1
+          echo "head=$execution_head" >> "$GITHUB_OUTPUT"
+          python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Publish exact authorized files to production Zenodo
+        id: zenodo
+        timeout-minutes: 20
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          execution_head="${{ steps.execution.outputs.head }}"
+          test "$(git rev-parse HEAD)" = "$execution_head"
+          remote="$(
+            git ls-remote --heads origin refs/heads/policy/universal-proof-thought-schema-v1 |
+              awk 'NR == 1 {print $1}'
+          )"
+          test "$remote" = "$execution_head"
+          GITHUB_SHA="$execution_head"             python3 -B tools/qikvrt_zenodo_publish.py --manifest "$MANIFEST"
+          test -f "$EVIDENCE"
+          python3 -B - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path(os.environ["EVIDENCE"])
+          v=json.loads(p.read_text(encoding="utf-8"))
+          if v.get("state") != "published":
+              raise SystemExit("BLOCK: Zenodo evidence is not published")
+          print("ZENODO_STATE=published")
+          print("ZENODO_DOI=" + str(v.get("doi")))
+          print("ZENODO_RECORD_ID=" + str(v.get("record_id")))
+          PY
+
+      - name: Persist public publication readback
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          execution_head="${{ steps.execution.outputs.head }}"
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          git add --             "$EVIDENCE"             REPOSITORY_FILE_MANIFEST.json             REPOSITORY_FILE_MANIFEST.json.sha256             SHA256SUMS.txt
+          git diff --cached --check
+          git commit -m 'zenodo: persist ontological-priority public readback'
+          remote="$(
+            git ls-remote --heads origin refs/heads/policy/universal-proof-thought-schema-v1 |
+              awk 'NR == 1 {print $1}'
+          )"
+          test "$remote" = "$execution_head"
+          git push origin HEAD:refs/heads/policy/universal-proof-thought-schema-v1
+
+      - name: Upload publication evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ontological-priority-zenodo-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: ignore
+          path: |
+            ${{ env.EVIDENCE }}
+            ${{ runner.temp }}/final-controls.json
