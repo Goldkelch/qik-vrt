@@ -100,11 +100,48 @@ class RulesetReconcileTests(unittest.TestCase):
             reconcile.ROOT / ".github/workflows/qikvrt_ruleset_reconcile.yml"
         ).read_text(encoding="utf-8")
         self.assertIn("QIKVRT_RULESET_ADMIN_TOKEN", workflow)
+        self.assertIn("GH_TOKEN: ${{ github.token }}", workflow)
         self.assertIn("persist-credentials: false", workflow)
         self.assertIn("--apply", workflow)
         self.assertIn("--receipt", workflow)
+        self.assertIn("statuses: write", workflow)
         self.assertNotIn("pull-requests: write", workflow)
         self.assertNotIn("contents: write", workflow)
+
+    def test_reconciler_is_repository_global_and_owner_pr_independent(self):
+        workflow = (
+            reconcile.ROOT / ".github/workflows/qikvrt_ruleset_reconcile.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn('cron: "17 */6 * * *"', workflow)
+        self.assertIn("repository_dispatch:", workflow)
+        self.assertIn("repository_global_subject: true", workflow)
+        self.assertIn("owner_authored_pr_required: false", workflow)
+        self.assertIn("QIKVRT main ruleset reconciliation", workflow)
+        self.assertNotIn("pull_request:", workflow)
+        self.assertNotIn("pull_request_target:", workflow)
+        self.assertNotIn("pulls/${", workflow)
+        self.assertNotIn("inputs[pr]", workflow)
+
+    def test_owner_authorization_is_exact_ruleset_policy_bound(self):
+        import json
+        path = (
+            reconcile.ROOT
+            / "state/authorization/delegations/OWNER_REPOSITORY_GLOBAL_RULESET_AUTONOMY_V1.json"
+        )
+        delegation = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            delegation["schema"],
+            "qikvrt_owner_repository_global_ruleset_autonomy_v1",
+        )
+        self.assertEqual(delegation["state"], "ACTIVE")
+        self.assertEqual(delegation["ruleset_id"], 19344903)
+        self.assertEqual(
+            delegation["desired_projection"],
+            "policy/GITHUB_MAIN_RULESET_V1.json",
+        )
+        self.assertFalse(delegation["owner_authored_pr_required"])
+        self.assertFalse(delegation["protection_weakening_authorized"])
+        self.assertTrue(delegation["post_effect_readback_required"])
 
 
 if __name__ == "__main__":
