@@ -30,6 +30,10 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+from qikvrt_transfer_parts import DEFAULT_PART_BYTES, describe, part_size, receive_file
 
 FILES = {"kernel": "qikvrt-megast-vmlinuz", "initrd": "qikvrt-megast-initrd",
          "rootfs": "qikvrt-megast-filesystem.squashfs", "m68000": "QIKVRT_BOOT.BIN"}
@@ -282,8 +286,8 @@ class BootDatagramHandler(socketserver.BaseRequestHandler):
         connection.sendto(reply, self.client_address)
 
 
-def validate_manifest(manifest: dict) -> None:
-    if manifest.get("schema") != "qikvrt_netboot_v1" or manifest.get("architecture") != "x86_64":
+def validate_manifest(manifest: dict, max_part_bytes: int = DEFAULT_PART_BYTES) -> None:
+    if manifest.get("schema") not in ("qikvrt_netboot_v1", "qikvrt_netboot_v2") or manifest.get("architecture") != "x86_64":
         raise ValueError("unsupported boot schema/architecture")
     if not re.fullmatch(r"[0-9a-f]{40}", manifest.get("source_sha", "")):
         raise ValueError("missing exact source commit")
@@ -296,18 +300,25 @@ def validate_manifest(manifest: dict) -> None:
         if entry.get("name") != name or not HEX64.fullmatch(entry.get("sha256", "")):
             raise ValueError("unbound file identity")
         size = entry.get("bytes")
-        if type(size) is not int or not 0 < size <= 2 * 1024 ** 3:
+        if type(size) is not int or size <= 0:
             raise ValueError("file size outside contract")
+        if manifest.get("schema") == "qikvrt_netboot_v2":
+            if manifest.get("part_bytes") != max_part_bytes:
+                raise ValueError("sender part profile exceeds receiver contract")
+            part_size(max_part_bytes)
 
 
-def make_manifest(directory: Path, source_sha: str, source_tree: str | None = None) -> dict:
-    manifest = {"schema": "qikvrt_netboot_v1", "source_sha": source_sha,
+def make_manifest(directory: Path, source_sha: str, source_tree: str | None = None,
+                  part_bytes: int = DEFAULT_PART_BYTES) -> dict:
+    part_size(part_bytes)
+    manifest = {"schema": "qikvrt_netboot_v2", "source_sha": source_sha,
                 "architecture": "x86_64", "boot_method": "linux-live-http",
                 "guest_m68000": "qemu-m68k-static-contract", "effect_ack_done": False,
-                "files": {k: {"name": n, "bytes": (directory / n).stat().st_size, "sha256": sha256(directory / n)} for k, n in FILES.items()}}
+                "part_bytes": part_bytes,
+                "files": {k: dict(name=n, **describe(directory / n, part_bytes)) for k, n in FILES.items()}}
     if source_tree is not None:
         manifest["source_tree"] = source_tree
-    validate_manifest(manifest)
+    validate_manifest(manifest, part_bytes)
     path = directory / "qikvrt-netboot.json"
     path.write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n")
     (directory / "qikvrt-netboot.json.sha256").write_text(sha256(path) + "  " + path.name + "\n")
