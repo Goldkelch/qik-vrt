@@ -327,3 +327,131 @@ jobs:
           path: |
             ${{ env.EVIDENCE }}
             ${{ runner.temp }}/final-controls.json
+
+
+  recover-ontological-priority-zenodo:
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/policy/universal-proof-thought-schema-v1' &&
+      github.actor == 'ingolf-lohmann' &&
+      github.event.head_commit.message == 'zenodo: recover exact ontological-priority record 22955727'
+    permissions:
+      contents: write
+      actions: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      EXECUTION_HEAD: 0763f0cc7d1a62e465c730d3e6786ae4cddf0287
+      RECOVERY_ARTIFACT_ID: "10855448703"
+      RELEASE: release/ontological-priority-of-difference-zenodo-v1
+      ZENODO_API_BASE: https://zenodo.org/api
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONNOUSERSITE: "1"
+    steps:
+      - name: Check out recovery carrier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Restore exact record-created recovery receipt
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          carrier_head="$(git rev-parse HEAD)"
+          test "$carrier_head" = "$GITHUB_SHA"
+          git merge-base --is-ancestor "$EXECUTION_HEAD" "$carrier_head"
+
+          curl --fail --silent --show-error --location             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$RECOVERY_ARTIFACT_ID/zip"             -o "$RUNNER_TEMP/recovery.zip"
+          mkdir -p "$RUNNER_TEMP/recovery"
+          unzip -q "$RUNNER_TEMP/recovery.zip" -d "$RUNNER_TEMP/recovery"
+          recovery="$RUNNER_TEMP/recovery/qik-vrt/qik-vrt/$RELEASE/zenodo-publication.json"
+          test -f "$recovery"
+
+          python3 -B - "$recovery" <<'PY'
+          import json, sys
+          value=json.load(open(sys.argv[1], encoding="utf-8"))
+          assert value["schema"] == "qikvrt_zenodo_publication_evidence_v2"
+          assert value["state"] == "EFFECT_RELEASED/AWAITING_REMOTE_RECONCILIATION"
+          assert value["phase"] == "record_created"
+          assert value["record_id"] == 22955727
+          assert value["doi"] == "10.5281/zenodo.22955727"
+          assert value["repository_commit"] == "0763f0cc7d1a62e465c730d3e6786ae4cddf0287"
+          assert value["recovery"]["duplicate_remote_mutation_forbidden"] is True
+          PY
+
+          git worktree add --detach "$RUNNER_TEMP/zenodo-execution" "$EXECUTION_HEAD"
+          mkdir -p "$RUNNER_TEMP/zenodo-execution/$RELEASE"
+          cp "$recovery" "$RUNNER_TEMP/zenodo-execution/$RELEASE/zenodo-publication.json"
+
+      - name: Reconcile and publish the existing Zenodo record
+        timeout-minutes: 20
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          execution="$RUNNER_TEMP/zenodo-execution"
+          test "$(git -C "$execution" rev-parse HEAD)" = "$EXECUTION_HEAD"
+          (
+            cd "$execution"
+            GITHUB_SHA="$EXECUTION_HEAD" GITHUB_REPOSITORY="$GITHUB_REPOSITORY"               python3 -B tools/qikvrt_zenodo_publish.py               --manifest "$RELEASE/publish-request.json"
+          )
+          evidence="$execution/$RELEASE/zenodo-publication.json"
+          python3 -B - "$evidence" <<'PY'
+          import json, sys
+          value=json.load(open(sys.argv[1], encoding="utf-8"))
+          assert value["state"] == "published"
+          assert value["phase"] == "public_verified"
+          assert value["record_id"] == 22955727
+          assert value["doi"] == "10.5281/zenodo.22955727"
+          assert value["recovery"]["public_verified"] is True
+          assert value["recovery"]["remote_state_requires_reconciliation"] is False
+          print("ZENODO_STATE=published")
+          print("ZENODO_DOI=" + value["doi"])
+          print("ZENODO_RECORD_ID=" + str(value["record_id"]))
+          print("ZENODO_CONCEPT_DOI=" + value["conceptdoi"])
+          print("ZENODO_RECORD_URL=" + value["record_url"])
+          PY
+          cp "$evidence" "$GITHUB_WORKSPACE/$RELEASE/zenodo-publication.json"
+
+      - name: Persist final public readback receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          carrier_head="$GITHUB_SHA"
+          evidence="$RELEASE/zenodo-publication.json"
+          test -f "$evidence"
+
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+
+          git config user.name 'qik-vrt-zenodo-recovery[bot]'
+          git config user.email 'qik-vrt-zenodo-recovery[bot]@users.noreply.github.com'
+          git add --             "$evidence"             REPOSITORY_FILE_MANIFEST.json             REPOSITORY_FILE_MANIFEST.json.sha256             SHA256SUMS.txt
+          git diff --cached --check
+          git commit -m 'zenodo: persist ontological-priority public record 22955727'
+          remote="$(
+            git ls-remote --heads origin refs/heads/policy/universal-proof-thought-schema-v1 |
+              awk 'NR == 1 {print $1}'
+          )"
+          test "$remote" = "$carrier_head"
+          git push origin HEAD:refs/heads/policy/universal-proof-thought-schema-v1
+
+      - name: Preserve final publication evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ontological-priority-zenodo-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: ignore
+          path: |
+            ${{ env.RELEASE }}/zenodo-publication.json
