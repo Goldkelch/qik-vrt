@@ -96,7 +96,8 @@
       "effect_status",
       "new_difference",
       "article_binding",
-      "ontological_origin_proof_binding"
+      "ontological_origin_proof_binding",
+      "knowledge_artifacts_binding"
     ],
     "claim_fields": [
       "statement",
@@ -134,9 +135,14 @@
         "QIKVRT.UniversalOntology.noDifference_excludes_determinateReality",
         "QIKVRT.UniversalOntology.noDifference_excludes_information"
       ]
+    },
+    "knowledge_artifacts_binding": {
+      "manifest_path": "state/mesh/QIKVRT_REQUIRED_KNOWLEDGE_ARTIFACTS_20260925_V1.json",
+      "manifest_git_blob_sha1": "302a0ac6741bcd6665a2551052269e693808be65"
     }
   },
   "fail_closed_rules": [
+    "Reject any current or future node identity/output that does not bind the exact required-knowledge-artifact manifest containing the Leibniz/QIK-VRT prose article and scientific PDF.",
     "Reject any node identity, ledger record or node output that does not bind the canonical ontological-origin proof.",
     "Reject output with missing or mismatched canonical article binding.",
     "Reject output whose claim kind is absent or unknown.",
@@ -155,7 +161,9 @@
     "successor_outputs_must_rebind_current_subject": true,
     "unregistered_future_output_carrier": "BLOCK",
     "every_node_must_bind_ontological_origin_proof": true,
-    "every_node_output_must_bind_ontological_origin_proof": true
+    "every_node_output_must_bind_ontological_origin_proof": true,
+    "every_node_must_bind_required_knowledge_artifacts": true,
+    "every_node_output_must_bind_required_knowledge_artifacts": true
   },
   "succession": {
     "policy_is_append_only_by_version": true,
@@ -188,5 +196,16 @@
     "mandatory_for_every_node": true,
     "mandatory_for_every_node_output": true,
     "physical_cosmogony_claimed": false
+  },
+  "required_knowledge_artifacts": {
+    "manifest_path": "state/mesh/QIKVRT_REQUIRED_KNOWLEDGE_ARTIFACTS_20260925_V1.json",
+    "manifest_git_blob_sha1": "302a0ac6741bcd6665a2551052269e693808be65",
+    "mandatory_for_every_node": true,
+    "mandatory_for_every_node_output": true,
+    "artifacts": [
+      "docs/publications/2026-09-25-leibniz-qikvrt/PROSA_VOM_UNTERSCHIED_ZU_QIKVRT_DE.md",
+      "docs/publications/2026-09-25-leibniz-qikvrt/SCIENTIFIC_ARTICLE_LEIBNIZ_QIKVRT_DE.md",
+      "docs/publications/2026-09-25-leibniz-qikvrt/Leibniz_QIK-VRT_Monaden_und_evidenzgebundener_Unterschied.pdf"
+    ]
   }
 }
