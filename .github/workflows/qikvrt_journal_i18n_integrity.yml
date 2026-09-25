@@ -1,0 +1,17 @@
+name: QIKVRT journal multilingual integrity
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  journal-i18n:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify six-language structural and evidence equivalence
+        run: python3 -B tools/qikvrt_journal_i18n_integrity.py | tee journal-i18n-integrity.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qikvrt-journal-i18n-integrity
+          path: journal-i18n-integrity.json

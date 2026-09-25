@@ -1,0 +1,53 @@
+{
+  "schema": "qikvrt-journal-translation-quality-policy/1.0",
+  "policy_id": "QIKVRT-JOURNAL-TRANSLATION-QUALITY-V1",
+  "source_locale": "de",
+  "required_locales": [
+    "de",
+    "en",
+    "fr",
+    "ru",
+    "fa",
+    "zh-Hans"
+  ],
+  "machine_requirements": {
+    "same_article_id": true,
+    "same_version": true,
+    "same_segment_ids": true,
+    "same_claim_ids": true,
+    "same_claim_kind_status_and_evidence": true,
+    "same_source_set": true,
+    "same_correction_lineage": true,
+    "all_segments_nonempty": true,
+    "rtl_required_for": [
+      "fa"
+    ]
+  },
+  "human_quality_dimensions": [
+    "factual_fidelity",
+    "completeness",
+    "legal_nuance",
+    "technical_terminology",
+    "idiomatic_naturalness",
+    "register_and_tone",
+    "cultural_readability"
+  ],
+  "superiority_claim_requirements": {
+    "independent_native_reviewers_per_target_locale": 2,
+    "blind_reference_systems_minimum": 2,
+    "critical_factual_errors_allowed": 0,
+    "material_omissions_allowed": 0,
+    "legal_meaning_changes_allowed": 0,
+    "minimum_mean_score_0_to_1": 0.95,
+    "minimum_terminology_score_0_to_1": 0.98,
+    "winning_or_tied_best_in_each_target_locale": true
+  },
+  "allowed_before_superiority_established": "evidence-bound multilingual editions with machine-checked structural/source equivalence",
+  "forbidden_before_superiority_established": [
+    "best translations",
+    "world's best translations",
+    "beste Übersetzungen",
+    "nachweislich besten Übersetzungen"
+  ],
+  "boundary": "Machine checks can establish structural/source equivalence. Natural-language quality superiority requires independent blind human evaluation."
+}

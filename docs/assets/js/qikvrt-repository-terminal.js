@@ -30,7 +30,7 @@
 
   const UI = {
     de: {
-      initial: "Bereit. Nutze help, status, capabilities, read, publications oder analyse.",
+      initial: "Bereit. Nutze help, status, capabilities, read, publications, journal oder analyse.",
       command: "Befehl",
       evidence: "Repository-Evidenz",
       continue: "CONTINUE",
@@ -59,6 +59,7 @@
         "  capabilities [authority|mirror]",
         "  read AI|STATUS|README|ARCHITECTURE|BOUNDARIES|PRIVACY",
         "  publications",
+        "  journal [index|claims|sources|corrections|languages]",
         "  analyse <Frage>  /  analyze <question>",
         "  clear",
         "",
@@ -66,7 +67,7 @@
       ].join("\n"),
     },
     en: {
-      initial: "Ready. Use help, status, capabilities, read, publications, or analyze.",
+      initial: "Ready. Use help, status, capabilities, read, publications, journal, or analyze.",
       command: "Command",
       evidence: "Repository evidence",
       continue: "CONTINUE",
@@ -95,6 +96,7 @@
         "  capabilities [authority|mirror]",
         "  read AI|STATUS|README|ARCHITECTURE|BOUNDARIES|PRIVACY",
         "  publications",
+        "  journal [index|claims|sources|corrections|languages]",
         "  analyse <Frage>  /  analyze <question>",
         "  clear",
         "",
@@ -376,6 +378,48 @@
     }
   }
 
+  async function showJournal(target) {
+    const key = String(target || "index").toLowerCase();
+    const fixed = Object.freeze({
+      index: Object.freeze({ path: "../journal/index.json", label: "QIK-VRT Journal index" }),
+      claims: Object.freeze({ path: "../journal/wahrheit-oder-spam/claims.json", label: "Wahrheit oder Spam? — claims" }),
+      sources: Object.freeze({ path: "../journal/wahrheit-oder-spam/sources.json", label: "Wahrheit oder Spam? — sources" }),
+      corrections: Object.freeze({ path: "../journal/corrections.json", label: "QIK-VRT Journal corrections" }),
+      languages: Object.freeze({ path: "../journal/wahrheit-oder-spam/i18n/manifest.json", label: "QIK-VRT Journal language contract" }),
+    });
+    const source = fixed[key];
+    if (!source) {
+      appendEntry("continue", message("continue"), "Allowed journal targets: index, claims, sources, corrections, languages.");
+      return;
+    }
+    setConnectionState("LOCAL_READ_PENDING");
+    try {
+      const response = await fetch(source.path, {
+        method: "GET",
+        credentials: "omit",
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const value = await response.json();
+      const output = [
+        `Journal object: ${source.label}`,
+        `Path: ${source.path}`,
+        "Read mode: SAME_ORIGIN_GET_ONLY",
+        "Mutation: NONE",
+        "",
+        boundedText(JSON.stringify(value, null, 2), 9000),
+      ].join("\n");
+      appendEntry("evidence", `${message("evidence")}: ${source.label}`, output, source.path);
+      setConnectionState("LOCAL_READ_COMPLETE");
+    } catch (error) {
+      appendEntry("continue", message("continue"), `CONTINUE: Journal evidence could not be read.\n${String(error.message || error)}`);
+      setConnectionState("CONTINUE");
+    }
+  }
+
   async function runLocalAnalysis(question) {
     if (!question) {
       appendEntry("continue", message("continue"), message("missingQuestion"));
@@ -429,6 +473,10 @@
     }
     if (command === "publications") {
       await showPublications();
+      return;
+    }
+    if (command === "journal") {
+      await showJournal(argument || "index");
       return;
     }
     if (command === "analyse" || command === "analyze") {

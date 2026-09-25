@@ -1,0 +1,17 @@
+name: QIKVRT journal translation quality
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  translation-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit multilingual structural and translation-claim evidence
+        run: python3 -B tools/qikvrt_journal_translation_quality.py | tee translation-quality.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qikvrt-journal-translation-quality
+          path: translation-quality.json

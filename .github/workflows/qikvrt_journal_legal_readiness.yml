@@ -1,0 +1,18 @@
+name: QIKVRT journal legal readiness
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  journal-legal-readiness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail closed on missing publication-law data
+        run: python3 -B tools/qikvrt_journal_legal_readiness.py --output journal-legal-readiness.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qikvrt-journal-legal-readiness
+          path: journal-legal-readiness.json
