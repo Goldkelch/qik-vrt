@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   rails-vercel-contract:
@@ -35,7 +35,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 1
-          persist-credentials: false
+          persist-credentials: true
 
       - name: Bind exact HEAD and TREE
         shell: bash
@@ -139,6 +139,62 @@ jobs:
           test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
           git status --porcelain=v1 --untracked-files=all | tee "$EVIDENCE_ROOT/WORKTREE.txt"
           test ! -s "$EVIDENCE_ROOT/WORKTREE.txt"
+
+      - name: Persist canonical integrity successor
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          TARGET_BRANCH: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          source_head="$(git rev-parse --verify HEAD^{commit})"
+          test "$source_head" = "$EXPECTED_HEAD"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_head" = "$source_head"
+
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+
+          mapfile -t changed < <(git diff --name-only)
+          allowed='^(REPOSITORY_FILE_MANIFEST\.json|REPOSITORY_FILE_MANIFEST\.json\.sha256|SHA256SUMS\.txt)        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-megast-rails-vercel-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ env.EVIDENCE_ROOT }}
+          retention-days: 30
+          if-no-files-found: error
+
+          for changed_path in "${changed[@]}"; do
+            printf '%s\n' "$changed_path" | grep -Eq "$allowed" || {
+              echo "BLOCK: unexpected materializer delta: $changed_path" >&2
+              exit 2
+            }
+          done
+
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          if git diff --cached --quiet; then
+            persisted_head="$source_head"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "ci: materialize Mega ST Rails/Vercel integrity successor"
+            persisted_head="$(git rev-parse --verify HEAD^{commit})"
+            remote_head_after="$(
+              git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" |
+                awk 'NR == 1 { print $1 }'
+            )"
+            test "$remote_head_after" = "$source_head"
+            git push origin "HEAD:$TARGET_BRANCH"
+          fi
+          {
+            printf 'SOURCE_HEAD=%s\n' "$source_head"
+            printf 'PERSISTED_HEAD=%s\n' "$persisted_head"
+            printf 'PERSISTED_TREE=%s\n' "$(git rev-parse --verify HEAD^{tree})"
+          } | tee "$EVIDENCE_ROOT/PERSISTED_SUBJECT.txt"
 
       - name: Preserve exact-subject Rails/Vercel evidence
         if: always()
