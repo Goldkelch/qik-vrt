@@ -55,6 +55,8 @@ REVIEW_INTAKE_SCHEMA = "qikvrt_review_intake_v1"
 REVIEW_PRIORITY_POLICY_PATH = "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json"
 REVIEW_PRIORITY_POLICY_SCHEMA = "qikvrt_requested_review_and_issue_lifecycle_policy_v1"
 REF_RECONCILIATION_DELAYS_SECONDS = (0.25, 1.0, 2.0, 4.0, 8.0)
+GITHUB_INSTALLATION_RATE_LIMIT_PREFIX = "API rate limit exceeded for installation."
+GITHUB_INSTALLATION_RATE_LIMIT_BACKOFF_SECONDS = (0, 15, 45)
 VALID_FILE_STATES = {
     "added",
     "changed",
@@ -2095,20 +2097,55 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
 
 
 def _run_json(command: Sequence[str], *, input_text: str | None = None) -> Any:
-    completed = subprocess.run(
-        list(command),
-        input=input_text,
-        text=True,
-        capture_output=True,
-        check=False,
+    """Run one JSON command with bounded retry for GitHub installation quota only.
+
+    This reuses the repository's canonical 0/15/45 second read-back policy.
+    Non-rate-limit failures are never retried. Exhaustion stays fail-closed and
+    is explicitly classified so a later repository-native interrupt can retry.
+    """
+    argv = list(command)
+    is_github_api = len(argv) >= 2 and argv[0] == "gh" and argv[1] == "api"
+    delays = (
+        GITHUB_INSTALLATION_RATE_LIMIT_BACKOFF_SECONDS
+        if is_github_api
+        else (0,)
     )
-    if completed.returncode:
-        detail = completed.stderr.strip().replace("\n", " ")[:400]
-        raise ReviewObservationError(f"command failed ({command[0]}): {detail}")
+    completed = None
+    for index, delay in enumerate(delays):
+        if delay:
+            time.sleep(delay)
+        completed = subprocess.run(
+            argv,
+            input=input_text,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if not completed.returncode:
+            break
+        stderr = completed.stderr or ""
+        rate_limited = (
+            is_github_api
+            and GITHUB_INSTALLATION_RATE_LIMIT_PREFIX in stderr
+        )
+        if not rate_limited:
+            detail = stderr.strip().replace("\n", " ")[:400]
+            raise ReviewObservationError(
+                f"command failed ({command[0]}): {detail}"
+            )
+        if index == len(delays) - 1:
+            detail = stderr.strip().replace("\n", " ")[:400]
+            raise ReviewObservationError(
+                "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED: "
+                f"command failed ({command[0]}): {detail}"
+            )
+    assert completed is not None
     try:
         return json.loads(completed.stdout)
     except json.JSONDecodeError as exc:
-        raise ReviewObservationError(f"command returned invalid JSON ({command[0]})") from exc
+        raise ReviewObservationError(
+            f"command returned invalid JSON ({command[0]})"
+        ) from exc
 
 
 def _gh_one(path: str) -> Any:

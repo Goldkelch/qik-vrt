@@ -103,6 +103,71 @@ def scope_sha256(changed_files: list[dict[str, object]]) -> str:
 
 
 class RequestedReviewExecutorTests(unittest.TestCase):
+    def test_github_api_installation_rate_limit_uses_bounded_backoff(self):
+        limited = subprocess.CompletedProcess(
+            ["gh", "api", "repos/example/qik-vrt/pulls/1"],
+            1,
+            stdout="",
+            stderr="gh: API rate limit exceeded for installation. request id (HTTP 403)",
+        )
+        success = subprocess.CompletedProcess(
+            ["gh", "api", "repos/example/qik-vrt/pulls/1"],
+            0,
+            stdout='{"number":1}',
+            stderr="",
+        )
+        with (
+            mock.patch.object(
+                MODULE.subprocess,
+                "run",
+                side_effect=[limited, limited, success],
+            ) as run,
+            mock.patch.object(MODULE.time, "sleep") as sleep,
+        ):
+            value = MODULE._run_json(
+                ("gh", "api", "repos/example/qik-vrt/pulls/1")
+            )
+        self.assertEqual(value, {"number": 1})
+        self.assertEqual(run.call_count, 3)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [15, 45])
+
+    def test_github_api_rate_limit_exhaustion_is_explicit(self):
+        limited = subprocess.CompletedProcess(
+            ["gh", "api", "repos/example/qik-vrt/pulls/1"],
+            1,
+            stdout="",
+            stderr="gh: API rate limit exceeded for installation. request id (HTTP 403)",
+        )
+        with (
+            mock.patch.object(
+                MODULE.subprocess,
+                "run",
+                side_effect=[limited, limited, limited],
+            ),
+            mock.patch.object(MODULE.time, "sleep"),
+            self.assertRaisesRegex(
+                MODULE.ReviewObservationError,
+                "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",
+            ),
+        ):
+            MODULE._run_json(("gh", "api", "repos/example/qik-vrt/pulls/1"))
+
+    def test_non_rate_limit_github_failure_is_not_retried(self):
+        failed = subprocess.CompletedProcess(
+            ["gh", "api", "repos/example/qik-vrt/pulls/1"],
+            1,
+            stdout="",
+            stderr="gh: Not Found (HTTP 404)",
+        )
+        with (
+            mock.patch.object(MODULE.subprocess, "run", return_value=failed) as run,
+            mock.patch.object(MODULE.time, "sleep") as sleep,
+            self.assertRaises(MODULE.ReviewObservationError),
+        ):
+            MODULE._run_json(("gh", "api", "repos/example/qik-vrt/pulls/1"))
+        self.assertEqual(run.call_count, 1)
+        sleep.assert_not_called()
+
     def test_github_workflow_expression_tokens_are_line_closed(self):
         offenders = []
         workflows = ROOT / ".github" / "workflows"
