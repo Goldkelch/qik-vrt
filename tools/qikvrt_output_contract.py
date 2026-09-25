@@ -124,6 +124,23 @@ def canonical_knowledge_artifacts_identity() -> dict[str, Any]:
     artifacts = value.get("artifacts")
     if not isinstance(artifacts, list) or len(artifacts) != 3:
         raise OutputContractError("required knowledge artifact count mismatch")
+    for item in artifacts:
+        path_text = item.get("path")
+        if not isinstance(path_text, str):
+            raise OutputContractError("required knowledge artifact path missing")
+        artifact_path = ROOT / path_text
+        if not artifact_path.is_file():
+            raise OutputContractError(f"required knowledge artifact missing: {path_text}")
+        raw = artifact_path.read_bytes()
+        if len(raw) != item.get("bytes"):
+            raise OutputContractError(f"required knowledge artifact byte mismatch: {path_text}")
+        if hashlib.sha256(raw).hexdigest() != item.get("sha256"):
+            raise OutputContractError(f"required knowledge artifact sha256 mismatch: {path_text}")
+        if _git_blob_sha1(raw) != item.get("git_blob_sha1"):
+            raise OutputContractError(f"required knowledge artifact git blob mismatch: {path_text}")
+        if path_text.endswith(".pdf"):
+            if not raw.startswith(b"%PDF-1.4") or not raw.rstrip().endswith(b"%%EOF"):
+                raise OutputContractError("required scientific PDF structure invalid")
     return {
         **identity,
         "manifest_id": value["manifest_id"],
