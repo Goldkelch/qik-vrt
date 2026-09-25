@@ -17,7 +17,12 @@ The distribution lane is not complete merely because an ISO builds. Its terminal
 
 Canonical download target after a legitimate trusted-Main publication:
 
-`https://github.com/Goldkelch/qik-vrt/releases/latest/download/qikvrt-megast-amd64.iso`
+`https://github.com/Goldkelch/qik-vrt/releases/latest/download/qikvrt-distribution-manifest.json`
+
+The manifest names the ISO and its transport parts. An ISO larger than the chosen
+part size is reconstructed by the readback client, rather than uploaded as a
+single oversized release asset. Exact release tags and trusted manifest hashes
+remain necessary when reproducing a particular source subject.
 
 ## Architecture
 
@@ -49,8 +54,9 @@ The script writes `out/qikvrt-megast-amd64.iso`, `out/qikvrt-megast-amd64.iso.sh
 The same build now exports `qikvrt-megast-vmlinuz`, `qikvrt-megast-initrd`,
 `qikvrt-megast-filesystem.squashfs` and `QIKVRT_BOOT.BIN`. The machine-readable
 `qikvrt-netboot.json` binds their byte counts, SHA-256 values, source commit,
-host architecture and fixed boot method. `qikvrt-netboot-client.py` downloads
-only those files, validates the caller-provided manifest digest and starts
+host architecture and fixed boot method. `qikvrt-netboot-client.py` with the
+adjacent `qikvrt_transfer_parts.py` downloads only those files or their declared
+parts, validates the caller-provided manifest digest and starts
 QEMU with the exact kernel/initrd and an HTTP-fetched live root filesystem.
 It attaches no CD-ROM. No command supplied by the remote manifest is executed.
 
@@ -181,6 +187,43 @@ Sources: [OpenAI remote connections](https://learn.chatgpt.com/docs/remote-conne
 [Pinned upstream native pairing implementation](https://github.com/openai/codex/blob/rust-v0.155.1/codex-rs/cli/src/remote_control_cmd.rs),
 [QEMU fw_cfg](https://www.qemu.org/docs/master/system/qemu-manpage.html).
 
+## Transfer parts and line profiles
+The standard transfer part is **2048 MiB (2 GiB)**. This is an application-level
+file segment; TCP/IP retains responsibility for network packets and retransmission.
+ISO, SquashFS and Docker archives use the same `tools/qikvrt_transfer_parts.py`
+implementation. Already compressed files are split into raw segments without an
+additional ZIP compression pass. The original file name, total size and SHA-256
+are bound separately from every part's name, offset, size and SHA-256.
+Both netboot and distribution manifests now use schema v2 for parts. Legacy v1
+netboot files retain the 2048-MiB single-file bound. The updated clients support
+both versions; older clients cannot interpret v2. Copy the helper alongside each
+exported Python client. The build carries those exact files into the ISO and
+the distribution archive, and binds the exported helper in the release manifest.
+For a less reliable connection, create smaller parts, for example 64 MiB:
+python3 distribution/qikvrt-megast/boot.py manifest out SOURCE_HEAD --part-mib 64
+python3 tools/qikvrt_distribution_readback.py manifest out SOURCE_HEAD SOURCE_TREE --part-mib 64
+python3 qikvrt-netboot-client.py receive MANIFEST_URL MANIFEST_SHA256 received --max-part-mib 64
+The same options accept larger parts for a stable connection, for example
+`--part-mib 4096` together with `--max-part-mib 4096` at the receiver. A sender
+cannot enlarge a receiver's default limit. The explicit implementation bounds
+are 8192 MiB per part, 64 GiB per logical file and 4096 parts per file. Choose a
+larger part size if the part inventory would exceed that bound. Network services
+may impose lower upload limits; select a compatible profile for that route.
+There is no automatic assessment of physical line quality or change to codec
+bitrate. Changing the configured profile creates different part names and a new
+manifest digest; it does not modify or relicense the original payload.
+The receiver retains complete, verified parts after interruption. Running the
+same receive command resumes with the missing parts; a conflicting cached part
+stops the operation. The final file appears only after ordered assembly and a
+successful complete-file hash check. Missing, reordered, duplicated, truncated
+or corrupted parts cannot create an accepted output. Final boot rechecks the
+assembled images as before. Public release readback deliberately downloads every
+part afresh so that a warm local cache cannot masquerade as public availability.
+Publication uploads each large asset's parts in place of the large original;
+readback recreates the original ISO/Docker/SquashFS before normal execution tests.
+Assembly temporarily needs space for both retained parts and the complete output.
+Smaller parts reduce the work repeated after an interruption; they do not reduce
+the total content, guarantee higher throughput, or change the boot RAM budget.
 ## Principle
 
 **Stay fail closed and keep future open.** Missing runtime or publication evidence leaves the lane open; it never converts transport success into effect. The return path carries the original request, material descendants, artifacts, effects, failures, repairs, successors and still-open obligations back into the evidence chain.
