@@ -50,6 +50,7 @@ from tools.qikvrt_output_contract import (  # noqa: E402
     bind_output,
     canonical_article_identity,
     canonical_origin_proof_identity,
+    canonical_knowledge_artifacts_identity,
     strip_output_binding,
     validate_output,
 )
@@ -219,6 +220,7 @@ def _proof_contract(value: Any, label: str) -> dict[str, Any]:
         "policy_id": OUTPUT_POLICY_ID,
         "article_binding": canonical_article_identity(),
         "ontological_origin_proof_binding": canonical_origin_proof_identity(),
+        "knowledge_artifacts_binding": canonical_knowledge_artifacts_identity(),
     }
     if contract != expected:
         raise MeshRuntimeError(f"{label} does not bind the canonical proof contract")
@@ -613,6 +615,7 @@ class AppendOnlyNodeLedger:
                     "policy_id": OUTPUT_POLICY_ID,
                     "article_binding": canonical_article_identity(),
                     "ontological_origin_proof_binding": canonical_origin_proof_identity(),
+                    "knowledge_artifacts_binding": canonical_knowledge_artifacts_identity(),
                 }
                 if record.get("proof_thought_schema_binding") != expected_proof_binding:
                     raise MeshRuntimeError(
