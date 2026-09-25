@@ -23,7 +23,7 @@ usage() {
     cat <<'EOF'
 Usage: tools/bootstrap-runtime.sh [--check-only] [--install]
        [--accept-third-party]
-       [--profile core|ietf|formal|audio|publication|smalltalk|target|all]
+       [--profile core|ietf|formal|audio|publication|smalltalk|multimedia|sso|target|all]
        [--cache-dir PATH]
 
 Every profile checks GitHub CLI first. Only the verified GitHub CLI and
@@ -91,7 +91,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$PROFILE" in
-    core|ietf|formal|audio|publication|smalltalk|target|all) ;;
+    core|ietf|formal|audio|publication|smalltalk|multimedia|sso|target|all) ;;
     *) usage >&2; exit 2 ;;
 esac
 if [ "$MODE" = install ] && [ "$ACCEPT_THIRD_PARTY" -ne 1 ]; then
@@ -429,6 +429,16 @@ case "$PROFILE" in
     audio) check_audio_profile ;;
     publication) check_publication_profile ;;
     smalltalk) check_smalltalk_profile ;;
+    multimedia)
+        multimedia_operation=verify
+        if [ "$MODE" = install ]; then multimedia_operation=install; fi
+        python3 "$ROOT/tools/qikvrt_multimedia_runtime.py" "$multimedia_operation" --cache-dir "$CACHE_DIR/multimedia" || mark_continue "multimedia: pinned local model/runtime unavailable"
+        ;;
+    sso)
+        sso_operation=verify
+        if [ "$MODE" = install ]; then sso_operation=install; fi
+        python3 "$ROOT/tools/qikvrt_sso_gateway.py" "$sso_operation" --cache-dir "$CACHE_DIR/sso" || mark_continue "sso: pinned OIDC gateway unavailable; personal enrollment is separate"
+        ;;
     target) check_target_profile ;;
     all)
         check_core_profile
@@ -437,6 +447,7 @@ case "$PROFILE" in
         check_audio_profile
         check_publication_profile
         check_smalltalk_profile
+        check_target_profile
         ;;
 esac
 
