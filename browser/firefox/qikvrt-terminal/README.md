@@ -96,3 +96,18 @@ The package includes every manifest-referenced script and all catalogs. Producti
 distribution still requires the supported signing or managed deployment path.
 The canonical public /AI and personal session acceptance contract is in
 `docs/terminal/FIREFOX_EFFECT_ACK_TERMINAL_PROXY_V1.md`.
+
+## License acceptance installation
+
+The package embeds the applicable QIK-VRT software/documentation legal texts and licensing guidance. The repository installer presents the noncommercial boundary before changing a Firefox profile and fails closed unless the terms are explicitly accepted:
+
+```sh
+python3 -B tools/qikvrt_firefox_install.py \\
+  --xpi /tmp/qikvrt-ai-terminal.xpi \\
+  --profile /path/to/firefox/profile \\
+  --accept-license
+```
+
+Without `--accept-license`, an interactive terminal requires the exact acceptance phrase. Use `--show-licenses` to display the full embedded legal texts. Current QIK-VRT-controlled software is governed, where identified, by `PolyForm-Noncommercial-1.0.0`; free private/personal use is included only within that license's permitted noncommercial purposes, while ordinary commercial use is not granted. Documentation/non-source content and third-party or historical material retain their separately applicable terms.
+
+The acceptance gate exists so repository access, build success, and installation are not mistaken for a commercial license grant. Installing the bytes also does not establish Firefox activation or supported signing. See `docs/terminal/FIREFOX_INSTALL_LICENSE_ACCEPTANCE_V1.md`.
