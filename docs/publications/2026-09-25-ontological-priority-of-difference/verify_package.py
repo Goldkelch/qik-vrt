@@ -85,8 +85,8 @@ def verify_content_freeze() -> dict:
     if freeze.get("schema") != "qikvrt_ontological_priority_content_candidate_freeze_v1":
         raise CandidateError("content freeze schema mismatch")
     files = freeze.get("files")
-    if not isinstance(files, list) or len(files) != 13:
-        raise CandidateError("content freeze must contain exactly 13 files")
+    if not isinstance(files, list) or len(files) != 16:
+        raise CandidateError("content freeze must contain exactly 16 files")
     seen = set()
     lines = []
     total = 0
@@ -109,7 +109,7 @@ def verify_content_freeze() -> dict:
             raise CandidateError(f"git blob mismatch: {path_text}")
         total += len(raw)
         lines.append(f"{observed_sha}  {path_text}\n")
-    aggregate = hashlib.sha256("".join(sorted(lines)).encode("utf-8")).hexdigest()
+    required_leibniz = {\n        "docs/publications/2026-09-25-leibniz-qikvrt/PROSA_VOM_UNTERSCHIED_ZU_QIKVRT_DE.md",\n        "docs/publications/2026-09-25-leibniz-qikvrt/SCIENTIFIC_ARTICLE_LEIBNIZ_QIKVRT_DE.md",\n        "docs/publications/2026-09-25-leibniz-qikvrt/Leibniz_QIK-VRT_Monaden_und_evidenzgebundener_Unterschied.pdf",\n    }\n    if not required_leibniz.issubset(seen):\n        raise CandidateError("Leibniz/QIK-VRT prose or scientific PDF missing from candidate")\n    pdf_path = ROOT / "docs/publications/2026-09-25-leibniz-qikvrt/Leibniz_QIK-VRT_Monaden_und_evidenzgebundener_Unterschied.pdf"\n    pdf = pdf_path.read_bytes()\n    if not pdf.startswith(b"%PDF-1.4") or not pdf.rstrip().endswith(b"%%EOF"):\n        raise CandidateError("Leibniz scientific PDF structure is invalid")\n    aggregate = hashlib.sha256("".join(sorted(lines)).encode("utf-8")).hexdigest()
     if aggregate != freeze.get("exact_content_aggregate_sha256"):
         raise CandidateError("content aggregate mismatch")
     if total != freeze.get("total_bytes"):
