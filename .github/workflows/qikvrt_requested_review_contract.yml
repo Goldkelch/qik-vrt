@@ -159,7 +159,13 @@ jobs:
           grep -F 'mesh_review_status_projection' .github/workflows/qikvrt_expected_head_promotion.yml
           grep -F 'require_unchanged_mesh_review_status' .github/workflows/qikvrt_expected_head_promotion.yml
           grep -F 'require_unchanged_promotion_marker' .github/workflows/qikvrt_expected_head_promotion.yml
-          grep -F 'HEAD^1' .github/workflows/qikvrt_expected_head_promotion.yml
-          ! grep -F 'pulls/${PR_NUMBER}/merge' .github/workflows/qikvrt_expected_head_promotion.yml
+          grep -F 'FULL_AUTOMATION_MARKER' .github/workflows/qikvrt_expected_head_promotion.yml
+          grep -F 'EXECUTE_EXACT_HEAD_MERGE' tools/qikvrt_expected_head_promotion.py
+          grep -F 'pulls/${PR_NUMBER}/merge' .github/workflows/qikvrt_expected_head_promotion.yml
+          grep -F -- '-f sha="$EXPECTED_HEAD"' .github/workflows/qikvrt_expected_head_promotion.yml
+          grep -F 'branch_protection_weakening_allowed' .github/workflows/qikvrt_expected_head_promotion.yml
+          grep -F 'qikvrt_repository_main_integration_effect_ack_v1' .github/workflows/qikvrt_expected_head_promotion.yml
+          grep -F 'global_release_effect_ack_done' .github/workflows/qikvrt_expected_head_promotion.yml
+          ! grep -F 'gh pr ready' .github/workflows/qikvrt_expected_head_promotion.yml
           grep -F "tools/qikvrt_requested_review_executor.py','verify'" .github/workflows/qikvrt_expected_head_promotion.yml
           grep -F "'--expected-diff',str(diff_path)" .github/workflows/qikvrt_expected_head_promotion.yml

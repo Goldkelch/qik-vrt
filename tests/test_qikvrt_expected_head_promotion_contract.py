@@ -10,6 +10,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
 PROMOTION_WORKFLOW = ROOT / ".github/workflows/qikvrt_expected_head_promotion.yml"
 SELF_HEAL_WORKFLOW = ROOT / ".github/workflows/qikvrt_autonomous_self_heal.yml"
+FULL_AUTOMATION_CANDIDATE_WORKFLOW = ROOT / ".github/workflows/qikvrt_full_automation_candidate.yml"
 MARKER = "<!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->"
 
 
@@ -53,23 +54,58 @@ class ExpectedHeadPromotionContractTests(unittest.TestCase):
         self.assertIn("tests.test_qikvrt_expected_head_promotion", workflow)
         self.assertIn("This proposal workflow never promotes or merges", workflow)
 
-    def test_executor_is_bounded_and_fails_closed_before_merge(self) -> None:
+    def test_executor_is_bounded_and_fail_closed_around_exact_head_merge(self) -> None:
         workflow = PROMOTION_WORKFLOW.read_text(encoding="utf-8")
+        decision = pathlib.Path(
+            ROOT / "tools/qikvrt_expected_head_promotion.py"
+        ).read_text(encoding="utf-8")
         self.assertIn('cron: "*/10 * * * *"', workflow)
         self.assertIn("cancel-in-progress: false", workflow)
-        self.assertIn("READY_RECLASSIFICATION_CAS_UNAVAILABLE", pathlib.Path(
-            ROOT / "tools/qikvrt_expected_head_promotion.py"
-        ).read_text(encoding="utf-8"))
-        self.assertIn('exit 0', workflow)
+        self.assertIn("READY_RECLASSIFICATION_CAS_UNAVAILABLE", decision)
+        self.assertIn("HEAD1_BASE_CAS_UNAVAILABLE", decision)
+        self.assertIn("EXECUTE_EXACT_HEAD_MERGE", decision)
         self.assertIn("require_unchanged_promotion_marker", workflow)
-        self.assertIn("HEAD^1", workflow)
-        self.assertNotIn('-f sha="$EXPECTED_HEAD"', workflow)
-        self.assertNotIn("repos/${REPOSITORY}/pulls/${PR_NUMBER}/merge", workflow)
+        self.assertIn('-f sha="$EXPECTED_HEAD"', workflow)
+        self.assertIn("-f merge_method=merge", workflow)
+        self.assertIn("repos/${REPOSITORY}/pulls/${PR_NUMBER}/merge", workflow)
+        self.assertIn("pull-requests: write", workflow)
+        self.assertIn("contents: write", workflow)
+        self.assertIn("statuses: write", workflow)
         self.assertNotIn("gh pr ready", workflow)
-        self.assertNotIn("pull-requests: write", workflow)
+        self.assertIn("qikvrt_repository_main_integration_effect_ack_v1", workflow)
+        self.assertIn("REPOSITORY_MAIN_INTEGRATION", workflow)
+        self.assertIn("merge_parents", workflow)
+        self.assertIn("global_release_effect_ack_done", workflow)
         compact = workflow.replace(" ", "")
         self.assertIn("other.get('base',{}).get('sha')!=current_main", compact)
         self.assertIn("other.get('head',{}).get('sha')==head", compact)
+
+    def test_full_automation_candidate_materializer_is_integrity_only(self) -> None:
+        workflow = FULL_AUTOMATION_CANDIDATE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("qikvrt-full-automation:v1", workflow)
+        self.assertIn("contents: write", workflow)
+        self.assertIn("tools/qikvrt_integrity.py generate", workflow)
+        self.assertIn("make test", workflow)
+        self.assertIn("INTEGRITY_TRIO_ONLY", workflow)
+        self.assertIn("REPOSITORY_FILE_MANIFEST.json.sha256", workflow)
+        self.assertIn("SHA256SUMS.txt", workflow)
+        self.assertIn('test "$remote_head" = "$EXPECTED_HEAD"', workflow)
+        self.assertIn('test "$remote_before_push" = "$source_head"', workflow)
+        self.assertIn('git push origin "HEAD:$HEAD_REF"', workflow)
+        self.assertIn("qikvrt_autonomous_exact_head_verify", workflow)
+        self.assertIn("actions: write", workflow)
+        self.assertIn("qikvrt_batch04_integrity.yml", workflow)
+        self.assertIn("qikvrt_ci.yml", workflow)
+        self.assertIn("qikvrt_collective_review.yml", workflow)
+        self.assertIn("qikvrt_global_completion.yml", workflow)
+        self.assertIn('event:"workflow_dispatch"', workflow)
+        self.assertIn("FULL_AUTOMATION_INTEGRITY_SUCCESSOR", workflow)
+        self.assertIn("steps.persist.outputs.successor", workflow)
+        self.assertIn("REOBSERVE_DISPATCHED", workflow)
+        self.assertNotIn("pulls/${PR_NUMBER}/merge", workflow)
+        self.assertNotIn("main:refs/heads/main", workflow)
+        self.assertIn('"external_effect":"NONE"', workflow)
+        self.assertIn('"effect_ack_done":False', workflow)
 
     def test_external_effect_claims_remain_fail_closed(self) -> None:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))

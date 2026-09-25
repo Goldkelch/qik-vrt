@@ -1,0 +1,229 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT full-automation candidate integrity
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: qikvrt-full-automation-candidate-${{ github.repository }}-${{ github.event.pull_request.head.ref }}
+  cancel-in-progress: false
+
+jobs:
+  materialize-integrity:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'github-actions[bot]' &&
+      contains(github.event.pull_request.body || '', '<!-- qikvrt-full-automation:v1 external_effect=REPOSITORY_MAIN_INTEGRATION -->')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      RECEIPT: /tmp/qikvrt-full-automation-candidate-integrity.json
+    steps:
+      - name: Check out exact full-automation candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_HEAD }}
+          fetch-depth: 2
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Bind exact branch head before materialization
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
+          test "$remote_head" = "$EXPECTED_HEAD"
+
+      - name: Regenerate canonical integrity and run full repository gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Enforce integrity-only worktree delta
+        id: delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json, os, pathlib, subprocess
+          allowed={
+              "REPOSITORY_FILE_MANIFEST.json",
+              "REPOSITORY_FILE_MANIFEST.json.sha256",
+              "SHA256SUMS.txt",
+          }
+          changed=set(subprocess.check_output(["git","diff","--name-only","--"],text=True).splitlines())
+          extra=sorted(changed-allowed)
+          if extra:
+              raise SystemExit(f"BLOCK: full-automation materializer produced out-of-scope paths: {extra}")
+          receipt={
+              "schema":"qikvrt_full_automation_candidate_integrity_v1",
+              "repository":os.environ["GITHUB_REPOSITORY"],
+              "source_head":os.environ["EXPECTED_HEAD"],
+              "head_ref":os.environ["HEAD_REF"],
+              "changed_paths":sorted(changed),
+              "mutation_scope":"INTEGRITY_TRIO_ONLY",
+              "main_mutation":False,
+              "external_effect":"NONE",
+              "effect_ack_done":False,
+              "predecessor_evidence_transfer":False,
+          }
+          pathlib.Path(os.environ["RECEIPT"]).write_text(json.dumps(receipt,sort_keys=True,indent=2)+"\n",encoding="utf-8")
+          with open(os.environ["GITHUB_OUTPUT"],"a",encoding="utf-8") as h:
+              h.write("changed=" + ("true" if changed else "false") + "\n")
+          PY
+
+      - name: Persist only canonical integrity trio
+        id: persist
+        if: steps.delta.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_head="$(git rev-parse --verify HEAD^{commit})"
+          test "$source_head" = "$EXPECTED_HEAD"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
+          test "$remote_head" = "$source_head"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          test -z "$(git diff --name-only --)"
+          git commit -m "ci: materialize full-automation candidate integrity"
+          successor="$(git rev-parse --verify HEAD^{commit})"
+          tree="$(git rev-parse --verify HEAD^{tree})"
+          remote_before_push="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
+          test "$remote_before_push" = "$source_head"
+          git push origin "HEAD:$HEAD_REF"
+          echo "successor=$successor" >> "$GITHUB_OUTPUT"
+          echo "successor_tree=$tree" >> "$GITHUB_OUTPUT"
+          SOURCE_HEAD="$source_head" SUCCESSOR_HEAD="$successor" SUCCESSOR_TREE="$tree" python3 -B - <<'PY'
+          import json, os, pathlib
+          path=pathlib.Path(os.environ["RECEIPT"])
+          value=json.loads(path.read_text(encoding="utf-8"))
+          value.update({
+              "state":"SUCCESSOR_PERSISTED",
+              "source_head":os.environ["SOURCE_HEAD"],
+              "successor_head":os.environ["SUCCESSOR_HEAD"],
+              "successor_tree":os.environ["SUCCESSOR_TREE"],
+          })
+          path.write_text(json.dumps(value,sort_keys=True,indent=2)+"\n",encoding="utf-8")
+          PY
+
+      - name: Dispatch exact successor required gates
+        if: steps.delta.outputs.changed == 'true'
+        env:
+          SUCCESSOR_HEAD: ${{ steps.persist.outputs.successor }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SUCCESSOR_HEAD"
+          live_head="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+          test "$live_head" = "$SUCCESSOR_HEAD"
+          receipt=/tmp/qikvrt-full-automation-gate-dispatch.jsonl
+          : > "$receipt"
+          for workflow in \
+            qikvrt_batch04_integrity.yml \
+            qikvrt_ci.yml \
+            qikvrt_collective_review.yml \
+            qikvrt_global_completion.yml
+          do
+            live_head="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+            test "$live_head" = "$SUCCESSOR_HEAD"
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/dispatches" \
+              -f ref="$HEAD_REF"
+            jq -nc \
+              --arg workflow "$workflow" \
+              --arg ref "$HEAD_REF" \
+              --arg head "$SUCCESSOR_HEAD" \
+              '{workflow:$workflow,ref:$ref,head:$head,event:"workflow_dispatch",productive_effect:false}' \
+              >> "$receipt"
+          done
+          SUCCESSOR_HEAD="$SUCCESSOR_HEAD" python3 -B - <<'PY'
+          import json, os, pathlib
+          path=pathlib.Path(os.environ["RECEIPT"])
+          value=json.loads(path.read_text(encoding="utf-8"))
+          value["required_gate_event"]="workflow_dispatch"
+          value["required_gate_dispatches"]=[
+              "qikvrt_batch04_integrity.yml",
+              "qikvrt_ci.yml",
+              "qikvrt_collective_review.yml",
+              "qikvrt_global_completion.yml",
+          ]
+          value["gate_dispatch_head"]=os.environ["SUCCESSOR_HEAD"]
+          path.write_text(json.dumps(value,sort_keys=True,indent=2)+"\n",encoding="utf-8")
+          PY
+
+      - name: Dispatch exact integrity successor revalidation
+        if: steps.delta.outputs.changed == 'true'
+        env:
+          SUCCESSOR_HEAD: ${{ steps.persist.outputs.successor }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SUCCESSOR_HEAD"
+          live_head="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+          test "$live_head" = "$SUCCESSOR_HEAD"
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg pr "$PR_NUMBER" \
+            --arg ref "$HEAD_REF" \
+            --arg head "$SUCCESSOR_HEAD" \
+            --arg base "$BASE_SHA" \
+            '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base,d0:2,causal_state:"REOBSERVE",reason:"FULL_AUTOMATION_INTEGRITY_SUCCESSOR"}}' \
+            | gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input -
+          SUCCESSOR_HEAD="$SUCCESSOR_HEAD" python3 -B - <<'PY'
+          import json, os, pathlib
+          path=pathlib.Path(os.environ["RECEIPT"])
+          value=json.loads(path.read_text(encoding="utf-8"))
+          value["revalidation_dispatch"]="qikvrt_autonomous_exact_head_verify"
+          value["revalidation_head"]=os.environ["SUCCESSOR_HEAD"]
+          value["continuation_state"]="REOBSERVE_DISPATCHED"
+          path.write_text(json.dumps(value,sort_keys=True,indent=2)+"\n",encoding="utf-8")
+          PY
+      - name: Seal no-op receipt when integrity is current
+        if: steps.delta.outputs.changed != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json, os, pathlib, subprocess
+          path=pathlib.Path(os.environ["RECEIPT"])
+          value=json.loads(path.read_text(encoding="utf-8"))
+          value.update({
+              "state":"INTEGRITY_CURRENT",
+              "successor_head":os.environ["EXPECTED_HEAD"],
+              "successor_tree":subprocess.check_output(["git","rev-parse","HEAD^{tree}"],text=True).strip(),
+          })
+          path.write_text(json.dumps(value,sort_keys=True,indent=2)+"\n",encoding="utf-8")
+          PY
+
+      - name: Preserve candidate-integrity receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-full-automation-candidate-integrity-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /tmp/qikvrt-full-automation-candidate-integrity.json
+            /tmp/qikvrt-full-automation-gate-dispatch.jsonl
+          if-no-files-found: warn
+          retention-days: 30

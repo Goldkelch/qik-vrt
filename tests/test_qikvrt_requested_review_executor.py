@@ -103,6 +103,71 @@ def scope_sha256(changed_files: list[dict[str, object]]) -> str:
 
 
 class RequestedReviewExecutorTests(unittest.TestCase):
+    def test_github_api_installation_rate_limit_uses_bounded_backoff(self):
+        limited = subprocess.CompletedProcess(
+            ["gh", "api", "repos/example/qik-vrt/pulls/1"],
+            1,
+            stdout="",
+            stderr="gh: API rate limit exceeded for installation. request id (HTTP 403)",
+        )
+        success = subprocess.CompletedProcess(
+            ["gh", "api", "repos/example/qik-vrt/pulls/1"],
+            0,
+            stdout='{"number":1}',
+            stderr="",
+        )
+        with (
+            mock.patch.object(
+                MODULE.subprocess,
+                "run",
+                side_effect=[limited, limited, success],
+            ) as run,
+            mock.patch.object(MODULE.time, "sleep") as sleep,
+        ):
+            value = MODULE._run_json(
+                ("gh", "api", "repos/example/qik-vrt/pulls/1")
+            )
+        self.assertEqual(value, {"number": 1})
+        self.assertEqual(run.call_count, 3)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [15, 45])
+
+    def test_github_api_rate_limit_exhaustion_is_explicit(self):
+        limited = subprocess.CompletedProcess(
+            ["gh", "api", "repos/example/qik-vrt/pulls/1"],
+            1,
+            stdout="",
+            stderr="gh: API rate limit exceeded for installation. request id (HTTP 403)",
+        )
+        with (
+            mock.patch.object(
+                MODULE.subprocess,
+                "run",
+                side_effect=[limited, limited, limited],
+            ),
+            mock.patch.object(MODULE.time, "sleep"),
+            self.assertRaisesRegex(
+                MODULE.ReviewObservationError,
+                "GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",
+            ),
+        ):
+            MODULE._run_json(("gh", "api", "repos/example/qik-vrt/pulls/1"))
+
+    def test_non_rate_limit_github_failure_is_not_retried(self):
+        failed = subprocess.CompletedProcess(
+            ["gh", "api", "repos/example/qik-vrt/pulls/1"],
+            1,
+            stdout="",
+            stderr="gh: Not Found (HTTP 404)",
+        )
+        with (
+            mock.patch.object(MODULE.subprocess, "run", return_value=failed) as run,
+            mock.patch.object(MODULE.time, "sleep") as sleep,
+            self.assertRaises(MODULE.ReviewObservationError),
+        ):
+            MODULE._run_json(("gh", "api", "repos/example/qik-vrt/pulls/1"))
+        self.assertEqual(run.call_count, 1)
+        sleep.assert_not_called()
+
     def test_github_workflow_expression_tokens_are_line_closed(self):
         offenders = []
         workflows = ROOT / ".github" / "workflows"
@@ -273,6 +338,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             "tree_sha": HEAD_TREE_SHA,
             "observed_tree_sha": HEAD_TREE_SHA,
             "draft": False,
+            "full_automation": False,
             # Mesh review is repository-initiated; a human review request is not
             # a precondition for the substantive technical disposition.
             "requested_reviewers": [],
@@ -807,6 +873,76 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertEqual(result["first_blocker"], "APPLICABLE_GATE_FAILED")
         self.assertIn("QIKVRT requested review executor", result["detail"])
 
+    def test_full_automation_accepts_exact_workflow_dispatch_gate_set(self):
+        runs = []
+        for run in self.workflow_runs():
+            changed = copy.deepcopy(run)
+            changed["event"] = "workflow_dispatch"
+            runs.append(changed)
+        snap = self.snapshot(
+            full_automation=True,
+            required_gate_events={
+                name: "workflow_dispatch" for name in REQUIRED_GATE_PATHS
+            },
+            workflow_runs=runs,
+        )
+
+        result = self.evaluate(snap)
+
+        self.assertEqual(result["mesh_disposition"], "APPROVE")
+        self.assertIsNone(result["first_blocker"])
+        self.assertTrue(result["full_automation"])
+        self.assertTrue(
+            all(
+                run["event"] == "workflow_dispatch"
+                for run in result["latest_workflows"]
+            )
+        )
+
+    def test_full_automation_rejects_pull_request_gate_substitution(self):
+        snap = self.snapshot(
+            full_automation=True,
+            required_gate_events={
+                name: "workflow_dispatch" for name in REQUIRED_GATE_PATHS
+            },
+        )
+
+        result = self.evaluate(snap)
+
+        self.assertEqual(result["mesh_disposition"], "WAIT")
+        self.assertEqual(result["first_blocker"], "UNTRUSTED_GATE_BINDING")
+
+    def test_legacy_review_rejects_workflow_dispatch_gate_substitution(self):
+        runs = copy.deepcopy(self.workflow_runs())
+        runs[0]["event"] = "workflow_dispatch"
+        snap = self.snapshot(workflow_runs=runs)
+
+        result = self.evaluate(snap)
+
+        self.assertEqual(result["mesh_disposition"], "WAIT")
+        self.assertEqual(result["first_blocker"], "UNTRUSTED_GATE_BINDING")
+
+    def test_full_automation_gate_mode_is_fingerprint_bound(self):
+        legacy = self.evaluate()
+        runs = []
+        for run in self.workflow_runs():
+            changed = copy.deepcopy(run)
+            changed["event"] = "workflow_dispatch"
+            runs.append(changed)
+        automated = self.evaluate(
+            self.snapshot(
+                full_automation=True,
+                required_gate_events={
+                    name: "workflow_dispatch" for name in REQUIRED_GATE_PATHS
+                },
+                workflow_runs=runs,
+            )
+        )
+        self.assertNotEqual(
+            legacy["evidence_fingerprint"],
+            automated["evidence_fingerprint"],
+        )
+
     def test_required_gate_identity_event_and_jobs_are_fail_closed(self):
         cases = {
             "workflow-id": {"workflow_id": 9999},
@@ -1060,7 +1196,9 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             mock.patch.object(MODULE, "_gh_runs", return_value=[raw_run]),
             mock.patch.object(MODULE, "_gh_jobs", return_value=raw_jobs) as gh_jobs,
         ):
-            runs = MODULE._workflow_observation("example/qik-vrt", HEAD_SHA)
+            runs = MODULE._workflow_observation(
+                "example/qik-vrt", HEAD_SHA, "pull_request"
+            )
 
         self.assertEqual(runs[0]["jobs_total"], 2)
         self.assertEqual(
@@ -1073,6 +1211,24 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         gh_jobs.assert_called_once_with(
             "repos/example/qik-vrt/actions/runs/101/jobs?per_page=100"
         )
+
+    def test_workflow_observation_event_is_explicit_and_bounded(self):
+        with mock.patch.object(MODULE, "_gh_runs", return_value=[]) as gh_runs:
+            self.assertEqual(
+                MODULE._workflow_observation(
+                    "example/qik-vrt", HEAD_SHA, "workflow_dispatch"
+                ),
+                [],
+            )
+        gh_runs.assert_called_once_with(
+            "repos/example/qik-vrt/actions/runs?"
+            f"head_sha={HEAD_SHA}&event=workflow_dispatch&per_page=100"
+        )
+        with self.assertRaisesRegex(
+            MODULE.ReviewObservationError,
+            "event is not trusted",
+        ):
+            MODULE._workflow_observation("example/qik-vrt", HEAD_SHA, "schedule")
 
     def test_workflow_api_order_cannot_change_receipt_for_same_run_set(self):
         first = self.snapshot()

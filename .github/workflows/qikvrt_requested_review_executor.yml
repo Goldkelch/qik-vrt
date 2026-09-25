@@ -927,9 +927,13 @@ jobs:
           selected=None
           selected_receipt_bytes=None
           selected_diff_bytes=None
+          subject_queue_prefix=(
+              f"{REVIEW_QUEUE_ROOT}/pr-{os.environ['SUBJECT_PR_NUMBER']}/"
+              f"{os.environ['SUBJECT_HEAD_SHA']}/"
+          )
           queue_paths=sorted(
               path for path in blobs
-              if path.startswith(f'{REVIEW_QUEUE_ROOT}/') and path.endswith('.json')
+              if path.startswith(subject_queue_prefix) and path.endswith('.json')
           )
           for queue_path in queue_paths:
               intent=parsed(queue_path)

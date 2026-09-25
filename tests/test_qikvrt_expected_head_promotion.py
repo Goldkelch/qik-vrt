@@ -65,6 +65,7 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
             "draft": False,
             "mergeable": True,
             "external_effect": "NONE",
+            "full_automation": True,
             "required_gates": [
                 "QIKVRT CI",
                 "QIKVRT repository evidence materialization",
@@ -86,15 +87,15 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
         value.update(overrides)
         return value
 
-    def test_ready_green_exact_head_holds_without_exact_base_cas(self):
+    def test_ready_green_exact_head_is_promotable(self):
         result = MODULE.evaluate_promotion(self.snapshot())
         self.assertEqual(
             (result["state"], result["phase"], result["first_blocker"]),
-            ("BLOCK", "REQUEST_EXACT_BASE_CAS_AUTHORITY", "HEAD1_BASE_CAS_UNAVAILABLE"),
+            ("PROMOTABLE", "EXECUTE_EXACT_HEAD_MERGE", None),
         )
         self.assertEqual(
             result["next_action"],
-            "REQUEST_HISTORY_PRESERVING_EXACT_BASE_CAS_AUTHORITY",
+            "MERGE_WITH_EXACT_HEAD_AND_POST_READBACK",
         )
         self.assertEqual(result["verification_state"], "HOLD_UNVERIFIED")
         self.assertFalse(result["completion_claims"]["MERGE"])
@@ -160,7 +161,8 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
                 ]
             )
         )
-        self.assertEqual(result["first_blocker"], "HEAD1_BASE_CAS_UNAVAILABLE")
+        self.assertEqual(result["state"], "PROMOTABLE")
+        self.assertIsNone(result["first_blocker"])
 
     def test_semantic_overlap_still_blocks(self):
         result = MODULE.evaluate_promotion(
@@ -188,6 +190,13 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
             ]
         )
         result = MODULE.evaluate_promotion(snapshot)
+        self.assertEqual(result["state"], "PROMOTABLE")
+        self.assertIsNone(result["first_blocker"])
+
+    def test_legacy_self_heal_remains_non_mutating(self):
+        result = MODULE.evaluate_promotion(self.snapshot(full_automation=False))
+        self.assertEqual(result["state"], "BLOCK")
+        self.assertEqual(result["phase"], "REQUEST_EXACT_BASE_CAS_AUTHORITY")
         self.assertEqual(result["first_blocker"], "HEAD1_BASE_CAS_UNAVAILABLE")
 
     def test_ready_candidate_without_bot_review_gate_blocks(self):
@@ -324,17 +333,60 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
         self.assertNotIn("marked = any(marker in", workflow)
         self.assertIn("final promotion fence", workflow)
         self.assertNotIn('gh pr ready', workflow)
-        self.assertNotIn('pull-requests: write', workflow)
+        self.assertIn('pull-requests: write', workflow)
+        self.assertIn('contents: write', workflow)
+        self.assertIn('statuses: write', workflow)
         self.assertGreater(
             workflow.rindex("tools/qikvrt_requested_review_executor.py','verify'"),
             workflow.index("require_unchanged_mesh_review_status"),
         )
         self.assertLess(
             workflow.rindex("tools/qikvrt_requested_review_executor.py','verify'"),
-            workflow.index("HOLD_UNVERIFIED: no repository mutation follows"),
+            workflow.index('pulls/${PR_NUMBER}/merge'),
         )
-        self.assertNotIn('pulls/${PR_NUMBER}/merge', workflow)
-        self.assertNotIn("gh pr merge", workflow)
+        self.assertIn('pulls/${PR_NUMBER}/merge', workflow)
+        self.assertIn('-f sha="$EXPECTED_HEAD"', workflow)
+        self.assertIn("QIKVRT repository main integration effect ack", workflow)
+        self.assertIn("qikvrt_repository_main_integration_effect_ack_v1", workflow)
+        self.assertNotIn("gh pr ready", workflow)
+
+    def test_owner_full_automation_marker_is_trusted_but_role_local(self):
+        pull_request = self.promotion_pr(
+            body=MODULE.FULL_AUTOMATION_MARKER + "\n\nOwner-authorized repository automation.",
+            user={"login": "ingolf-lohmann"},
+            head={
+                "ref": "feat/repository-full-automation-test",
+                "sha": "b" * 40,
+                "repo": {"full_name": "example/qik-vrt"},
+            },
+        )
+        binding = MODULE.trusted_promotion_marker(pull_request, "example/qik-vrt")
+        self.assertEqual(
+            binding["source"], "TRUSTED_REPOSITORY_FULL_AUTOMATION_PR_BODY"
+        )
+        self.assertEqual(binding["marker"], MODULE.FULL_AUTOMATION_MARKER)
+
+        with self.assertRaisesRegex(MODULE.PromotionBlock, "configured repository actor"):
+            MODULE.trusted_promotion_marker(
+                {**pull_request, "user": {"login": "untrusted-user"}},
+                "example/qik-vrt",
+            )
+
+    def test_full_automation_delegation_authorizes_only_exact_gated_merge(self):
+        delegation = json.loads(
+            (
+                ROOT
+                / "state/authorization/delegations/OWNER_REPOSITORY_FULL_AUTOMATION_V1.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(delegation["state"], "ACTIVE")
+        self.assertEqual(delegation["merge"]["authorization"], "EXACT_HEAD_GATED")
+        self.assertFalse(delegation["branch_protection_weakening_allowed"])
+        self.assertFalse(delegation["force_push_allowed"])
+        self.assertEqual(
+            delegation["effect_ack"]["scope"], "REPOSITORY_MAIN_INTEGRATION"
+        )
+        self.assertFalse(delegation["effect_ack"]["global_release_implied"])
 
     def test_promotion_chunk_transport_rejects_incomplete_or_drifted_packets(self):
         packet_bytes = REVIEW_MODULE.REVIEW_DIFF_CHUNK_BYTES
