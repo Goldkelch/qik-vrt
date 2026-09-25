@@ -214,5 +214,68 @@ class HandlerUnitTests(unittest.TestCase):
         self.assertRegex(last["event_hash"], r"^[0-9a-f]{64}$|^sha256:[0-9a-f]{64}$")
 
 
+    def test_work_order_is_hash_bound_registered_and_not_executed(self) -> None:
+        work_order = {
+            "schema": "qikvrt_work_order_v1",
+            "task_type": "implement_artifact",
+            "output_path": "QIK_VRT_MESH.html",
+            "requirements": {
+                "offline": True,
+                "singleFile": True,
+                "svgEngine": True,
+            },
+            "acceptance": {
+                "roundtripTests": True,
+                "idempotenceTests": True,
+            },
+            "notes": "unit work order",
+        }
+        payload = json.dumps(
+            work_order, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        digest = hashlib.sha256(payload).hexdigest()
+        encoded = base64.b64encode(payload).decode("ascii")
+
+        dry = run_handler(
+            self.config(
+                "work_order",
+                artifact_id="mesh-html",
+                payload_b64=encoded,
+                expected_sha256=digest,
+                request_id="work-order-dry",
+            )
+        )
+        self.assertEqual(dry["effect_state"], EffectState.EFFECT_ACK_DONE.value)
+        self.assertTrue(dry["work_order_accepted"])
+        self.assertEqual(dry["task_execution"], "NOT_EXECUTED")
+        self.assertEqual(dry["write_status"], "DRY_RUN")
+
+        cfg = self.config(
+            "work_order",
+            artifact_id="mesh-html",
+            payload_b64=encoded,
+            expected_sha256=digest,
+            dry_run=False,
+            request_id="work-order-live",
+            effect_accepted=True,
+            responsibility_owner="unit-test-owner",
+            origin_authenticated=True,
+        )
+        live = run_handler(cfg)
+        self.assertEqual(live["effect_state"], EffectState.EFFECT_ACK_DONE.value)
+        self.assertTrue(live["ordinary_release"])
+        self.assertEqual(live["task_execution"], "NOT_EXECUTED")
+        self.assertEqual(live["write_status"], "WRITTEN")
+        registration = self.root / live["registration_path"]
+        self.assertTrue(registration.is_file())
+        registered = json.loads(registration.read_text(encoding="utf-8"))
+        self.assertEqual(registered["work_order"]["output_path"], "QIK_VRT_MESH.html")
+        self.assertEqual(registered["source_sha256"], digest)
+
+        replay = run_handler(cfg)
+        self.assertTrue(replay["replayed"])
+        self.assertEqual(replay["source_sha256"], digest)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
