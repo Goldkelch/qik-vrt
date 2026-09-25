@@ -14,8 +14,15 @@ import hashlib
 import json
 import pathlib
 import re
+import sys
 from collections.abc import Mapping
 from typing import Any
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tools.qikvrt_output_contract import bind_output, validate_output  # noqa: E402
 
 
 INPUT_SCHEMA = "qikvrt_authority_mirror_observation_input_v1"
@@ -301,7 +308,44 @@ def terminal_projection(instance: Mapping[str, Any], audience: str) -> dict[str,
         }
     elif audience == "FULL":
         result["full"] = envelope
-    return result
+
+    bound = bind_output(
+        result,
+        node_id="authority-mirror-mesh-instance",
+        repository="Goldkelch/qik-vrt",
+        subject={
+            "mesh_instance_id": envelope["mesh_instance_id"],
+            "observation_id": envelope["observation"]["observation_id"],
+            "canonical_envelope_sha256": digest,
+            "authority_head": envelope["nodes"]["authority"]["head_sha"],
+            "authority_tree": envelope["nodes"]["authority"]["root_tree_sha"],
+            "mirror_head": envelope["nodes"]["mirror"]["head_sha"],
+            "mirror_tree": envelope["nodes"]["mirror"]["root_tree_sha"],
+        },
+        claim_kind="SOURCE_BOUND",
+        statement=(
+            "Read-only Authority/Mirror Mesh projection bound to the exact "
+            "observation envelope and universal proof-and-thought schema."
+        ),
+        assumptions=["OBSERVE_ONLY"],
+        definitions=["QIKVRT_AUTHORITY_MIRROR_MESH_V1"],
+        dependencies=[],
+        exclusions=[
+            "authority/mirror equality",
+            "shared canonical main",
+            "merge",
+            "synchronization",
+            "external effect",
+            "general EFFECT_ACK_DONE",
+        ],
+        evidence_refs=[digest],
+        epistemic_state="RUNTIME_EVIDENCE",
+        effect_state="NONE",
+        transport_ack=False,
+        effect_ack_done=False,
+        new_difference="AUTHORITY_MIRROR_OBSERVATION_PROJECTED",
+    )
+    return validate_output(bound)
 
 
 def _arguments(argv: list[str] | None = None) -> argparse.Namespace:
