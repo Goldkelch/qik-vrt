@@ -556,3 +556,97 @@ jobs:
           retention-days: 90
           if-no-files-found: error
           path: ${{ env.EVIDENCE }}
+
+
+  diagnose-ontological-priority-zenodo:
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/policy/universal-proof-thought-schema-v1' &&
+      github.actor == 'ingolf-lohmann' &&
+      github.event.head_commit.message == 'zenodo: inspect exact draft 22955727'
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      EXECUTION_HEAD: 0763f0cc7d1a62e465c730d3e6786ae4cddf0287
+      RECORD_ID: "22955727"
+      ZENODO_API_BASE: https://zenodo.org/api
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONNOUSERSITE: "1"
+    steps:
+      - name: Check out exact diagnostic carrier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Inspect exact existing Zenodo draft read-only
+        shell: bash
+        env:
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$EXECUTION_HEAD" HEAD
+          python3 -B - <<'PY'
+          import json, os
+          from pathlib import Path
+          from tools import qikvrt_zenodo_actions as zenodo
+
+          record_id=int(os.environ["RECORD_ID"])
+          token=os.environ["ZENODO_ACCESS_TOKEN"]
+          client=zenodo.ZenodoClient(token, os.environ["ZENODO_API_BASE"])
+          status, value=client.get(
+              f"/api/deposit/depositions/{record_id}",
+              accept=(200,202,403,404),
+          )
+          manifest=json.loads(
+              Path("release/ontological-priority-of-difference-zenodo-v1/publish-request.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          expected=dict(manifest["metadata"])
+          expected.pop("prereserve_doi",None)
+          actual=value.get("metadata") if isinstance(value,dict) else None
+          report={
+              "schema":"qikvrt_zenodo_draft_diagnostic_v1",
+              "record_id":record_id,
+              "http_status":status,
+              "submitted":value.get("submitted") if isinstance(value,dict) else None,
+              "state":value.get("state") if isinstance(value,dict) else None,
+              "doi":value.get("doi") if isinstance(value,dict) else None,
+              "metadata_matches":zenodo._metadata_matches(actual,expected),
+              "expected_metadata":expected,
+              "actual_metadata":actual,
+              "links":{
+                  k:v for k,v in (value.get("links") or {}).items()
+                  if k in {"bucket","self","html","publish","record","latest_draft"}
+              } if isinstance(value,dict) else {},
+              "files":[
+                  {
+                      "name":item.get("filename",item.get("key")),
+                      "size":item.get("filesize",item.get("size")),
+                      "checksum":item.get("checksum"),
+                  }
+                  for item in (value.get("files") or [])
+                  if isinstance(item,dict)
+              ] if isinstance(value,dict) else [],
+          }
+          print(json.dumps(report,ensure_ascii=False,sort_keys=True))
+          Path("/tmp/zenodo-draft-diagnostic.json").write_text(
+              json.dumps(report,ensure_ascii=False,indent=2)+"\n",encoding="utf-8"
+          )
+          PY
+
+      - name: Preserve diagnostic
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ontological-priority-zenodo-diagnostic-${{ github.run_id }}
+          retention-days: 30
+          if-no-files-found: error
+          path: /tmp/zenodo-draft-diagnostic.json
