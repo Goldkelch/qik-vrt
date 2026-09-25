@@ -1,0 +1,980 @@
+diff --git a/.github/workflows/qikvrt_megast_rails_vercel.yml b/.github/workflows/qikvrt_megast_rails_vercel.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..9ea691b2ad410d0f6befee523e860f180752083b
+--- /dev/null
++++ b/.github/workflows/qikvrt_megast_rails_vercel.yml
+@@ -0,0 +1,150 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++name: QIKVRT Mega ST Rails Vercel
++
++on:
++  pull_request:
++    paths:
++      - 'deploy/vercel-monitor/**'
++      - 'state/work_units/MEGAST_RAILS_VERCEL_MAIN_SUCCESSOR_20260925_V1.json'
++      - '.github/workflows/qikvrt_megast_rails_vercel.yml'
++  push:
++    branches:
++      - main
++    paths:
++      - 'deploy/vercel-monitor/**'
++      - 'state/work_units/MEGAST_RAILS_VERCEL_MAIN_SUCCESSOR_20260925_V1.json'
++      - '.github/workflows/qikvrt_megast_rails_vercel.yml'
++  workflow_dispatch:
++
++permissions:
++  contents: read
++
++jobs:
++  rails-vercel-contract:
++    runs-on: ubuntu-24.04
++    timeout-minutes: 15
++    env:
++      BUNDLE_FROZEN: 'true'
++      BUNDLE_WITHOUT: ''
++      BUNDLE_WITH: test
++      EVIDENCE_ROOT: /tmp/qikvrt-megast-rails-vercel
++    steps:
++      - name: Check out exact subject
++        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
++        with:
++          ref: ${{ github.event.pull_request.head.sha || github.sha }}
++          fetch-depth: 1
++          persist-credentials: false
++
++      - name: Bind exact HEAD and TREE
++        shell: bash
++        env:
++          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
++        run: |
++          set -euo pipefail
++          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
++          rm -rf "$EVIDENCE_ROOT"
++          mkdir -p "$EVIDENCE_ROOT"
++          {
++            printf 'HEAD=%s\n' "$EXPECTED_HEAD"
++            printf 'TREE=%s\n' "$(git rev-parse --verify HEAD^{tree})"
++          } | tee "$EVIDENCE_ROOT/SUBJECT.txt"
++
++      - name: Provision exact Ruby and frozen bundle
++        uses: ruby/setup-ruby@bec3f19a76460dbe12f60def7d1a77585f07516c
++        with:
++          ruby-version: '3.3.8'
++          bundler: '2.5.22'
++          bundler-cache: true
++          working-directory: deploy/vercel-monitor
++
++      - name: Verify frozen dependency closure
++        shell: bash
++        run: |
++          set -euo pipefail
++          test "$(ruby -e 'print RUBY_VERSION')" = '3.3.8'
++          test "$(bundle _2.5.22_ --version)" = 'Bundler version 2.5.22'
++          cd deploy/vercel-monitor
++          BUNDLE_FROZEN=true BUNDLE_WITHOUT= bundle _2.5.22_ check
++
++      - name: Execute descriptor and Rails production smoke tests
++        shell: bash
++        run: |
++          set -euo pipefail
++          cd deploy/vercel-monitor
++          BUNDLE_FROZEN=true BUNDLE_WITHOUT= bundle _2.5.22_ exec ruby test/megast_test.rb --seed 1079
++          BUNDLE_FROZEN=true BUNDLE_WITHOUT= bundle _2.5.22_ exec ruby test/rails_smoke_test.rb
++
++      - name: Verify exact source pins and Vercel routing contract
++        shell: bash
++        run: |
++          set -euo pipefail
++          python3 -B - <<'PY'
++          import json
++          from pathlib import Path
++
++          source = json.loads(Path('deploy/vercel-monitor/megast-source.json').read_text())
++          assert source['repository'] == 'Goldkelch/qik-vrt'
++          assert source['source_commit'] == '2fdcf8d233b1495732ef38e3406ebfc095fd0ef3'
++          assert source['source_tree'] == 'e073c90c1d8c5ffa47b8a4c08093ea00046ab850'
++          assert source['archive']['name'] == 'qikvrt-megast-2fdcf8d2.zip'
++          assert source['archive']['bytes'] == 3298453805
++          assert source['archive']['sha256'] == '762fccec9f80bc83ac0475d5fdc3627dd370ad5ac8aabaa6d1c878de20a1bb76'
++          assert source['netboot']['manifest_sha256'] == 'b0f33a6f9385ab72b42737165a427e3c33df49295c13cb10da70562fea9b1701'
++          assert source['archive']['transport_rebuild_allowed'] is False
++          assert source['transport']['public_download_urls'] is None
++          assert source['transport']['part_hashes'] is None
++
++          vercel = json.loads(Path('deploy/vercel-monitor/vercel.json').read_text())
++          rewrites = {(r['source'], r['destination']) for r in vercel['rewrites']}
++          assert ('/api/megast', '/api/megast.rb') in rewrites
++          assert ('/api/megast/download', '/api/megast.rb?qikvrt_operation=download') in rewrites
++          assert vercel['functions']['api/megast.rb']['includeFiles'] == '{lib/**,megast-source.json}'
++          headers = {
++              h['key']: h['value']
++              for rule in vercel['headers']
++              for h in rule.get('headers', [])
++          }
++          assert headers['Cache-Control'] == 'no-store'
++          assert headers['X-QIKVRT-Role'] == 'MONITOR_ONLY'
++          PY
++
++      - name: Materialize bounded same-head receipt
++        shell: bash
++        env:
++          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
++        run: |
++          set -euo pipefail
++          python3 -B - "$EVIDENCE_ROOT" "$EXPECTED_HEAD" "$(git rev-parse --verify HEAD^{tree})" <<'PY'
++          import json, pathlib, sys
++          root = pathlib.Path(sys.argv[1])
++          receipt = {
++              'schema': 'qikvrt_megast_rails_vercel_same_head_receipt_v1',
++              'repository': 'Goldkelch/qik-vrt',
++              'head': sys.argv[2],
++              'tree': sys.argv[3],
++              'source_commit': '2fdcf8d233b1495732ef38e3406ebfc095fd0ef3',
++              'archive_sha256': '762fccec9f80bc83ac0475d5fdc3627dd370ad5ac8aabaa6d1c878de20a1bb76',
++              'rails_tests': 'PASS',
++              'vercel_contract': 'PASS',
++              'deployment_effect': 'NOT_EXECUTED_BY_THIS_JOB',
++              'public_delivery_verified': False,
++              'new_receiver_boot_verified': False,
++              'effect_ack_done': False,
++              'predecessor_evidence_transfer': False,
++          }
++          (root / 'receipt.json').write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
++          PY
++          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
++          git status --porcelain=v1 --untracked-files=all | tee "$EVIDENCE_ROOT/WORKTREE.txt"
++          test ! -s "$EVIDENCE_ROOT/WORKTREE.txt"
++
++      - name: Preserve exact-subject Rails/Vercel evidence
++        if: always()
++        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
++        with:
++          name: qikvrt-megast-rails-vercel-${{ github.event.pull_request.head.sha || github.sha }}
++          path: ${{ env.EVIDENCE_ROOT }}
++          retention-days: 30
++          if-no-files-found: error
+diff --git a/.gitignore b/.gitignore
+index 838be5dc2d6315715de57003c98d7f5aa3b8034b..f386373f0151db7208cbe1eaf2ffb053c7e4cc21 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -22,3 +22,7 @@ interaction-export*.json
+ *.aux
+ *.log
+ *.toc
++
++# Declared Ruby/Bundler provider outputs; dependency pins remain tracked.
++/deploy/vercel-monitor/.bundle/
++/deploy/vercel-monitor/vendor/bundle/
+diff --git a/deploy/vercel-monitor/Gemfile b/deploy/vercel-monitor/Gemfile
+new file mode 100644
+index 0000000000000000000000000000000000000000..44f89d806f81851a8b869aebe33a6c6a37fd708a
+--- /dev/null
++++ b/deploy/vercel-monitor/Gemfile
+@@ -0,0 +1,10 @@
++# Copyright (c) 2026 Ingolf Lohmann. Repository licensing applies.
++source 'https://rubygems.org'
++ruby '~> 3.3.0'
++# API-only Rails: no database, mail, jobs, storage or asset compiler required.
++gem 'railties', '= 8.1.3.1'
++
++group :test do
++  gem 'minitest', '= 5.20.0'
++  gem 'webrick', '= 1.9.1'
++end
+diff --git a/deploy/vercel-monitor/Gemfile.lock b/deploy/vercel-monitor/Gemfile.lock
+new file mode 100644
+index 0000000000000000000000000000000000000000..4a212dc74db0ca30f620c4e56a0f86c7fef33af6
+--- /dev/null
++++ b/deploy/vercel-monitor/Gemfile.lock
+@@ -0,0 +1,142 @@
++GEM
++  remote: https://rubygems.org/
++  specs:
++    actionpack (8.1.3.1)
++      actionview (= 8.1.3.1)
++      activesupport (= 8.1.3.1)
++      nokogiri (>= 1.8.5)
++      rack (>= 2.2.4)
++      rack-session (>= 1.0.1)
++      rack-test (>= 0.6.3)
++      rails-dom-testing (~> 2.2)
++      rails-html-sanitizer (~> 1.6)
++      useragent (~> 0.16)
++    actionview (8.1.3.1)
++      activesupport (= 8.1.3.1)
++      builder (~> 3.1)
++      erubi (~> 1.11)
++      rails-dom-testing (~> 2.2)
++      rails-html-sanitizer (~> 1.6)
++    activesupport (8.1.3.1)
++      base64
++      bigdecimal
++      concurrent-ruby (~> 1.0, >= 1.3.1)
++      connection_pool (>= 2.2.5)
++      drb
++      i18n (>= 1.6, < 2)
++      json
++      logger (>= 1.4.2)
++      minitest (>= 5.1)
++      securerandom (>= 0.3)
++      tzinfo (~> 2.0, >= 2.0.5)
++      uri (>= 0.13.1)
++    base64 (0.3.0)
++    bigdecimal (4.1.3)
++    builder (3.3.0)
++    concurrent-ruby (1.3.8)
++    connection_pool (3.0.2)
++    crass (1.0.7)
++    drb (2.2.3)
++    erb (6.0.7)
++    erubi (1.13.1)
++    i18n (1.15.2)
++      concurrent-ruby (~> 1.0)
++    io-console (0.9.3)
++    irb (1.18.0)
++      pp (>= 0.6.0)
++      prism (>= 1.3.0)
++      rdoc (>= 4.0.0)
++      reline (>= 0.4.2)
++    json (3.0.2)
++    logger (1.7.0)
++    loofah (2.25.2)
++      crass (~> 1.0.2)
++      nokogiri (>= 1.12.0)
++    minitest (5.20.0)
++    nokogiri (1.19.4-aarch64-linux-gnu)
++      racc (~> 1.4)
++    nokogiri (1.19.4-aarch64-linux-musl)
++      racc (~> 1.4)
++    nokogiri (1.19.4-arm-linux-gnu)
++      racc (~> 1.4)
++    nokogiri (1.19.4-arm-linux-musl)
++      racc (~> 1.4)
++    nokogiri (1.19.4-arm64-darwin)
++      racc (~> 1.4)
++    nokogiri (1.19.4-x86_64-darwin)
++      racc (~> 1.4)
++    nokogiri (1.19.4-x86_64-linux-gnu)
++      racc (~> 1.4)
++    nokogiri (1.19.4-x86_64-linux-musl)
++      racc (~> 1.4)
++    pp (0.6.4)
++      prettyprint
++    prettyprint (0.2.0)
++    prism (1.9.0)
++    racc (1.8.1)
++    rack (3.2.7)
++    rack-session (2.1.2)
++      base64 (>= 0.1.0)
++      rack (>= 3.0.0)
++    rack-test (2.2.0)
++      rack (>= 1.3)
++    rackup (2.3.1)
++      rack (>= 3)
++    rails-dom-testing (2.3.0)
++      activesupport (>= 5.0.0)
++      minitest
++      nokogiri (>= 1.6)
++    rails-html-sanitizer (1.7.1)
++      loofah (~> 2.25, >= 2.25.2)
++      nokogiri (>= 1.15.7, != 1.16.7, != 1.16.6, != 1.16.5, != 1.16.4, != 1.16.3, != 1.16.2, != 1.16.1, != 1.16.0.rc1, != 1.16.0)
++    railties (8.1.3.1)
++      actionpack (= 8.1.3.1)
++      activesupport (= 8.1.3.1)
++      irb (~> 1.13)
++      rackup (>= 1.0.0)
++      rake (>= 12.2)
++      thor (~> 1.0, >= 1.2.2)
++      tsort (>= 0.2)
++      zeitwerk (~> 2.6)
++    rake (13.4.2)
++    rbs (4.2.0)
++      logger
++      prism (>= 1.6.0)
++      tsort
++    rdoc (8.0.0)
++      erb
++      prism (>= 1.6.0)
++      rbs (>= 4.0.0)
++      tsort
++    reline (0.7.0)
++      io-console (~> 0.5)
++    securerandom (0.4.1)
++    thor (1.5.0)
++    tsort (0.2.0)
++    tzinfo (2.0.6)
++      concurrent-ruby (~> 1.0)
++    uri (1.1.1)
++    useragent (0.16.11)
++    webrick (1.9.1)
++    zeitwerk (2.8.3)
++
++PLATFORMS
++  aarch64-linux-gnu
++  aarch64-linux-musl
++  arm-linux-gnu
++  arm-linux-musl
++  arm64-darwin
++  x86_64-darwin
++  x86_64-linux-gnu
++  x86_64-linux-musl
++
++DEPENDENCIES
++  minitest (= 5.20.0)
++  railties (= 8.1.3.1)
++  webrick (= 1.9.1)
++
++RUBY VERSION
++   ruby 3.3.8p144
++
++BUNDLED WITH
++   2.5.22
+diff --git a/deploy/vercel-monitor/README-MEGAST.md b/deploy/vercel-monitor/README-MEGAST.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..2b468a9a617be2f9360321c34861a10c49d2d456
+--- /dev/null
++++ b/deploy/vercel-monitor/README-MEGAST.md
+@@ -0,0 +1,99 @@
++# Mega ST: original-archive descriptor through Rails on Vercel
++
++This change extends the existing `deploy/vercel-monitor` project. It does not
++replace the monitor, add a second repository controller, rebuild an image,
++publish a release, start a VM, or manufacture a new boot witness.
++
++## Implemented surface
++
++`GET /api/megast` is an API-only Rails endpoint. It exposes the original source,
++archive and netboot pins and the eight owner-specified transport filenames.
++`HEAD` returns no body. The Vercel handler rejects write methods with HTTP 405.
++`GET /api/megast/download` deliberately returns HTTP 503 with a concrete remaining
++action, not a fake link. Both the public path and Vercel's rewritten handler
++path are covered. Responses are bounded to 64 KiB and use `Cache-Control: no-store`.
++
++The `VERCEL_GIT_COMMIT_SHA` environment value is labeled as a provider-reported,
++not independently verified deployment identity. It is never substituted for
++the original image's source commit. A source descriptor is not a live receipt.
++
++## Frozen source artifact
++
++- Repository: `Goldkelch/qik-vrt`, PR #1079.
++- Source commit: `2fdcf8d233b1495732ef38e3406ebfc095fd0ef3`.
++- Source tree: `e073c90c1d8c5ffa47b8a4c08093ea00046ab850`.
++- Original Actions run: `34895793369`; archive artifact: `10368454862`.
++- Original archive: `qikvrt-megast-2fdcf8d2.zip`, 3,298,453,805 bytes.
++- Archive SHA-256: `762fccec9f80bc83ac0475d5fdc3627dd370ad5ac8aabaa6d1c878de20a1bb76`.
++- Netboot manifest SHA-256: `b0f33a6f9385ab72b42737165a427e3c33df49295c13cb10da70562fea9b1701`.
++
++The archive's size and digest were read from GitHub Actions metadata. The archive
++was not redownloaded or booted during this change. The manifest pin, assembler
++name and transport names come from the owner's supplied instructions. Individual
++part digests and anonymous public URLs have not been observed; their JSON values
++remain null. The assembler and transport parts are not invented or regenerated.
++
++The new integration candidate inherits #1094's source tree but does not inherit
++its P2/P3 evidence. The archived image remains the older, explicitly named source
++artifact. No new image is relabeled as the original.
++
++## Tests and runtime admission
++
++Core descriptor and actual WEBrick-to-Rack bridge tests, without Rails:
++
++```sh
++cd deploy/vercel-monitor
++ruby test/megast_test.rb --seed 1079
++```
++
++The real Rails boot/routing test is separate and never skips missing dependencies:
++
++```sh
++bundle exec ruby test/rails_smoke_test.rb
++```
++
++The optional Rails candidate uses Ruby 3.3.x and pins `railties` to 8.1.3.1.
++Before admitting it to P2 or deploying, use the repository's existing tool-cache
++and bootstrap mechanism to register/provision the Ruby/Bundler/Rails profile,
++resolve and review the full transitive `Gemfile.lock`, verify cache coverage,
++and run BOTH test suites on the final exact candidate. The local core test used
++Ruby 3.3.8. Rails/Rack dependencies were unavailable in this execution sandbox;
++full Rails boot, the repository bootloader, full `make test`, integrity
++materialization and a Vercel build have NOT been verified here. The Gemfile is
++not represented as a complete transitive dependency lock.
++
++## Public delivery and Main continuation
++
++The existing Vercel deployment connection returned no teams, failed to list
++projects under the repository-recorded `ingolflohmann-8385` scope, and refused
++its recorded Beacon deployment with HTTP 403. These observations establish only
++this connection's capability boundary, not absence of the owner's credentials
++or repository provisioning. No new production deployment was attempted.
++
++Continue through current-head P2, native counterpart review, independent ruleset
++effect, unchanged post-review reobservation, legitimate expected-head Main
++promotion, and exact-Main readback. Then reuse the existing original-archive
++transport/export and Mega ST publication mechanisms. Do not rebuild the image
++merely to transport it. GitHub's release-asset limit is under 2 GiB per file, so
++the 3.3 GB archive cannot become a single release asset; preserve the existing
++eight-part transport and original assembler.
++
++Public delivery needs independently read-back part bytes, the reconstructed
++original archive digest, actual release identities and URLs. Add URL admission
++only in that evidence-bound successor. Vercel should serve the small API/UI;
++large image files belong on the reviewed binary delivery origin, not in a
++buffering Rails function. The actual Linux/QEMU receiver boot remains distinct
++from hosting the Rails API. Physical Atari execution, native review, ruleset
++enforcement, Main adoption and scoped EFFECT_ACK_DONE remain separate claims.
++
++## Implementation references
++
++- https://vercel.com/docs/functions/runtimes/ruby
++- https://guides.rubyonrails.org/api_app.html
++- https://rubygems.org/gems/railties/versions/8.1.3.1
++- https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases
++
++Human contribution: Ingolf Lohmann's architecture, exact source artifact and
++execution request. Artificial-cognitive contribution: ChatGPT's adapter,
++validation code and this scoped integration candidate. Acceptance does not
++retroactively change that origin attribution. Repository licensing applies.
+diff --git a/deploy/vercel-monitor/api/megast.rb b/deploy/vercel-monitor/api/megast.rb
+new file mode 100644
+index 0000000000000000000000000000000000000000..097c70d2c57a97b5a6d33e626a864bea4f73c970
+--- /dev/null
++++ b/deploy/vercel-monitor/api/megast.rb
+@@ -0,0 +1,49 @@
++# frozen_string_literal: true
++# Copyright (c) 2026 Ingolf Lohmann. Repository licensing applies.
++ENV['RAILS_ENV'] ||= 'production'
++require 'bundler/setup'
++require 'logger'
++require 'rails'
++require 'action_controller/railtie'
++require_relative '../lib/megast'
++require_relative '../lib/rails_bridge'
++
++module QikvrtDelivery
++  class Application < Rails::Application
++    config.load_defaults 8.1
++    config.root = File.expand_path('..', __dir__)
++    config.api_only = true
++    config.eager_load = true
++    config.enable_reloading = false
++    config.logger = Logger.new($stdout)
++    config.log_level = :warn
++    config.hosts = ['.vercel.app', 'localhost', '127.0.0.1']
++    config.public_file_server.enabled = false
++    config.consider_all_requests_local = false
++    config.action_dispatch.show_exceptions = :rescuable
++  end
++end
++
++class MegaStController < ActionController::API
++  def show
++    response.headers['Cache-Control'] = 'no-store'
++    status = params[:qikvrt_operation] == 'download' ? :service_unavailable : :ok
++    render json: QikvrtMegaST.descriptor, status: status
++  end
++
++  def download
++    response.headers['Cache-Control'] = 'no-store'
++    render json: QikvrtMegaST.descriptor, status: :service_unavailable
++  end
++end
++
++QikvrtDelivery::Application.initialize!
++QikvrtDelivery::Application.routes.draw do
++  get '/api/megast', to: 'mega_st#show'
++  get '/api/megast.rb', to: 'mega_st#show'
++  get '/api/megast/download', to: 'mega_st#download'
++end
++
++Handler = proc do |request, response|
++  QikvrtRailsBridge.call(QikvrtDelivery::Application, request, response)
++end
+diff --git a/deploy/vercel-monitor/lib/megast.rb b/deploy/vercel-monitor/lib/megast.rb
+new file mode 100644
+index 0000000000000000000000000000000000000000..3e9a665487156333df9554e59074c02e59aca404
+--- /dev/null
++++ b/deploy/vercel-monitor/lib/megast.rb
+@@ -0,0 +1,62 @@
++# frozen_string_literal: true
++# Copyright (c) 2026 Ingolf Lohmann. Repository licensing applies.
++require 'json'
++
++module QikvrtMegaST
++  SOURCE_PATH = File.expand_path('../megast-source.json', __dir__)
++  SHA256 = /\A[0-9a-f]{64}\z/
++  COMMIT = /\A[0-9a-f]{40}\z/
++
++  # This is a source descriptor, never a substitute for a live effect receipt.
++  def self.source(path = SOURCE_PATH)
++    value = JSON.parse(File.binread(path))
++    archive = value.fetch('archive')
++    netboot = value.fetch('netboot')
++    transport = value.fetch('transport')
++    raise ArgumentError, 'unexpected source schema' unless value['schema'] == 'qikvrt_megast_source_descriptor_v1'
++    raise ArgumentError, 'unexpected source repository' unless value['repository'] == 'Goldkelch/qik-vrt'
++    raise ArgumentError, 'invalid commit' unless COMMIT.match?(value.fetch('source_commit'))
++    raise ArgumentError, 'invalid tree' unless COMMIT.match?(value.fetch('source_tree'))
++    raise ArgumentError, 'invalid archive digest' unless SHA256.match?(archive.fetch('sha256'))
++    raise ArgumentError, 'invalid manifest digest' unless SHA256.match?(netboot.fetch('manifest_sha256'))
++    raise ArgumentError, 'invalid archive size' unless archive['bytes'].is_a?(Integer) && archive['bytes'].positive?
++    raise ArgumentError, 'transport must not rebuild' unless archive['transport_rebuild_allowed'] == false
++    short = value.fetch('source_commit')[0, 8]
++    expected = (0..7).map { |i| format('qikvrt-megast-%s.part%02d.zip', short, i) }
++    raise ArgumentError, 'incomplete or reordered transport' unless transport['part_names'] == expected
++    # URL admission belongs to the reviewed release/readback path, not this API.
++    raise ArgumentError, 'public URL admission not implemented' unless transport['public_download_urls'].nil?
++    raise ArgumentError, 'part hashes not independently available' unless transport['part_hashes'].nil?
++    value
++  end
++
++  def self.descriptor(environment = ENV)
++    value = source
++    deployment_commit = environment['VERCEL_GIT_COMMIT_SHA']
++    deployment_commit = nil unless deployment_commit.is_a?(String) && COMMIT.match?(deployment_commit)
++    {
++      'schema' => 'qikvrt_megast_delivery_projection_v1',
++      'role' => 'READ_ONLY_SOURCE_DESCRIPTOR',
++      'source' => value,
++      'deployment_commit_reported_by_environment' => deployment_commit,
++      'deployment_commit_independently_verified' => false,
++      'delivery' => {
++        'state' => 'HOLD_UNVERIFIED',
++        'blocker' => 'PUBLIC_RELEASE_BYTE_READBACK_REQUIRED',
++        'next_action' => 'Complete native review and Main adoption, then reuse the existing Mega ST publish path and independently verify the original archive transport bytes.',
++        'download_url' => nil,
++        'public_delivery_verified' => false,
++        'new_receiver_boot_verified' => false,
++        'physical_atari_execution_verified' => false
++      },
++      'boundaries' => {
++        'predecessor_evidence_transfer' => false,
++        'main_adoption_implied' => false,
++        'native_review_implied' => false,
++        'ruleset_effect_implied' => false,
++        'transport_ack_is_effect_ack' => false,
++        'effect_ack_done' => false
++      }
++    }
++  end
++end
+diff --git a/deploy/vercel-monitor/lib/rails_bridge.rb b/deploy/vercel-monitor/lib/rails_bridge.rb
+new file mode 100644
+index 0000000000000000000000000000000000000000..4967d47951652f68c26e7094dfe01ae8dd209795
+--- /dev/null
++++ b/deploy/vercel-monitor/lib/rails_bridge.rb
+@@ -0,0 +1,53 @@
++# frozen_string_literal: true
++# Copyright (c) 2026 Ingolf Lohmann. Repository licensing applies.
++require 'json'
++require 'stringio'
++
++module QikvrtRailsBridge
++  MAX_RESPONSE_BYTES = 65_536
++
++  # Adapt Vercel's documented WEBrick request/response pair to a Rack app.
++  # No request body, shell execution, background job or upstream fetch is used.
++  def self.call(app, request, response)
++    response['Cache-Control'] = 'no-store'
++    response['X-QIKVRT-Role'] = 'READ_ONLY_SOURCE_DESCRIPTOR'
++    method = request.request_method
++    unless %w[GET HEAD].include?(method)
++      response.status = 405
++      response['Allow'] = 'GET, HEAD'
++      response['Content-Type'] = 'application/json; charset=utf-8'
++      response.body = JSON.generate(error: 'METHOD_NOT_ALLOWED', effect_ack_done: false)
++      return
++    end
++    env = {
++      'REQUEST_METHOD' => method,
++      'SCRIPT_NAME' => '',
++      'PATH_INFO' => request.path,
++      'QUERY_STRING' => request.query_string.to_s,
++      'SERVER_NAME' => request.host,
++      'SERVER_PORT' => request.port.to_s,
++      'SERVER_PROTOCOL' => 'HTTP/1.1',
++      'HTTP_HOST' => request['host'].to_s,
++      'HTTPS' => request.ssl? ? 'on' : 'off',
++      'rack.url_scheme' => request.ssl? ? 'https' : 'http',
++      'rack.input' => StringIO.new(''),
++      'rack.errors' => $stderr
++    }
++    body = nil
++    status, headers, body = app.call(env)
++    bytes = String.new
++    body.each do |chunk|
++      raise TypeError, 'Rack response must contain strings' unless chunk.is_a?(String)
++      raise RangeError, 'descriptor response too large' if bytes.bytesize + chunk.bytesize > MAX_RESPONSE_BYTES
++      bytes << chunk
++    end
++    response.status = status
++    headers.each { |key, value| response[key] = value }
++    # Do not let Rails ETags or a handler override the no-stale-evidence policy.
++    response['Cache-Control'] = 'no-store'
++    response['X-QIKVRT-Role'] = 'READ_ONLY_SOURCE_DESCRIPTOR'
++    response.body = method == 'HEAD' ? '' : bytes
++  ensure
++    body.close if body.respond_to?(:close)
++  end
++end
+diff --git a/deploy/vercel-monitor/megast-source.json b/deploy/vercel-monitor/megast-source.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..a2b61d64c3a8ee19cd270a79dacc9ac44e6e293b
+--- /dev/null
++++ b/deploy/vercel-monitor/megast-source.json
+@@ -0,0 +1,48 @@
++{
++  "schema": "qikvrt_megast_source_descriptor_v1",
++  "repository": "Goldkelch/qik-vrt",
++  "source_pr": 1079,
++  "source_commit": "2fdcf8d233b1495732ef38e3406ebfc095fd0ef3",
++  "source_tree": "e073c90c1d8c5ffa47b8a4c08093ea00046ab850",
++  "archive": {
++    "name": "qikvrt-megast-2fdcf8d2.zip",
++    "bytes": 3298453805,
++    "sha256": "762fccec9f80bc83ac0475d5fdc3627dd370ad5ac8aabaa6d1c878de20a1bb76",
++    "github_actions_run_id": 34895793369,
++    "github_actions_artifact_id": 10368454862,
++    "github_actions_expires_at": "2026-10-14T21:09:30Z",
++    "transport_rebuild_allowed": false
++  },
++  "netboot": {
++    "manifest_name": "qikvrt-netboot.json",
++    "manifest_sha256": "b0f33a6f9385ab72b42737165a427e3c33df49295c13cb10da70562fea9b1701",
++    "client_name": "qikvrt-netboot-client.py",
++    "receiver_architecture": "x86_64",
++    "receiver_os": "Linux desktop",
++    "python_minimum": "3.11",
++    "emulator": "qemu-system-x86_64",
++    "documented_guest_ram_gib": 4
++  },
++  "transport": {
++    "part_names": [
++      "qikvrt-megast-2fdcf8d2.part00.zip",
++      "qikvrt-megast-2fdcf8d2.part01.zip",
++      "qikvrt-megast-2fdcf8d2.part02.zip",
++      "qikvrt-megast-2fdcf8d2.part03.zip",
++      "qikvrt-megast-2fdcf8d2.part04.zip",
++      "qikvrt-megast-2fdcf8d2.part05.zip",
++      "qikvrt-megast-2fdcf8d2.part06.zip",
++      "qikvrt-megast-2fdcf8d2.part07.zip"
++    ],
++    "assembler_name": "QIKVRT_ZUSAMMENSETZEN_2fdcf8d2.py",
++    "extract_parts_individually": false,
++    "approximate_free_disk_gb": 12,
++    "part_hashes": null,
++    "public_download_urls": null
++  },
++  "evidence_scope": "Existing Linux/QEMU source-bound boot witness; not a new receiver boot or physical Atari execution.",
++  "provenance": {
++    "archive_size_and_digest": "GitHub Actions artifact metadata readback",
++    "netboot_pin_and_transport_names": "Owner-supplied instructions; not independently redownloaded in this change"
++  }
++}
+diff --git a/deploy/vercel-monitor/test/megast_test.rb b/deploy/vercel-monitor/test/megast_test.rb
+new file mode 100644
+index 0000000000000000000000000000000000000000..2b4e0f7b39e4b1710afa2861179830ff14f01b9d
+--- /dev/null
++++ b/deploy/vercel-monitor/test/megast_test.rb
+@@ -0,0 +1,144 @@
++# frozen_string_literal: true
++require 'minitest/autorun'
++require 'tempfile'
++require 'webrick'
++require_relative '../lib/megast'
++require_relative '../lib/rails_bridge'
++
++class MegaSTTest < Minitest::Test
++  def test_original_archive_pin
++    source = QikvrtMegaST.source
++    assert_equal '2fdcf8d233b1495732ef38e3406ebfc095fd0ef3', source['source_commit']
++    assert_equal 3_298_453_805, source['archive']['bytes']
++    assert_equal '762fccec9f80bc83ac0475d5fdc3627dd370ad5ac8aabaa6d1c878de20a1bb76', source['archive']['sha256']
++    assert_equal 'b0f33a6f9385ab72b42737165a427e3c33df49295c13cb10da70562fea9b1701', source['netboot']['manifest_sha256']
++  end
++
++  def test_exact_eight_parts
++    names = QikvrtMegaST.source['transport']['part_names']
++    assert_equal 8, names.uniq.length
++    assert_equal 'qikvrt-megast-2fdcf8d2.part00.zip', names.first
++    assert_equal 'qikvrt-megast-2fdcf8d2.part07.zip', names.last
++  end
++
++  def test_no_claim_promotion
++    value = QikvrtMegaST.descriptor({})
++    assert_nil value['delivery']['download_url']
++    assert_equal 'HOLD_UNVERIFIED', value['delivery']['state']
++    value['boundaries'].each_value { |v| assert_equal false, v }
++    %w[public_delivery_verified new_receiver_boot_verified physical_atari_execution_verified].each do |key|
++      assert_equal false, value['delivery'][key]
++    end
++  end
++
++  def test_deployment_and_archive_subjects_are_separate
++    value = QikvrtMegaST.descriptor('VERCEL_GIT_COMMIT_SHA' => 'a' * 40)
++    assert_equal 'a' * 40, value['deployment_commit_reported_by_environment']
++    assert_equal false, value['deployment_commit_independently_verified']
++    refute_equal value['source']['source_commit'], value['deployment_commit_reported_by_environment']
++    assert_nil QikvrtMegaST.descriptor('VERCEL_GIT_COMMIT_SHA' => 'main')['deployment_commit_reported_by_environment']
++  end
++
++  def test_source_mutations_fail_closed
++    mutations = [
++      ->(x) { x['schema'] = 'unexpected' },
++      ->(x) { x['repository'] = 'other/repo' },
++      ->(x) { x['archive']['sha256'] = 'not-a-digest' },
++      ->(x) { x['source_commit'] = 'main' },
++      ->(x) { x['archive']['bytes'] = '3298453805' },
++      ->(x) { x['archive']['transport_rebuild_allowed'] = true },
++      ->(x) { x['transport']['part_names'].pop },
++      ->(x) { x['transport']['part_names'].reverse! },
++      ->(x) { x['transport']['public_download_urls'] = ['https://example.org/fake.zip'] },
++      ->(x) { x['transport']['part_hashes'] = ['0' * 64] }
++    ]
++    mutations.each do |mutate|
++      source = QikvrtMegaST.source
++      mutate.call(source)
++      Tempfile.create('megast') do |file|
++        file.write(JSON.generate(source)); file.flush
++        assert_raises(ArgumentError) { QikvrtMegaST.source(file.path) }
++      end
++    end
++  end
++
++  Request = Struct.new(:request_method, :path, :query_string, :host, :port) do
++    def [](name) = name == 'host' ? host : nil
++    def ssl? = true
++  end
++  class Response
++    attr_accessor :status, :body
++    attr_reader :headers
++    def initialize = @headers = {}
++    def []=(key, value)
++      @headers[key] = value
++    end
++    def [](key) = @headers[key]
++  end
++
++  def request(method = 'GET') = Request.new(method, '/api/megast', '', 'localhost', 443)
++
++  def test_bridge_get
++    res = Response.new
++    app = lambda do |env|
++      assert_equal 'GET', env['REQUEST_METHOD']
++      assert_equal '/api/megast', env['PATH_INFO']
++      assert_equal 'https', env['rack.url_scheme']
++      assert_equal '', env['rack.input'].read
++      [200, {'Content-Type' => 'application/json'}, ['{"ok":true}']]
++    end
++    QikvrtRailsBridge.call(app, request, res)
++    assert_equal 200, res.status
++    assert_equal '{"ok":true}', res.body
++    assert_equal 'no-store', res['Cache-Control']
++  end
++
++  def test_bridge_head
++    res = Response.new
++    QikvrtRailsBridge.call(->(_) { [200, {}, ['not emitted']] }, request('HEAD'), res)
++    assert_equal 200, res.status
++    assert_equal '', res.body
++  end
++
++  def test_bridge_rejects_write_methods_before_calling_app
++    %w[POST PUT PATCH DELETE OPTIONS].each do |method|
++      res = Response.new
++      QikvrtRailsBridge.call(->(_) { flunk 'app must not execute' }, request(method), res)
++      assert_equal 405, res.status
++      assert_equal 'GET, HEAD', res['Allow']
++      assert_equal false, JSON.parse(res.body)['effect_ack_done']
++    end
++  end
++
++  def test_bridge_closes_body_even_on_oversize
++    body = Object.new
++    body.define_singleton_method(:each) { |&block| block.call('x' * 65_537) }
++    closed = false
++    body.define_singleton_method(:close) { closed = true }
++    assert_raises(RangeError) do
++      QikvrtRailsBridge.call(->(_) { [200, {}, body] }, request, Response.new)
++    end
++    assert closed
++  end
++
++  def test_bridge_overrides_accidental_cache_header
++    res = Response.new
++    QikvrtRailsBridge.call(->(_) { [200, {'Cache-Control' => 'public, max-age=3600'}, ['ok']] }, request, res)
++    assert_equal 'no-store', res['Cache-Control']
++  end
++  def test_real_webrick_request_and_response
++    req = WEBrick::HTTPRequest.new(WEBrick::Config::HTTP)
++    req.parse(StringIO.new("GET /api/megast HTTP/1.1\r\nHost: localhost\r\n\r\n"))
++    res = WEBrick::HTTPResponse.new(WEBrick::Config::HTTP)
++    app = lambda do |env|
++      assert_equal '/api/megast', env['PATH_INFO']
++      assert_equal 'http', env['rack.url_scheme']
++      [200, {'content-type' => 'application/json', 'cache-control' => 'public'}, [JSON.generate(QikvrtMegaST.descriptor({}))]]
++    end
++    QikvrtRailsBridge.call(app, req, res)
++    assert_equal 200, res.status
++    assert_equal 'no-store', res['cache-control']
++    assert_equal false, JSON.parse(res.body)['boundaries']['effect_ack_done']
++  end
++
++end
+diff --git a/deploy/vercel-monitor/test/rails_smoke_test.rb b/deploy/vercel-monitor/test/rails_smoke_test.rb
+new file mode 100644
+index 0000000000000000000000000000000000000000..770a56ef3f7591e1b7523f5b0535c926d8e7b373
+--- /dev/null
++++ b/deploy/vercel-monitor/test/rails_smoke_test.rb
+@@ -0,0 +1,47 @@
++# frozen_string_literal: true
++# This test deliberately fails rather than skips when Rails is unavailable.
++require 'securerandom'
++# Exercise production middleware with a fresh, test-process-only signing key.
++# Never reuse a deployment credential or add a fallback to application code.
++ENV['RAILS_ENV'] = 'production'
++ENV['SECRET_KEY_BASE'] = SecureRandom.hex(64)
++require 'minitest/autorun'
++require 'rack/mock'
++require_relative '../api/megast'
++
++class RailsSmokeTest < Minitest::Test
++  def client = Rack::MockRequest.new(QikvrtDelivery::Application)
++  def get(path) = client.get(path, 'HTTP_HOST' => 'localhost')
++
++  def test_production_fixture
++    assert Rails.env.production?
++    assert QikvrtDelivery::Application.config.secret_key_base.to_s.bytesize >= 128
++  end
++
++  def test_rails_descriptor
++    response = get('/api/megast')
++    assert_equal 200, response.status
++    assert_equal 'no-store', response['cache-control']
++    assert_equal '2fdcf8d233b1495732ef38e3406ebfc095fd0ef3', JSON.parse(response.body)['source']['source_commit']
++    assert_equal false, JSON.parse(response.body)['boundaries']['effect_ack_done']
++  end
++
++  def test_download_is_not_fabricated
++    %w[/api/megast/download /api/megast.rb?qikvrt_operation=download].each do |path|
++      response = get(path)
++      assert_equal 503, response.status
++      assert_nil JSON.parse(response.body)['delivery']['download_url']
++    end
++  end
++
++  def test_head
++    response = client.head('/api/megast', 'HTTP_HOST' => 'localhost')
++    assert_equal 200, response.status
++    assert_equal '', response.body
++  end
++
++  def test_host_authorization
++    response = client.get('/api/megast', 'HTTP_HOST' => 'untrusted.example')
++    assert_equal 403, response.status
++  end
++end
+diff --git a/deploy/vercel-monitor/vercel.json b/deploy/vercel-monitor/vercel.json
+index e3799c95bf69561a9922f3d762647b9dd5cc87b7..bd9d3267a44216d28c9acbb783ef457d1da6feb9 100644
+--- a/deploy/vercel-monitor/vercel.json
++++ b/deploy/vercel-monitor/vercel.json
+@@ -4,15 +4,37 @@
+     "horizon-by-qik-vrt.vercel.app"
+   ],
+   "rewrites": [
+-    {"source": "/api/state", "destination": "/api/state.js"}
++    {
++      "source": "/api/state",
++      "destination": "/api/state.js"
++    },
++    {
++      "source": "/api/megast",
++      "destination": "/api/megast.rb"
++    },
++    {
++      "source": "/api/megast/download",
++      "destination": "/api/megast.rb?qikvrt_operation=download"
++    }
+   ],
+   "headers": [
+     {
+       "source": "/(.*)",
+       "headers": [
+-        {"key": "Cache-Control", "value": "no-store"},
+-        {"key": "X-QIKVRT-Role", "value": "MONITOR_ONLY"}
++        {
++          "key": "Cache-Control",
++          "value": "no-store"
++        },
++        {
++          "key": "X-QIKVRT-Role",
++          "value": "MONITOR_ONLY"
++        }
+       ]
+     }
+-  ]
++  ],
++  "functions": {
++    "api/megast.rb": {
++      "includeFiles": "{lib/**,megast-source.json}"
++    }
++  }
+ }
+diff --git a/state/work_units/MEGAST_RAILS_VERCEL_MAIN_SUCCESSOR_20260925_V1.json b/state/work_units/MEGAST_RAILS_VERCEL_MAIN_SUCCESSOR_20260925_V1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..0a63eac7c5aaa42a17df904b07f799d960c6efcd
+--- /dev/null
++++ b/state/work_units/MEGAST_RAILS_VERCEL_MAIN_SUCCESSOR_20260925_V1.json
+@@ -0,0 +1,52 @@
++{
++  "schema": "qikvrt_work_unit_v1",
++  "work_unit_id": "MEGAST_RAILS_VERCEL_MAIN_SUCCESSOR_20260925_V1",
++  "state": "CANDIDATE_MATERIALIZED",
++  "repository": "Goldkelch/qik-vrt",
++  "base_main": "f4bbc5846bd6fad789e4712dbf8443119499c636",
++  "carrier_branch": "integrate/megast-rails-vercel-main-20260925",
++  "request": "Manifest the unchanged QIK-VRT Mega ST original archive through GitHub, Ruby on Rails and Vercel, then continue through legitimate Main integration and a separately verified scoped EFFECT_ACK_DONE.",
++  "source_artifact": {
++    "pull_request": 1079,
++    "commit": "2fdcf8d233b1495732ef38e3406ebfc095fd0ef3",
++    "tree": "e073c90c1d8c5ffa47b8a4c08093ea00046ab850",
++    "archive": "qikvrt-megast-2fdcf8d2.zip",
++    "bytes": 3298453805,
++    "sha256": "762fccec9f80bc83ac0475d5fdc3627dd370ad5ac8aabaa6d1c878de20a1bb76",
++    "netboot_manifest_sha256": "b0f33a6f9385ab72b42737165a427e3c33df49295c13cb10da70562fea9b1701"
++  },
++  "source_lane": {
++    "historical_pull_request": 1095,
++    "historical_head": "e4f9cb413f42313d65a93e82b61939fe8cb5a550",
++    "role": "SOURCE_ONLY",
++    "predecessor_evidence_transfer": false
++  },
++  "implementation": {
++    "rails_role": "READ_ONLY_SOURCE_DESCRIPTOR",
++    "vercel_role": "MONITOR_ONLY",
++    "public_api": "/api/megast",
++    "download_api": "/api/megast/download",
++    "download_behavior_before_byte_readback": "HTTP_503",
++    "large_binary_origin": "SEPARATE_REVIEWED_BINARY_DELIVERY_ORIGIN"
++  },
++  "acceptance_chain": [
++    "EXACT_HEAD_RAILS_TESTS",
++    "REPOSITORY_INTEGRITY_MATERIALIZATION",
++    "NATIVE_INDEPENDENT_REVIEW",
++    "POST_REVIEW_SAME_HEAD_READBACK",
++    "LEGITIMATE_MAIN_PROMOTION",
++    "EXACT_MAIN_REVALIDATION",
++    "VERCEL_PRODUCTION_DEPLOYMENT_AND_PUBLIC_READBACK",
++    "ORIGINAL_TRANSPORT_BYTE_READBACK",
++    "NEW_RECEIVER_BOOT_READBACK",
++    "SCOPED_EFFECT_ACK_DONE"
++  ],
++  "claims": {
++    "main_integrated": false,
++    "vercel_deployed": false,
++    "public_delivery_verified": false,
++    "new_receiver_boot_verified": false,
++    "effect_ack_done": false,
++    "transport_ack_is_effect_ack": false
++  }
++}
