@@ -178,9 +178,21 @@ def bind_output(value: Mapping[str, Any], **binding_kwargs: Any) -> dict[str, An
         raise OutputContractError("node output must be an object")
     result = copy.deepcopy(dict(value))
     if BINDING_KEY in result:
-        raise OutputContractError("node output is already bound")
+        # A returning Mesh response is transport of the already bound origin
+        # output, not a new semantic claim. Validate and preserve it bytewise.
+        validate_output(result)
+        return result
     result[BINDING_KEY] = make_binding(**binding_kwargs)
     validate_output(result)
+    return result
+
+
+def strip_output_binding(value: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the domain payload without its additive epistemic binding."""
+    if not isinstance(value, Mapping):
+        raise OutputContractError("node output must be an object")
+    result = copy.deepcopy(dict(value))
+    result.pop(BINDING_KEY, None)
     return result
 
 
