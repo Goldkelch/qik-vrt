@@ -10,6 +10,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
 PROMOTION_WORKFLOW = ROOT / ".github/workflows/qikvrt_expected_head_promotion.yml"
 SELF_HEAL_WORKFLOW = ROOT / ".github/workflows/qikvrt_autonomous_self_heal.yml"
+FULL_AUTOMATION_CANDIDATE_WORKFLOW = ROOT / ".github/workflows/qikvrt_full_automation_candidate.yml"
 MARKER = "<!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->"
 
 
@@ -78,6 +79,23 @@ class ExpectedHeadPromotionContractTests(unittest.TestCase):
         compact = workflow.replace(" ", "")
         self.assertIn("other.get('base',{}).get('sha')!=current_main", compact)
         self.assertIn("other.get('head',{}).get('sha')==head", compact)
+
+    def test_full_automation_candidate_materializer_is_integrity_only(self) -> None:
+        workflow = FULL_AUTOMATION_CANDIDATE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("qikvrt-full-automation:v1", workflow)
+        self.assertIn("contents: write", workflow)
+        self.assertIn("tools/qikvrt_integrity.py generate", workflow)
+        self.assertIn("make test", workflow)
+        self.assertIn("INTEGRITY_TRIO_ONLY", workflow)
+        self.assertIn("REPOSITORY_FILE_MANIFEST.json.sha256", workflow)
+        self.assertIn("SHA256SUMS.txt", workflow)
+        self.assertIn('test "$remote_head" = "$EXPECTED_HEAD"', workflow)
+        self.assertIn('test "$remote_before_push" = "$source_head"', workflow)
+        self.assertIn('git push origin "HEAD:$HEAD_REF"', workflow)
+        self.assertNotIn("pulls/${PR_NUMBER}/merge", workflow)
+        self.assertNotIn("main:refs/heads/main", workflow)
+        self.assertIn('"external_effect":"NONE"', workflow)
+        self.assertIn('"effect_ack_done":False', workflow)
 
     def test_external_effect_claims_remain_fail_closed(self) -> None:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
