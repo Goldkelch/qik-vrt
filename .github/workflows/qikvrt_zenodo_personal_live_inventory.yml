@@ -15,6 +15,8 @@ jobs:
   live-audit:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
     steps:
       - name: Check out exact subject
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -28,12 +30,16 @@ jobs:
           python-version: "3.12"
       - name: Unit-test live inventory core
         run: python3 -B -m unittest -v tests.test_qikvrt_zenodo_personal_live_inventory
-      - name: Read-only Zenodo reobservation
+      - name: Require read-only owner credential
+        run: test -n "$ZENODO_ACCESS_TOKEN"
+      - name: Read-only Zenodo owner and public reobservation
         id: audit
         shell: bash
         run: |
           set +e
-          python3 -B tools/qikvrt_zenodo_personal_live_inventory.py --snapshot release/qikvrt-mesh-zenodo-personal-corpus-snapshot-2026-09-25/ZENODO_PERSONAL_CORPUS_SNAPSHOT.json --output /tmp/QIKVRT_ZENODO_PERSONAL_LIVE_AUDIT.json
+          python3 -B tools/qikvrt_zenodo_personal_live_inventory.py \
+            --snapshot release/qikvrt-mesh-zenodo-personal-corpus-snapshot-2026-09-25/ZENODO_PERSONAL_CORPUS_SNAPSHOT.json \
+            --output /tmp/QIKVRT_ZENODO_PERSONAL_LIVE_AUDIT.json
           rc=$?
           echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
           exit 0
