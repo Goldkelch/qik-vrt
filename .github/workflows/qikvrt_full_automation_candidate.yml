@@ -23,8 +23,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
+      GH_TOKEN: ${{ github.token }}
       HEAD_REF: ${{ github.event.pull_request.head.ref }}
       EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
       RECEIPT: /tmp/qikvrt-full-automation-candidate-integrity.json
     steps:
       - name: Check out exact full-automation candidate
@@ -90,6 +93,7 @@ jobs:
           PY
 
       - name: Persist only canonical integrity trio
+        id: persist
         if: steps.delta.outputs.changed == 'true'
         shell: bash
         run: |
@@ -108,6 +112,8 @@ jobs:
           remote_before_push="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
           test "$remote_before_push" = "$source_head"
           git push origin "HEAD:$HEAD_REF"
+          echo "successor=$successor" >> "$GITHUB_OUTPUT"
+          echo "successor_tree=$tree" >> "$GITHUB_OUTPUT"
           SOURCE_HEAD="$source_head" SUCCESSOR_HEAD="$successor" SUCCESSOR_TREE="$tree" python3 -B - <<'PY'
           import json, os, pathlib
           path=pathlib.Path(os.environ["RECEIPT"])
@@ -121,6 +127,33 @@ jobs:
           path.write_text(json.dumps(value,sort_keys=True,indent=2)+"\n",encoding="utf-8")
           PY
 
+      - name: Dispatch exact integrity successor revalidation
+        if: steps.delta.outputs.changed == 'true'
+        env:
+          SUCCESSOR_HEAD: ${{ steps.persist.outputs.successor }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SUCCESSOR_HEAD"
+          live_head="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+          test "$live_head" = "$SUCCESSOR_HEAD"
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg pr "$PR_NUMBER" \
+            --arg ref "$HEAD_REF" \
+            --arg head "$SUCCESSOR_HEAD" \
+            --arg base "$BASE_SHA" \
+            '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base,d0:2,causal_state:"REOBSERVE",reason:"FULL_AUTOMATION_INTEGRITY_SUCCESSOR"}}' \
+            | gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input -
+          SUCCESSOR_HEAD="$SUCCESSOR_HEAD" python3 -B - <<'PY'
+          import json, os, pathlib
+          path=pathlib.Path(os.environ["RECEIPT"])
+          value=json.loads(path.read_text(encoding="utf-8"))
+          value["revalidation_dispatch"]="qikvrt_autonomous_exact_head_verify"
+          value["revalidation_head"]=os.environ["SUCCESSOR_HEAD"]
+          value["continuation_state"]="REOBSERVE_DISPATCHED"
+          path.write_text(json.dumps(value,sort_keys=True,indent=2)+"\n",encoding="utf-8")
+          PY
       - name: Seal no-op receipt when integrity is current
         if: steps.delta.outputs.changed != 'true'
         shell: bash
