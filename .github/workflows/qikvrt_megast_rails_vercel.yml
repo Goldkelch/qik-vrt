@@ -1,0 +1,199 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT Mega ST Rails Vercel
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/vercel-monitor/**'
+      - 'state/work_units/MEGAST_RAILS_VERCEL_MAIN_SUCCESSOR_20260925_V1.json'
+      - '.github/workflows/qikvrt_megast_rails_vercel.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'deploy/vercel-monitor/**'
+      - 'state/work_units/MEGAST_RAILS_VERCEL_MAIN_SUCCESSOR_20260925_V1.json'
+      - '.github/workflows/qikvrt_megast_rails_vercel.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  rails-vercel-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      BUNDLE_FROZEN: 'true'
+      BUNDLE_WITHOUT: ''
+      BUNDLE_WITH: test
+      EVIDENCE_ROOT: /tmp/qikvrt-megast-rails-vercel
+    steps:
+      - name: Check out exact subject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Bind exact HEAD and TREE
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
+          rm -rf "$EVIDENCE_ROOT"
+          mkdir -p "$EVIDENCE_ROOT"
+          {
+            printf 'HEAD=%s\n' "$EXPECTED_HEAD"
+            printf 'TREE=%s\n' "$(git rev-parse --verify HEAD^{tree})"
+          } | tee "$EVIDENCE_ROOT/SUBJECT.txt"
+
+      - name: Provision exact Ruby and frozen bundle
+        uses: ruby/setup-ruby@bec3f19a76460dbe12f60def7d1a77585f07516c
+        with:
+          ruby-version: '3.3.8'
+          bundler: '2.5.22'
+          bundler-cache: true
+          working-directory: deploy/vercel-monitor
+
+      - name: Verify frozen dependency closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(ruby -e 'print RUBY_VERSION')" = '3.3.8'
+          test "$(bundle _2.5.22_ --version)" = 'Bundler version 2.5.22'
+          cd deploy/vercel-monitor
+          BUNDLE_FROZEN=true BUNDLE_WITHOUT= bundle _2.5.22_ check
+
+      - name: Execute descriptor and Rails production smoke tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd deploy/vercel-monitor
+          BUNDLE_FROZEN=true BUNDLE_WITHOUT= bundle _2.5.22_ exec ruby test/megast_test.rb --seed 1079
+          BUNDLE_FROZEN=true BUNDLE_WITHOUT= bundle _2.5.22_ exec ruby test/rails_smoke_test.rb
+
+      - name: Verify exact source pins and Vercel routing contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+
+          source = json.loads(Path('deploy/vercel-monitor/megast-source.json').read_text())
+          assert source['repository'] == 'Goldkelch/qik-vrt'
+          assert source['source_commit'] == '2fdcf8d233b1495732ef38e3406ebfc095fd0ef3'
+          assert source['source_tree'] == 'e073c90c1d8c5ffa47b8a4c08093ea00046ab850'
+          assert source['archive']['name'] == 'qikvrt-megast-2fdcf8d2.zip'
+          assert source['archive']['bytes'] == 3298453805
+          assert source['archive']['sha256'] == '762fccec9f80bc83ac0475d5fdc3627dd370ad5ac8aabaa6d1c878de20a1bb76'
+          assert source['netboot']['manifest_sha256'] == 'b0f33a6f9385ab72b42737165a427e3c33df49295c13cb10da70562fea9b1701'
+          assert source['archive']['transport_rebuild_allowed'] is False
+          assert source['transport']['public_download_urls'] is None
+          assert source['transport']['part_hashes'] is None
+
+          vercel = json.loads(Path('deploy/vercel-monitor/vercel.json').read_text())
+          rewrites = {(r['source'], r['destination']) for r in vercel['rewrites']}
+          assert ('/api/megast', '/api/megast.rb') in rewrites
+          assert ('/api/megast/download', '/api/megast.rb?qikvrt_operation=download') in rewrites
+          assert vercel['functions']['api/megast.rb']['includeFiles'] == '{lib/**,megast-source.json}'
+          headers = {
+              h['key']: h['value']
+              for rule in vercel['headers']
+              for h in rule.get('headers', [])
+          }
+          assert headers['Cache-Control'] == 'no-store'
+          assert headers['X-QIKVRT-Role'] == 'MONITOR_ONLY'
+          PY
+
+      - name: Materialize bounded same-head receipt
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          python3 -B - "$EVIDENCE_ROOT" "$EXPECTED_HEAD" "$(git rev-parse --verify HEAD^{tree})" <<'PY'
+          import json, pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          receipt = {
+              'schema': 'qikvrt_megast_rails_vercel_same_head_receipt_v1',
+              'repository': 'Goldkelch/qik-vrt',
+              'head': sys.argv[2],
+              'tree': sys.argv[3],
+              'source_commit': '2fdcf8d233b1495732ef38e3406ebfc095fd0ef3',
+              'archive_sha256': '762fccec9f80bc83ac0475d5fdc3627dd370ad5ac8aabaa6d1c878de20a1bb76',
+              'rails_tests': 'PASS',
+              'vercel_contract': 'PASS',
+              'deployment_effect': 'NOT_EXECUTED_BY_THIS_JOB',
+              'public_delivery_verified': False,
+              'new_receiver_boot_verified': False,
+              'effect_ack_done': False,
+              'predecessor_evidence_transfer': False,
+          }
+          (root / 'receipt.json').write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
+          PY
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
+          git status --porcelain=v1 --untracked-files=all | tee "$EVIDENCE_ROOT/WORKTREE.txt"
+          test ! -s "$EVIDENCE_ROOT/WORKTREE.txt"
+
+      - name: Persist canonical integrity successor
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          TARGET_BRANCH: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          source_head="$(git rev-parse --verify HEAD^{commit})"
+          test "$source_head" = "$EXPECTED_HEAD"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_head" = "$source_head"
+
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+
+          mapfile -t changed < <(git diff --name-only)
+          allowed='^(REPOSITORY_FILE_MANIFEST\.json|REPOSITORY_FILE_MANIFEST\.json\.sha256|SHA256SUMS\.txt)$'
+          for changed_path in "${changed[@]}"; do
+            printf '%s\n' "$changed_path" | grep -Eq "$allowed" || {
+              echo "BLOCK: unexpected materializer delta: $changed_path" >&2
+              exit 2
+            }
+          done
+
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          if git diff --cached --quiet; then
+            persisted_head="$source_head"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "ci: materialize Mega ST Rails/Vercel integrity successor"
+            persisted_head="$(git rev-parse --verify HEAD^{commit})"
+            remote_head_after="$(
+              git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" |
+                awk 'NR == 1 { print $1 }'
+            )"
+            test "$remote_head_after" = "$source_head"
+            git push origin "HEAD:$TARGET_BRANCH"
+          fi
+          {
+            printf 'SOURCE_HEAD=%s\n' "$source_head"
+            printf 'PERSISTED_HEAD=%s\n' "$persisted_head"
+            printf 'PERSISTED_TREE=%s\n' "$(git rev-parse --verify HEAD^{tree})"
+          } | tee "$EVIDENCE_ROOT/PERSISTED_SUBJECT.txt"
+
+      - name: Preserve exact-subject Rails/Vercel evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-megast-rails-vercel-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ env.EVIDENCE_ROOT }}
+          retention-days: 30
+          if-no-files-found: error

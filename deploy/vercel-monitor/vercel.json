@@ -4,15 +4,37 @@
     "horizon-by-qik-vrt.vercel.app"
   ],
   "rewrites": [
-    {"source": "/api/state", "destination": "/api/state.js"}
+    {
+      "source": "/api/state",
+      "destination": "/api/state.js"
+    },
+    {
+      "source": "/api/megast",
+      "destination": "/api/megast.rb"
+    },
+    {
+      "source": "/api/megast/download",
+      "destination": "/api/megast.rb?qikvrt_operation=download"
+    }
   ],
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
-        {"key": "Cache-Control", "value": "no-store"},
-        {"key": "X-QIKVRT-Role", "value": "MONITOR_ONLY"}
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        },
+        {
+          "key": "X-QIKVRT-Role",
+          "value": "MONITOR_ONLY"
+        }
       ]
     }
-  ]
+  ],
+  "functions": {
+    "api/megast.rb": {
+      "includeFiles": "{lib/**,megast-source.json}"
+    }
+  }
 }
