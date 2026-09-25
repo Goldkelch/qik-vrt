@@ -42,6 +42,7 @@ from qikvrt_effect_ack import (
 )
 
 SAFE_ID = re.compile(r"^[A-Za-z0-9_.=-]{1,128}$")
+WORK_ORDER_PATH = re.compile(r"^[A-Za-z0-9._/-]{1,512}$")
 SHA256_HEX = re.compile(r"^[0-9a-fA-F]{64}$")
 BASE64URL_SECRET = re.compile(r"^[A-Za-z0-9_-]+$")
 UTC_SECONDS = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
@@ -188,6 +189,7 @@ def dirs(root: Path) -> dict[str, Path]:
         "transactions": state / "transactions",
         "provenance": state / "provenance",
         "stage": state / "out" / "stage",
+        "work_orders": state / "out" / "work_orders",
     }
     for path in result.values():
         _reject_symlink(path)
@@ -615,6 +617,14 @@ def _load_receipt(cfg: HandlerConfig) -> dict[str, Any] | None:
             or protocol.input_hash != f"sha256:{stage_content_sha256}"
         ):
             raise IntegrityIsolationError("idempotency stage result binding mismatch")
+    elif cfg.operation == "work_order":
+        expected = require_sha(cfg.expected_sha256)
+        if (
+            result.get("artifact_id") != safe_id(cfg.artifact_id)
+            or result.get("source_sha256") != expected
+            or protocol.input_hash != f"sha256:{expected}"
+        ):
+            raise IntegrityIsolationError("idempotency work-order result binding mismatch")
     else:
         raise IntegrityIsolationError("operation is not permitted to consume a persisted receipt")
     _verify_transaction_effects(cfg)
@@ -1377,6 +1387,157 @@ def op_stage(cfg: HandlerConfig) -> dict[str, Any]:
     )
 
 
+def op_work_order(cfg: HandlerConfig) -> dict[str, Any]:
+    artifact_id = safe_id(cfg.artifact_id)
+    expected = require_sha(cfg.expected_sha256)
+    if len(cfg.payload_b64) > MAX_BASE64_CHARS:
+        raise ValueError("base64 work order exceeds the 16 MiB decoded limit")
+    try:
+        payload = base64.b64decode(cfg.payload_b64.encode("utf-8"), validate=True)
+    except Exception as exc:
+        raise ValueError("invalid base64 work order") from exc
+    if len(payload) > 256 * 1024:
+        raise ValueError("work order exceeds the 256 KiB limit")
+    actual = sha256_bytes(payload)
+    if actual != expected:
+        evidence = (f"sha256:{actual}",)
+        ack = _effect_request(
+            cfg,
+            payload=payload,
+            declared_hash=expected,
+            decision=ConnectionDecision.BLOCK,
+            policy_allows_release=False,
+            reasons=("WORK_ORDER_SHA256_MISMATCH",),
+            evidence_refs=evidence,
+            required_evidence_refs=evidence,
+            next_checks=("REPAIR_AND_REVERIFY_WORK_ORDER_HASH",),
+            risk_level=RiskLevel.HIGH,
+        )
+        return _with_effect(
+            {
+                "operation": "work_order",
+                "artifact_id": artifact_id,
+                "actual_sha256": actual,
+                "expected_sha256": expected,
+                "work_order_accepted": False,
+            },
+            ack,
+            cfg=cfg,
+            reason=f"work-order sha256 mismatch actual={actual} expected={expected}",
+            error_class="WORK_ORDER_SHA256_MISMATCH",
+        )
+    try:
+        value = _strict_json_loads(payload)
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise ValueError("work order must be strict UTF-8 JSON") from exc
+    if not isinstance(value, dict):
+        raise ValueError("work order must be a JSON object")
+    allowed = {"schema", "task_type", "output_path", "requirements", "acceptance", "notes"}
+    required = {"schema", "task_type", "output_path", "requirements"}
+    if set(value) - allowed or required - set(value):
+        raise ValueError("work-order fields are incomplete or unknown")
+    if value.get("schema") != "qikvrt_work_order_v1":
+        raise ValueError("unsupported work-order schema")
+    if value.get("task_type") not in {"implement_artifact", "modify_artifact"}:
+        raise ValueError("unsupported work-order task_type")
+    output_path = value.get("output_path")
+    if (
+        not isinstance(output_path, str)
+        or not WORK_ORDER_PATH.fullmatch(output_path)
+        or output_path.startswith("/")
+        or "//" in output_path
+        or any(part in {"", ".", ".."} for part in output_path.split("/"))
+    ):
+        raise ValueError("unsafe work-order output_path")
+    requirements = value.get("requirements")
+    if not isinstance(requirements, dict) or len(requirements) > 64:
+        raise ValueError("work-order requirements must be an object with at most 64 properties")
+    acceptance = value.get("acceptance", {})
+    if not isinstance(acceptance, dict) or len(acceptance) > 64:
+        raise ValueError("work-order acceptance must be an object with at most 64 properties")
+    notes = value.get("notes", "")
+    if not isinstance(notes, str) or len(notes) > 8192:
+        raise ValueError("work-order notes must be a string of at most 8192 characters")
+    if not cfg.dry_run:
+        _mutation_preconditions(cfg)
+
+    normalized = {
+        "schema": "qikvrt_work_order_v1",
+        "task_type": value["task_type"],
+        "output_path": output_path,
+        "requirements": requirements,
+        "acceptance": acceptance,
+        "notes": notes,
+    }
+    normalized_bytes = _canonical_bytes(normalized)
+    normalized_sha256 = sha256_bytes(normalized_bytes)
+    evidence = (f"sha256:{actual}", f"sha256:{normalized_sha256}")
+    ack = _effect_request(
+        cfg,
+        payload=payload,
+        declared_hash=expected,
+        decision=ConnectionDecision.RELEASE,
+        policy_allows_release=True,
+        reasons=(
+            "WORK_ORDER_SCHEMA_VALIDATED",
+            "WORK_ORDER_HASH_BOUND",
+            "EFFECT_SCOPE_WORK_ORDER_REGISTRATION_ONLY",
+            "TASK_EXECUTION_NOT_IMPLIED",
+            "SCOPED_EFFECT_ACCEPTED" if not cfg.dry_run else "DRY_RUN_AUDIT_ONLY",
+        ),
+        evidence_refs=evidence,
+        required_evidence_refs=evidence,
+        risk_level=RiskLevel.MEDIUM if not cfg.dry_run else RiskLevel.LOW,
+    )
+
+    registration = {
+        "schema": "qikvrt_work_order_registration_v1",
+        "artifact_id": artifact_id,
+        "request_id": cfg.request_id,
+        "repository": cfg.repository,
+        "responsibility_owner": cfg.responsibility_owner,
+        "source_sha256": actual,
+        "normalized_work_order_sha256": normalized_sha256,
+        "work_order": normalized,
+    }
+    registration_text = _json_text(registration)
+    registration_sha256 = sha256_bytes(registration_text.encode("utf-8"))
+    target = dirs(cfg.root)["work_orders"] / f"{registration_sha256}.json"
+    write_status = "DRY_RUN"
+    if not cfg.dry_run and ack.ordinary_release:
+        effects = [{
+            "path": str(target.relative_to(cfg.root.resolve())),
+            "sha256": registration_sha256,
+            "size": len(registration_text.encode("utf-8")),
+        }]
+        _advance_transaction(cfg, "PREPARED", effects=effects)
+        if target.exists():
+            if secure_read_bytes(target, max_bytes=512 * 1024) != registration_text.encode("utf-8"):
+                raise IntegrityIsolationError("content-addressed work-order registration collision")
+            write_status = "ALREADY_PRESENT"
+        else:
+            atomic_write_text(target, registration_text)
+            write_status = "WRITTEN"
+        _advance_transaction(cfg, "APPLIED")
+
+    return _with_effect(
+        {
+            "operation": "work_order",
+            "artifact_id": artifact_id,
+            "source_sha256": actual,
+            "normalized_work_order_sha256": normalized_sha256,
+            "work_order_accepted": True,
+            "task_execution": "NOT_EXECUTED",
+            "effect_scope": "work-order-registration-only",
+            "registration_path": str(target.relative_to(cfg.root.resolve())),
+            "registration_sha256": registration_sha256,
+            "write_status": write_status,
+        },
+        ack,
+        cfg=cfg,
+    )
+
+
 def op_release_status(cfg: HandlerConfig) -> dict[str, Any]:
     descriptor = _canonical_bytes({"repository": cfg.repository, "run_id": cfg.run_id})
     if cfg.remote_evidence_b64 or cfg.payload_b64 or cfg.expected_sha256:
@@ -1568,6 +1729,8 @@ def run_handler(cfg: HandlerConfig) -> dict[str, Any]:
                     result = op_verify(cfg)
                 elif cfg.operation == "stage":
                     result = op_stage(cfg)
+                elif cfg.operation == "work_order":
+                    result = op_work_order(cfg)
                 elif cfg.operation == "release_status":
                     result = op_release_status(cfg)
                 else:
@@ -1602,7 +1765,7 @@ def run_handler(cfg: HandlerConfig) -> dict[str, Any]:
                         transaction = _read_transaction(cfg)
                         if transaction is not None and transaction.get("state") == "APPLIED":
                             _advance_transaction(cfg, "COMMITTED", result=receipt_result)
-                    elif cfg.operation in ("ingest", "stage") and not cfg.dry_run:
+                    elif cfg.operation in ("ingest", "stage", "work_order") and not cfg.dry_run:
                         _persist_receipt(cfg, result)
                         _advance_transaction(cfg, "COMMITTED", result=result)
                 return result

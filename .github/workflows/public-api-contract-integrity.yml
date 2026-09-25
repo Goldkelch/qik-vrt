@@ -1,0 +1,44 @@
+name: Public API contract integrity successor
+
+on:
+  push:
+    branches:
+      - docs/public-api-contract-v2
+    paths:
+      - 'api/**'
+      - 'README.md'
+      - 'QIKVRT_SELF_CONTAINED_GITHUB_REPOSITORY_WITH_REST_TCPIP_API_V1.md'
+      - 'docs/index.html'
+      - '.github/workflows/qikvrt_mesh_api.yml'
+      - '.github/workflows/public-api-contract-integrity.yml'
+      - 'src/qikvrt_api_handler.py'
+      - 'scripts/qikvrt_api_client.py'
+      - 'tests/test_handler_unit.py'
+
+permissions:
+  contents: write
+
+jobs:
+  persist-integrity:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: docs/public-api-contract-v2
+      - name: Regenerate and verify canonical integrity
+        run: |
+          python3 tools/qikvrt_integrity.py generate
+          python3 tools/qikvrt_integrity.py verify
+          make test
+      - name: Persist integrity successor
+        run: |
+          if git diff --quiet -- REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt; then
+            echo "Integrity metadata already canonical."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git commit -m "chore(integrity): bind public API contract successor"
+          git push origin HEAD:docs/public-api-contract-v2

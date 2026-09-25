@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Goldkelch/qik-vrt/blob/main/api/qikvrt_work_order.schema.json",
+  "title": "QIK-VRT Work Order v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "task_type", "output_path", "requirements"],
+  "properties": {
+    "schema": { "const": "qikvrt_work_order_v1" },
+    "task_type": { "type": "string", "enum": ["implement_artifact", "modify_artifact"] },
+    "output_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$"
+    },
+    "requirements": {
+      "type": "object",
+      "maxProperties": 64
+    },
+    "acceptance": {
+      "type": "object",
+      "maxProperties": 64
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 8192
+    }
+  }
+}

@@ -75,7 +75,7 @@ def main() -> int:
     ap.add_argument("--owner", required=True)
     ap.add_argument("--repo", required=True)
     ap.add_argument("--ref", default="main")
-    ap.add_argument("--operation", choices=["ingest", "verify", "stage", "release_status"], default="ingest")
+    ap.add_argument("--operation", choices=["ingest", "verify", "stage", "work_order", "release_status"], default="ingest")
     ap.add_argument("--artifact-id", default="qikvrt_artifact")
     ap.add_argument("--payload-file")
     ap.add_argument("--expected-sha256")
