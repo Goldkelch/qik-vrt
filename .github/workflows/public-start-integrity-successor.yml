@@ -1,0 +1,38 @@
+name: Public Start integrity successor
+
+on:
+  push:
+    branches:
+      - docs/public-start-cloud-transputer-terminal
+    paths:
+      - 'docs/index.html'
+      - '.github/workflows/public-start-integrity-successor.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  persist-integrity:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: docs/public-start-cloud-transputer-terminal
+      - name: Regenerate canonical repository integrity
+        run: |
+          python3 tools/qikvrt_integrity.py generate
+          python3 tools/qikvrt_integrity.py verify
+      - name: Verify complete repository before persistence
+        run: make test
+      - name: Persist integrity successor
+        run: |
+          if git diff --quiet -- REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt; then
+            echo "Integrity metadata already canonical."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git commit -m "chore(integrity): bind public-start successor"
+          git push origin HEAD:docs/public-start-cloud-transputer-terminal
