@@ -20,6 +20,7 @@ from tools.qikvrt_output_contract import (  # noqa: E402
     bind_output,
     canonical_article_identity,
     canonical_origin_proof_identity,
+    canonical_knowledge_artifacts_identity,
     load_policy,
     validate_output,
 )
@@ -75,6 +76,13 @@ class UniversalProofThoughtSchemaTests(unittest.TestCase):
         self.assertTrue(
             policy["persistence"]["every_node_must_bind_ontological_origin_proof"]
         )
+        self.assertTrue(
+            policy["persistence"]["every_node_must_bind_required_knowledge_artifacts"]
+        )
+        self.assertEqual(
+            policy["required_knowledge_artifacts"]["manifest_git_blob_sha1"],
+            canonical_knowledge_artifacts_identity()["git_blob_sha1"],
+        )
 
     def test_valid_bound_output_passes(self):
         value = self.base()
@@ -96,6 +104,12 @@ class UniversalProofThoughtSchemaTests(unittest.TestCase):
         value[BINDING_KEY]["ontological_origin_proof_binding"][
             "git_blob_sha1"
         ] = "0" * 40
+        with self.assertRaises(OutputContractError):
+            validate_output(value)
+
+    def test_required_knowledge_rebinding_fails_closed(self):
+        value = self.base()
+        value[BINDING_KEY]["knowledge_artifacts_binding"]["git_blob_sha1"] = "0" * 40
         with self.assertRaises(OutputContractError):
             validate_output(value)
 
