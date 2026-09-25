@@ -655,7 +655,8 @@ def _legacy_metadata_text(value: str) -> str:
     is weakened by this normalization.
     """
     return (
-        value.replace("\u201c", '"')
+        value.replace("\u201e", '"')
+        .replace("\u201c", '"')
         .replace("\u201d", '"')
         .replace("\u2018", "'")
         .replace("\u2019", "'")
