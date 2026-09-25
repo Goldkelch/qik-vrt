@@ -6,7 +6,7 @@ on:
   pull_request:
     branches:
       - main
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, review_requested]
     paths:
       - ".github/workflows/qikvrt_journal_live_truth_state_watch.yml"
   schedule:
@@ -159,6 +159,7 @@ jobs:
   materialize-pr-self-test-integrity:
     if: >-
       github.event_name == 'pull_request' &&
+      github.event.action != 'review_requested' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.actor != 'github-actions[bot]'
     needs: observe
