@@ -51,6 +51,7 @@ PATHS = {
     "bundle": f"{RELEASE_REL}/MACHINE_PROOF_BUNDLE.json",
     "auth": f"{RELEASE_REL}/OWNER_ZENODO_AUTHORIZATION.json",
     "manifest": f"{RELEASE_REL}/publish-request.json",
+    "final_upload": f"{RELEASE_REL}/FINAL_UPLOAD_AUTHORIZATION.json",
     "evidence": f"{RELEASE_REL}/zenodo-publication.json",
 }
 
@@ -119,7 +120,7 @@ def main() -> int:
 
     if any((ROOT / PATHS[key]).exists() for key in (
         "raw_kernel", "prepub_gate", "kernel", "claim_matrix", "source_evidence",
-        "return", "bundle", "auth", "manifest", "evidence",
+        "return", "bundle", "auth", "manifest", "final_upload", "evidence",
     )):
         fail("one or more final publication artifacts already exist")
 
@@ -509,6 +510,36 @@ def main() -> int:
     manifest_raw = json_bytes(manifest)
     write_once(PATHS["manifest"], manifest_raw)
 
+    aggregate_material = "".join(
+        sorted(
+            f"{item['sha256']}  {item['path']}  {item['name']}\n"
+            for item in uploads
+        )
+    ).encode("utf-8")
+    final_upload_aggregate_sha256 = hashlib.sha256(
+        aggregate_material
+    ).hexdigest()
+    final_upload = {
+        "schema": "qikvrt_final_upload_authorization_v1",
+        "publication_id": PUBLICATION_ID,
+        "proof_source_head": SOURCE_HEAD,
+        "proof_source_tree": SOURCE_TREE,
+        "upload_count": len(uploads),
+        "aggregate_algorithm": (
+            "SHA-256 of sorted '<sha256>  <path>  <name>\\n' lines"
+        ),
+        "final_upload_aggregate_sha256": final_upload_aggregate_sha256,
+        "return_sha256": return_ident["sha256"],
+        "metadata_sha256": metadata_sha256,
+        "machine_proof_sha256": bundle_ident["sha256"],
+        "authorization_id": AUTHORIZATION_ID,
+        "exact_authorization_statement": exact_statement,
+        "owner_instruction": "Veröffentliche jetzt auf Zenodo.",
+        "predecessor_evidence_transfer": False,
+    }
+    final_upload_raw = json_bytes(final_upload)
+    write_once(PATHS["final_upload"], final_upload_raw)
+
     upload_paths = [item["path"] for item in uploads]
     proof_receipt = proof.validate_bundle(
         ROOT,
@@ -537,6 +568,10 @@ def main() -> int:
         "authorization_statement": exact_statement,
         "authorization_sha256": authorization_ident["sha256"],
         "manifest_sha256": hashlib.sha256(manifest_raw).hexdigest(),
+        "final_upload_aggregate_sha256": final_upload_aggregate_sha256,
+        "final_upload_authorization_sha256": hashlib.sha256(
+            final_upload_raw
+        ).hexdigest(),
         "state": "FINAL_CONTROLS_VALIDATED_READY_FOR_EXECUTION_COMMIT",
     }, ensure_ascii=False, sort_keys=True))
     return 0
