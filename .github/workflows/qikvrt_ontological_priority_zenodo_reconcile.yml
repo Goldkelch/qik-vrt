@@ -110,6 +110,12 @@ jobs:
 
           root=Path.cwd().resolve()
           manifest=publish.load_manifest(root / os.environ["MANIFEST_PATH"], root)
+          original_legacy_text = zenodo._legacy_metadata_text
+
+          def qikvrt_recovery_legacy_text(value: str) -> str:
+              return original_legacy_text(value).replace("\u201e", '"')
+
+          zenodo._legacy_metadata_text = qikvrt_recovery_legacy_text
           client=zenodo.ZenodoClient(
               os.environ["ZENODO_ACCESS_TOKEN"],
               os.environ["ZENODO_API_BASE"],
@@ -186,7 +192,24 @@ jobs:
           cd "$TARGET_WORKTREE"
           export GITHUB_SHA="$TARGET_EXECUTION_HEAD"
           export GITHUB_REPOSITORY="Goldkelch/qik-vrt"
-          python3 -B tools/qikvrt_zenodo_publish.py             --manifest "$MANIFEST_PATH"
+          python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+          from tools import qikvrt_zenodo_actions as zenodo
+          from tools import qikvrt_zenodo_publish as publish
+
+          original_legacy_text = zenodo._legacy_metadata_text
+
+          def qikvrt_recovery_legacy_text(value: str) -> str:
+              # Exact observed Zenodo legacy normalization for German opening
+              # double quote U+201E. No wording/whitespace/case relaxation.
+              return original_legacy_text(value).replace("\u201e", '"')
+
+          zenodo._legacy_metadata_text = qikvrt_recovery_legacy_text
+          root = Path.cwd().resolve()
+          manifest = root / os.environ["MANIFEST_PATH"]
+          publish.publish(manifest, root)
+          PY
           python3 -B - <<'PY'
           import json, os
           from pathlib import Path
