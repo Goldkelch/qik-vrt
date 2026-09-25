@@ -677,6 +677,7 @@ class AppendOnlyNodeLedger:
                 "policy_id": OUTPUT_POLICY_ID,
                 "article_binding": canonical_article_identity(),
                 "ontological_origin_proof_binding": canonical_origin_proof_identity(),
+                "knowledge_artifacts_binding": canonical_knowledge_artifacts_identity(),
             },
             **fields,
         }
@@ -1188,6 +1189,7 @@ class MeshHarness:
                     "policy_id": OUTPUT_POLICY_ID,
                     "article_binding": canonical_article_identity(),
                     "ontological_origin_proof_binding": canonical_origin_proof_identity(),
+                    "knowledge_artifacts_binding": canonical_knowledge_artifacts_identity(),
                 },
             ),
             NodeIdentity(
