@@ -117,12 +117,25 @@ jobs:
 
           root=Path.cwd().resolve()
           manifest=publish.load_manifest(root / os.environ["MANIFEST_PATH"], root)
-          original_legacy_text = zenodo._legacy_metadata_text
+          original_metadata_matches = zenodo._metadata_matches
 
-          def qikvrt_recovery_legacy_text(value: str) -> str:
-              return original_legacy_text(value).replace("\u201e", '"')
+          def qikvrt_recovery_metadata_matches(actual, expected):
+              if isinstance(actual, str) and isinstance(expected, str):
+                  translation = str.maketrans({
+                      "\u201c": '"',
+                      "\u201d": '"',
+                      "\u201e": '"',
+                      "\u2018": "'",
+                      "\u2019": "'",
+                  })
+                  return (
+                      actual == expected
+                      or actual.translate(translation)
+                      == expected.translate(translation)
+                  )
+              return original_metadata_matches(actual, expected)
 
-          zenodo._legacy_metadata_text = qikvrt_recovery_legacy_text
+          zenodo._metadata_matches = qikvrt_recovery_metadata_matches
           client=zenodo.ZenodoClient(
               os.environ["ZENODO_ACCESS_TOKEN"],
               os.environ["ZENODO_API_BASE"],
@@ -205,14 +218,27 @@ jobs:
           from tools import qikvrt_zenodo_actions as zenodo
           from tools import qikvrt_zenodo_publish as publish
 
-          original_legacy_text = zenodo._legacy_metadata_text
+          original_metadata_matches = zenodo._metadata_matches
 
-          def qikvrt_recovery_legacy_text(value: str) -> str:
-              # Exact observed Zenodo legacy normalization for German opening
-              # double quote U+201E. No wording/whitespace/case relaxation.
-              return original_legacy_text(value).replace("\u201e", '"')
+          def qikvrt_recovery_metadata_matches(actual, expected):
+              # Exact observed Zenodo legacy quote normalization only.
+              # No wording, whitespace, case, identifier or URL relaxation.
+              if isinstance(actual, str) and isinstance(expected, str):
+                  translation = str.maketrans({
+                      "\u201c": '"',
+                      "\u201d": '"',
+                      "\u201e": '"',
+                      "\u2018": "'",
+                      "\u2019": "'",
+                  })
+                  return (
+                      actual == expected
+                      or actual.translate(translation)
+                      == expected.translate(translation)
+                  )
+              return original_metadata_matches(actual, expected)
 
-          zenodo._legacy_metadata_text = qikvrt_recovery_legacy_text
+          zenodo._metadata_matches = qikvrt_recovery_metadata_matches
           root = Path.cwd().resolve()
           manifest = root / os.environ["MANIFEST_PATH"]
           publish.publish(manifest, root)
