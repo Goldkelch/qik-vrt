@@ -36,6 +36,12 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from tools.qikvrt_output_contract import (  # noqa: E402
+    OutputContractError,
+    bind_output,
+    validate_output,
+)
+
 CONTRACT_PATH = ROOT / "state" / "mesh" / "QIKVRT_REAL_MESH_V1.json"
 REFLEXIVE_STANDARD_PATH = ROOT / "REFLEXIVE_FINDING_WORKFLOW_STANDARD.json"
 
@@ -105,6 +111,11 @@ def verify_receipt(
 ) -> list[str]:
     """Return a list of findings.  An empty list means the receipt is conformant."""
     findings: list[str] = []
+
+    try:
+        validate_output(receipt)
+    except OutputContractError as exc:
+        findings.append(f"universal proof/thought output contract: {exc}")
 
     def _check(condition: bool, finding: str) -> None:
         if not condition:
@@ -285,7 +296,35 @@ def build_audit_receipt(
         "external_effect": "NONE",
         "transport_ack_is_effect_ack": False,
     }
+    audit = bind_output(
+        audit,
+        node_id="real-mesh-system-verifier",
+        repository="Goldkelch/qik-vrt",
+        subject={
+            "source_head": receipt.get("source_head"),
+            "source_tree": receipt.get("source_tree"),
+            "receipt_source": receipt_path or "in-memory",
+        },
+        claim_kind="SOURCE_BOUND",
+        statement="System-verification result for one exact bounded real-mesh execution receipt.",
+        assumptions=[],
+        definitions=["QIKVRT_REAL_MULTI_PAIR_MESH_V1"],
+        dependencies=[],
+        exclusions=[
+            "general EFFECT_ACK_DONE",
+            "production deployment",
+            "physical correspondence",
+            "scientific consensus",
+        ],
+        evidence_refs=[str(receipt.get("receipt_sha256", ""))],
+        epistemic_state="RUNTIME_EVIDENCE",
+        effect_state="BLOCK" if findings else "NONE",
+        transport_ack=False,
+        effect_ack_done=False,
+        new_difference="SYSTEM_VERIFICATION_RESULT_MATERIALIZED",
+    )
     audit["audit_sha256"] = canonical_sha256(audit)
+    validate_output(audit)
     return audit
 
 
