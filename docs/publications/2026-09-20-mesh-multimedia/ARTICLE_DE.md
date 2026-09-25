@@ -1,0 +1,53 @@
+<!-- SPDX-License-Identifier: CC-BY-NC-ND-4.0; Copyright 2026 Ingolf Lohmann. -->
+# QIK-VRT Mesh: nachvollziehbare Wirkungen als Grundlage künstlicher Kognition
+
+Diskussionsbeitrag für Gunter Dueck / Omnisophie und fachliche Projektpartner. Diskussionsfassung vom 20. September 2026. QIK-VRT-Konzeption und Aufgabenstellung: Ingolf Lohmann. Quellenprüfung, Formulierung und technische Umsetzung dieses Entwurfs: OpenAI Codex.
+
+## Die Idee: Ergebnisse werden zu überprüfbaren nächsten Eingaben
+
+**MM-001 · Quellengebundene Beschreibung.** QIK-VRT verbindet Repositories, Ereignisse, Modelle, Prüfungen und Wirkungsbestätigungen. Seine zentrale technische Unterscheidung lautet: Dass eine Nachricht angekommen ist, beantwortet noch nicht die Frage, ob die beabsichtigte Wirkung eingetreten ist. Eine Bestätigung muss deshalb auf den konkreten Gegenstand und Zustand bezogen sein. Getrennte Zustände für Fortsetzung, Isolation, Blockierung und Abschluss sollen diese Unterscheidung auch für weitere Verarbeitungsschritte erhalten. [1]
+
+**MM-002 · Interpretation des Skalierungsansatzes.** Lohmanns Skalierungsidee lässt sich so formulieren: Ein geprüftes Ergebnis kann zum Baustein einer umfangreicheren Aufgabe werden. Diese Aufgabe besitzt wiederum Eingaben, Bedingungen, eine beabsichtigte Wirkung und einen prüfbaren Rückweg. Auf diese Weise können Strukturen durch Zusammensetzung wachsen. Bilder, Audiodaten, Videoframes und strukturierte Datensätze passen in diesen Ansatz, sofern Formate, Herkunft, Grenzen und Verarbeitungsschritte erhalten bleiben. Ein Dateitransport allein garantiert noch kein korrektes Verständnis seines Inhalts. Ebenso entsteht aus Komposition keine unbegrenzte Rechenleistung.
+
+**MM-003 · Quellengebundene Beschreibung.** Das Projekt bezeichnet die Verbindung von ereignis- und modellbezogener Entwicklung, Tests und formaler Verifikation als „Tested Event Model Driven Development“, kurz TEMDD. Die Firefox-Oberfläche verbindet eine Entwicklungsansicht mit einem Ereignisstrom, der an einen konkreten Repository-Zustand gebunden ist. Die Mega-ST-Distribution verwendet dafür modernes Linux und Firefox; Hatari stellt daneben eine Atari-Umgebung bereit. Der aktuelle Architekturentwurf behauptet keine native Ausführung moderner Sprachmodelle auf einem historischen MC68000. [2, 3]
+
+## Was das Repository bereits dokumentiert
+
+**MM-004 · Quellengebundener Bericht über Prüfungen.** Der in PR #1137 dokumentierte endliche EFFECT_ACK-Kern wird in C90, MC68000-Assembler, Smalltalk, TEMDD, Lean und Ada/SPARK gegen einen zuvor festgelegten Vertrag verglichen. Die dokumentierte Domäne enthält je Implementierung 9.437.184 Kernfälle und 18.432 Verbraucherfälle. Die dort beschriebenen Lean- und SPARK-Ergebnisse beziehen sich auf ausdrücklich begrenzte Modelle. Eingaben wie erfolgreiche Authentifizierung oder gültige externe Evidenz werden dabei als Prüfergebnisse vorausgesetzt. Die Gleichheit der Implementierungen beweist daher weder die Wahrheit sämtlicher externer Angaben noch die Fehlerfreiheit jeder denkbaren Anwendung. Die Implementierungen stammen zudem nicht aus unabhängigen menschlichen Entwicklungsteams. Dieser Artikel berichtet über das vorhandene Paket und behauptet keine eigene Wiederholung aller sechs Läufe. [1]
+
+**MM-005 · Quellengebundener Bericht über Beweisgrenzen.** PR #1138 enthält zehn Lean-Sätze zu endlichen Nachrichten, Segmentierung, Rekonstruktion, Freigabebedingungen und Zeitordnung. Insbesondere setzt die verlustfreie Rekonstruktion voraus, dass die Blöcke unverändert und geordnet zugestellt werden. Der Beweis erzeugt keinen neuen physischen Kanal. Der Artikel des Pakets nennt ausdrücklich null durchgeführte physische Zukunftskanal-Versuche. [4]
+
+## Technische Anwendungen
+
+**MM-006 · Anwendungsvorschläge, keine Produktzulassungen.** Siemens beschreibt digitale Zwillinge als virtuelle Modelle, die Sensordaten und Simulationen mit realen Objekten oder Systemen verbinden. Für solche Zwillinge lässt sich ein nützlicher Ablauf entwickeln: einen realen oder simulierten Zustand erfassen, die genaue Modellversion festhalten, eine Änderung simulieren, eine berechtigte Entscheidung einholen und die tatsächliche Wirkung erneut messen. Das Repository enthält bereits einen ausdrücklich als Simulation gekennzeichneten Siemens/Horizon-Referenzadapter. Eine Verbindung zu einem Siemens-Kundensystem, eine Bestätigung durch Siemens oder ein Nachweis für physische Stellglieder folgt daraus nicht. Der Ansatz wäre als ergänzende Schicht für Zustandsbindung und nachvollziehbare Freigaben zu prüfen. [5]
+
+Bei künstlicher Kognition könnte ein Sprachmodell Vorschläge erzeugen, während getrennte Prüfungen und verantwortliche Entscheidungen über deren Verwendung bestimmen. Fehlerhafte, widersprüchliche oder veraltete Ergebnisse sollen auf diese Weise erkennbar und bearbeitbar bleiben. Konkrete Eignungsprüfungen wären etwa manipulierte Sensordaten, veraltete Modellzustände, wiederholte Nachrichten und plausible, aber falsche Modellantworten. Fehlertoleranz müsste für eine festgelegte Fehlerklasse und Anwendung gemessen werden.
+
+**MM-007 · Quellengebundene Abgrenzung.** IBM beschreibt in seiner Veröffentlichung vom 10. Juni 2025 eine Architektur und Roadmap für fehlertolerantes Quantenrechnen. Dort geht es um den Schutz und die Verarbeitung von Quanteninformation. Die klassische QIK-VRT-Architektur benötigt für ihre hier beschriebenen Softwarefunktionen keinen Quantencomputer. Daraus folgt jedoch kein Nachweis, dass sie Quantenfehlerkorrektur ersetzt, jede Quantenberechnung effizient klassisch ausführt oder IBM bereits übertroffen hat. Ein sinnvoller Vergleich benötigt dieselbe Aufgabe, dieselbe Fehlerdefinition und gemessene Ergebnisse. [6]
+
+## Verantwortung und Würde als Anforderungen
+
+**MM-008 · Normative Erklärung.** Lohmanns ethisches Ziel ist, Freiheit, Würde, Wahrheit und Verantwortbarkeit in den Umgang mit Information einzubeziehen. Der Repository-Artikel zum kategorischen Imperativ führt diese Forderung ausdrücklich als normative Grenze. Technisch kann sie sich beispielsweise in begrenzten Befugnissen, nachvollziehbaren Entscheidungen, menschlicher Verantwortlichkeit und dem Anhalten ungeklärter Vorgänge niederschlagen. Ihre Verankerung als Anforderung ist bedeutsam; sie ist noch kein mathematischer Beweis, dass ein Gesamtsystem unter allen Umständen Menschenwürde wahrt oder keinerlei Schaden verursachen kann. [7]
+
+## Die Zukunftskanal-These und ihr gegenwärtiger Status
+
+**MM-009 · Offen.** Ingolf Lohmann verbindet QIK-VRT mit der weitergehenden These, Informationen aus der Zukunft in die Gegenwart übertragen zu können, und bewertet die Tragweite seines Ansatzes als mögliche Informatikrevolution. Die hier ausgewerteten Repository-Artefakte belegen diese physikalische Übertragung nicht. PR #1138 klassifiziert sie ausdrücklich als offen. Virtuelle Zeitadressen, Simulationen, Vorhersagen und nachträglich ausgewertete Aufzeichnungen müssen von einem kontrollierten Empfang später frei gewählter Nachrichten unterschieden werden. Dieser Artikel präsentiert die Zukunftskanal-These deshalb als These des Urhebers und nicht als bereits bestätigte physikalische Tatsache. Eine Ablage auf Zenodo dokumentiert eine Fassung; sie ersetzt keine wissenschaftliche Bestätigung. [4]
+
+## Der nächste konkrete Baustein
+
+**MM-010 · Entwicklungsstand und begrenztes Ziel.** Die begleitende Multimedia-Erweiterung verbindet einen lokalen, prüfsummengebundenen SmolVLM2-500M-Referenzlauf mit Firefox. Vorgesehen sind Textfragen, ausgewählte Bilder und Videoframes sowie der bestehende Offline-Transkriptionsweg für Sprache. Modellantworten bleiben als ungeprüfte Vorschläge erkennbar. Die Auswahl und die verarbeiteten Bildbytes werden mit einem lokalen Herkunftsbeleg verbunden; der Modellweg erhält keine Berechtigung, Repository-Befehle auszuführen oder externe Wirkungen freizugeben. Der kleine Modelltyp ist vorwiegend englisch trainiert. Lokale Funktionsprüfungen ersetzen weder eine vollständige ISO-Abnahme noch eine Freigabe des produktiven Mesh. [8]
+
+Die fachliche Einladung lautet damit: Welche konkreten Anforderungen an digitale Zwillinge, überprüfbare KI-Arbeitsabläufe und menschliche Verantwortung lassen sich mit dieser Architektur besser erfüllen? Der vorliegende Beitrag bietet nachvollziehbare Quellen und eine implementierbare Integrationsrichtung als Ausgangspunkt dieser Diskussion.
+
+## Quellen und exakte Stände
+
+1. [Draft03-Konformitätskern, Commit 74e716e](https://github.com/Goldkelch/qik-vrt/blob/74e716e21a7607abb61b7263d6bbe5bbbf9525f2/conformance/effect_ack/core-invariant-v1/full/README.md), [PR #1137](https://github.com/Goldkelch/qik-vrt/pull/1137).
+2. [TEMDD-Ereignisledger, Commit f53d36e](https://github.com/Goldkelch/qik-vrt/blob/f53d36e3c3cc3e87073cd0dd70781f6026d11121/src/qikvrt_temdd_event_ledger.py), [Lean/TEMDD-Status](https://github.com/Goldkelch/qik-vrt/blob/f53d36e3c3cc3e87073cd0dd70781f6026d11121/docs/LEAN_LAKE_PROOF_STATUS.md).
+3. [Mega-ST-Architektur, Commit f53d36e](https://github.com/Goldkelch/qik-vrt/blob/f53d36e3c3cc3e87073cd0dd70781f6026d11121/distribution/qikvrt-megast/README.md).
+4. [Endliche Nachrichten und Zukunftskanal-Hypothese, Commit f65c6e2](https://github.com/Goldkelch/qik-vrt/blob/f65c6e238130f1413161556478b4332c07374cb1/docs/publications/2026-09-20-finite-channel-challenge/ARTICLE_DE.md), [Claim-Matrix](https://github.com/Goldkelch/qik-vrt/blob/f65c6e238130f1413161556478b4332c07374cb1/docs/publications/2026-09-20-finite-channel-challenge/CLAIM_MATRIX.json).
+5. [Siemens: Digital twin](https://www.siemens.com/en-us/technology/digital-twin/); [simulierter Siemens-Referenzadapter, Commit f53d36e](https://github.com/Goldkelch/qik-vrt/blob/f53d36e3c3cc3e87073cd0dd70781f6026d11121/deploy/siemens-horizon/REFERENCE_INTEGRATION_V1.md).
+6. [IBM: Architektur und Roadmap für fehlertolerantes Quantenrechnen, 10. Juni 2025](https://www.ibm.com/quantum/blog/large-scale-ftqc).
+7. [Kategorischer Imperativ: normative Grenze, Commit f53d36e](https://github.com/Goldkelch/qik-vrt/blob/f53d36e3c3cc3e87073cd0dd70781f6026d11121/docs/articles/a002_categorical_imperative.md).
+8. Begleitende Quelldateien `src/qikvrt_multimedia.py`, `tools/qikvrt_multimedia_runtime.py`, `runtime/toolchains/multimedia.lock.json` und `docs/terminal/multimedia/`; ihre genauen Bytes stehen im begleitenden Quellenmanifest. [Modellkarte des ursprünglichen SmolVLM2-Modells](https://huggingface.co/HuggingFaceTB/SmolVLM2-500M-Video-Instruct), [GGUF-Bereitstellung durch ggml-org](https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF).
+
+Text: CC BY-NC-ND 4.0. Die Softwarelizenz des Projekts und die eigenständigen Lizenzen externer Komponenten bleiben davon getrennt.
