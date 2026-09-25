@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from collections import Counter
 import json
 import pathlib
 import sys
@@ -19,20 +20,23 @@ if data.get('schema') != 'qikvrt_image_text_fidelity_v1':
 required = data.get('required_literals')
 observed = data.get('observed_literals')
 unexpected = data.get('unexpected_visible_text')
-if not isinstance(required, list) or not all(isinstance(x, str) and x for x in required):
-    fail('required_literals must be non-empty strings')
+if not isinstance(required, list) or not required or not all(isinstance(x, str) and x for x in required):
+    fail('required_literals must be a non-empty list of non-empty strings')
 if not isinstance(observed, list) or not all(isinstance(x, str) for x in observed):
     fail('observed_literals must be strings')
-if not isinstance(unexpected, list):
-    fail('unexpected_visible_text must be a list')
+if not isinstance(unexpected, list) or not all(isinstance(x, str) and x for x in unexpected):
+    fail('unexpected_visible_text must contain only non-empty strings')
 
 norm = lambda s: unicodedata.normalize('NFC', s)
 req = [norm(x) for x in required]
 obs = [norm(x) for x in observed]
 
-missing = [x for x in req if x not in obs]
-if missing:
-    fail('missing required literals: ' + repr(missing))
+req_counts = Counter(req)
+obs_counts = Counter(obs)
+if req_counts != obs_counts:
+    missing = list((req_counts - obs_counts).elements())
+    extra = list((obs_counts - req_counts).elements())
+    fail('rendered literal multiset mismatch: missing=' + repr(missing) + ' extra=' + repr(extra))
 if unexpected:
     fail('unexpected visible text: ' + repr(unexpected))
 if data.get('human_visual_readback_complete') is not True:

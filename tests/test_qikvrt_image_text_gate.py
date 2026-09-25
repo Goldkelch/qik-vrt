@@ -24,6 +24,12 @@ bad=dict(base); bad['observed_literals']=['Bewusstsein ist Wechselwirkung!','Eff
 assert run(bad).returncode!=0
 extra=dict(base); extra['unexpected_visible_text']=['invented caption']
 assert run(extra).returncode!=0
+extra_observed=dict(base); extra_observed['observed_literals']=base['observed_literals']+['invented caption']
+assert run(extra_observed).returncode!=0
+duplicate_observed=dict(base); duplicate_observed['observed_literals']=base['observed_literals']+['EFFECT_ACK']
+assert run(duplicate_observed).returncode!=0
+empty_required=dict(base); empty_required['required_literals']=[]; empty_required['observed_literals']=[]
+assert run(empty_required).returncode!=0
 unchecked=dict(base); unchecked['spelling_review_complete']=False
 assert run(unchecked).returncode!=0
 print('PASS image text fidelity gate tests')
