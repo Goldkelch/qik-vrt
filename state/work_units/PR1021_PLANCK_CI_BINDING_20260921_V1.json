@@ -1,0 +1,80 @@
+{
+  "schema": "qikvrt_work_unit_v1",
+  "work_unit_id": "PR1021_PLANCK_CI_BINDING_20260921_V1",
+  "created_at": "2026-09-21T13:19:20.107556+00:00",
+  "source_repository": "Goldkelch/qik-vrt",
+  "source_ref": "copilot/main",
+  "source_commit": "698bcc9d7af4b9d30501fd7aaef4097a8d6e90be",
+  "source_tree": "2d288cdf903355f06a0abcd377b21f28f4323e69",
+  "human_actor": {
+    "name": "Ingolf Lohmann"
+  },
+  "artificial_cognitive_actor": {
+    "provider": "OpenAI",
+    "system_family": "Codex",
+    "model_or_build": "UNAVAILABLE"
+  },
+  "human_contributions": [
+    "Explicit instruction to remove the defect discovered during PR #1021 review."
+  ],
+  "artificial_cognitive_contributions": [
+    "Identify that make test did not execute tests.test_planck_tick_gap_law_v1.",
+    "Add the existing six-test module to the existing evidence-contract-test invocation already required by make test.",
+    "Regenerate canonical integrity metadata and require fresh successor validation."
+  ],
+  "joint_components": [],
+  "unresolved_origin": [],
+  "inputs": [
+    {
+      "path": "Makefile",
+      "source_git_blob": "4f3eae3ab9a530e5d4d672de84f5526b8e00e4ac"
+    },
+    {
+      "path": "tests/test_planck_tick_gap_law_v1.py",
+      "sha256": "f96d55e6aa1958c6edd5899abd582189e483e3bfe90cf0993b5976da7ab9fa60",
+      "unchanged_from_source_commit": true
+    }
+  ],
+  "outputs": [
+    {
+      "path": "Makefile"
+    },
+    {
+      "path": "REPOSITORY_FILE_MANIFEST.json"
+    },
+    {
+      "path": "REPOSITORY_FILE_MANIFEST.json.sha256"
+    },
+    {
+      "path": "SHA256SUMS.txt"
+    }
+  ],
+  "git_history": {
+    "method": "append-only successor",
+    "predecessor_evidence_transfer": false
+  },
+  "verification": {
+    "required_commands": [
+      "make test",
+      "python3 -B tools/qikvrt_integrity.py verify"
+    ],
+    "required_execution_witness": "All six tests.test_planck_tick_gap_law_v1 cases appear with ok in the full make test log.",
+    "successor_validation": "PENDING_FRESH_EXACT_HEAD",
+    "successor_native_review": "PENDING"
+  },
+  "human_decision": {
+    "task_authorized": true,
+    "native_review_not_synthesized": true
+  },
+  "external_effects": {
+    "scope": "repair existing PR #1021 branch and its review handoff",
+    "merge_to_main": false,
+    "publication": false,
+    "deployment": false
+  },
+  "release_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
