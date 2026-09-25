@@ -45,6 +45,14 @@ from src.qikvrt_effect_ack import (  # noqa: E402
     sha256_identifier,
 )
 
+from tools.qikvrt_output_contract import (  # noqa: E402
+    POLICY_ID as OUTPUT_POLICY_ID,
+    bind_output,
+    canonical_article_identity,
+    strip_output_binding,
+    validate_output,
+)
+
 MESH_ID = "QIKVRT_REAL_MULTI_PAIR_MESH_V1"
 TOPOLOGY_SCHEMA = "qikvrt_real_mesh_topology_v1"
 MESSAGE_SCHEMA = "qikvrt_real_mesh_message_v1"
@@ -77,6 +85,52 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace(
         "+00:00", "Z"
     )
+
+
+def _output_effect_state(response: Mapping[str, Any]) -> str:
+    raw = response.get("effect_state")
+    if raw == EffectState.EFFECT_ACK_BLOCK.value:
+        return "BLOCK"
+    if raw == EffectState.EFFECT_ACK_ISOLATE.value:
+        return "ISOLATE"
+    if raw == EffectState.EFFECT_ACK_CONTINUE.value:
+        return "CONTINUE"
+    return "NONE"
+
+
+def _bind_runtime_output(
+    response: Mapping[str, Any],
+    identity: "NodeIdentity",
+) -> dict[str, Any]:
+    bound = bind_output(
+        response,
+        node_id=identity.node_id,
+        repository=identity.repository,
+        subject={
+            "root_tree_sha": identity.root_tree_sha,
+            "instance_id": identity.instance_id,
+            "response_schema": response.get("schema", "UNSPECIFIED"),
+            "message_id": response.get("message_id", "UNAVAILABLE"),
+        },
+        claim_kind="SOURCE_BOUND",
+        statement="Repository/Mesh node output bound to exact node identity, declared scope and canonical proof-and-thought schema.",
+        assumptions=[],
+        definitions=["QIKVRT-UNIVERSAL-PROOF-THOUGHT-SCHEMA-V1"],
+        dependencies=[],
+        exclusions=[
+            "physical correspondence",
+            "independent empirical confirmation",
+            "scientific consensus",
+            "general EFFECT_ACK_DONE",
+        ],
+        evidence_refs=[],
+        epistemic_state="RUNTIME_EVIDENCE",
+        effect_state=_output_effect_state(response),
+        transport_ack=bool(response.get("transport_ack", False)),
+        effect_ack_done=False,
+        new_difference="NODE_OUTPUT_MATERIALIZED",
+    )
+    return validate_output(bound)
 
 
 def _normalize_json(value: Any) -> Any:
@@ -590,6 +644,10 @@ class AppendOnlyNodeLedger:
             "recorded_utc": utc_now(),
             "event": event,
             "message_id": message_id,
+            "proof_thought_schema_binding": {
+                "policy_id": OUTPUT_POLICY_ID,
+                "article_binding": canonical_article_identity(),
+            },
             **fields,
         }
         record = {**projection, "record_sha256": canonical_sha256(projection)}
@@ -918,6 +976,7 @@ async def serve_node(
                 except json.JSONDecodeError:
                     decoded = None
                 response = await runtime.handle(decoded)
+            response = _bind_runtime_output(response, identity)
             writer.write(canonical_json_bytes(response) + b"\n")
             await asyncio.wait_for(
                 writer.drain(), timeout=SOCKET_TIMEOUT_SECONDS
@@ -935,19 +994,17 @@ async def serve_node(
         handle_connection, host, port, limit=MAX_FRAME_BYTES + 1
     )
     bound = server.sockets[0].getsockname()
-    print(
-        json.dumps(
-            {
-                "event": "READY",
-                "node_id": identity.node_id,
-                "host": bound[0],
-                "port": bound[1],
-                "ledger": str(ledger_path),
-            },
-            sort_keys=True,
-        ),
-        flush=True,
+    ready_output = _bind_runtime_output(
+        {
+            "event": "READY",
+            "node_id": identity.node_id,
+            "host": bound[0],
+            "port": bound[1],
+            "ledger": str(ledger_path),
+        },
+        identity,
     )
+    print(json.dumps(ready_output, sort_keys=True), flush=True)
     async with server:
         await server.serve_forever()
 
@@ -1207,7 +1264,7 @@ def reobserve_route(
             raise MeshRuntimeError(
                 f"node {node_id} hop receipt hash mismatch"
             )
-        if completed != terminal:
+        if strip_output_binding(completed) != strip_output_binding(terminal):
             raise MeshRuntimeError(
                 f"node {node_id} terminal response mismatch"
             )
@@ -1413,7 +1470,36 @@ def run_demo(
             "external_effect": "NONE",
             "receipt_created_utc": utc_now(),
         }
+        receipt = bind_output(
+            receipt,
+            node_id="real-mesh-harness",
+            repository="Goldkelch/qik-vrt",
+            subject={"source_head": source_head, "source_tree": source_tree},
+            claim_kind="SOURCE_BOUND",
+            statement="Bounded real-mesh execution receipt with explicit epistemic and effect boundaries.",
+            assumptions=["LOOPBACK_TCP_ONLY"],
+            definitions=["QIKVRT_REAL_MULTI_PAIR_MESH_V1"],
+            dependencies=[],
+            exclusions=[
+                "general internet reachability",
+                "production deployment",
+                "physical hardware execution",
+                "authority/mirror synchronization",
+                "general EFFECT_ACK_DONE",
+            ],
+            evidence_refs=[
+                item
+                for route in receipt["routes"]
+                for item in route["observation"]["hop_receipt_sha256s"]
+            ],
+            epistemic_state="RUNTIME_EVIDENCE",
+            effect_state="CONTINUE",
+            transport_ack=True,
+            effect_ack_done=False,
+            new_difference="REAL_MESH_EXECUTION_REOBSERVED",
+        )
         receipt["receipt_sha256"] = canonical_sha256(receipt)
+        validate_output(receipt)
         return receipt
 
 
