@@ -86,6 +86,21 @@ class RealMeshPureContractTests(unittest.TestCase):
         with self.assertRaises(mesh.MeshRuntimeError):
             mesh.normalize_topology(topology)
 
+    def test_node_missing_or_tampered_origin_proof_is_rejected(self) -> None:
+        missing = self.synthetic_topology()
+        missing["nodes"][0].pop("proof_contract")
+        with self.assertRaises(mesh.MeshRuntimeError):
+            mesh.normalize_topology(missing)
+
+        tampered = self.synthetic_topology()
+        tampered["nodes"][0]["proof_contract"][
+            "ontological_origin_proof_binding"
+        ]["git_blob_sha1"] = "0" * 40
+        with self.assertRaisesRegex(
+            mesh.MeshRuntimeError, "canonical proof contract"
+        ):
+            mesh.normalize_topology(tampered)
+
     def test_route_must_cross_pairs_and_follow_declared_links(self) -> None:
         topology = mesh.normalize_topology(self.synthetic_topology())
         with self.assertRaises(mesh.MeshRuntimeError):
@@ -147,7 +162,7 @@ class RealMeshNetworkTests(unittest.TestCase):
         self.assertEqual(receipt["effect_ack_scope"], mesh.EFFECT_ACK_SCOPE)
         self.assertEqual(receipt["external_effect"], "NONE")
         self.assertTrue(all(pair["state"] == "DIVERGED" for pair in receipt["pair_states"]))
-        projection = dict(receipt)
+        projection = mesh.strip_output_binding(receipt)
         stored_hash = projection.pop("receipt_sha256")
         self.assertEqual(stored_hash, mesh.canonical_sha256(projection))
 
@@ -228,6 +243,13 @@ class RealMeshRepositoryContractTests(unittest.TestCase):
         self.assertEqual(contract["transport"]["network_scope"], mesh.NETWORK_SCOPE)
         self.assertFalse(contract["effect_boundary"]["general_effect_ack_done"])
         self.assertFalse(contract["effect_boundary"]["authority_mirror_synchronization"])
+        self.assertTrue(contract["node_contract"]["proof_contract_required"])
+        self.assertTrue(
+            contract["node_contract"]["every_ledger_record_binds_proof_contract"]
+        )
+        self.assertTrue(
+            contract["node_contract"]["every_network_output_binds_proof_contract"]
+        )
         workflow = (
             root / ".github" / "workflows" / "qikvrt_real_mesh.yml"
         ).read_text(encoding="utf-8")
