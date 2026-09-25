@@ -94,6 +94,85 @@ jobs:
           test -f "$target/$MANIFEST_PATH"
           echo "path=$target" >> "$GITHUB_OUTPUT"
 
+      - name: Probe current Zenodo draft normalization
+        shell: bash
+        env:
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+          TARGET_WORKTREE: ${{ steps.target.outputs.path }}
+        run: |
+          set -euo pipefail
+          cd "$TARGET_WORKTREE"
+          python3 -B - <<'PY'
+          import json, os
+          from pathlib import Path
+          from tools import qikvrt_zenodo_actions as zenodo
+          from tools import qikvrt_zenodo_publish as publish
+
+          root=Path.cwd().resolve()
+          manifest=publish.load_manifest(root / os.environ["MANIFEST_PATH"], root)
+          client=zenodo.ZenodoClient(
+              os.environ["ZENODO_ACCESS_TOKEN"],
+              os.environ["ZENODO_API_BASE"],
+              poll_attempts=1,
+              poll_interval=0,
+          )
+          record_id=int(os.environ["EXPECTED_RECORD_ID"])
+          status, value=client.get(
+              f"/api/deposit/depositions/{record_id}",
+              accept=(200,202,403,404),
+          )
+          actual=value.get("metadata") if isinstance(value,dict) else None
+          expected=dict(manifest["metadata"])
+          expected.pop("prereserve_doi",None)
+          checks={}
+          if isinstance(actual,dict):
+              for key, expected_value in expected.items():
+                  checks[key]=zenodo._metadata_matches(
+                      actual.get(key), expected_value
+                  )
+          public_status, public_value=client.get(
+              f"/api/records/{record_id}",
+              accept=(200,202,404),
+          )
+          probe={
+              "schema":"qikvrt_zenodo_editable_metadata_probe_v1",
+              "record_id":record_id,
+              "deposition_http_status":status,
+              "deposition_state":value.get("state") if isinstance(value,dict) else None,
+              "deposition_submitted":value.get("submitted") if isinstance(value,dict) else None,
+              "bucket_present":bool(
+                  isinstance(value,dict)
+                  and isinstance(value.get("links"),dict)
+                  and isinstance(value["links"].get("bucket"),str)
+              ),
+              "metadata_key_matches":checks,
+              "metadata_all_match":bool(checks) and all(checks.values()),
+              "actual_metadata":actual,
+              "public_http_status":public_status,
+              "public_record_present":public_status == 200,
+              "public_doi":(
+                  public_value.get("doi")
+                  if isinstance(public_value,dict) else None
+              ),
+          }
+          Path(os.environ["RUNNER_TEMP"],"zenodo-draft-probe.json").write_text(
+              json.dumps(probe,ensure_ascii=False,indent=2,sort_keys=True)+"\n",
+              encoding="utf-8",
+          )
+          print(json.dumps({
+              "record_id":record_id,
+              "deposition_http_status":status,
+              "deposition_state":probe["deposition_state"],
+              "deposition_submitted":probe["deposition_submitted"],
+              "bucket_present":probe["bucket_present"],
+              "metadata_key_matches":checks,
+              "metadata_all_match":probe["metadata_all_match"],
+              "public_http_status":public_status,
+              "public_record_present":probe["public_record_present"],
+              "public_doi":probe["public_doi"],
+          },sort_keys=True))
+          PY
+
       - name: Resume exact publication and verify public bytes
         id: publish
         timeout-minutes: 25
@@ -160,3 +239,4 @@ jobs:
           path: |
             ${{ steps.target.outputs.path }}/${{ env.EVIDENCE_PATH }}
             ${{ env.EVIDENCE_PATH }}
+            ${{ runner.temp }}/zenodo-draft-probe.json
