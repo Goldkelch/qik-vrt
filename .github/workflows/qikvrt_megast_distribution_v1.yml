@@ -10,6 +10,8 @@ on:
       - 'tests/test_qikvrt_distribution_readback.py'
       - 'tests/test_qikvrt_distribution_execution.py'
       - 'tools/qikvrt_distribution_readback.py'
+      - 'tools/qikvrt_transfer_parts.py'
+      - 'tests/test_qikvrt_transfer_parts.py'
       - 'deploy/universal-terminal/**'
       - '.dockerignore'
       - 'src/smalltalk/**'
@@ -28,6 +30,8 @@ on:
       - 'tests/test_qikvrt_distribution_readback.py'
       - 'tests/test_qikvrt_distribution_execution.py'
       - 'tools/qikvrt_distribution_readback.py'
+      - 'tools/qikvrt_transfer_parts.py'
+      - 'tests/test_qikvrt_transfer_parts.py'
       - 'deploy/universal-terminal/**'
       - '.dockerignore'
       - 'src/smalltalk/**'
@@ -59,7 +63,7 @@ jobs:
       - name: Install nginx for the unprivileged log regression
         run: sudo apt-get update && sudo apt-get install -y nginx
       - name: Verify distribution contract
-        run: python -m unittest tests.test_qikvrt_megast_distribution tests.test_qikvrt_netboot tests.test_qikvrt_distribution_readback tests.test_qikvrt_distribution_execution -v
+        run: python -m unittest tests.test_qikvrt_megast_distribution tests.test_qikvrt_netboot tests.test_qikvrt_transfer_parts tests.test_qikvrt_distribution_readback tests.test_qikvrt_distribution_execution -v
 
   build:
     needs: contract
@@ -91,6 +95,14 @@ jobs:
           sudo dpkg -i /tmp/live-build.deb
           lb --version
           qemu-system-x86_64 --version
+      - name: Set up the declared Node 24 audio runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Prepare the pinned offline audio package
+        run: |
+          npm ci --prefix tools/offline-audio-transcription --omit=dev
+          echo "QIKVRT_NODE_BIN=$(command -v node)" >> "$GITHUB_ENV"
       - name: Verify C90 and Smalltalk language implementations
         id: languages
         run: |
@@ -226,6 +238,7 @@ jobs:
             test ! -f "$evidence" || cp "$evidence" out/
           done
           cp distribution/qikvrt-megast/boot.py out/qikvrt-netboot-client.py
+          cp tools/qikvrt_transfer_parts.py out/qikvrt_transfer_parts.py
           exit "$result"
       - name: Build and export exact-subject Docker image
         id: export
@@ -320,9 +333,11 @@ jobs:
           short=$(printf '%s' "$QIKVRT_EXACT_SHA" | cut -c1-12)
           tag="qikvrt-distribution-${short}"
           mapfile -t assets < <(python3 - <<'PY'
-          import json
+          import json,sys
+          sys.path.insert(0, 'out')
+          from qikvrt_transfer_parts import transport_names
           m=json.load(open('out/qikvrt-distribution-manifest.json'))
-          for name in sorted(m['assets']): print('out/'+name)
+          for name in transport_names(m['assets']): print('out/'+name)
           print('out/qikvrt-distribution-manifest.json')
           print('out/qikvrt-distribution-manifest.json.sha256')
           PY
