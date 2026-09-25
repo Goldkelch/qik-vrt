@@ -3,8 +3,10 @@
 # Copyright 2026 Ingolf Lohmann.
 """Fail-closed QIK-VRT epistemic output contract.
 
-Every conforming repository/Mesh node output carries a binding to the canonical
-article plus explicit subject, scope, epistemic-status and effect boundaries.
+Every conforming repository/Mesh node output carries exact bindings to the
+canonical proof-and-thought article and to the ontological-origin proof:
+"Am Anfang muss ein Unterschied gewesen sein, denn sonst wäre alles nichts."
+
 The binding is additive: domain payload schemas remain intact.
 """
 from __future__ import annotations
@@ -18,12 +20,21 @@ from typing import Any, Mapping
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 POLICY_PATH = ROOT / "policy/QIKVRT_UNIVERSAL_PROOF_THOUGHT_SCHEMA_V1.json"
 ARTICLE_PATH = ROOT / "docs/QIKVRT_UNIVERSAL_PROOF_AND_THOUGHT_SCHEMA_DE.md"
+ORIGIN_PROOF_PATH = ROOT / "docs/ONTOLOGICAL_ORIGIN_OF_DIFFERENCE_DE.md"
 
 BINDING_KEY = "_qikvrt_epistemic_output"
 BINDING_SCHEMA = "qikvrt_epistemic_output_binding_v1"
 POLICY_ID = "QIKVRT-UNIVERSAL-PROOF-THOUGHT-SCHEMA-V1"
-ARTICLE_SHA256 = "3179af0c1a7c16bf63208a1c91e23213b7746f61f6a0d60ed100728c6064d392"
-ARTICLE_BYTES = 21501
+ARTICLE_GIT_BLOB_SHA1 = "339ad05606ee4d74185c72d006608cff7aea5f37"
+ORIGIN_PROOF_GIT_BLOB_SHA1 = "d128c6fecf672abfd0fee1d1ef3cfa5dcf20fb33"
+ORIGIN_STATEMENT = (
+    "Am Anfang muss ein Unterschied gewesen sein, denn sonst wäre alles nichts."
+)
+ORIGIN_PROOF_CONSTANTS = (
+    "QIKVRT.UniversalOntology.determinateReality_requires_difference",
+    "QIKVRT.UniversalOntology.noDifference_excludes_determinateReality",
+    "QIKVRT.UniversalOntology.noDifference_excludes_information",
+)
 
 CLAIM_KINDS = frozenset({
     "DEFINITION",
@@ -62,25 +73,38 @@ class OutputContractError(ValueError):
     """A fail-closed output-contract violation."""
 
 
-def _sha256_bytes(raw: bytes) -> str:
-    return hashlib.sha256(raw).hexdigest()
+def _git_blob_sha1(raw: bytes) -> str:
+    header = f"blob {len(raw)}\0".encode("ascii")
+    return hashlib.sha1(header + raw).hexdigest()
+
+
+def _bound_file_identity(path: pathlib.Path, expected_blob: str) -> dict[str, Any]:
+    raw = path.read_bytes()
+    observed = _git_blob_sha1(raw)
+    if observed != expected_blob:
+        raise OutputContractError(
+            f"canonical file git blob mismatch for {path.name}: "
+            f"{observed} != {expected_blob}"
+        )
+    return {
+        "path": path.relative_to(ROOT).as_posix(),
+        "git_blob_sha1": observed,
+    }
 
 
 def canonical_article_identity() -> dict[str, Any]:
-    raw = ARTICLE_PATH.read_bytes()
-    observed = _sha256_bytes(raw)
-    if len(raw) != ARTICLE_BYTES:
-        raise OutputContractError(
-            f"canonical article byte length mismatch: {len(raw)} != {ARTICLE_BYTES}"
-        )
-    if observed != ARTICLE_SHA256:
-        raise OutputContractError(
-            f"canonical article sha256 mismatch: {observed} != {ARTICLE_SHA256}"
-        )
+    return _bound_file_identity(ARTICLE_PATH, ARTICLE_GIT_BLOB_SHA1)
+
+
+def canonical_origin_proof_identity() -> dict[str, Any]:
+    identity = _bound_file_identity(
+        ORIGIN_PROOF_PATH, ORIGIN_PROOF_GIT_BLOB_SHA1
+    )
     return {
-        "path": ARTICLE_PATH.relative_to(ROOT).as_posix(),
-        "bytes": len(raw),
-        "sha256": observed,
+        **identity,
+        "statement": ORIGIN_STATEMENT,
+        "proof_constants": list(ORIGIN_PROOF_CONSTANTS),
+        "interpretation": "ONTOLOGICAL_PRIORITY_NOT_FIRST_PHYSICAL_TIME",
     }
 
 
@@ -90,13 +114,34 @@ def load_policy() -> dict[str, Any]:
         raise OutputContractError("policy schema mismatch")
     if value.get("policy_id") != POLICY_ID:
         raise OutputContractError("policy id mismatch")
+
     article = value.get("canonical_article")
     if not isinstance(article, dict):
         raise OutputContractError("policy canonical article binding missing")
-    identity = canonical_article_identity()
-    for key in ("path", "bytes", "sha256"):
-        if article.get(key) != identity[key]:
-            raise OutputContractError(f"policy canonical article {key} mismatch")
+    for key, expected in canonical_article_identity().items():
+        if article.get(key) != expected:
+            raise OutputContractError(
+                f"policy canonical article {key} mismatch"
+            )
+
+    proof = value.get("ontological_origin_proof")
+    if not isinstance(proof, dict):
+        raise OutputContractError("policy ontological-origin proof missing")
+    expected_proof = canonical_origin_proof_identity()
+    if proof.get("document_path") != expected_proof["path"]:
+        raise OutputContractError("origin proof document path mismatch")
+    if proof.get("document_git_blob_sha1") != expected_proof["git_blob_sha1"]:
+        raise OutputContractError("origin proof document blob mismatch")
+    if proof.get("statement") != ORIGIN_STATEMENT:
+        raise OutputContractError("origin proof statement mismatch")
+    if proof.get("proof_constants") != list(ORIGIN_PROOF_CONSTANTS):
+        raise OutputContractError("origin proof constants mismatch")
+    if proof.get("mandatory_for_every_node") is not True:
+        raise OutputContractError("origin proof is not mandatory for every node")
+    if proof.get("mandatory_for_every_node_output") is not True:
+        raise OutputContractError(
+            "origin proof is not mandatory for every node output"
+        )
     return value
 
 
@@ -122,11 +167,15 @@ def make_binding(
     if claim_kind not in CLAIM_KINDS:
         raise OutputContractError(f"unknown claim kind: {claim_kind}")
     if epistemic_state not in EPISTEMIC_STATES:
-        raise OutputContractError(f"unknown epistemic state: {epistemic_state}")
+        raise OutputContractError(
+            f"unknown epistemic state: {epistemic_state}"
+        )
     if effect_state not in EFFECT_STATES:
         raise OutputContractError(f"unknown effect state: {effect_state}")
     if effect_ack_done and effect_state != "DONE_WITHIN_DECLARED_SCOPE":
-        raise OutputContractError("effect_ack_done requires scoped DONE state")
+        raise OutputContractError(
+            "effect_ack_done requires scoped DONE state"
+        )
     if effect_state == "DONE_WITHIN_DECLARED_SCOPE" and not effect_ack_done:
         raise OutputContractError("scoped DONE requires effect_ack_done")
     if not isinstance(statement, str) or not statement:
@@ -137,7 +186,7 @@ def make_binding(
         raise OutputContractError("repository must be owner/name")
     if not isinstance(subject, Mapping) or not subject:
         raise OutputContractError("subject binding must be non-empty")
-    article = canonical_article_identity()
+
     return {
         "schema": BINDING_SCHEMA,
         "policy_id": POLICY_ID,
@@ -169,17 +218,20 @@ def make_binding(
             "transport_ack_is_effect_ack": False,
         },
         "new_difference": new_difference,
-        "article_binding": article,
+        "article_binding": canonical_article_identity(),
+        "ontological_origin_proof_binding": (
+            canonical_origin_proof_identity()
+        ),
     }
 
 
-def bind_output(value: Mapping[str, Any], **binding_kwargs: Any) -> dict[str, Any]:
+def bind_output(
+    value: Mapping[str, Any], **binding_kwargs: Any
+) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise OutputContractError("node output must be an object")
     result = copy.deepcopy(dict(value))
     if BINDING_KEY in result:
-        # A returning Mesh response is transport of the already bound origin
-        # output, not a new semantic claim. Validate and preserve it bytewise.
         validate_output(result)
         return result
     result[BINDING_KEY] = make_binding(**binding_kwargs)
@@ -202,39 +254,79 @@ def validate_output(value: Mapping[str, Any]) -> dict[str, Any]:
         raise OutputContractError("node output must be an object")
     binding = value.get(BINDING_KEY)
     if not isinstance(binding, Mapping):
-        raise OutputContractError("mandatory epistemic output binding missing")
+        raise OutputContractError(
+            "mandatory epistemic output binding missing"
+        )
     if binding.get("schema") != BINDING_SCHEMA:
         raise OutputContractError("output binding schema mismatch")
     if binding.get("policy_id") != POLICY_ID:
         raise OutputContractError("output policy binding mismatch")
-    article = binding.get("article_binding")
-    if article != canonical_article_identity():
-        raise OutputContractError("output canonical article binding mismatch")
+    if binding.get("article_binding") != canonical_article_identity():
+        raise OutputContractError(
+            "output canonical article binding mismatch"
+        )
+    if (
+        binding.get("ontological_origin_proof_binding")
+        != canonical_origin_proof_identity()
+    ):
+        raise OutputContractError(
+            "output ontological-origin proof binding mismatch"
+        )
+
     claim = binding.get("claim")
-    if not isinstance(claim, Mapping) or claim.get("kind") not in CLAIM_KINDS:
+    if (
+        not isinstance(claim, Mapping)
+        or claim.get("kind") not in CLAIM_KINDS
+    ):
         raise OutputContractError("output claim kind missing or invalid")
     scope = binding.get("scope")
     if not isinstance(scope, Mapping):
         raise OutputContractError("output scope missing")
     if scope.get("predecessor_evidence_transfer") is not False:
-        raise OutputContractError("predecessor evidence transfer must be false")
-    for key in ("assumptions", "definitions", "dependencies", "exclusions"):
+        raise OutputContractError(
+            "predecessor evidence transfer must be false"
+        )
+    for key in (
+        "assumptions",
+        "definitions",
+        "dependencies",
+        "exclusions",
+    ):
         if not isinstance(scope.get(key), list):
             raise OutputContractError(f"scope.{key} must be a list")
+
     epistemic_state = binding.get("epistemic_status")
     if epistemic_state not in EPISTEMIC_STATES:
         raise OutputContractError("invalid epistemic status")
     effect = binding.get("effect_status")
-    if not isinstance(effect, Mapping) or effect.get("state") not in EFFECT_STATES:
+    if (
+        not isinstance(effect, Mapping)
+        or effect.get("state") not in EFFECT_STATES
+    ):
         raise OutputContractError("invalid effect status")
     if effect.get("transport_ack_is_effect_ack") is not False:
-        raise OutputContractError("TRANSPORT_ACK must remain distinct from EFFECT_ACK")
+        raise OutputContractError(
+            "TRANSPORT_ACK must remain distinct from EFFECT_ACK"
+        )
     done = effect.get("effect_ack_done")
-    if done is True and effect.get("state") != "DONE_WITHIN_DECLARED_SCOPE":
-        raise OutputContractError("unscoped effect_ack_done is forbidden")
-    if effect.get("state") == "DONE_WITHIN_DECLARED_SCOPE" and done is not True:
-        raise OutputContractError("DONE_WITHIN_DECLARED_SCOPE requires effect_ack_done")
-    if not isinstance(binding.get("new_difference"), str) or not binding["new_difference"]:
+    if (
+        done is True
+        and effect.get("state") != "DONE_WITHIN_DECLARED_SCOPE"
+    ):
+        raise OutputContractError(
+            "unscoped effect_ack_done is forbidden"
+        )
+    if (
+        effect.get("state") == "DONE_WITHIN_DECLARED_SCOPE"
+        and done is not True
+    ):
+        raise OutputContractError(
+            "DONE_WITHIN_DECLARED_SCOPE requires effect_ack_done"
+        )
+    if (
+        not isinstance(binding.get("new_difference"), str)
+        or not binding["new_difference"]
+    ):
         raise OutputContractError("new_difference must be explicit")
     return copy.deepcopy(dict(value))
 
@@ -246,13 +338,15 @@ def validate_json_file(path: pathlib.Path) -> None:
 
 def main() -> int:
     load_policy()
-    canonical_article_identity()
     print(
         json.dumps(
             {
                 "schema": "qikvrt_output_contract_selfcheck_v1",
                 "policy_id": POLICY_ID,
                 "article": canonical_article_identity(),
+                "ontological_origin_proof": (
+                    canonical_origin_proof_identity()
+                ),
                 "status": "PASS",
                 "effect_ack_done": False,
             },
