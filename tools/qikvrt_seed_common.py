@@ -33,8 +33,10 @@ from typing import Any, Callable, Iterable, Mapping
 
 try:
     from tools import qikvrt_workflow_executor as workflow_executor
+    from tools import qikvrt_mesh_node_receipt as mesh_node_receipt
 except ModuleNotFoundError:  # Script execution keeps tools/ as sys.path[0].
     import qikvrt_workflow_executor as workflow_executor
+    import qikvrt_mesh_node_receipt as mesh_node_receipt
 
 
 MAX_INPUT_BYTES = 1_048_576
@@ -535,7 +537,7 @@ def run_acceptance(
                 receipt_sha256 = None
                 if receipt_url is not None:
                     receipt = fetch(receipt_url)
-                    workflow_executor.validate_node_receipt(
+                    mesh_node_receipt.validate_bound_node_receipt(
                         receipt.value,
                         node.source_repository,
                         node.node_branch,
@@ -546,7 +548,7 @@ def run_acceptance(
                 )
             except SeedError as exc:
                 errors.append({"guid": node.guid, "error": str(exc)})
-            except workflow_executor.ExecutorBlock as exc:
+            except (workflow_executor.ExecutorBlock, mesh_node_receipt.NodeReceiptContractError) as exc:
                 errors.append({"guid": node.guid, "error": str(exc)})
         else:
             prepared.append((node, policy, policy.status, None, None, None))
