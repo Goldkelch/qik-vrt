@@ -29,7 +29,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
-      GH_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}
+      # This bridge only reads exact subjects and dispatches the single
+      # effect writer; it must not consume ruleset administration authority.
+      GH_TOKEN: ${{ github.token }}
       REPOSITORY: ${{ github.repository }}
       UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id }}
       REVIEW_STATUS_CONTEXT: QIKVRT required code-owner review
