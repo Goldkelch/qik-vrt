@@ -1,0 +1,58 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT PR1203 journal-order one-shot integrity successor
+on:
+  push:
+    branches:
+      - review/qikvrt-journal-human-20260924
+permissions:
+  contents: write
+concurrency:
+  group: qikvrt-pr1203-journal-order-integrity-once
+  cancel-in-progress: false
+jobs:
+  materialize:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TARGET_REF: review/qikvrt-journal-human-20260924
+      SOURCE_HEAD: ${{ github.sha }}
+      SELF_PATH: .github/workflows/qikvrt_pr1203_journal_order_integrity_once.yml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - name: Bind exact source and remove one-shot carrier
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$SOURCE_HEAD"
+          test "$(git ls-remote origin "refs/heads/$TARGET_REF" | cut -f1)" = "$SOURCE_HEAD"
+          rm "$SELF_PATH"
+      - name: Regenerate and verify canonical integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+      - name: Persist exact bounded successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin "refs/heads/$TARGET_REF" | cut -f1)" = "$SOURCE_HEAD"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A -- "$SELF_PATH" REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          mapfile -t changed < <(git diff --cached --name-only | sort)
+          test "${#changed[@]}" -eq 4
+          git commit -m "fix(journal): preserve canonical lead article contract"
+          successor="$(git rev-parse --verify HEAD^{commit})"
+          tree="$(git rev-parse --verify HEAD^{tree})"
+          test "$(git ls-remote origin "refs/heads/$TARGET_REF" | cut -f1)" = "$SOURCE_HEAD"
+          git push origin "HEAD:refs/heads/$TARGET_REF"
+          test "$(git ls-remote origin "refs/heads/$TARGET_REF" | cut -f1)" = "$successor"
+          printf 'BOUND_HEAD=%s\nBOUND_TREE=%s\nPREDECESSOR_EVIDENCE_TRANSFER=false\nPUBLICATION_EFFECT_ACK_DONE=false\n' "$successor" "$tree"
