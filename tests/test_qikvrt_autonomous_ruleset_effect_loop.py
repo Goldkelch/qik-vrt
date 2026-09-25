@@ -43,6 +43,8 @@ class AutonomousRulesetEffectLoopContractTest(unittest.TestCase):
 
     def test_admin_authority_is_nonterminal_and_repository_routed(self):
         self.assertIn("QIKVRT_RULESET_ADMIN_TOKEN", self.text)
+        self.assertIn("GH_TOKEN: ${{ github.token }}", self.text)
+        self.assertIn("QIKVRT_RULESET_ADMIN_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}", self.text)
         self.assertNotIn("QIKVRT_GITHUB_ADMIN_TOKEN", self.text)
         self.assertIn("REQUEST_AUTHORITY", self.text)
         self.assertIn("state=pending", self.text)
