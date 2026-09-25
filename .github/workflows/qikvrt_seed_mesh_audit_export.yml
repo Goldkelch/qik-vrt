@@ -4,6 +4,16 @@
 name: QIKVRT Seed Mesh Audit Build
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/qikvrt_seed_mesh_audit_export.yml'
+      - 'tools/qikvrt_seed_mesh_maintenance.sh'
+      - 'tools/qikvrt_seed_node_revalidation.sh'
+      - 'tools/qikvrt_seed_mesh_audit_export.sh'
+      - 'REPOSITORY_FILE_MANIFEST.json'
+      - 'REPOSITORY_FILE_MANIFEST.json.sha256'
+      - 'SHA256SUMS.txt'
   workflow_dispatch:
     inputs:
       run_id:
@@ -37,9 +47,9 @@ jobs:
           set -euo pipefail
           mkdir -p .qikvrt/seed-workflow
           {
-            sh tools/qikvrt_seed_mesh_maintenance.sh
-            sh tools/qikvrt_seed_node_revalidation.sh
-            sh tools/qikvrt_seed_mesh_audit_export.sh
+            sh tools/qikvrt_seed_mesh_maintenance.sh || { echo "ERROR in maintenance script"; exit 10; }
+            sh tools/qikvrt_seed_node_revalidation.sh || { echo "ERROR in revalidation script"; exit 10; }
+            sh tools/qikvrt_seed_mesh_audit_export.sh || { echo "ERROR in audit export script"; exit 10; }
           } 2>&1 | tee .qikvrt/seed-workflow/audit-export.log
       - name: Preserve local audit evidence without mutating the repository
         if: always()
