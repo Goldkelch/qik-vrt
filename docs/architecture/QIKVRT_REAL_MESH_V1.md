@@ -27,6 +27,31 @@ Die deklarierte Peer-Graphstruktur ist zusammenhängend, zyklisch und gibt jedem
 
 Jedes Authority/Mirror-Paar enthält genau eine `AUTHORITY`- und eine `MIRROR`-Rolle. Mehrere Laufzeitinstanzen dürfen dieselben Repository-Rollen binden; daraus wird weder ein weiteres GitHub-Repository noch eine neue kanonische Authority erfunden.
 
+## Verbindlicher Beweisvertrag jedes Nodes
+
+Jeder aktuelle oder zukünftige Node trägt als Bestandteil seiner Topologie-Identität
+einen `proof_contract`. Dieser muss exakt binden:
+
+- `QIKVRT-UNIVERSAL-PROOF-THOUGHT-SCHEMA-V1`;
+- den kanonischen Artikel `docs/QIKVRT_UNIVERSAL_PROOF_AND_THOUGHT_SCHEMA_DE.md`;
+- den kanonischen Beweis `docs/ONTOLOGICAL_ORIGIN_OF_DIFFERENCE_DE.md`;
+- die drei Lean-Konstanten
+  `determinateReality_requires_difference`,
+  `noDifference_excludes_determinateReality` und
+  `noDifference_excludes_information`.
+
+Damit trägt jeder Node ausdrücklich den Satz:
+
+> **Am Anfang muss ein Unterschied gewesen sein, denn sonst wäre alles nichts.**
+>
+> **Quod erat demonstrandum, Ingolf Lohmann.**
+
+Die Aussage ist als ontologische Priorität gebunden, nicht als Behauptung eines
+ersten physikalischen Zeitpunkts. Ein Node ohne exakt passende Bindung wird
+bereits bei der Topologie-Normalisierung verworfen. Jeder Node-Output und jeder
+append-only Ledger-Datensatz bindet dieselbe Identität erneut. Downstream darf
+diese Pflicht verschärfen, aber nicht entfernen oder abschwächen.
+
 ## Ereignismodell
 
 Node-Arbeit beginnt ausschließlich durch einen eingehenden Socket-Frame. Es gibt keinen fachlichen Timer und kein periodisches Polling. Socket- und Prozess-Timeouts sind nur begrenzte Watchdog-/Lease-Grenzen und lösen keine neue fachliche Arbeit aus.
