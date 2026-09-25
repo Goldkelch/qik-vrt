@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
+# retry-self-disclosure-v2
 
 name: Publish ontological priority to Zenodo now
 
@@ -139,9 +140,71 @@ jobs:
         run: |
           set -euo pipefail
           execution_head="${{ steps.execution.outputs.head }}"
+          python3 -B - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          evidence_path = Path(os.environ["EVIDENCE"])
+          evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+          if evidence.get("state") != "published":
+              raise SystemExit("BLOCK: publication evidence is not published")
+
+          index_path = Path("docs/publications/index.json")
+          index = json.loads(index_path.read_text(encoding="utf-8"))
+          publication_id = "qikvrt-ontological-priority-of-difference-2026-v1"
+          doi = evidence["doi"]
+          concept = evidence.get("conceptdoi") or evidence.get("concept_doi")
+          if not concept and evidence.get("concept_record_id"):
+              concept = f"10.5281/zenodo.{evidence['concept_record_id']}"
+          entry = {
+              "id": publication_id,
+              "title": "Der ontologische Vorrang des Unterschieds",
+              "record_id": evidence.get("record_id"),
+              "doi": doi,
+              "doi_url": f"https://doi.org/{doi}",
+              "receipt_path": os.environ["EVIDENCE"],
+              "manifest_sha256": evidence["manifest_sha256"],
+              "repository_commit": evidence.get("repository_commit"),
+              "file_count": len(evidence["files"]),
+              "state": "published_receipt",
+          }
+          if concept:
+              entry["concept_doi"] = concept
+          records = index["zenodo_records"]
+          records[:] = [item for item in records if item.get("id") != publication_id]
+          records.append(entry)
+          index_path.write_text(
+              json.dumps(index, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+
+          html_path = Path("docs/publications/index.html")
+          html = html_path.read_text(encoding="utf-8")
+          marker = "<!-- ontological-priority-zenodo-v1 -->"
+          if marker not in html:
+              block = (
+                  "\n      " + marker + "\n"
+                  '      <article class="card">\n'
+                  '        <h2>Zenodo: Der ontologische Vorrang des Unterschieds</h2>\n'
+                  f'        <p><a href="https://doi.org/{doi}">https://doi.org/{doi}</a></p>\n'
+                  '      </article>\n'
+              )
+              pos = html.rfind("</main>")
+              if pos < 0:
+                  raise SystemExit("BLOCK: publication index HTML lacks </main>")
+              html = html[:pos] + block + html[pos:]
+              html_path.write_text(html, encoding="utf-8")
+          PY
+          python3 -B -m unittest -v tests.test_qikvrt_self_disclosure
           python3 -B tools/qikvrt_integrity.py generate
           python3 -B tools/qikvrt_integrity.py verify
-          git add --             "$EVIDENCE"             REPOSITORY_FILE_MANIFEST.json             REPOSITORY_FILE_MANIFEST.json.sha256             SHA256SUMS.txt
+          git add -- \
+            "$EVIDENCE" \
+            docs/publications/index.json \
+            docs/publications/index.html \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt
           git diff --cached --check
           git commit -m 'zenodo: persist ontological-priority public readback'
           remote="$(
