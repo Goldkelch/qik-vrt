@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:qikvrt:feature-request:v1",
+  "$comment": "SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0; Copyright 2026 Ingolf Lohmann.",
+  "title": "QIK-VRT Interactive Evidence Sphere repository_dispatch v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_type", "client_payload"],
+  "properties": {
+    "event_type": {"const": "qikvrt_feature_request"},
+    "client_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "priority", "artifact", "request"],
+      "properties": {
+        "title": {"const": "QIK-VRT Interactive Evidence Sphere"},
+        "priority": {"const": "high"},
+        "artifact": {"const": "QIK_VRT_MESH.html"},
+        "subject_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "request": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["offline", "single_file", "embedded_svg", "views", "time_modes", "animations", "performance", "persistence", "testing"],
+          "properties": {
+            "offline": {"const": true},
+            "single_file": {"const": true},
+            "embedded_svg": {"const": true},
+            "views": {"const": ["front", "side", "top", "bottom", "isometric", "free_orbit"]},
+            "time_modes": {"const": ["snapshot", "timeline", "replay", "evolution", "future_projection"]},
+            "animations": {"const": ["rotation", "orbit", "pulse", "growth", "focus"]},
+            "performance": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["fps_monitor", "history_chart", "profile_system", "warning_history"],
+              "properties": {
+                "fps_monitor": {"const": true},
+                "history_chart": {"const": true},
+                "profile_system": {"const": true},
+                "warning_history": {"const": true}
+              }
+            },
+            "persistence": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["schema_versions", "migrations", "downgrades", "canonical_json", "unicode_nfc"],
+              "properties": {
+                "schema_versions": {"const": ["v1", "v2", "v3", "v4"]},
+                "migrations": {"const": true},
+                "downgrades": {"const": true},
+                "canonical_json": {"const": true},
+                "unicode_nfc": {"const": true}
+              }
+            },
+            "testing": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["property_based", "roundtrip", "idempotence", "unicode", "migration"],
+              "properties": {
+                "property_based": {"const": true},
+                "roundtrip": {"const": true},
+                "idempotence": {"const": true},
+                "unicode": {"const": true},
+                "migration": {"const": true}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
