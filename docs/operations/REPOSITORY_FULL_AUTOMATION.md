@@ -17,3 +17,7 @@ The transaction reaches scoped `EFFECT_ACK_DONE` only after fresh GitHub readbac
 The resulting status context is `QIKVRT repository main integration effect ack`.
 
 This acknowledgement has scope `REPOSITORY_MAIN_INTEGRATION`. It does not imply a Vercel deployment, public release, publication, Zenodo effect, physical effect, scientific confirmation, or repository-wide/global completion. Those remain separate effect contracts and require their own execution and readback.
+
+## Bot-successor gate transport
+
+A `github-actions[bot]` integrity successor does not rely on the suppressed `pull_request` job set. The candidate carrier dispatches the canonical required workflows on the exact successor ref. For an explicitly marked full-automation subject, the trusted review executor binds its required-gate event mode to `workflow_dispatch`; legacy subjects remain `pull_request`-only. Workflow ID, workflow path, exact head, executed jobs, terminal conclusion, marker/body digest and event mode are all fingerprint-bound. A zero-job run, a wrong event type, or a head/path/ID mismatch remains `HOLD/REOBSERVE`; no predecessor gate is inherited.

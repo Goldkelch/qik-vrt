@@ -8,6 +8,7 @@ on:
     types: [opened, synchronize, reopened, edited, ready_for_review]
 
 permissions:
+  actions: write
   contents: write
 
 concurrency:
@@ -127,6 +128,51 @@ jobs:
           path.write_text(json.dumps(value,sort_keys=True,indent=2)+"\n",encoding="utf-8")
           PY
 
+      - name: Dispatch exact successor required gates
+        if: steps.delta.outputs.changed == 'true'
+        env:
+          SUCCESSOR_HEAD: ${{ steps.persist.outputs.successor }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SUCCESSOR_HEAD"
+          live_head="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+          test "$live_head" = "$SUCCESSOR_HEAD"
+          receipt=/tmp/qikvrt-full-automation-gate-dispatch.jsonl
+          : > "$receipt"
+          for workflow in \
+            qikvrt_batch04_integrity.yml \
+            qikvrt_ci.yml \
+            qikvrt_collective_review.yml \
+            qikvrt_global_completion.yml
+          do
+            live_head="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+            test "$live_head" = "$SUCCESSOR_HEAD"
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/dispatches" \
+              -f ref="$HEAD_REF"
+            jq -nc \
+              --arg workflow "$workflow" \
+              --arg ref "$HEAD_REF" \
+              --arg head "$SUCCESSOR_HEAD" \
+              '{workflow:$workflow,ref:$ref,head:$head,event:"workflow_dispatch",productive_effect:false}' \
+              >> "$receipt"
+          done
+          SUCCESSOR_HEAD="$SUCCESSOR_HEAD" python3 -B - <<'PY'
+          import json, os, pathlib
+          path=pathlib.Path(os.environ["RECEIPT"])
+          value=json.loads(path.read_text(encoding="utf-8"))
+          value["required_gate_event"]="workflow_dispatch"
+          value["required_gate_dispatches"]=[
+              "qikvrt_batch04_integrity.yml",
+              "qikvrt_ci.yml",
+              "qikvrt_collective_review.yml",
+              "qikvrt_global_completion.yml",
+          ]
+          value["gate_dispatch_head"]=os.environ["SUCCESSOR_HEAD"]
+          path.write_text(json.dumps(value,sort_keys=True,indent=2)+"\n",encoding="utf-8")
+          PY
+
       - name: Dispatch exact integrity successor revalidation
         if: steps.delta.outputs.changed == 'true'
         env:
@@ -176,6 +222,8 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: qikvrt-full-automation-candidate-integrity-${{ github.run_id }}-${{ github.run_attempt }}
-          path: /tmp/qikvrt-full-automation-candidate-integrity.json
+          path: |
+            /tmp/qikvrt-full-automation-candidate-integrity.json
+            /tmp/qikvrt-full-automation-gate-dispatch.jsonl
           if-no-files-found: warn
           retention-days: 30

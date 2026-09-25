@@ -71,5 +71,17 @@
     "vercel": "SEPARATE_AUTHORIZATION_REQUIRED",
     "physical_effect": "SEPARATE_AUTHORIZATION_REQUIRED"
   },
-  "predecessor_evidence_transfer": false
+  "predecessor_evidence_transfer": false,
+  "required_gate_transport": {
+    "legacy_subjects": "PULL_REQUEST_EVENT_ONLY",
+    "full_automation_bot_successor": "EXACT_HEAD_WORKFLOW_DISPATCH",
+    "trusted_workflows": [
+      ".github/workflows/qikvrt_ci.yml",
+      ".github/workflows/qikvrt_batch04_integrity.yml",
+      ".github/workflows/qikvrt_collective_review.yml"
+    ],
+    "event_mode_is_evidence_bound": true,
+    "zero_job_or_wrong_event": "HOLD_REOBSERVE",
+    "predecessor_gate_transfer": false
+  }
 }

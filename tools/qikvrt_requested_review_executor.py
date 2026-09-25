@@ -42,6 +42,7 @@ REVIEW_QUEUE_ACK_ROOT = "state/mesh/review-queue-acks"
 TRUSTED_EVALUATOR_PATH = "tools/qikvrt_requested_review_executor.py"
 TRUSTED_WORKFLOW_PATH = ".github/workflows/qikvrt_requested_review_executor.yml"
 REVIEW_MARKER = "qikvrt-mesh-review:v1"
+FULL_AUTOMATION_MARKER = "<!-- qikvrt-full-automation:v1 external_effect=REPOSITORY_MAIN_INTEGRATION -->"
 LIVE_STATUS_MARKER = "qikvrt-live-status-watch"
 HUMAN_AUTHORITY_REVIEW_MARKER = "qikvrt-human-exact-scope-review-confirmation-v1"
 TRUSTED_AUTOMATION_DISCUSSION_PREFIXES = (
@@ -1261,6 +1262,10 @@ def _required_gate_binding(
         raise ReviewSnapshotError("required_gate_paths must bind every required gate exactly once")
     raw_ids = snapshot.get("required_gate_workflow_ids")
     raw_events = snapshot.get("required_gate_events")
+    full_automation = snapshot.get("full_automation")
+    if not isinstance(full_automation, bool):
+        raise ReviewSnapshotError("full_automation must be boolean")
+    expected_event = "workflow_dispatch" if full_automation else "pull_request"
     if not isinstance(raw_ids, Mapping) or set(raw_ids) != set(required):
         raise ReviewSnapshotError("required_gate_workflow_ids must bind every required gate")
     if not isinstance(raw_events, Mapping) or set(raw_events) != set(required):
@@ -1285,8 +1290,11 @@ def _required_gate_binding(
         event = raw_events.get(name)
         if isinstance(workflow_id, bool) or not isinstance(workflow_id, int) or workflow_id < 1:
             raise ReviewSnapshotError(f"required workflow id is invalid: {name}")
-        if event != "pull_request":
-            raise ReviewSnapshotError(f"required workflow event is invalid: {name}")
+        if event != expected_event:
+            raise ReviewSnapshotError(
+                f"required workflow event is invalid for "
+                f"{'full automation' if full_automation else 'legacy review'}: {name}"
+            )
         workflow_ids[name] = workflow_id
         events[name] = event
     return list(required), paths, workflow_ids, events
@@ -1316,6 +1324,7 @@ def _evidence_fingerprint(
         "head_repository": snapshot.get("head_repository"),
         "base_ref": snapshot.get("base_ref", "main"),
         "draft": snapshot.get("draft"),
+        "full_automation": snapshot.get("full_automation"),
         "current_main_sha": snapshot.get("current_main_sha"),
         "current_main_tree_sha": snapshot.get("current_main_tree_sha"),
         "base_sha": snapshot.get("base_sha"),
@@ -1576,6 +1585,7 @@ def _result(
         "pr_body_sha256": snapshot.get("pr_body_sha256"),
         "head_repository": snapshot.get("head_repository"),
         "draft": snapshot.get("draft"),
+        "full_automation": snapshot.get("full_automation"),
         "trusted_evaluator_blob_sha": snapshot.get("trusted_evaluator_blob_sha"),
         "trusted_workflow_blob_sha": snapshot.get("trusted_workflow_blob_sha"),
         "base_ref": snapshot.get("base_ref", "main"),
@@ -1669,6 +1679,10 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
             raise ReviewSnapshotError("pull request base ref is not main")
         if not isinstance(snapshot.get("draft"), bool):
             raise ReviewSnapshotError("draft must be boolean")
+        full_automation = snapshot.get("full_automation")
+        if not isinstance(full_automation, bool):
+            raise ReviewSnapshotError("full_automation must be boolean")
+        expected_gate_event = "workflow_dispatch" if full_automation else "pull_request"
         _sha(snapshot.get("trusted_evaluator_blob_sha"), "trusted_evaluator_blob_sha")
         _sha(snapshot.get("trusted_workflow_blob_sha"), "trusted_workflow_blob_sha")
         current_main = _sha(snapshot.get("current_main_sha"), "current_main_sha")
@@ -1929,9 +1943,20 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
                 + [_finding("UNTRUSTED_GATE_BINDING", "HOLD", f"workflow {name} is not bound to the exact candidate head")],
                 **common,
             )
-        if run.get("event") != "pull_request":
-            detail=f"workflow {name} is not a pull_request run"
-            return _result(snapshot, "WAIT", "UNTRUSTED_GATE_BINDING", detail, findings=findings + [_finding("UNTRUSTED_GATE_BINDING", "HOLD", detail)], **common)
+        if run.get("event") != expected_gate_event:
+            detail=(
+                f"workflow {name} is not a trusted {expected_gate_event} run "
+                f"for {'full automation' if full_automation else 'legacy review'}"
+            )
+            return _result(
+                snapshot,
+                "WAIT",
+                "UNTRUSTED_GATE_BINDING",
+                detail,
+                findings=findings
+                + [_finding("UNTRUSTED_GATE_BINDING", "HOLD", detail)],
+                **common,
+            )
         workflow_id = run.get("workflow_id")
         jobs_total = run.get("jobs_total")
         if isinstance(workflow_id, bool) or not isinstance(workflow_id, int) or workflow_id < 1:
@@ -2767,10 +2792,14 @@ def _discussion_observation(repository: str, number: int) -> list[dict[str, Any]
 def _workflow_observation(
     repository: str,
     head: str,
+    event: str,
 ) -> list[dict[str, Any]]:
+    if event not in {"pull_request", "workflow_dispatch"}:
+        raise ReviewObservationError("workflow observation event is not trusted")
     encoded_head = urllib.parse.quote(head, safe="")
+    encoded_event = urllib.parse.quote(event, safe="")
     raw_runs = _gh_runs(
-        f"repos/{repository}/actions/runs?head_sha={encoded_head}&event=pull_request&per_page=100"
+        f"repos/{repository}/actions/runs?head_sha={encoded_head}&event={encoded_event}&per_page=100"
     )
     runs: list[dict[str, Any]] = [
         {
@@ -2895,7 +2924,10 @@ def observe_repository(
     base = pr["base"]["sha"]
     head = pr["head"]["sha"]
     title_sha256 = hashlib.sha256(str(pr.get("title") or "").encode("utf-8")).hexdigest()
-    body_sha256 = hashlib.sha256(str(pr.get("body") or "").encode("utf-8")).hexdigest()
+    body_text = str(pr.get("body") or "")
+    body_sha256 = hashlib.sha256(body_text.encode("utf-8")).hexdigest()
+    full_automation = FULL_AUTOMATION_MARKER in body_text
+    gate_event = "workflow_dispatch" if full_automation else "pull_request"
     _git_fetch(("--no-tags", "--depth=1", "origin", base))
     local_ref = f"refs/qikvrt/mesh-review-head-{pr_number}"
     _git_fetch(
@@ -2922,7 +2954,7 @@ def observe_repository(
     diff = _canonical_git_diff(base, head)
 
     gate_ids: dict[str, int] = {}
-    gate_events = {name: "pull_request" for name in required_gates}
+    gate_events = {name: gate_event for name in required_gates}
     for gate in required_gates:
         path = required_gate_paths[gate]
         workflow = _gh_one(
@@ -2934,7 +2966,7 @@ def observe_repository(
 
     threads = _thread_observation(repository, pr_number)
     discussion = _discussion_observation(repository, pr_number)
-    runs = _workflow_observation(repository, head)
+    runs = _workflow_observation(repository, head, gate_event)
     writers = _active_writer_observation(
         repository,
         current_run_id,
@@ -3007,6 +3039,7 @@ def observe_repository(
         "head_repository": final_pr.get("head", {}).get("repo", {}).get("full_name"),
         "base_ref": final_pr.get("base", {}).get("ref"),
         "draft": bool(final_pr.get("draft")),
+        "full_automation": full_automation,
         "trusted_evaluator_blob_sha": _git_text(("rev-parse", f"HEAD:{TRUSTED_EVALUATOR_PATH}")),
         "trusted_workflow_blob_sha": _git_text(("rev-parse", f"HEAD:{TRUSTED_WORKFLOW_PATH}")),
         "current_main_sha": main_sha,
