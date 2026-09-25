@@ -49,6 +49,7 @@ from tools.qikvrt_output_contract import (  # noqa: E402
     POLICY_ID as OUTPUT_POLICY_ID,
     bind_output,
     canonical_article_identity,
+    canonical_origin_proof_identity,
     strip_output_binding,
     validate_output,
 )
@@ -212,6 +213,18 @@ def _port(value: Any, label: str) -> int:
     return value
 
 
+def _proof_contract(value: Any, label: str) -> dict[str, Any]:
+    contract = _mapping(value, label)
+    expected = {
+        "policy_id": OUTPUT_POLICY_ID,
+        "article_binding": canonical_article_identity(),
+        "ontological_origin_proof_binding": canonical_origin_proof_identity(),
+    }
+    if contract != expected:
+        raise MeshRuntimeError(f"{label} does not bind the canonical proof contract")
+    return copy.deepcopy(expected)
+
+
 def normalize_node(value: Any, label: str = "node") -> dict[str, Any]:
     node = _mapping(value, label)
     _exact_keys(
@@ -223,6 +236,7 @@ def normalize_node(value: Any, label: str = "node") -> dict[str, Any]:
             "repository",
             "instance_id",
             "root_tree_sha",
+            "proof_contract",
             "host",
             "port",
         },
@@ -244,6 +258,9 @@ def normalize_node(value: Any, label: str = "node") -> dict[str, Any]:
         "repository": repository,
         "instance_id": _identifier(node["instance_id"], f"{label}.instance_id"),
         "root_tree_sha": _sha1(node["root_tree_sha"], f"{label}.root_tree_sha"),
+        "proof_contract": _proof_contract(
+            node["proof_contract"], f"{label}.proof_contract"
+        ),
         "host": host,
         "port": _port(node["port"], f"{label}.port"),
     }
@@ -592,6 +609,15 @@ class AppendOnlyNodeLedger:
                     raise MeshRuntimeError(
                         f"ledger line {line_number} identity mismatch"
                     )
+                expected_proof_binding = {
+                    "policy_id": OUTPUT_POLICY_ID,
+                    "article_binding": canonical_article_identity(),
+                    "ontological_origin_proof_binding": canonical_origin_proof_identity(),
+                }
+                if record.get("proof_thought_schema_binding") != expected_proof_binding:
+                    raise MeshRuntimeError(
+                        f"ledger line {line_number} proof binding mismatch"
+                    )
                 if record.get("sequence") != expected_sequence:
                     raise MeshRuntimeError(
                         f"ledger line {line_number} sequence mismatch"
@@ -647,6 +673,7 @@ class AppendOnlyNodeLedger:
             "proof_thought_schema_binding": {
                 "policy_id": OUTPUT_POLICY_ID,
                 "article_binding": canonical_article_identity(),
+                "ontological_origin_proof_binding": canonical_origin_proof_identity(),
             },
             **fields,
         }
@@ -674,6 +701,7 @@ class NodeIdentity:
     repository: str
     instance_id: str
     root_tree_sha: str
+    proof_contract: dict[str, Any]
 
     @classmethod
     def from_json(cls, value: Mapping[str, Any]) -> "NodeIdentity":
@@ -684,6 +712,7 @@ class NodeIdentity:
             "repository",
             "instance_id",
             "root_tree_sha",
+            "proof_contract",
         }
         _exact_keys(value, required, "node identity")
         synthetic = {**value, "host": "127.0.0.1", "port": 1}
@@ -699,6 +728,7 @@ class NodeIdentity:
                 "repository": self.repository,
                 "instance_id": self.instance_id,
                 "root_tree_sha": self.root_tree_sha,
+                "proof_contract": self.proof_contract,
                 "host": host,
                 "port": port,
             }
@@ -752,6 +782,7 @@ class NodeRuntime:
             "repository",
             "instance_id",
             "root_tree_sha",
+            "proof_contract",
         )
         if any(
             topology_node[field] != getattr(self.identity, field)
@@ -929,6 +960,12 @@ async def send_message_async(
         response = json.loads(response_bytes)
         if not isinstance(response, dict):
             raise MeshTransportError("mesh response is not an object")
+        try:
+            validate_output(response)
+        except Exception as exc:
+            raise MeshTransportError(
+                f"mesh response violates proof/output contract: {exc}"
+            ) from exc
         return response
     finally:
         writer.close()
@@ -1029,6 +1066,7 @@ class NodeProcess:
             "repository": self.identity.repository,
             "instance_id": self.identity.instance_id,
             "root_tree_sha": self.identity.root_tree_sha,
+            "proof_contract": self.identity.proof_contract,
         }
         command = [
             sys.executable,
@@ -1075,6 +1113,14 @@ class NodeProcess:
                 f"node {self.identity.node_id} exited before READY: {diagnostics}"
             )
         ready = json.loads(line)
+        try:
+            validate_output(ready)
+        except Exception as exc:
+            diagnostics = self.stop()
+            raise MeshTransportError(
+                f"node {self.identity.node_id} READY violates proof/output contract: "
+                f"{exc}; {diagnostics}"
+            ) from exc
         if (
             ready.get("event") != "READY"
             or ready.get("node_id") != self.identity.node_id
@@ -1135,6 +1181,11 @@ class MeshHarness:
                 repository="Goldkelch/qik-vrt",
                 instance_id="authority-instance-a",
                 root_tree_sha=authority_tree,
+                proof_contract={
+                    "policy_id": OUTPUT_POLICY_ID,
+                    "article_binding": canonical_article_identity(),
+                    "ontological_origin_proof_binding": canonical_origin_proof_identity(),
+                },
             ),
             NodeIdentity(
                 node_id="pair-a-mirror",
@@ -1143,6 +1194,11 @@ class MeshHarness:
                 repository="ingolf-lohmann/qik-vrt",
                 instance_id="mirror-instance-a",
                 root_tree_sha=mirror_tree,
+                proof_contract={
+                    "policy_id": OUTPUT_POLICY_ID,
+                    "article_binding": canonical_article_identity(),
+                    "ontological_origin_proof_binding": canonical_origin_proof_identity(),
+                },
             ),
             NodeIdentity(
                 node_id="pair-b-authority",
@@ -1151,6 +1207,11 @@ class MeshHarness:
                 repository="Goldkelch/qik-vrt",
                 instance_id="authority-instance-b",
                 root_tree_sha=authority_tree,
+                proof_contract={
+                    "policy_id": OUTPUT_POLICY_ID,
+                    "article_binding": canonical_article_identity(),
+                    "ontological_origin_proof_binding": canonical_origin_proof_identity(),
+                },
             ),
             NodeIdentity(
                 node_id="pair-b-mirror",
@@ -1159,6 +1220,11 @@ class MeshHarness:
                 repository="ingolf-lohmann/qik-vrt",
                 instance_id="mirror-instance-b",
                 root_tree_sha=mirror_tree,
+                proof_contract={
+                    "policy_id": OUTPUT_POLICY_ID,
+                    "article_binding": canonical_article_identity(),
+                    "ontological_origin_proof_binding": canonical_origin_proof_identity(),
+                },
             ),
         ]
         self.nodes = {
