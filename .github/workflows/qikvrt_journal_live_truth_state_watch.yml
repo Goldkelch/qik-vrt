@@ -170,6 +170,8 @@ jobs:
     env:
       HEAD_REF: ${{ github.event.pull_request.head.ref }}
       EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
     steps:
       - name: Check out exact PR head for deterministic integrity only
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -228,3 +230,43 @@ jobs:
           remote_head_after_commit="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
           test "$remote_head_after_commit" = "$source_head"
           git push origin "HEAD:$HEAD_REF"
+
+      - name: Dispatch exact integrity successor to trusted verifier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          successor="$(git rev-parse --verify HEAD^{commit})"
+          parent="$(git rev-parse --verify HEAD^1)"
+          test "$parent" = "$EXPECTED_HEAD"
+          git merge-base --is-ancestor "$BASE_SHA" "$successor"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
+          test "$remote_head" = "$successor"
+          root="$RUNNER_TEMP/qikvrt-journal-live-watch-self-test"
+          mkdir -p "$root"
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg pr "$PR_NUMBER" \
+            --arg ref "$HEAD_REF" \
+            --arg head "$successor" \
+            --arg base "$BASE_SHA" \
+            '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base,d0:2,causal_state:"REOBSERVE",reason:"JOURNAL_WATCH_PR_SAFE_INTEGRITY_SUCCESSOR"}}' \
+            > "$root/dispatch-envelope.json"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" \
+            --input "$root/dispatch-envelope.json"
+          jq -n \
+            --arg source "$EXPECTED_HEAD" \
+            --arg successor "$successor" \
+            --arg base "$BASE_SHA" \
+            '{schema:"qikvrt.journal-watch-direct-exact-head-dispatch.v1",source_head:$source,integrity_successor_head:$successor,base_sha:$base,dispatch:"ACKNOWLEDGED",issue_1229_mutation:"DISABLED",journal_source_mutation:"NOT_PERFORMED",publication_promotion:"HOLD",legal_readiness:"HOLD",effect_ack_done:false,predecessor_evidence_transfer:false}' \
+            > "$root/dispatch-receipt.json"
+
+      - name: Preserve direct exact-head dispatch receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-journal-live-watch-direct-dispatch-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qikvrt-journal-live-watch-self-test
+          if-no-files-found: warn
+          retention-days: 30
