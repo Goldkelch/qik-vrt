@@ -67,8 +67,8 @@ def main() -> int:
         for claim in matrix["claims"]:
             if claim.get("kind") == "FORMAL_THEOREM":
                 expected.add(claim["proof_constant"])
-    if len(expected) != 32:
-        raise SystemExit(f"BLOCK: expected exactly 32 theorem constants, observed {len(expected)}")
+    if len(expected) != 35:
+        raise SystemExit(f"BLOCK: expected exactly 35 theorem constants, observed {len(expected)}")
 
     observed: dict[str, list[str]] = {}
     unexpected: list[str] = []
