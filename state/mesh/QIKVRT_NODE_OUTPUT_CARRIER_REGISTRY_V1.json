@@ -1,0 +1,94 @@
+{
+  "schema": "qikvrt_node_output_carrier_registry_v1",
+  "registry_id": "QIKVRT-NODE-OUTPUT-CARRIER-REGISTRY-V1",
+  "policy_id": "QIKVRT-UNIVERSAL-PROOF-THOUGHT-SCHEMA-V1",
+  "canonical_article": {
+    "path": "docs/QIKVRT_UNIVERSAL_PROOF_AND_THOUGHT_SCHEMA_DE.md",
+    "bytes": 21501,
+    "sha256": "3179af0c1a7c16bf63208a1c91e23213b7746f61f6a0d60ed100728c6064d392"
+  },
+  "coverage_complete_for_declared_current_carriers": true,
+  "future_carriers_require_registration_before_admission": true,
+  "unregistered_future_carrier_disposition": "BLOCK",
+  "carriers": [
+    {
+      "id": "REAL_MESH_NODE_OUTPUT",
+      "producer": "tools/qikvrt_real_mesh.py",
+      "outputs": [
+        "READY",
+        "network_response",
+        "node_ledger_record",
+        "execution_receipt"
+      ],
+      "enforcement": "FAIL_CLOSED",
+      "validator": "tools/qikvrt_output_contract.py",
+      "article_binding_required": true,
+      "policy_id": "QIKVRT-UNIVERSAL-PROOF-THOUGHT-SCHEMA-V1"
+    },
+    {
+      "id": "REAL_MESH_SYSTEM_VERIFICATION_OUTPUT",
+      "producer": "tools/qikvrt_real_mesh_system_verification.py",
+      "outputs": [
+        "system_verification_audit"
+      ],
+      "enforcement": "FAIL_CLOSED",
+      "validator": "tools/qikvrt_output_contract.py",
+      "article_binding_required": true,
+      "policy_id": "QIKVRT-UNIVERSAL-PROOF-THOUGHT-SCHEMA-V1"
+    },
+    {
+      "id": "AUTHORITY_MIRROR_TERMINAL_PROJECTION",
+      "producer": "tools/qikvrt_authority_mirror_mesh_instance.py",
+      "outputs": [
+        "EXECUTIVE",
+        "EXPERT",
+        "FULL"
+      ],
+      "enforcement": "FAIL_CLOSED",
+      "validator": "tools/qikvrt_output_contract.py",
+      "article_binding_required": true,
+      "policy_id": "QIKVRT-UNIVERSAL-PROOF-THOUGHT-SCHEMA-V1"
+    },
+    {
+      "id": "FUTURE_MESH_NODE_CONTINUITY_RECEIPT",
+      "producer": "tools/qikvrt_mesh_node_receipt.py",
+      "underlying_payload_builder": "tools/qikvrt_workflow_executor.py",
+      "outputs": [
+        "continuity_receipt",
+        "continuity_validation_receipt"
+      ],
+      "enforcement": "FAIL_CLOSED",
+      "validator": "tools/qikvrt_output_contract.py",
+      "admission_gate": "tools/qikvrt_seed_common.py",
+      "article_binding_required": true,
+      "policy_id": "QIKVRT-UNIVERSAL-PROOF-THOUGHT-SCHEMA-V1"
+    },
+    {
+      "id": "AI_AGENT_NODE_EXPLANATORY_OUTPUT",
+      "producer": "AI",
+      "bootstrap": "AI_CONTEXT.json",
+      "outputs": [
+        "human_readable_explanation",
+        "agent_repository_response"
+      ],
+      "enforcement": "FAIL_CLOSED",
+      "validator": "policy/QIKVRT_UNIVERSAL_PROOF_THOUGHT_SCHEMA_V1.json",
+      "article_binding_required": true,
+      "policy_id": "QIKVRT-UNIVERSAL-PROOF-THOUGHT-SCHEMA-V1"
+    }
+  ],
+  "admission_invariant": {
+    "current_carrier_must_be_registered": true,
+    "future_carrier_must_be_registered": true,
+    "machine_output_must_validate_before_emit_or_persist": true,
+    "explanatory_output_must_load_policy_and_article_before_emit": true,
+    "predecessor_evidence_transfer": false
+  },
+  "nonclaims": {
+    "all_possible_future_software_is_immutable": false,
+    "policy_can_never_be_changed_by_authorized_code_owner": false,
+    "physical_correspondence_established": false,
+    "scientific_consensus_established": false,
+    "general_effect_ack_done": false
+  }
+}
