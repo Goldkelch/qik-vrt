@@ -54,6 +54,16 @@ Der vollständige maschinenlesbare Satz aller 24 Records und Kanten steht in `QI
 - `OCI_ARTIFACT_TRANSPORT` — [oras-project/oras ](https://github.com/oras-project/oras): OCI registry transport for artifacts, images and packages.
 - `SBOM_EXTRACTION` — [anchore/syft ](https://github.com/anchore/syft): Generates SBOMs from images/filesystems and supports SPDX/CycloneDX/in-toto outputs.
 
+## Interner kanonischer Monotonie-Anker
+
+Diese Registry erfindet keine zweite Monotonie-Semantik. Sie ist an den bereits vorhandenen QIK-VRT-Invariant gebunden:
+
+- [`docs/research/2026-09-03-evidence-spiral/README.md`](../research/2026-09-03-evidence-spiral/README.md)
+
+`KNOWN(E_n) ⊆ KNOWN(E_(n+1))`
+
+Historische Evidenz bleibt exakt gebunden; Successor-Evidenz wird angefügt, Widersprüche werden als neue Evidenz aufgenommen und die zulässige Closure wird neu berechnet. Nichts wird stillschweigend gelöscht, um Monotonie vorzutäuschen.
+
 ## Anschlusssemantik
 
 Ein externer Knoten darf erst dann zu QIK-VRT-Evidenz werden, wenn eine konkrete, frische Bindung materialisiert ist, z. B. über:
