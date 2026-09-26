@@ -142,3 +142,14 @@ machine-verifiable-science-charter-test:
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tests/test_machine_verifiable_science_charter.py
 
 test: machine-verifiable-science-charter-test
+
+# Comparator regression is part of the required repository gate, not only a path-filtered workflow.
+.PHONY: monotonic-evolution-test
+monotonic-evolution-test:
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest discover -s tests -p test_monotonic_evolution.py -v
+
+test: monotonic-evolution-test github-observation-test
+
+.PHONY: github-observation-test
+github-observation-test:
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_github_observation tests.test_qikvrt_review_mesh_work tests.test_qikvrt_mesh_worker_installation

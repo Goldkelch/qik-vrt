@@ -242,3 +242,44 @@ delegations are
 `state/authorization/delegations/OWNER_REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json`
 and
 `state/authorization/delegations/OWNER_MESH_REPOSITORY_SELF_REVIEW_FEEDBACK_V1.json`.
+
+
+## Lossless review scaling (2026-09-26)
+
+Owner instruction: Ingolf Lohmann. Implementation: Codex AI assistance.
+The existing requested-review executor now has a fixed read/write partition,
+conditional REST observations and an optional read-only counterpart worker.
+`QIKVRT_MESH_TOKEN`, when provisioned, is the dedicated read/dispatch lane;
+`github.token` retains the source ledger/status writer role. Rate exhaustion
+never rotates credentials. Every mutable REST read still reaches GitHub.
+Only a matching authenticated 304 can reuse exact digest-checked bytes;
+permission, network, rate-limit and malformed-response failures cannot do so.
+Original bodies and observation receipts are retained; the mutable cache index
+is a reconstructible pointer. Pagination is complete and repository-bound.
+
+The source packs the complete snapshot, exact receipt and existing ordered
+diff transport. Before dispatch it requires identical worker and transport Git blobs on the
+counterpart's trusted Main. The counterpart reobserves the source Main and the
+authenticated source workflow/run, then checks out that exact source evaluator
+in an isolated directory. Its older local evaluator remains available. All four
+evaluator, worker, transport and policy blobs must match the work manifest
+before computation. The worker has no repository write permission. Its result names its own HEAD/TREE and
+Actions run/attempt. The source waits, reads the artifact, requires byte-identical
+consolidation and then performs the existing fresh pre-effect observations.
+A contradiction remains an error. No worker result grants native approval.
+The existing append-only review ledger retains an observation checkpoint;
+finite-retention Actions artifacts are transport copies.
+
+Missing Mesh credentials or a counterpart whose compatible code is not admitted
+retain the existing local capability with an explicit `LOCAL_RETAINED_*`
+receipt. This state is not distributed execution. Once a remote task is admitted,
+failure, ambiguous delivery or missing result yields HOLD. Existing exact
+run identity is reused; the transport does not launch another work scheduler.
+
+The same transport is used by consumers of the shared review observer. Other
+workflows are covered only after their actual integration and fresh execution
+are observed. Installing this candidate is not evidence of repository-wide
+adoption, a live quota improvement, a native counteraccount review, Main
+promotion, or EFFECT_ACK_DONE. Both trusted-Main installations, the Mesh
+credential, the native signer and the intended ruleset are separate activation
+prerequisites. Authority and Mirror histories and evidence remain distinct.

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
 name: QIKVRT requested review executor
-run-name: QIKVRT requested review pr=${{ inputs.pr || 'event' }} head=${{ inputs.head || 'event' }} fp=${{ inputs.fingerprint || 'event' }}
+run-name: ${{ inputs.mode == 'mesh-worker' && format('QIKVRT mesh review {0} {1}', inputs.source_run_id, inputs.work_sha256) || format('QIKVRT requested review pr={0} head={1} fp={2}', inputs.pr || 'event', inputs.head || 'event', inputs.fingerprint || 'event') }}
 
 on:
   pull_request_target:
@@ -21,6 +21,20 @@ on:
     types: [completed]
   workflow_dispatch:
     inputs:
+      mode:
+        description: "Existing review or read-only counterpart computation"
+        type: choice
+        options: [review, mesh-worker]
+        default: review
+      source_repository:
+        description: "Exact configured counterpart for mesh-worker"
+        type: string
+      source_run_id:
+        description: "Exact source Actions run carrying the immutable work artifact"
+        type: string
+      work_sha256:
+        description: "Exact work manifest SHA-256"
+        type: string
       pr:
         description: "Exact pull request number"
         required: true
@@ -47,17 +61,20 @@ permissions:
   statuses: write
 
 concurrency:
-  group: qikvrt-requested-review-executor-${{ github.repository }}
+  group: qikvrt-requested-review-executor-${{ github.repository }}-${{ inputs.mode == 'mesh-worker' && inputs.work_sha256 || 'ledger-writer' }}
   cancel-in-progress: false
   queue: max
 
 jobs:
   review-one:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && inputs.mode != 'mesh-worker'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     env:
       GH_TOKEN: ${{ github.token }}
+      # Fixed read/write partition, selected before the run; never token rotation.
+      QIKVRT_REVIEW_READ_TOKEN: ${{ secrets.QIKVRT_MESH_TOKEN }}
+      QIKVRT_OBSERVATION_ROOT: .qikvrt/github-observations
       REPOSITORY: ${{ github.repository }}
       STATUS_CONTEXT: QIKVRT requested review execution
       REVIEW_MARKER: qikvrt-mesh-review:v1
@@ -86,6 +103,12 @@ jobs:
           else
             echo 'active=false' >> "$GITHUB_OUTPUT"
             echo 'BOOTSTRAP_NOOP: executor is not yet promoted to trusted main.'
+          fi
+          if test -f tools/qikvrt_github_observation.py && test -f tools/qikvrt_review_mesh_work.py; then
+            echo 'scaling=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'scaling=false' >> "$GITHUB_OUTPUT"
+            echo 'LOCAL_RETAINED_TRUSTED_MAIN_PREDECESSOR: existing review remains active until scaling code is promoted.'
           fi
 
       - name: Set up Python
@@ -254,6 +277,33 @@ jobs:
           print(f"blocker={value.get('first_blocker') or ''}")
           PY
 
+      - name: Bind lossless counterpart work
+        if: steps.active.outputs.active == 'true' && steps.active.outputs.scaling == 'true' && steps.select.outputs.state == 'CANDIDATE'
+        id: mesh-work
+        run: |
+          set -euo pipefail
+          key="$(python3 -B tools/qikvrt_review_mesh_work.py pack --root .qikvrt/mesh-review --output .qikvrt/mesh-work)"
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+
+      - name: Preserve complete counterpart inputs
+        if: steps.mesh-work.outputs.key != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mesh-work-${{ steps.mesh-work.outputs.key }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+          path: .qikvrt/mesh-work
+
+      - name: Execute available counterpart and consolidate synchronously
+        if: steps.mesh-work.outputs.key != ''
+        env:
+          QIKVRT_MESH_TOKEN: ${{ secrets.QIKVRT_MESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_review_mesh_work.py execute \
+            --bundle .qikvrt/mesh-work --output .qikvrt/mesh-review/counterpart
+
       - name: Persist exact receipt and diff by ledger fast-forward CAS
         if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE'
         id: ledger
@@ -267,6 +317,7 @@ jobs:
           import base64, hashlib, json, os, pathlib, subprocess, sys, urllib.parse
           from tools.qikvrt_requested_review_executor import (
               _pretty_json_bytes, exact_ref_sha, plan_ledger_update,
+              build_diff_transport,
               prepare_diff_transport_ledger_entries,
               reassemble_diff_transport, reconcile_ref_readback,
               review_queue_ack, review_queue_intent,
@@ -288,6 +339,14 @@ jobs:
           class LedgerHold(RuntimeError): pass
 
           def gh(method,path,payload=None,allow_404=False):
+              if method == 'GET' and payload is None and pathlib.Path('tools/qikvrt_github_observation.py').is_file():
+                  from tools.qikvrt_github_observation import environment_client, ObservationError
+                  try:
+                      return environment_client().get(path)[0]
+                  except ObservationError as exc:
+                      if allow_404 and exc.status == 404:
+                          return None
+                      raise LedgerHold(str(exc)) from exc
               command=['gh','api','--method',method,path]
               encoded=None
               if payload is not None:
@@ -655,6 +714,38 @@ jobs:
                       .get('predecessor_successor_fingerprint')
                   )
                   initial_entries={}
+                  # Persist the complete computation inputs and observation
+                  # checkpoint in the existing append-only ledger. Actions
+                  # artifacts are transport copies with a finite retention.
+                  import io, zipfile
+                  checkpoint=io.BytesIO()
+                  with zipfile.ZipFile(checkpoint,'w',compression=zipfile.ZIP_DEFLATED) as archive:
+                      checkpoint_roots=[
+                          pathlib.Path('.qikvrt/mesh-work'),
+                          pathlib.Path('.qikvrt/github-observations/objects'),
+                          pathlib.Path('.qikvrt/github-observations/receipts'),
+                          root/'counterpart',
+                      ]
+                      for checkpoint_root in checkpoint_roots:
+                          if checkpoint_root.exists():
+                              for path in sorted(checkpoint_root.rglob('*')):
+                                  if path.is_file():
+                                      info=zipfile.ZipInfo(path.as_posix())
+                                      info.compress_type=zipfile.ZIP_DEFLATED
+                                      archive.writestr(info,path.read_bytes())
+                  checkpoint_bytes=checkpoint.getvalue()
+                  checkpoint_sha=hashlib.sha256(checkpoint_bytes).hexdigest()
+                  checkpoint_base=f'state/mesh/observation-checkpoints/{checkpoint_sha}'
+                  checkpoint_transport=build_diff_transport(checkpoint_bytes,checkpoint_base)
+                  checkpoint_path=checkpoint_transport['manifest_path']
+                  checkpoint_manifest,checkpoint_packets=prepare_diff_transport_ledger_entries(
+                      checkpoint_transport,checkpoint_bytes,checkpoint_path,
+                  )
+                  initial_entries[checkpoint_path]=checkpoint_manifest
+                  for packet,payload in zip(checkpoint_transport['packets'],checkpoint_packets):
+                      initial_entries[packet['path']]=payload
+                  report['observation_checkpoint_path']=checkpoint_path
+                  report['observation_checkpoint_sha256']=checkpoint_sha
                   if (
                       isinstance(invoked_fingerprint,str)
                       and invoked_fingerprint != current_fingerprint
@@ -1227,7 +1318,9 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
           retention-days: 90
-          path: .qikvrt/mesh-review
+          path: |
+            .qikvrt/mesh-review
+            .qikvrt/github-observations
 
       - name: Enforce fail-closed ledger persistence
         if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE' && steps.ledger.outputs.persisted != 'true'
@@ -1244,3 +1337,84 @@ jobs:
       - name: Bootstrap NOOP before trusted-main promotion
         if: steps.active.outputs.active != 'true'
         run: echo 'Executor definition is under review; trusted main remains the only executable source.'
+
+  # qikvrt-mesh-review-worker:v1
+  mesh-worker:
+    if: github.ref == 'refs/heads/main' && inputs.mode == 'mesh-worker'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Check out current trusted counterpart main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Validate exact counterpart route before artifact access
+        env:
+          SOURCE_REPOSITORY: ${{ inputs.source_repository }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          WORK_SHA256: ${{ inputs.work_sha256 }}
+        run: |
+          python3 -B - <<'PY'
+          import os, re
+          from tools.qikvrt_review_mesh_work import PAIR, require
+          require(PAIR.get(os.environ['SOURCE_REPOSITORY']) == os.environ['GITHUB_REPOSITORY'], 'WORKER_ROUTE_INVALID')
+          require(re.fullmatch(r'[0-9a-f]{64}', os.environ['WORK_SHA256']), 'WORK_DIGEST_INVALID')
+          require(os.environ['SOURCE_RUN_ID'].isdecimal() and int(os.environ['SOURCE_RUN_ID']) > 0, 'SOURCE_RUN_ID_INVALID')
+          PY
+      - name: Read exact source work artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          github-token: ${{ secrets.QIKVRT_MESH_TOKEN || github.token }}
+          repository: ${{ inputs.source_repository }}
+          run-id: ${{ inputs.source_run_id }}
+          name: qikvrt-mesh-work-${{ inputs.work_sha256 }}
+          path: .qikvrt/mesh-work
+      - name: Verify current source Main and authenticated source run
+        id: source
+        env:
+          GH_TOKEN: ${{ secrets.QIKVRT_MESH_TOKEN || github.token }}
+          WORK_SHA256: ${{ inputs.work_sha256 }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_review_mesh_work.py verify-source \
+            --bundle .qikvrt/mesh-work --expected-digest "$WORK_SHA256" \
+            --repository "$GITHUB_REPOSITORY" > /tmp/qikvrt-source-evaluator.json
+          python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          value=json.load(open('/tmp/qikvrt-source-evaluator.json',encoding='utf-8'))
+          for key in ('repository','sha','worker_head','worker_tree'):
+              print(f'{key}={value[key]}')
+          PY
+      - name: Check out verified source evaluator in an isolated directory
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ steps.source.outputs.repository }}
+          ref: ${{ steps.source.outputs.sha }}
+          path: .qikvrt/source-evaluator
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Evaluate exact source bytes without a write credential
+        working-directory: .qikvrt/source-evaluator
+        env:
+          WORK_SHA256: ${{ inputs.work_sha256 }}
+          QIKVRT_WORKER_HEAD: ${{ steps.source.outputs.worker_head }}
+          QIKVRT_WORKER_TREE: ${{ steps.source.outputs.worker_tree }}
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_review_mesh_work.py worker \
+            --bundle "$GITHUB_WORKSPACE/.qikvrt/mesh-work" --expected-digest "$WORK_SHA256" \
+            --repository "$GITHUB_REPOSITORY" --output "$GITHUB_WORKSPACE/.qikvrt/mesh-result"
+      - name: Preserve exact counterpart result
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mesh-result-${{ inputs.work_sha256 }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+          path: .qikvrt/mesh-result

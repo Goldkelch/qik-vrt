@@ -77,7 +77,11 @@
         "approve_requires_current_requested_counterpart_reobservation": true,
         "is_identity_impersonation": false,
         "is_independent_natural_person_review": false,
-        "may_submit": ["APPROVE", "REQUEST_CHANGES", "COMMENT"],
+        "may_submit": [
+          "APPROVE",
+          "REQUEST_CHANGES",
+          "COMMENT"
+        ],
         "comment_with_blocker_projection": "REQUEST_CHANGES_TO_SUPERSEDE_ANY_OLDER_SAME_HEAD_DELEGATED_APPROVAL",
         "non_request_negative_projection": "ONLY_RETRACTS_A_CURRENTLY_DECISIVE_STALE_SAME_HEAD_DELEGATED_APPROVAL_AFTER_AN_EXACT_ARTIFACT_BOUND_PULL_REQUEST_TARGET_ISSUE_COMMENT_OR_WORKFLOW_RUN_EVENT",
         "delegation_state_must_be_active_at_plan_and_pre_effect_readback": true,
@@ -97,7 +101,10 @@
       ]
     },
     "repository_reviewer_counterpart_rule": {
-      "configured_accounts": ["Goldkelch", "ingolf-lohmann"],
+      "configured_accounts": [
+        "Goldkelch",
+        "ingolf-lohmann"
+      ],
       "pull_request_author_is_eligible": false,
       "eligible_reviewer": "CONFIGURED_ACCOUNT_OTHER_THAN_PULL_REQUEST_AUTHOR",
       "natural_person_ingolf_lohmann_participates": false,
@@ -404,5 +411,31 @@
     "EFFECT_ACK_DONE": false,
     "FULL_AUTHORITY_MIRROR_SYNCHRONIZATION": false,
     "MERGE": false
+  },
+  "review_transport_scaling": {
+    "authorization": "Ingolf Lohmann, 2026-09-26: implement synchronously; then continue authorized repository work in the scaling and lossless consolidation mode",
+    "implementation": "tools/qikvrt_github_observation.py",
+    "counterpart_work": "tools/qikvrt_review_mesh_work.py",
+    "existing_executor_reused": true,
+    "mutable_rest_reads": "AUTHENTICATED_SERVER_REVALIDATION_ON_EVERY_READ",
+    "cache_acceptance": "HTTP_304_WITH_MATCHING_REQUEST_VALIDATOR_AND_EXACT_RETAINED_BODY_DIGEST_ONLY",
+    "errors_return_cached_data": false,
+    "credential_routing": "FIXED_MESH_READ_LANE_WHEN_PROVISIONED_ROLE_LOCAL_WRITE_LANE_NO_ROTATION_ON_ERROR",
+    "counterpart_inputs": "COMPLETE_SNAPSHOT_RECEIPT_AND_ORDERED_DIFF_PACKETS_WITH_EXACT_DIGESTS",
+    "counterpart_code": "EXACT_LOCAL_WORKER_AND_TRANSPORT_PLUS_FRESHLY_AUTHENTICATED_SOURCE_MAIN_CHECKOUT_WITH_ALL_EVALUATOR_BLOBS_MATCHED",
+    "counterpart_execution": "DISPATCH_ONCE_OR_REUSE_EXACT_EXISTING_RUN_WAIT_THEN_CONSOLIDATE_BYTES",
+    "counterpart_failure": "HOLD_AFTER_ADMISSION_NO_SILENT_FALLBACK",
+    "unavailable_counterpart": "RETAIN_LOCAL_CAPABILITY_WITH_EXPLICIT_UNREALIZED_MESH_REASON",
+    "consolidation": "BYTE_IDENTICAL_RESULT_REQUIRED_CONTRADICTIONS_RETAINED",
+    "durability": "EXISTING_APPEND_ONLY_LEDGER_OBSERVATION_CHECKPOINT_AND_EXACT_READBACK",
+    "pre_effect_reobservation": "MANDATORY_AFTER_COUNTERPART_RETURN",
+    "native_review_and_merge_authority": "UNCHANGED",
+    "activation_evidence_required": [
+      "BOTH_TRUSTED_MAIN_IMPLEMENTATIONS",
+      "EXACT_REMOTE_RUN_AND_ARTIFACT_READBACK",
+      "SOURCE_FRESH_REOBSERVATION",
+      "VALID_NATIVE_SIGNER_AND_RULESET"
+    ],
+    "global_adoption_claim": "ONLY_FOR_CALLERS_ACTUALLY_USING_THIS_TRANSPORT_WITH_OBSERVED_EXECUTION"
   }
 }

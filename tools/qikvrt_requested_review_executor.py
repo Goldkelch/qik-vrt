@@ -1307,6 +1307,7 @@ def _evidence_fingerprint(
         "fingerprint_schema": "qikvrt_mesh_review_evidence_fingerprint_v4",
         "trusted_evaluator_blob_sha": snapshot.get("trusted_evaluator_blob_sha"),
         "trusted_workflow_blob_sha": snapshot.get("trusted_workflow_blob_sha"),
+        "trusted_read_transport_blob_sha": snapshot.get("trusted_read_transport_blob_sha"),
         "repository": snapshot.get("repository"),
         "repository_role": snapshot.get("repository_role"),
         "pr_number": snapshot.get("pr_number"),
@@ -1578,6 +1579,7 @@ def _result(
         "draft": snapshot.get("draft"),
         "trusted_evaluator_blob_sha": snapshot.get("trusted_evaluator_blob_sha"),
         "trusted_workflow_blob_sha": snapshot.get("trusted_workflow_blob_sha"),
+        "trusted_read_transport_blob_sha": snapshot.get("trusted_read_transport_blob_sha"),
         "base_ref": snapshot.get("base_ref", "main"),
         "current_main_sha": snapshot.get("current_main_sha"),
         "current_main_tree_sha": snapshot.get("current_main_tree_sha"),
@@ -1671,6 +1673,8 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
             raise ReviewSnapshotError("draft must be boolean")
         _sha(snapshot.get("trusted_evaluator_blob_sha"), "trusted_evaluator_blob_sha")
         _sha(snapshot.get("trusted_workflow_blob_sha"), "trusted_workflow_blob_sha")
+        if snapshot.get("trusted_read_transport_blob_sha") is not None:
+            _sha(snapshot["trusted_read_transport_blob_sha"], "trusted_read_transport_blob_sha")
         current_main = _sha(snapshot.get("current_main_sha"), "current_main_sha")
         current_main_tree = _sha(snapshot.get("current_main_tree_sha"), "current_main_tree_sha")
         base = _sha(snapshot.get("base_sha"), "base_sha")
@@ -2070,6 +2074,20 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
 
 
 def _run_json(command: Sequence[str], *, input_text: str | None = None) -> Any:
+    # Mutable REST observations always reach GitHub. Authenticated 304 responses
+    # revalidate exact retained bytes, saving the shared repository API budget.
+    # GraphQL remains a fresh query; it has no REST entity validator.
+    if (list(command[:2]) == ["gh", "api"] and len(command) > 2
+            and command[2] != "graphql"
+            and (os.environ.get("GH_TOKEN") or os.environ.get("QIKVRT_REVIEW_READ_TOKEN"))):
+        try:
+            from tools.qikvrt_github_observation import gh_read_json, ObservationError
+        except ModuleNotFoundError:
+            from qikvrt_github_observation import gh_read_json, ObservationError
+        try:
+            return gh_read_json(command)
+        except ObservationError as exc:
+            raise ReviewObservationError(str(exc)) from exc
     completed = subprocess.run(
         list(command),
         input=input_text,
@@ -2888,7 +2906,9 @@ def observe_repository(
     main_sha = str(main.get("sha"))
     if _git_text(("rev-parse", "HEAD")) != main_sha:
         raise ReviewObservationError("trusted-main checkout drifted from observed main")
-    main_tree = _gh_one(f"repos/{repository}/git/commits/{main_sha}")["tree"]["sha"]
+    # The commits endpoint supplies the immutable tree binding in the same
+    # response. Fetching that same Git object again adds no fresh mutable fact.
+    main_tree = main["commit"]["tree"]["sha"]
     if _git_text(("rev-parse", "HEAD^{tree}")) != main_tree:
         raise ReviewObservationError("trusted-main tree differs from observed main tree")
 
@@ -3009,6 +3029,7 @@ def observe_repository(
         "draft": bool(final_pr.get("draft")),
         "trusted_evaluator_blob_sha": _git_text(("rev-parse", f"HEAD:{TRUSTED_EVALUATOR_PATH}")),
         "trusted_workflow_blob_sha": _git_text(("rev-parse", f"HEAD:{TRUSTED_WORKFLOW_PATH}")),
+        "trusted_read_transport_blob_sha": _git_text(("rev-parse", "HEAD:tools/qikvrt_github_observation.py")),
         "current_main_sha": main_sha,
         "current_main_tree_sha": main_tree,
         "base_sha": base,
