@@ -32,7 +32,7 @@ def fixture():
     new["nodes"]["n3"] = h("n3")
     new["capabilities"]["transcribe.de"]["witness"] = witness(b, "new-cap")
     new["performance"]["latency.ns"]["witness"] = witness(b, "new-perf")
-    return old, new, a, b
+    return old, new, copy.deepcopy(a), copy.deepcopy(b)
 
 
 class MonotonicEvolutionTests(unittest.TestCase):
@@ -98,7 +98,8 @@ class MonotonicEvolutionTests(unittest.TestCase):
         self.blocked("EDGES_REMOVED_OR_REWRITTEN")
 
     def test_append_correction_preserves_history(self):
-        self.new["edges"]["e2"] = {"source": "n3", "target": "n1", "relation": "contradicts", "sha256": h("e2")}
+        self.new["edges"]["e2"] = {"source": "n3", "target": "n1", "relation": "contradicts", "sha256": h("e2")
+        }
         self.assertTrue(self.result()["eligible"])
 
     def test_capability_failure_or_skip(self):
