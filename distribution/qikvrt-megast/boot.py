@@ -30,6 +30,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+import uuid
 
 FILES = {"kernel": "qikvrt-megast-vmlinuz", "initrd": "qikvrt-megast-initrd",
          "rootfs": "qikvrt-megast-filesystem.squashfs", "m68000": "QIKVRT_BOOT.BIN"}
@@ -38,6 +39,125 @@ HEADER = struct.Struct("!4sB3xIIIIII")
 CHUNK = 128
 MAX_BOOT = 4 * 1024 * 1024
 SSH_KEY_PATH = Path("/sys/firmware/qemu_fw_cfg/by_name/opt/qikvrt/ssh-key/raw")
+
+
+def transputer_subject(config: dict) -> dict:
+    """The image's source identity is independent of a successful operation."""
+    subject = {"repository": "Goldkelch/qik-vrt", "subject_id": "transputer",
+               "head": config.get("source_sha", ""), "tree": config.get("source_tree", "")}
+    if any(not isinstance(subject[key], str) or not re.fullmatch(r"[0-9a-f]{40}", subject[key])
+           for key in ("head", "tree")):
+        raise ValueError("exact Transputer HEAD/TREE required")
+    return subject
+
+
+def prepare_transputer(binary: Path, state: Path, program: Path, config: dict) -> dict:
+    """Provision once, then open the retained store; never repair by resetting it."""
+    subject = transputer_subject(config)
+    binding = config["universal_transputer"]
+    for path, key in ((binary, "binary_sha256"), (program, "program_sha256")):
+        if hashlib.sha256(path.read_bytes()).hexdigest() != binding[key]:
+            raise ValueError("Transputer installed-byte mismatch: " + key)
+
+    def call(*args, data=None):
+        result = subprocess.run([str(binary), *map(str, args)], input=data,
+                                capture_output=True, check=True, timeout=30)
+        return json.loads(result.stdout)
+
+    if state.is_symlink():
+        raise ValueError("Transputer state must not be a symlink")
+    state.mkdir(mode=0o700, parents=True, exist_ok=True)
+    marker, store = state / "provisioned.json", state / "store"
+    if not marker.exists():
+        if any(state.iterdir()):
+            raise ValueError("unrecognized Transputer state; explicit recovery required")
+        identity = "megast-" + uuid.uuid4().hex
+        # Retain initialization intent before creating the store. An interrupted
+        # initialization or a later missing store must stop, never start afresh.
+        with marker.open("x") as stream:
+            json.dump({"identity": identity, "initial_subject": subject}, stream)
+            stream.write("\n"); stream.flush(); os.fsync(stream.fileno())
+        directory_fd = os.open(state, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+        call("init", store, identity)
+    if marker.is_symlink() or not marker.is_file():
+        raise ValueError("unsafe Transputer provisioning record")
+    identity = json.loads(marker.read_text())["identity"]
+    call("verify", store)
+    if call("discover", store)["identity"] != identity:
+        raise ValueError("Transputer identity differs from provisioning record")
+    artifact = call("put", store, program)["sha256"]
+    command = {"event_id": "megast-register:" + subject["head"] + ":" + artifact,
+               "node_id": "universal-transputer", "subject": subject, "cause_event_ids": [],
+               "operation": {"op": "register", "artifact": artifact,
+                             "entrypoint": "next/examples/boolean_roundtrip.temdd"}}
+    receipt = call("run", store, data=(json.dumps(command) + "\n").encode())
+    if receipt.get("state") != "PERSISTED" or receipt["record"]["command"] != command:
+        raise ValueError("Transputer registration was not durably read back")
+    return {"subject": subject, "identity": identity, "store": str(store),
+            "program_sha256": artifact, "registration": receipt, "effect_ack_done": False}
+
+
+def transputer_guest(binary: Path, state: Path, program: Path, config_path: Path) -> None:
+    prepared = prepare_transputer(binary, state, program, json.loads(config_path.read_text()))
+    print("QIKVRT_TRANSPUTER_PREPARED " + json.dumps(prepared, sort_keys=True), flush=True)
+    os.execv(str(binary), [str(binary), "serve", prepared["store"], "127.0.0.1:8772"])
+
+
+def transputer_readback(config: dict, program: Path,
+                       address: str = "http://127.0.0.1:8772") -> dict:
+    """Use the terminal to compile TEMDD, execute C90 and read the retained result."""
+    subject = transputer_subject(config)
+    source = program.read_bytes()
+    digest = hashlib.sha256(source).hexdigest()
+    if digest != config["universal_transputer"]["program_sha256"]:
+        raise ValueError("Transputer program differs from installed subject")
+
+    def request(path, data=None, content_type="application/json", raw=False):
+        req = urllib.request.Request(address + path, data=data,
+                                     headers={"Content-Type": content_type})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            payload = response.read(2 * 1024 * 1024 + 1)
+            if response.status != 200 or len(payload) > 2 * 1024 * 1024:
+                raise ValueError("invalid Transputer terminal response")
+        return payload if raw else json.loads(payload)
+
+    if b"TEMDD" not in request("/AI", raw=True):
+        raise ValueError("Transputer terminal surface missing")
+    directory = request("/api/directory")
+    node = next((node for node in directory["nodes"]
+                 if node["node_id"] == "universal-transputer"), None)
+    if node is None or node["subject"] != subject or node["artifact"] != digest:
+        raise ValueError("Transputer terminal subject mismatch")
+    ir = request("/api/compile", source, "text/plain")
+    command = {"event_id": "megast-internal-use:" + uuid.uuid4().hex,
+               "node_id": "universal-transputer", "subject": subject,
+               "cause_event_ids": [], "operation": {
+                   "op": "program", "source": digest, "event": "event",
+                   "input": {"a": 13, "b": 9, "lut": 6, "requested": 2,
+                             "binding": 1, "authority": 1, "distinction": 1, "drift": 0}}}
+    payload = json.dumps(command).encode()
+    receipt = request("/api/execute", payload)
+    if receipt.get("state") != "PERSISTED" or receipt["record"]["command"] != command:
+        raise ValueError("Transputer operation was not durably read back")
+    result = receipt["record"]["result"]
+    if (result["native_effect"]["value"] != 4 or not result["native_effect"]["value_valid"]
+            or result["external_effect"] or result["done"]
+            or receipt["record"]["implementation_sha256"] != config["universal_transputer"]["binary_sha256"]):
+        raise ValueError("Transputer C90 result or executable binding mismatch")
+    replay = request("/api/execute", payload)
+    if (replay.get("replayed") is not True or replay["record"] != receipt["record"]
+            or replay["digest"] != receipt["digest"]):
+        raise ValueError("Transputer durable replay mismatch")
+    return {"subject": subject, "identity": directory["identity"],
+            "binary_sha256": receipt["record"]["implementation_sha256"],
+            "program_sha256": digest, "temdd_compiled": bool(ir),
+            "c90_value": result["native_effect"]["value"], "durable_replay": True,
+            "event_id": command["event_id"], "event_digest": receipt["digest"],
+            "sequence": receipt["record"]["sequence"], "effect_ack_done": False}
 
 
 def ed25519_public_key(value: str) -> str:
@@ -470,6 +590,39 @@ def runtime_result(serial: str, source_sha: str) -> str | None:
     return result
 
 
+def runtime_receipt(serial: str, manifest: dict) -> dict:
+    """A success marker cannot replace the exact guest's complete result."""
+    records = []
+    prefix = "QIKVRT_RUNTIME_RECEIPT "
+    for line in serial.splitlines(keepends=True):
+        if not line.endswith(("\n", "\r")) or not line.startswith(prefix):
+            continue
+        if len(line.encode()) > 65536:
+            raise ValueError("guest runtime receipt exceeds bound")
+        value = json.loads(line[len(prefix):])
+        if not isinstance(value, dict) or value.get("schema") != "qikvrt_megast_runtime_receipt_v1":
+            raise ValueError("invalid guest runtime receipt")
+        subject = transputer_subject(manifest)
+        transputer = value.get("universal_transputer", {})
+        if (not isinstance(transputer, dict) or value.get("source_sha") != subject["head"]
+                or value.get("source_tree") != subject["tree"]
+                or transputer.get("subject") != subject):
+            raise ValueError("guest runtime receipt HEAD/TREE mismatch")
+        if (value.get("effect_ack_done") is not False
+                or transputer.get("effect_ack_done") is not False
+                or transputer.get("temdd_compiled") is not True
+                or transputer.get("durable_replay") is not True
+                or transputer.get("c90_value") != 4
+                or any(not isinstance(transputer.get(key), str)
+                       or not HEX64.fullmatch(transputer[key])
+                       for key in ("binary_sha256", "program_sha256", "event_digest"))):
+            raise ValueError("guest Transputer execution receipt invalid")
+        records.append(value)
+    if not records or any(record != records[0] for record in records):
+        raise ValueError("missing or conflicting complete guest runtime receipt")
+    return records[0]
+
+
 def snapshot_serial(logfile: Path) -> Path:
     # QEMU can append shutdown messages and an interactive session keeps logging.
     # Bind receipts to immutable observed bytes, not the still-open console log.
@@ -568,7 +721,9 @@ def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bo
                 witness = snapshot_serial(logfile)
                 if runtime_result(witness.read_text(errors="replace"), manifest["source_sha"]) != "success":
                     raise ValueError("runtime evidence changed before receipt binding")
+                guest_receipt = runtime_receipt(witness.read_text(errors="replace"), manifest)
                 receipt = {"schema": "qikvrt_netboot_receipt_v1", "source_sha": manifest["source_sha"],
+                           "source_tree": manifest["source_tree"], "guest_runtime_receipt": guest_receipt,
                            "manifest_sha256": sha256(directory / "qikvrt-netboot.json"),
                            "serial_evidence_file": witness.name, "serial_sha256": sha256(witness),
                            "screenshot_sha256": sha256(screenshot), "observed_colors": len(colors),
@@ -598,6 +753,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("chatgpt-connect")
+    transputer = sub.add_parser("transputer-guest")
+    transputer.add_argument("--binary", type=Path, default=Path("/usr/local/bin/qikvrt-next"))
+    transputer.add_argument("--state", type=Path, default=Path("/var/lib/qikvrt-transputer"))
+    transputer.add_argument("--program", type=Path, default=Path("/opt/qikvrt/boolean_roundtrip.temdd"))
+    transputer.add_argument("--config", type=Path, default=Path("/etc/qikvrt/distribution.json"))
     make = sub.add_parser("manifest"); make.add_argument("directory", type=Path); make.add_argument("source_sha"); make.add_argument("--source-tree")
     client = sub.add_parser("receive"); client.add_argument("url"); client.add_argument("sha256"); client.add_argument("directory", type=Path); client.add_argument("--boot", action="store_true"); client.add_argument("--verify-only", action="store_true")
     execute = sub.add_parser("boot"); execute.add_argument("directory", type=Path); execute.add_argument("--verify-only", action="store_true")
@@ -613,6 +773,9 @@ def main() -> int:
     serve = sub.add_parser("serve"); serve.add_argument("directory", type=Path); serve.add_argument("--host", default="127.0.0.1"); serve.add_argument("--port", type=int, default=7331)
     args = parser.parse_args()
     try:
+        if args.command == "transputer-guest":
+            transputer_guest(args.binary, args.state, args.program, args.config)
+            return 0
         if args.command == "chatgpt-connect":
             chatgpt_connect()
             return 0

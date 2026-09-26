@@ -9,7 +9,7 @@ The distribution lane is not complete merely because an ISO builds. Its terminal
 1. a reproducible bootable amd64 ISO is built from the repository;
 2. the ISO contains the QIK-VRT TEMDD/Effect-ACK contract and Universal Terminal client surface;
 3. a graphical session presents a deliberately Mega-ST/GEM-inspired visual shell;
-4. Hatari is installed so an Atari ST/Mega ST class machine can run when the user supplies a legally usable TOS image; no proprietary Atari ROM is redistributed by this project;
+4. Hatari starts the ST environment with the hash-locked, redistributable EmuTOS ROM; no proprietary Atari ROM is redistributed by this project;
 5. modern software remains available through native Debian packages, Flatpak, OCI/Podman and the web browser instead of being trapped inside the 68k guest;
 6. build manifest, ISO SHA-256 and exact git subject are emitted as receipts;
 7. the released asset is downloadable from the stable release path and independently read back after publication;
@@ -25,12 +25,32 @@ The host is Debian Live. Xfce is the modern desktop substrate. `qikvrt-megast-se
 
 Compatibility is intentionally layered:
 
-- **Atari layer:** Hatari, user-provided legal TOS/EmuTOS-compatible ROM media;
+- **Atari layer:** Hatari with the bundled, hash-locked EmuTOS ROM;
 - **native Linux layer:** Debian packages;
 - **portable desktop layer:** Flatpak;
 - **service/container layer:** Podman/OCI;
 - **universal application layer:** Firefox/Web;
 - **QIK-VRT layer:** TEMDD, exact-subject receipts, Effect Acknowledgement, Mesh/Universal Terminal integration.
+
+The desktop opens the existing universal Transputer terminal at
+`http://127.0.0.1:8772/AI`. `qikvrt-next` runs the C90 core through its existing
+Rust adapter. The `qikvrt-transputer` service retains its identity and events in
+`/var/lib/qikvrt-transputer/store`; it provisions a new identity only in a new,
+empty state directory. A provisioning marker with a missing or damaged store
+blocks startup and requires explicit recovery. A Live session needs a persistent
+volume or an explicit store snapshot to retain this state across VM replacement.
+
+The guest runtime witness compiles the installed TEMDD program through this
+terminal, executes its Boolean operation in the C90 core, and replays the exact
+stored result. Its receipt binds the image HEAD/TREE and executable digest.
+The complete receipt travels through the existing boot-scoped journal relay
+when the desktop user cannot write the serial device. The receiving boot client
+requires that complete, matching receipt; a success marker alone is rejected.
+This local operation does not claim `EFFECT_ACK_DONE`. The existing Effect-Ack
+endpoint remains at port 8771. Authenticated peer connections use the same
+`qikvrt-next bus-config`, `bus-serve` and `bus-peer` entrypoints documented in
+[the universal Transputer guide](../../next/README.md); no public bus listener or
+peer credentials are created by the image.
 
 This is a compatibility envelope, not a claim that literally every existing program can execute on every CPU or license regime.
 

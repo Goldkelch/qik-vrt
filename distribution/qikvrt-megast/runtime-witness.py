@@ -37,6 +37,15 @@ def stage(name):
     subprocess.run(["logger", "-t", "qikvrt-runtime", "QIKVRT_RUNTIME_STEP " + name], check=True)
 
 
+def emit_runtime_receipt(receipt):
+    message = "QIKVRT_RUNTIME_RECEIPT " + json.dumps(receipt, sort_keys=True)
+    emit_serial(message)
+    # The desktop user may not open ttyS0. Reuse the boot-scoped journal relay
+    # for the complete receipt as well as the final marker. logger's default
+    # message limit is too small for the source-bound Transputer receipt.
+    subprocess.run(["logger", "--size", "65536", "-t", "qikvrt-runtime", message], check=True)
+
+
 def run(command):
     return subprocess.run(command, capture_output=True, text=True, check=True, timeout=90).stdout
 
@@ -132,6 +141,8 @@ def main():
         if not capabilities:
             raise RuntimeError("empty Effect-Ack capability response")
     stage("effect-ack-http-observed")
+    transputer = boot.transputer_readback(config, ROOT / "boolean_roundtrip.temdd")
+    stage("transputer-temdd-c90-durable-readback")
     c90 = run(["/usr/local/bin/qikvrt-c90-selftest"])
     if "7864387" not in c90:
         raise RuntimeError("complete C90 corpus was not executed")
@@ -163,6 +174,7 @@ def main():
             raise RuntimeError("Smalltalk image did not restore")
         stage("smalltalk-image-restored")
     receipt = {"schema": "qikvrt_megast_runtime_receipt_v1", "source_sha": source,
+               "source_tree": config["source_tree"], "universal_transputer": transputer,
                "graphical_session": "Xfce with mapped Firefox window", "effect_ack_http_readback": True,
                "c90_checks": 7864387, "ip_boot_binary_sha256": hashlib.sha256(image).hexdigest(),
                "received_mc68000_executed": True, "smalltalk_image_restored": True,
@@ -171,7 +183,7 @@ def main():
                "hatari_window_observed": True, "physical_atari_boot": False,
                "effect_ack_done": False}
     Path.home().joinpath(".config/qikvrt/runtime-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
-    emit_serial("QIKVRT_RUNTIME_RECEIPT " + json.dumps(receipt, sort_keys=True))
+    emit_runtime_receipt(receipt)
     # The root-owned boot-scoped journal reader also covers user device denial.
     marker = "QIKVRT_MEGAST_RUNTIME_OK source_sha=" + source
     emit_serial(marker)
