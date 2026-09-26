@@ -141,6 +141,9 @@ The six supplied recordings are exact-byte bound in:
 
 All six recordings are `BOUND_PENDING_ASR`. Their filenames are not transcripts. A similarly titled manuscript is context, not an acoustic transcript. Repository-native transcription must bind the exact audio SHA-256, model/tool identity and result receipt. `ASR_DRAFT` is machine-derived and fallible. `VERBATIM_VERIFIED` requires explicit human acoustic review against the exact bound recording.
 
+The bootstrap corpus classifies their speech content as `UNTRANSCRIBED` until a
+hash-bound transcript exists; `BOUND_PENDING_ASR` preserves the pending request.
+
 The existing repository-native audio transport/transcription implementation on `audio-transport/20260806-cognition-ontology-audio-v1`, including `.github/workflows/qikvrt_audio_request.yml` and `tools/offline-audio-transcription`, is the preferred reuse source. Raw audio must not be published merely to make transcription convenient.
 
 HUMAN–MACHINE COLLECTIVE COGNITION

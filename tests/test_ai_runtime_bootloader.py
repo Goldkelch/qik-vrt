@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import pathlib
@@ -11,8 +12,15 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+SPEC = importlib.util.spec_from_file_location(
+    "ai_runtime_bootloader", ROOT / "tools/ai_runtime_bootloader.py"
+)
+assert SPEC and SPEC.loader
+BOOTLOADER = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(BOOTLOADER)
 
 
 class AIRuntimeBootloaderContractTests(unittest.TestCase):
@@ -154,6 +162,101 @@ class AIRuntimeBootloaderContractTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("AI_HANDOFF_STATUS=VALID", completed.stdout)
         self.assertNotIn("source commit is unavailable", completed.stderr)
+
+
+class AIRuntimeRemoteTopologyTests(unittest.TestCase):
+    """Exercise the documented topology with real local Git repositories."""
+
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = pathlib.Path(self.directory.name)
+        self.git("init", "--quiet")
+        patch = mock.patch.object(BOOTLOADER, "ROOT", self.root)
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.context = {
+            "personal_working_memory_origin": {
+                "personal_working_copy_remote": "origin",
+                "canonical_source_remote": "upstream",
+            }
+        }
+
+    def git(self, *args: str) -> None:
+        subprocess.run(
+            ["git", *args], cwd=self.root, check=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10,
+        )
+
+    def resolve(self) -> tuple[str, str]:
+        return BOOTLOADER.repository_remote(self.context)
+
+    def test_local_only_copy_uses_declared_source_without_creating_origin(self) -> None:
+        url = "https://github.com/Goldkelch/qik-vrt.git"
+        self.git("remote", "add", "upstream", url)
+        before = (self.root / ".git/config").read_bytes()
+        self.assertEqual(self.resolve(), ("upstream", url))
+        self.assertEqual((self.root / ".git/config").read_bytes(), before)
+        self.assertEqual(BOOTLOADER.git_value("remote"), "upstream")
+
+    def test_existing_origin_only_copy_remains_supported(self) -> None:
+        url = "git@github.com:ingolf-lohmann/qik-vrt.git"
+        self.git("remote", "add", "origin", url)
+        self.assertEqual(self.resolve(), ("origin", url))
+
+    def test_personal_origin_is_not_relabelled_as_authority(self) -> None:
+        personal = "https://github.com/ingolf-lohmann/qik-vrt.git"
+        self.git("remote", "add", "origin", personal)
+        self.git("remote", "add", "upstream", "https://github.com/Goldkelch/qik-vrt.git")
+        self.assertEqual(self.resolve(), ("origin", personal))
+
+    def test_context_declared_names_are_used(self) -> None:
+        self.context["personal_working_memory_origin"].update(
+            personal_working_copy_remote="personal", canonical_source_remote="source"
+        )
+        url = "https://github.com/Goldkelch/qik-vrt.git"
+        self.git("remote", "add", "source", url)
+        self.assertEqual(self.resolve(), ("source", url))
+
+    def test_no_remote_still_blocks(self) -> None:
+        with self.assertRaisesRegex(BOOTLOADER.BootBlock, "neither declared"):
+            self.resolve()
+
+    def test_unrelated_remote_is_not_an_identity_fallback(self) -> None:
+        self.git("remote", "add", "unrelated", "https://github.com/example/repo.git")
+        with self.assertRaisesRegex(BOOTLOADER.BootBlock, "neither declared"):
+            self.resolve()
+
+    def test_ambiguous_personal_remote_does_not_fall_back_to_source(self) -> None:
+        self.git("remote", "add", "origin", "https://github.com/example/one.git")
+        self.git("config", "--add", "remote.origin.url", "https://github.com/example/two.git")
+        self.git("remote", "add", "upstream", "https://github.com/Goldkelch/qik-vrt.git")
+        with self.assertRaisesRegex(BOOTLOADER.BootBlock, "one non-empty fetch URL"):
+            self.resolve()
+
+    def test_empty_url_does_not_fall_back_to_source(self) -> None:
+        self.git("config", "remote.origin.url", "")
+        self.git("remote", "add", "upstream", "https://github.com/Goldkelch/qik-vrt.git")
+        with self.assertRaisesRegex(BOOTLOADER.BootBlock, "one non-empty fetch URL"):
+            self.resolve()
+
+    def test_missing_or_invalid_contract_blocks(self) -> None:
+        invalid = [
+            {},
+            {"personal_working_memory_origin": []},
+            {"personal_working_memory_origin": {}},
+            {"personal_working_memory_origin": {
+                "personal_working_copy_remote": "upstream",
+                "canonical_source_remote": "upstream",
+            }},
+            {"personal_working_memory_origin": {
+                "personal_working_copy_remote": "--get-all",
+                "canonical_source_remote": "upstream",
+            }},
+        ]
+        for context in invalid:
+            with self.subTest(context=context), self.assertRaises(BOOTLOADER.BootBlock):
+                BOOTLOADER.repository_remote(context)
 
 
 if __name__ == "__main__":

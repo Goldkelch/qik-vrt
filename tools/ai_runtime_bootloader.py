@@ -62,6 +62,37 @@ def git_value(*args: str) -> str:
     return str(gate["stdout"])
 
 
+def repository_remote(context: dict[str, Any]) -> tuple[str, str]:
+    """Read working-copy provenance without requiring a personal remote.
+
+    LOCAL_ONLY copies retain the declared source remote and intentionally have
+    no personal origin. Remote configuration is local provenance, not a fresh
+    remote observation or evidence of Authority/Mirror equality.
+    """
+    contract = context.get("personal_working_memory_origin")
+    if not isinstance(contract, dict):
+        raise BootBlock("personal working-memory remote contract is missing")
+    names = [
+        contract.get("personal_working_copy_remote"),
+        contract.get("canonical_source_remote"),
+    ]
+    if (
+        any(not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name)
+            for name in names)
+        or names[0] == names[1]
+    ):
+        raise BootBlock("personal working-memory remote names are invalid")
+    configured = set(git_value("remote").splitlines())
+    for name in names:
+        if name not in configured:
+            continue
+        url = git_value("config", "--get-all", f"remote.{name}.url")
+        if not url or len(url.splitlines()) != 1:
+            raise BootBlock(f"remote {name} requires one non-empty fetch URL")
+        return name, url
+    raise BootBlock("neither declared personal nor source remote is configured")
+
+
 def load_json_object(path: Path, label: str) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -218,9 +249,12 @@ def main() -> int:
             "matrix_rows": len(adaptation_matrix.get("rows", [])),
             "minimum_observations_before_preference": adaptation_policy.get("evaluation_matrix", {}).get("minimum_observations_before_preference"),
         }
-        report["repository"] = git_value("config", "--get", "remote.origin.url")
+        report["repository_remote"], report["repository"] = repository_remote(context)
+        report["repository_binding"] = "LOCAL_GIT_REMOTE_CONFIGURATION"
         report["git_ref"] = git_value("rev-parse", "--abbrev-ref", "HEAD")
         report["git_commit"] = git_value("rev-parse", "HEAD")
+        report["git_tree"] = git_value("rev-parse", "HEAD^{tree}")
+        report["git_worktree_dirty"] = bool(git_value("status", "--porcelain=v1", "--untracked-files=normal"))
 
         report["gates"].append(
             {
@@ -292,8 +326,12 @@ def main() -> int:
     else:
         print(f"AI_RUNTIME_BOOT_STATE={report['state']}")
         print(f"REPOSITORY={report.get('repository', 'unavailable')}")
+        print(f"REPOSITORY_REMOTE={report.get('repository_remote', 'unavailable')}")
+        print(f"REPOSITORY_BINDING={report.get('repository_binding', 'unavailable')}")
         print(f"GIT_REF={report.get('git_ref', 'unavailable')}")
         print(f"GIT_COMMIT={report.get('git_commit', 'unavailable')}")
+        print(f"GIT_TREE={report.get('git_tree', 'unavailable')}")
+        print(f"GIT_WORKTREE_DIRTY={report.get('git_worktree_dirty', 'unavailable')}")
         corpus_report = report.get("knowledge_corpus", {})
         if corpus_report:
             print(f"KNOWLEDGE_CORPUS_ARTIFACTS={corpus_report.get('artifact_count', 0)}")
