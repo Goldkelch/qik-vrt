@@ -25,6 +25,15 @@ class IssueAgentAutofinishWorkflowSyntaxTests(unittest.TestCase):
                 f"workflow shell line {number} escaped run block: {line!r}",
             )
 
+    def test_checkout_does_not_override_scoped_mirror_credentials(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        checkout = """      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+"""
+        self.assertIn(checkout, text)
+
     def test_deindented_run_block_is_valid_bash(self):
         lines = WORKFLOW.read_text(encoding="utf-8").splitlines()
         start = lines.index("        run: |")
