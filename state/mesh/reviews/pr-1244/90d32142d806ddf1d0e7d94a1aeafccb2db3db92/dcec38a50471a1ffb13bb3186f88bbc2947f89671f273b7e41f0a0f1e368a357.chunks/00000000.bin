@@ -1,0 +1,32 @@
+diff --git a/.github/workflows/issue-agent-autofinish.yml b/.github/workflows/issue-agent-autofinish.yml
+index 8e2d152f1ef29901e0c03ac03b8db9bed4f33f05..82308de17b208a8b9a318a927d17ff00d67b52ba 100644
+--- a/.github/workflows/issue-agent-autofinish.yml
++++ b/.github/workflows/issue-agent-autofinish.yml
+@@ -33,6 +33,7 @@ jobs:
+       - uses: actions/checkout@v4
+         with:
+           fetch-depth: 0
++          persist-credentials: false
+ 
+       - name: Resume all eligible issue-agent transactions
+         shell: bash
+diff --git a/tests/test_issue_agent_autofinish_workflow_syntax.py b/tests/test_issue_agent_autofinish_workflow_syntax.py
+index aa123189ebe97dea8afda5ca1edb17d9d5fd235c..28b91c7f1325b8c27fe5dc0afc516272029f8e4e 100644
+--- a/tests/test_issue_agent_autofinish_workflow_syntax.py
++++ b/tests/test_issue_agent_autofinish_workflow_syntax.py
+@@ -25,6 +25,15 @@ class IssueAgentAutofinishWorkflowSyntaxTests(unittest.TestCase):
+                 f"workflow shell line {number} escaped run block: {line!r}",
+             )
+ 
++    def test_checkout_does_not_override_scoped_mirror_credentials(self):
++        text = WORKFLOW.read_text(encoding="utf-8")
++        checkout = """      - uses: actions/checkout@v4
++        with:
++          fetch-depth: 0
++          persist-credentials: false
++"""
++        self.assertIn(checkout, text)
++
+     def test_deindented_run_block_is_valid_bash(self):
+         lines = WORKFLOW.read_text(encoding="utf-8").splitlines()
+         start = lines.index("        run: |")
