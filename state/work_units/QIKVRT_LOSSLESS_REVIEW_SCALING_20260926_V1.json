@@ -1,0 +1,60 @@
+{
+  "schema": "qikvrt_lossless_review_scaling_work_unit_v1",
+  "requested_by": "Ingolf Lohmann",
+  "implementation_by": "Codex AI assistance",
+  "source_instruction": "Implement the scaling and lossless consolidation mode synchronously; continue the remaining authorized repository work through the admitted mode.",
+  "source_subject": {
+    "repository": "Goldkelch/qik-vrt",
+    "pr": 1240,
+    "head": "d9359c96497bb2e8471d45f69cbda26c81981648",
+    "tree": "995eba0a0bc2272ca3268d4c9dbe7dbbbb93e06a",
+    "main": "f4bbc5846bd6fad789e4712dbf8443119499c636"
+  },
+  "failure_evidence": {
+    "run": 36235061071,
+    "job": 108385476032,
+    "selection": "success",
+    "observation": "failure",
+    "observed_error": "HTTP 403 API rate limit exceeded for installation"
+  },
+  "reuse": {
+    "executor": ".github/workflows/qikvrt_requested_review_executor.yml",
+    "decision_core": "tools/qikvrt_requested_review_executor.py",
+    "diff_transport": "EXISTING_ORDERED_CHUNKS",
+    "ledger": "refs/heads/qikvrt/mesh-review-ledger-v1",
+    "new_scheduler": false
+  },
+  "changes": [
+    "Conditional authenticated REST revalidation with retained bytes and append-only observation receipts",
+    "Fixed read/write credential lanes without failure-driven rotation",
+    "Exact read-only counterpart work and synchronous result consolidation",
+    "Fresh source reobservation before ledger and platform effects",
+    "Existing append-only ledger observation checkpoint persistence"
+  ],
+  "acceptance_commands": [
+    "python3 -B -m unittest tests.test_qikvrt_github_observation tests.test_qikvrt_review_mesh_work tests.test_qikvrt_requested_review_executor tests.test_qikvrt_workflow_executor_mesh_contract tests.test_qikvrt_native_account_review tests.test_qikvrt_required_review_gate tests.test_qikvrt_expected_head_promotion tests.test_qikvrt_expected_head_promotion_contract",
+    "make test"
+  ],
+  "required_live_acceptance": [
+    "Candidate admitted and all required tests run on its own HEAD/TREE",
+    "Compatible implementation admitted on both trusted Main branches",
+    "Exact worker dispatch, jobs, artifact and byte-identical consolidation read back",
+    "Post-worker fresh source observation",
+    "Intended native ruleset and delegated signer authority observed",
+    "PR1240 native review, merge and fresh Main readback"
+  ],
+  "continuation": {
+    "all_authorized_work_preserved": true,
+    "chatgpt_tasks_used": false,
+    "safe_independent_work_may_continue": true,
+    "global_adoption_requires_observed_callers": true,
+    "successor_becomes_next_subject_after_binding": true
+  },
+  "completion_claims": {
+    "DEPLOYED": false,
+    "REMOTE_WORKER_EXECUTED": false,
+    "MAIN_MERGED": false,
+    "GLOBAL_ADOPTION": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
