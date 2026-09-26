@@ -43,6 +43,9 @@ volume or an explicit store snapshot to retain this state across VM replacement.
 The guest runtime witness compiles the installed TEMDD program through this
 terminal, executes its Boolean operation in the C90 core, and replays the exact
 stored result. Its receipt binds the image HEAD/TREE and executable digest.
+The complete receipt travels through the existing boot-scoped journal relay
+when the desktop user cannot write the serial device. The receiving boot client
+requires that complete, matching receipt; a success marker alone is rejected.
 This local operation does not claim `EFFECT_ACK_DONE`. The existing Effect-Ack
 endpoint remains at port 8771. Authenticated peer connections use the same
 `qikvrt-next bus-config`, `bus-serve` and `bus-peer` entrypoints documented in

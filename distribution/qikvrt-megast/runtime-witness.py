@@ -37,6 +37,15 @@ def stage(name):
     subprocess.run(["logger", "-t", "qikvrt-runtime", "QIKVRT_RUNTIME_STEP " + name], check=True)
 
 
+def emit_runtime_receipt(receipt):
+    message = "QIKVRT_RUNTIME_RECEIPT " + json.dumps(receipt, sort_keys=True)
+    emit_serial(message)
+    # The desktop user may not open ttyS0. Reuse the boot-scoped journal relay
+    # for the complete receipt as well as the final marker. logger's default
+    # message limit is too small for the source-bound Transputer receipt.
+    subprocess.run(["logger", "--size", "65536", "-t", "qikvrt-runtime", message], check=True)
+
+
 def run(command):
     return subprocess.run(command, capture_output=True, text=True, check=True, timeout=90).stdout
 
@@ -174,7 +183,7 @@ def main():
                "hatari_window_observed": True, "physical_atari_boot": False,
                "effect_ack_done": False}
     Path.home().joinpath(".config/qikvrt/runtime-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
-    emit_serial("QIKVRT_RUNTIME_RECEIPT " + json.dumps(receipt, sort_keys=True))
+    emit_runtime_receipt(receipt)
     # The root-owned boot-scoped journal reader also covers user device denial.
     marker = "QIKVRT_MEGAST_RUNTIME_OK source_sha=" + source
     emit_serial(marker)

@@ -44,8 +44,9 @@ SSH_KEY_PATH = Path("/sys/firmware/qemu_fw_cfg/by_name/opt/qikvrt/ssh-key/raw")
 def transputer_subject(config: dict) -> dict:
     """The image's source identity is independent of a successful operation."""
     subject = {"repository": "Goldkelch/qik-vrt", "subject_id": "transputer",
-               "head": config["source_sha"], "tree": config["source_tree"]}
-    if any(not re.fullmatch(r"[0-9a-f]{40}", subject[key]) for key in ("head", "tree")):
+               "head": config.get("source_sha", ""), "tree": config.get("source_tree", "")}
+    if any(not isinstance(subject[key], str) or not re.fullmatch(r"[0-9a-f]{40}", subject[key])
+           for key in ("head", "tree")):
         raise ValueError("exact Transputer HEAD/TREE required")
     return subject
 
@@ -589,6 +590,39 @@ def runtime_result(serial: str, source_sha: str) -> str | None:
     return result
 
 
+def runtime_receipt(serial: str, manifest: dict) -> dict:
+    """A success marker cannot replace the exact guest's complete result."""
+    records = []
+    prefix = "QIKVRT_RUNTIME_RECEIPT "
+    for line in serial.splitlines(keepends=True):
+        if not line.endswith(("\n", "\r")) or not line.startswith(prefix):
+            continue
+        if len(line.encode()) > 65536:
+            raise ValueError("guest runtime receipt exceeds bound")
+        value = json.loads(line[len(prefix):])
+        if not isinstance(value, dict) or value.get("schema") != "qikvrt_megast_runtime_receipt_v1":
+            raise ValueError("invalid guest runtime receipt")
+        subject = transputer_subject(manifest)
+        transputer = value.get("universal_transputer", {})
+        if (not isinstance(transputer, dict) or value.get("source_sha") != subject["head"]
+                or value.get("source_tree") != subject["tree"]
+                or transputer.get("subject") != subject):
+            raise ValueError("guest runtime receipt HEAD/TREE mismatch")
+        if (value.get("effect_ack_done") is not False
+                or transputer.get("effect_ack_done") is not False
+                or transputer.get("temdd_compiled") is not True
+                or transputer.get("durable_replay") is not True
+                or transputer.get("c90_value") != 4
+                or any(not isinstance(transputer.get(key), str)
+                       or not HEX64.fullmatch(transputer[key])
+                       for key in ("binary_sha256", "program_sha256", "event_digest"))):
+            raise ValueError("guest Transputer execution receipt invalid")
+        records.append(value)
+    if not records or any(record != records[0] for record in records):
+        raise ValueError("missing or conflicting complete guest runtime receipt")
+    return records[0]
+
+
 def snapshot_serial(logfile: Path) -> Path:
     # QEMU can append shutdown messages and an interactive session keeps logging.
     # Bind receipts to immutable observed bytes, not the still-open console log.
@@ -687,7 +721,9 @@ def boot(directory: Path, manifest: dict, *, timeout: int = 900, verify_only: bo
                 witness = snapshot_serial(logfile)
                 if runtime_result(witness.read_text(errors="replace"), manifest["source_sha"]) != "success":
                     raise ValueError("runtime evidence changed before receipt binding")
+                guest_receipt = runtime_receipt(witness.read_text(errors="replace"), manifest)
                 receipt = {"schema": "qikvrt_netboot_receipt_v1", "source_sha": manifest["source_sha"],
+                           "source_tree": manifest["source_tree"], "guest_runtime_receipt": guest_receipt,
                            "manifest_sha256": sha256(directory / "qikvrt-netboot.json"),
                            "serial_evidence_file": witness.name, "serial_sha256": sha256(witness),
                            "screenshot_sha256": sha256(screenshot), "observed_colors": len(colors),
