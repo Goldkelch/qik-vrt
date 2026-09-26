@@ -1,0 +1,90 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT offline audio runtime recovery
+on:
+  push:
+    branches: ['recovery/audio/**']
+    paths:
+      - 'tools/offline-audio-transcription/**'
+      - '.github/workflows/qikvrt_audio_runtime_recovery.yml'
+  pull_request:
+    paths:
+      - 'tools/offline-audio-transcription/**'
+      - '.github/workflows/qikvrt_audio_runtime_recovery.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: qikvrt-audio-recovery-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build-and-cold-restore:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Install host media prerequisites and synthetic-fixture generator
+        run: |
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y --no-install-recommends ffmpeg espeak-ng
+      - name: Package existing repository pipeline, resolved runtime and verified model
+        run: bash tools/offline-audio-transcription/scripts/build-recovery-bundle.sh "$RUNNER_TEMP/audio-recovery-artifact"
+      - name: Two independent cold extractions and network-isolated real inference
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/audio-recovery-artifact/qikvrt-audio-runtime-linux-x64.tar.gz"
+          for trial in 1 2; do
+            root="$RUNNER_TEMP/cold-$trial"
+            mkdir -p "$root" "$root/home"
+            tar -xzf "$archive" -C "$root"
+            "$root/qikvrt-audio-runtime/verify"
+            sudo unshare --net env -i HOME="$root/home" PATH=/usr/bin:/bin \
+              "$root/qikvrt-audio-runtime/transcribe" \
+              --input "$root/qikvrt-audio-runtime/smoke.wav" \
+              --output-dir "$root/output" --language de --threads 2
+            sudo chown -R "$(id -u):$(id -g)" "$root/output"
+          done
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,re
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])
+          def words(s): return re.findall(r'\w+',s.lower())
+          def edit(a,b):
+              row=list(range(len(b)+1))
+              for i,x in enumerate(a,1):
+                  nxt=[i]
+                  for j,y in enumerate(b,1): nxt.append(min(row[j]+1,nxt[-1]+1,row[j-1]+(x!=y)))
+                  row=nxt
+              return row[-1]
+          texts=[]; trials=[]
+          for i in (1,2):
+              p=root/f'cold-{i}'/'output'/'smoke.transcript.txt'
+              s=p.read_text().strip()
+              if not s: raise SystemExit('EMPTY_ASR_RESULT')
+              prov=json.loads(p.with_name('smoke.provenance.json').read_text())
+              bundle=json.loads((root/f'cold-{i}'/'qikvrt-audio-runtime/BUNDLE.json').read_text())
+              if prov['engine']['sherpaOnnxNode'] != bundle['sherpa_onnx_package']: raise SystemExit('ENGINE_IDENTITY_MISMATCH')
+              texts.append(s); trials.append({'trial':i,'text_sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'provenance':prov})
+          reference=(root/'cold-1/qikvrt-audio-runtime/smoke-reference.txt').read_text()
+          wer=edit(words(reference),words(texts[0]))/len(words(reference))
+          if texts[0]!=texts[1]: raise SystemExit('COLD_RESTORE_OUTPUT_MISMATCH')
+          if wer>0.5: raise SystemExit(f'SYNTHETIC_SMOKE_WER_TOO_HIGH: {wer}')
+          receipt={'schema':'qikvrt_audio_cold_restore_receipt_v1','source_head':os.environ['GITHUB_SHA'],
+            'run_id':os.environ['GITHUB_RUN_ID'],'real_inference':True,'network_namespace':'unshare --net',
+            'cold_extractions':2,'equal_text':True,'synthetic_reference_wer':wer,'synthetic_max_wer':0.5,
+            'human_audio_verified':False,'user_transcription_delivered':False,'trials':trials}
+          (root/'audio-recovery-artifact/COLD_RESTORE_RECEIPT.json').write_text(json.dumps(receipt,indent=2)+'\n')
+          PY
+      - name: Retain verified runtime for offline restoration; contains no user audio
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-audio-runtime-recovery-${{ github.sha }}
+          path: ${{ runner.temp }}/audio-recovery-artifact/*
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
