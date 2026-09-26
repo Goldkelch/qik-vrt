@@ -23,6 +23,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      - name: Publication monitor persistence and failure regressions
+        run: python3 -B tests/test_qikvrt_publication_monitor.py
       - name: Full compile, launcher, protocol, handler, security and TCP/IP tests
         id: full_test
         continue-on-error: true
