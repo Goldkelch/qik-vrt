@@ -25,6 +25,17 @@ Terminal=false
 EOF
 chmod +x "$HOME/Desktop/QIK-VRT-Mega-ST.desktop"
 
+cat > "$HOME/Desktop/QIK-VRT-Transputer.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=QIK-VRT Universal Terminal
+Comment=TEMDD editor and retained Transputer history
+Exec=firefox-esr --new-window http://127.0.0.1:8772/AI
+Icon=utilities-terminal
+Terminal=false
+EOF
+chmod +x "$HOME/Desktop/QIK-VRT-Transputer.desktop"
+
 cat > "$HOME/Desktop/Modern-Software.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application
@@ -64,7 +75,21 @@ EOF
 
 # Start the actual client in the graphical session, then observe its window and
 # the locally executed C90/Smalltalk/MC68000 paths before reporting runtime ready.
-firefox-esr --new-window http://127.0.0.1:8771/.well-known/effect-ack \
+# Wait for the existing service's first durable registration before opening the
+# browser. systemd process startup alone does not mean its HTTP listener is ready.
+transputer_ready=0
+for attempt in $(seq 1 30); do
+  if curl --fail --silent --max-time 1 http://127.0.0.1:8772/api/directory >/dev/null; then
+    transputer_ready=1
+    break
+  fi
+  sleep 1
+done
+if [ "$transputer_ready" -ne 1 ]; then
+  printf '%s\n' 'BLOCK: Universal Transputer terminal did not become ready' >&2
+  exit 1
+fi
+firefox-esr --new-window http://127.0.0.1:8772/AI \
   > "$HOME/.config/qikvrt/firefox.log" 2>&1 &
 hatari --machine st --tos /usr/share/qikvrt/emutos/etos256de.img \
   > "$HOME/.config/qikvrt/hatari.log" 2>&1 &

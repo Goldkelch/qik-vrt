@@ -132,6 +132,8 @@ def main():
         if not capabilities:
             raise RuntimeError("empty Effect-Ack capability response")
     stage("effect-ack-http-observed")
+    transputer = boot.transputer_readback(config, ROOT / "boolean_roundtrip.temdd")
+    stage("transputer-temdd-c90-durable-readback")
     c90 = run(["/usr/local/bin/qikvrt-c90-selftest"])
     if "7864387" not in c90:
         raise RuntimeError("complete C90 corpus was not executed")
@@ -163,6 +165,7 @@ def main():
             raise RuntimeError("Smalltalk image did not restore")
         stage("smalltalk-image-restored")
     receipt = {"schema": "qikvrt_megast_runtime_receipt_v1", "source_sha": source,
+               "source_tree": config["source_tree"], "universal_transputer": transputer,
                "graphical_session": "Xfce with mapped Firefox window", "effect_ack_http_readback": True,
                "c90_checks": 7864387, "ip_boot_binary_sha256": hashlib.sha256(image).hexdigest(),
                "received_mc68000_executed": True, "smalltalk_image_restored": True,
