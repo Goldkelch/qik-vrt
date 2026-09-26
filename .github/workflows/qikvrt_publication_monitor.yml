@@ -1,0 +1,92 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT authoritative public-state monitor
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'PUBLICATION_MONITOR.json'
+      - 'policy/PUBLICATION_MONITOR_V1.json'
+      - 'tools/qikvrt_publication_monitor*'
+      - '.github/workflows/qikvrt_publication_monitor.yml'
+  schedule:
+    - cron: '41 * * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'PUBLICATION_MONITOR.json'
+      - 'policy/PUBLICATION_MONITOR_V1.json'
+      - 'tools/qikvrt_publication_monitor*'
+      - 'tests/test_qikvrt_publication_monitor.py'
+      - 'state/publication-monitor/**'
+      - '.github/workflows/qikvrt_publication_monitor.yml'
+permissions:
+  contents: read
+concurrency:
+  group: qikvrt-publication-monitor-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  candidate-probe:
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: source
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: Goldkelch/qik-vrt
+          ref: qikvrt/publication-monitor-state-v1
+          path: observations
+          persist-credentials: false
+      - name: Exact-source tests and public GET probe; no state push
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh tools/qikvrt_publication_monitor_runner.sh probe \
+            "$GITHUB_WORKSPACE/observations" "$RUNNER_TEMP/publication-monitor-audit"
+      - name: Preserve probe and errors without asserting deployment
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-publication-monitor-probe-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/publication-monitor-audit/
+          retention-days: 30
+          if-no-files-found: error
+  persistent-observation:
+    if: github.repository == 'Goldkelch/qik-vrt' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: source
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: Goldkelch/qik-vrt
+          ref: qikvrt/publication-monitor-state-v1
+          path: observations
+          persist-credentials: true
+      - name: Observe, persist data-only successor, fetch and compare exact state
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh tools/qikvrt_publication_monitor_runner.sh persist \
+            "$GITHUB_WORKSPACE/observations" "$RUNNER_TEMP/publication-monitor-audit"
+      - name: Preserve authoritative persistence receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-publication-monitor-readback-${{ github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/publication-monitor-audit/
+          retention-days: 30
+          if-no-files-found: error
