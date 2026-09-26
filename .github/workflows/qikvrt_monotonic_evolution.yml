@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT monotonic evolution contract
+on:
+  push:
+    branches: ['recovery/monotonic-**']
+  pull_request:
+    paths:
+      - 'tools/qikvrt_monotonic_evolution.py'
+      - 'tools/qikvrt_anticipation.py'
+      - 'policy/QIKVRT_MONOTONIC_EVOLUTION_V1.json'
+      - 'tests/test_monotonic_evolution.py'
+      - '.github/workflows/qikvrt_monotonic_evolution.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: qikvrt-monotonic-contract-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  contract-tests-not-live-promotion:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Run negative controls and existing-classifier integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/monotonic-contract"
+          python3 -B -m unittest discover -s tests -p test_monotonic_evolution.py -v 2>&1 | tee "$RUNNER_TEMP/monotonic-contract/tests.log"
+          python3 -B - <<'PY'
+          import hashlib,json,os,pathlib,subprocess,zipfile
+          out=pathlib.Path(os.environ['RUNNER_TEMP'])/'monotonic-contract'
+          receipt={'schema':'qikvrt_monotonic_contract_test_receipt_v1',
+            'head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+            'tree':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip(),
+            'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],
+            'test_log_sha256':hashlib.sha256((out/'tests.log').read_bytes()).hexdigest(),
+            'test_scope':'synthetic negative controls and CLI; not live runtime measurements',
+            'contract_tests_passed':True,'live_successor_admitted':False,
+            'performance_improved':False,'promotion_executed':False,'effect_ack_done':False}
+          (out/'RECEIPT.json').write_text(json.dumps(receipt,indent=2)+'\n')
+          files=['tools/qikvrt_monotonic_evolution.py','tools/qikvrt_anticipation.py',
+                 'tools/qikvrt_seed_common.py','tools/qikvrt_workflow_executor.py',
+                 'tests/test_monotonic_evolution.py','policy/QIKVRT_MONOTONIC_EVOLUTION_V1.json',
+                 '.github/workflows/qikvrt_monotonic_evolution.yml']
+          with zipfile.ZipFile(out/'source-and-tests.zip','w',zipfile.ZIP_DEFLATED) as z:
+              for f in files: z.write(f)
+          PY
+      - name: Retain exact-source contract-test evidence only
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-monotonic-contract-${{ github.sha }}
+          path: ${{ runner.temp }}/monotonic-contract/*
+          if-no-files-found: error
+          retention-days: 90
