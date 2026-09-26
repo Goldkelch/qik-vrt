@@ -21,6 +21,7 @@ on:
 permissions:
   contents: write
   actions: read
+  pull-requests: write
 
 concurrency:
   group: qikvrt-universal-terminal-${{ github.repository }}
@@ -52,7 +53,8 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Fail closed unless observed SHA is current Trusted Main
+      - name: Bind current Trusted Main
+        id: current
         env:
           SUBJECT_SHA: ${{ steps.subject.outputs.sha }}
         shell: bash
@@ -61,11 +63,14 @@ jobs:
           git fetch origin main
           main_sha="$(git rev-parse origin/main)"
           if [ "$SUBJECT_SHA" != "$main_sha" ]; then
+            echo "current=false" >> "$GITHUB_OUTPUT"
             echo "HOLD_UNVERIFIED stale subject=$SUBJECT_SHA current_main=$main_sha"
-            exit 0
+          else
+            echo "current=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Run Lean/Lake proof build when configured
+        if: steps.current.outputs.current == 'true'
         id: lake
         shell: bash
         run: |
@@ -80,6 +85,7 @@ jobs:
           fi
 
       - name: Materialize live events, proof index and recursive terminal graph
+        if: steps.current.outputs.current == 'true'
         env:
           QIKVRT_EXACT_SHA: ${{ steps.subject.outputs.sha }}
           QIKVRT_SOURCE_EVENT: ${{ steps.subject.outputs.source }}
@@ -87,6 +93,7 @@ jobs:
         run: python3 tools/qikvrt_universal_terminal_materialize.py
 
       - name: Bind Lean/Lake execution receipt to exact subject
+        if: steps.current.outputs.current == 'true'
         env:
           SUBJECT_SHA: ${{ steps.subject.outputs.sha }}
           LAKE_STATE: ${{ steps.lake.outputs.state }}
@@ -113,7 +120,11 @@ jobs:
           p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+'\n')
           PY
 
-      - name: Commit only productive materialized delta
+      - name: Persist productive delta through protected-branch PR
+        if: steps.current.outputs.current == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUBJECT_SHA: ${{ steps.subject.outputs.sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -125,4 +136,13 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'ci: materialize universal terminal live proof state'
-          git push origin HEAD:main
+          branch="automation/universal-terminal-${SUBJECT_SHA:0:12}"
+          git push origin "HEAD:refs/heads/$branch"
+          existing="$(gh pr list --state open --head "$branch" --base main --json number --jq '.[0].number // empty')"
+          if [ -z "$existing" ]; then
+            gh pr create --base main --head "$branch" \
+              --title "ci: materialize universal terminal for ${SUBJECT_SHA:0:12}" \
+              --body "Repository-native successor generated from exact Trusted Main \`$SUBJECT_SHA\`. This carrier replaces the prohibited direct push to protected Main. PREDECESSOR_EVIDENCE_TRANSFER=false; generated state requires its own checks/review and fresh Main/effect readback."
+          else
+            echo "PR_ALREADY_OPEN=$existing"
+          fi
