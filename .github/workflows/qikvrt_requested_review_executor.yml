@@ -104,6 +104,12 @@ jobs:
             echo 'active=false' >> "$GITHUB_OUTPUT"
             echo 'BOOTSTRAP_NOOP: executor is not yet promoted to trusted main.'
           fi
+          if test -f tools/qikvrt_github_observation.py && test -f tools/qikvrt_review_mesh_work.py; then
+            echo 'scaling=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'scaling=false' >> "$GITHUB_OUTPUT"
+            echo 'LOCAL_RETAINED_TRUSTED_MAIN_PREDECESSOR: existing review remains active until scaling code is promoted.'
+          fi
 
       - name: Set up Python
         if: steps.active.outputs.active == 'true'
@@ -272,7 +278,7 @@ jobs:
           PY
 
       - name: Bind lossless counterpart work
-        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE'
+        if: steps.active.outputs.active == 'true' && steps.active.outputs.scaling == 'true' && steps.select.outputs.state == 'CANDIDATE'
         id: mesh-work
         run: |
           set -euo pipefail
@@ -333,7 +339,7 @@ jobs:
           class LedgerHold(RuntimeError): pass
 
           def gh(method,path,payload=None,allow_404=False):
-              if method == 'GET' and payload is None:
+              if method == 'GET' and payload is None and pathlib.Path('tools/qikvrt_github_observation.py').is_file():
                   from tools.qikvrt_github_observation import environment_client, ObservationError
                   try:
                       return environment_client().get(path)[0]

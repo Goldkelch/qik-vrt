@@ -32,7 +32,7 @@
     "Existing append-only ledger observation checkpoint persistence"
   ],
   "acceptance_commands": [
-    "python3 -B -m unittest tests.test_qikvrt_github_observation tests.test_qikvrt_review_mesh_work tests.test_qikvrt_requested_review_executor tests.test_qikvrt_workflow_executor_mesh_contract tests.test_qikvrt_native_account_review tests.test_qikvrt_required_review_gate tests.test_qikvrt_expected_head_promotion tests.test_qikvrt_expected_head_promotion_contract",
+    "python3 -B -m unittest tests.test_qikvrt_mesh_worker_installation tests.test_qikvrt_github_observation tests.test_qikvrt_review_mesh_work tests.test_qikvrt_requested_review_executor tests.test_qikvrt_workflow_executor_mesh_contract tests.test_qikvrt_native_account_review tests.test_qikvrt_required_review_gate tests.test_qikvrt_expected_head_promotion tests.test_qikvrt_expected_head_promotion_contract",
     "make test"
   ],
   "required_live_acceptance": [
@@ -56,5 +56,14 @@
     "MAIN_MERGED": false,
     "GLOBAL_ADOPTION": false,
     "EFFECT_ACK_DONE": false
+  },
+  "implementation_repair": {
+    "evidence_run": 36237487868,
+    "evidence_job": 108391809898,
+    "failure": "New workflow imported observation module before its trusted-Main promotion",
+    "repair": "Retain legacy trusted-Main reads until module presence is established before any API request; separately gate new work packaging",
+    "source_run_binding": "Bind PR-triggered run head to exact work subject while independently verifying current source Main; repository and run ID are authenticated",
+    "targeted_local_tests": 190,
+    "live_acceptance": "Fresh successor CI required; predecessor results are historical"
   }
 }

@@ -287,10 +287,22 @@ def verify_source(bundle, expected_digest, repository):
     main = api.get(f"repos/{source}/commits/main")[0]
     require(main.get("sha") == work["source_main_sha"], "SOURCE_TRUSTED_MAIN_DRIFT")
     run = api.get(f"repos/{source}/actions/runs/{source_run}")[0]
+    event = run.get("event")
+    if event in {"pull_request_target", "pull_request_review"}:
+        # GitHub's run metadata names the PR head even though this job checks
+        # out trusted Main. Bind that event to its exact PR subject separately.
+        subject_bound = run.get("head_sha") == work.get("head_sha") and any(
+            pr.get("number") == work.get("pr_number")
+            and (pr.get("base") or {}).get("ref") == "main"
+            for pr in run.get("pull_requests", []))
+    else:
+        subject_bound = run.get("head_branch") == "main"
     require(run.get("path") == f".github/workflows/{WORKFLOW}"
-            and run.get("head_branch") == "main"
+            and str(run.get("id")) == source_run
+            and (run.get("repository") or {}).get("full_name") == source
+            and subject_bound
             and run.get("run_attempt") == int(work["source_run_attempt"])
-            and run.get("event") in {"pull_request_target", "pull_request_review", "issue_comment", "workflow_run", "workflow_dispatch"},
+            and event in {"pull_request_target", "pull_request_review", "issue_comment", "workflow_run", "workflow_dispatch"},
             "SOURCE_TRUSTED_RUN_MISMATCH")
     return {"repository": source, "sha": work["source_main_sha"],
             "worker_head": git("rev-parse", "HEAD"), "worker_tree": git("rev-parse", "HEAD^{tree}")}
