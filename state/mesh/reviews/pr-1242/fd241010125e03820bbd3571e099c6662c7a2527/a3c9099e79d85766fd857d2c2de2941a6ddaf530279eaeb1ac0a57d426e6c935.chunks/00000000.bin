@@ -1,0 +1,2090 @@
+diff --git a/.github/workflows/qikvrt_ci.yml b/.github/workflows/qikvrt_ci.yml
+index 652929632e179fb443279d90b43c24af3e866aa5..7f2b5bcc30629a880712c98a67f550eb3b39462c 100644
+--- a/.github/workflows/qikvrt_ci.yml
++++ b/.github/workflows/qikvrt_ci.yml
+@@ -23,6 +23,8 @@ jobs:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+         with:
+           fetch-depth: 0
++      - name: Publication monitor persistence and failure regressions
++        run: python3 -B tests/test_qikvrt_publication_monitor.py
+       - name: Full compile, launcher, protocol, handler, security and TCP/IP tests
+         id: full_test
+         continue-on-error: true
+diff --git a/.github/workflows/qikvrt_publication_monitor.yml b/.github/workflows/qikvrt_publication_monitor.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..f5647df955f53764df79ba6b17f0ad77b6c1a9d5
+--- /dev/null
++++ b/.github/workflows/qikvrt_publication_monitor.yml
+@@ -0,0 +1,85 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++name: QIKVRT authoritative public-state monitor
++on:
++  schedule:
++    - cron: '41 * * * *'
++  workflow_dispatch:
++  pull_request:
++    paths:
++      - 'PUBLICATION_MONITOR.json'
++      - 'policy/PUBLICATION_MONITOR_V1.json'
++      - 'tools/qikvrt_publication_monitor*'
++      - 'tests/test_qikvrt_publication_monitor.py'
++      - 'state/publication-monitor/**'
++      - '.github/workflows/qikvrt_publication_monitor.yml'
++permissions:
++  contents: read
++concurrency:
++  group: qikvrt-publication-monitor-${{ github.repository }}
++  cancel-in-progress: false
++jobs:
++  candidate-probe:
++    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')
++    runs-on: ubuntu-24.04
++    timeout-minutes: 15
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
++        with:
++          ref: ${{ github.event.pull_request.head.sha || github.sha }}
++          path: source
++          persist-credentials: false
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
++        with:
++          repository: Goldkelch/qik-vrt
++          ref: qikvrt/publication-monitor-state-v1
++          path: observations
++          persist-credentials: false
++      - name: Exact-source tests and public GET probe; no state push
++        working-directory: source
++        shell: bash
++        run: |
++          set -euo pipefail
++          sh tools/qikvrt_publication_monitor_runner.sh probe \
++            "$GITHUB_WORKSPACE/observations" "$RUNNER_TEMP/publication-monitor-audit"
++      - name: Preserve probe and errors without asserting deployment
++        if: always()
++        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
++        with:
++          name: qikvrt-publication-monitor-probe-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}
++          path: ${{ runner.temp }}/publication-monitor-audit/
++          retention-days: 30
++          if-no-files-found: error
++  persistent-observation:
++    if: github.repository == 'Goldkelch/qik-vrt' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
++    permissions:
++      contents: write
++    runs-on: ubuntu-24.04
++    timeout-minutes: 15
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
++        with:
++          ref: ${{ github.sha }}
++          path: source
++          persist-credentials: false
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
++        with:
++          repository: Goldkelch/qik-vrt
++          ref: qikvrt/publication-monitor-state-v1
++          path: observations
++          persist-credentials: true
++      - name: Observe, persist data-only successor, fetch and compare exact state
++        working-directory: source
++        shell: bash
++        run: |
++          set -euo pipefail
++          sh tools/qikvrt_publication_monitor_runner.sh persist \
++            "$GITHUB_WORKSPACE/observations" "$RUNNER_TEMP/publication-monitor-audit"
++      - name: Preserve authoritative persistence receipt
++        if: always()
++        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
++        with:
++          name: qikvrt-publication-monitor-readback-${{ github.sha }}-${{ github.run_id }}
++          path: ${{ runner.temp }}/publication-monitor-audit/
++          retention-days: 30
++          if-no-files-found: error
+diff --git a/PUBLICATION_MONITOR.json b/PUBLICATION_MONITOR.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..01214daff6bba817169544734c13a296b44d5119
+--- /dev/null
++++ b/PUBLICATION_MONITOR.json
+@@ -0,0 +1,15 @@
++{
++  "bootstrap": "Only explicit one-time initialize command; existing state must never be replaced by genesis.",
++  "history_path": "monitor/history",
++  "implementation": "tools/qikvrt_publication_monitor.py",
++  "migration": "Historical ACK is archived verbatim but is NOT a verified platform baseline.",
++  "missing_state_disposition": "BLOCK_STATE_UNAVAILABLE_NEVER_REINITIALIZE",
++  "monitor_id": "qikvrt-publication-discovery-v1",
++  "outbox_path": "monitor/state.json#/outbox",
++  "policy_path": "policy/PUBLICATION_MONITOR_V1.json",
++  "repository": "Goldkelch/qik-vrt",
++  "schema": "qikvrt.publication-monitor.locator.v1",
++  "state_path": "monitor/state.json",
++  "state_ref": "qikvrt/publication-monitor-state-v1",
++  "workflow": ".github/workflows/qikvrt_publication_monitor.yml"
++}
+diff --git a/docs/operations/PUBLICATION_MONITOR.md b/docs/operations/PUBLICATION_MONITOR.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..8fe34b24b10afae84357af2e6cb712190f905046
+--- /dev/null
++++ b/docs/operations/PUBLICATION_MONITOR.md
+@@ -0,0 +1,130 @@
++<!-- SPDX-License-Identifier: CC-BY-NC-ND-4.0 -->
++<!-- Copyright 2026 Ingolf Lohmann. -->
++# Kanonischer Publikations- und Paketbeobachtungsstand
++
++Der stabile Einstieg ist `/PUBLICATION_MONITOR.json` in `Goldkelch/qik-vrt`.
++Er benennt die geprüfte Implementierung, Policy und den einzigen Datenzweig
++`refs/heads/qikvrt/publication-monitor-state-v1`. Die Datei heißt dort immer
++`monitor/state.json`. Jeder Consumer löst zuerst den Ref zu einem exakten
++Commit/TREE auf und liest die Datei auf genau diesem Commit. Chat-Dateien,
++Suchtreffer und die Zustimmung zu einer Meldung ersetzen diesen Schritt nicht.
++Fehlender oder beschädigter Zustand ist BLOCK, niemals eine neue leere Baseline.
++
++Der Datenzweig enthält keine ausführbaren Workflows. Er ist ein dauerhafter
++Ledger, kein zu mergender Produktzweig. Seine Snapshots stehen append-only unter
++`monitor/history/<generation>-<SHA256>.json`; öffentliche HTTP-Antwortbytes
++stehen unter `monitor/responses/<SHA256>.body`. Code wird über einen regulären
++PR geprüft und nach Main integriert. Ein PR-Probe läuft nur lesend; erst die
++Main-Ausführung des Writers darf Datenzustand committen. Die Existenz dieser
++Dateien allein ist keine Main-Integration oder laufende Überwachung.
++
++## Wiederverwendung und verlorene Ausgangslage
++
++`tools/qikvrt_zenodo_corpus_proof.py` bleibt unverändert. Dieses vorhandene
++Werkzeug untersucht tokengebundene Depositionen und lädt Dateien erneut; es
++ersetzt keinen vierplattformigen, credentialfreien Discovery-Ledger. Die
++native Codesuche auf Main `f4bbc5846bd6fad789e4712dbf8443119499c636` lieferte
++für `crates.io` nur `next/Cargo.lock`. Der neue einzelne Collector verwendet
++Git-Persistenz und die bestehenden gepinnten Checkout/Artifact-Actions sowie
++die bestehende Integritätsmaterialisierung. Die Regressionen sind zusätzlich
++in der bestehenden erforderlichen CI registriert. Keine ChatGPT-Aufgabe wird
++angelegt oder verändert.
++
++Der frühere lokale ACK liegt byteidentisch unter
++`state/publication-monitor/migration/ACK_515570598dad2437.json`.
++Sein SHA-256 lautet
++`515570598dad24378f2f875dd281370b8a9b4334919b060c69bc9d03bf36b6b0`.
++Die 37 darin berichteten Dateichecksummen bleiben historische Berichtsangaben,
++kein neuer öffentlicher Downloadnachweis. Die verlorene vollständige alte
++Zenodo/arXiv/Wikimedia-Baseline wird nicht erfunden. Bekannte bereits gemeldete
++Record-IDs bleiben als Wiederauffindungsziele erhalten; die erste vollständige
++öffentliche Recovery-Inventur wird still etabliert und nicht als neue
++Publikationswelle gemeldet. Diese Migration beansprucht keine rückwirkend
++vollständige Wiederherstellung der verlorenen Beobachtungshistorie.
++
++Die vom Nutzer ausdrücklich konsumierte crates.io-Baseline vom
++`2026-09-12T08:35:40.709Z` bleibt exakt erhalten: `qik-vrt`, `qikvrt`, `temdd`
++und `cloud-transputer` jeweils null Treffer. Ihre Klasse ist
++`CONSUMED_USER_SUPPLIED_BASELINE`. Ein später tatsächlich neu gefundener
++passender Crate oder eine Version ist deshalb ein neuer Subject.
++
++## Öffentliche Reobservation
++
++Alle vier Plattformadapter erlauben nur HTTPS-GETs an explizite offizielle
++Endpoints. Es gibt keine Tokenparameter, Cookies, automatischen Redirects,
++Publikations-, Edit-, Mail- oder Owner-Schreibpfade. JSON-Duplikate, NaN,
++XML-Entities, unvollständige Pagination und Identitätsabweichungen werden
++abgelehnt. Ressourcen und Laufzeit sind begrenzt; arXiv wird gesondert gepaced.
++
++Zenodo bindet Record, Concept und DOI nur an gelieferte Felder, niemals an
++arithmetische Vermutungen. Metadaten, Zugriff, Lizenz, Versionsbeziehungen,
++Dateinamen, Größen und Publisher-Checksummen sind normalisiert. Diese
++Checksummen sind **Publisher-Metadaten, kein hier ausgeführter Dateidownload**.
++
++Bei crates.io bleiben Crate-Metadaten und jede Version getrennte Subjects.
++Owners, Projektlinks, aktuelle/maximale Version, Versions-ID, Yank-Status und
++Zeitstempel werden erfasst; Downloadzähler sind keine Identitätsänderung.
++Versionen werden gegen die vollständige ID-Liste geprüft. Neuere Versionen
++validieren weder frühere Versionen noch umgekehrt. Ein Owner-Endpoint-Fehler
++kann nicht als Verschwinden des Crates gelten. Die Suchrelevanz beweist keine
++Urheberschaft oder offizielle Projektzugehörigkeit.
++
++arXiv bindet die explizite Versions-ID und liest bereits bekannte alte Versionen
++separat nach. Eine Suchauslassung ist keine Löschung. MediaWiki bindet positive
++Ergebnisse an Page-ID und Revisions-ID; nur eine gültige API-Antwort mit
++`missing=true` belegt das Fehlen eines Lemmas. Der Wiki-Scope umfasst die
++benannten englischen/deutschen Wikipedia-Titel und Wikidata-Suchen in diesen
++Sprachen, nicht alle Wikimedia-Projekte.
++
++Timeout, DNS-Fehler, unvollständige Antwort, 403, 429, 5xx oder Schemafehler
++ändern keinen zuletzt verifizierten Subject. Sie aktualisieren die getrennte
++Betriebsdiagnose. `Retry-After` wird gespeichert und vor neuem Abruf beachtet.
++Eine Abrufbarkeitsregression wegen 404/410 erfordert zwei getrennte Antworten
++des exakten bisherigen Record-/Crate-Endpoints mit mindestens 60 Sekunden
++Abstand und erfolgreiche vollständige Plattforminventur. Der letzte Metadaten-
++Stand bleibt auch dann erhalten. Eine Löschungsursache wird nicht behauptet.
++
++## Persistenz, Wiederanlauf und Meldezustellung
++
++`validate` prüft Zustandsschema, Policy-Hash, aktuelle und unmittelbare vorige
++Snapshotbytes, alle im Zustand referenzierten HTTP-Antwortbytes und die
++Outbox-Fingerprints. Ein Hash im selben beschreibbaren Speicher ist kein
++unabhängiger Authentizitätsbeweis; der extern zurückgelesene Git-Commit ist
++die zusätzliche Bindung. POSIX-Schreibsperre, atomarer Ersatz mit fsync und
++Vergleich des erwarteten Vorgängers verhindern konkurrierende lokale Updates.
++
++Der Main-Runner führt innerhalb desselben Writers aus: lesen, materialisieren,
++Datencommit, normaler Non-Force-Push, erneutes Fetch und bytegenauer Vergleich
++der Zustandsdatei. Auch nach uneindeutigem Push wird frisch nachgelesen. Ein
++konkurrierender Schreiber oder Main-Drift führt zu BLOCK, nicht Force-Push.
++Nur `REPOSITORY_READBACK.json` mit `repository_persistence_readback=true`
++bestätigt diesen Repository-Effekt. `LOCAL_PREPARATION.json` tut das nicht.
++Der nächste Lauf beginnt mit dem tatsächlich gespeicherten Nachfolger.
++
++`outbox` enthält nur materielle Alt→Neu-Übergänge. Die Fingerprints binden
++Subject, dessen Änderungsnummer und beide Zustände. Unverändertes Replay
++produziert nichts Neues; eine echte Folge A→B→A→B bleibt erkennbar. Der
++Collector selbst sendet keine Nachrichten. Ein autorisierter Consumer liest
++zuerst die persistierte Outbox, stellt die Nachricht zu und bestätigt danach
++nur deren exakte Event-ID mit `acknowledge --event-id`. Auch diese Bestätigung
++muss gespeichert und nachgelesen werden. Ohne Zustellreceipt bleibt das
++Ereignis offen; Exactly-once-Zustellung über unabhängige Dienste wird nicht
++behauptet.
++
++Die manuelle Initialisierung ist einmalig und weigert sich, vorhandenen
++Zustand oder Historie zu ersetzen. Reguläre Runs initialisieren niemals selbst:
++
++```sh
++python3 -B tools/qikvrt_publication_monitor.py validate --store /absolute/data-checkout
++python3 -B tests/test_qikvrt_publication_monitor.py
++sh tools/qikvrt_publication_monitor_runner.sh probe /absolute/data-checkout /absolute/new-audit-dir
++```
++
++Die 41 Regressionstests verwenden synthetische Fixtures. Sie prüfen Verlust,
++Neustart, Sperre, beschädigte Antwortbytes, HTTP-Fehler, Versionstrennung,
++Deduplication und Negativfälle, nicht die heutige Verfügbarkeit einer Plattform.
++Ein gesonderter nativer Run liefert die frischen HTTP-Antworten. Externe
++Netzausfälle werden nicht unmöglich; der überprüfbare Anspruch ist, sie nicht
++mehr mit Zustandsverlust, leerer Inventur, Neuveröffentlichung oder erfolgreicher
++Reobservation zu verwechseln. Kein Ergebnis impliziert wissenschaftliche
++Bestätigung, Repository-Approval oder allgemeines `EFFECT_ACK_DONE`.
+diff --git a/policy/PUBLICATION_MONITOR_V1.json b/policy/PUBLICATION_MONITOR_V1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..71c86283719ace7d7c5d1b85443a2915a5e14570
+--- /dev/null
++++ b/policy/PUBLICATION_MONITOR_V1.json
+@@ -0,0 +1,100 @@
++{
++  "boundaries": [
++    "PUBLIC_READBACK_IS_NOT_BYTE_DOWNLOAD_PROOF",
++    "DISCOVERY_IS_NOT_SCIENTIFIC_VALIDATION",
++    "NO_PREDECESSOR_VERSION_EVIDENCE_TRANSFER",
++    "NO_EXTERNAL_PUBLICATION_MUTATIONS",
++    "NO_CHATGPT_SCHEDULED_TASKS",
++    "NO_ALERT_BEFORE_PERSISTENCE_READBACK",
++    "MISSING_STATE_IS_BLOCK_NOT_EMPTY_BASELINE",
++    "READ_FAILURE_IS_NOT_ABSENCE"
++  ],
++  "external_methods": [
++    "GET"
++  ],
++  "genesis": {
++    "cratesio": {
++      "canonical": {
++        "queries": {
++          "cloud-transputer": 0,
++          "qik-vrt": 0,
++          "qikvrt": 0,
++          "temdd": 0
++        },
++        "relevant_crates": []
++      },
++      "evidence_class": "CONSUMED_USER_SUPPLIED_BASELINE",
++      "observed_at": "2026-09-12T08:35:40.709Z"
++    },
++    "other_platforms": "RECOVERY_REQUIRED_FIRST_COMPLETE_INVENTORY_SILENT_NO_OLD_BASELINE_INVENTED"
++  },
++  "limits": {
++    "arxiv_pacing_seconds": 3.1,
++    "deadline_seconds": 420,
++    "json_bytes": 16777216,
++    "pacing_seconds": 1.0,
++    "pages": 30,
++    "requests": 300,
++    "timeout_seconds": 20
++  },
++  "migration": {
++    "complete_prior_inventory_recovered": false,
++    "historical_ack_path": "state/publication-monitor/migration/ACK_515570598dad2437.json",
++    "historical_ack_sha256": "515570598dad24378f2f875dd281370b8a9b4334919b060c69bc9d03bf36b6b0",
++    "historical_checksum_shape_issues": [],
++    "historical_reports_are_public_readback": false,
++    "known_already_reported_records": [
++      "22813431",
++      "22840633",
++      "22845516",
++      "22847245",
++      "22907018",
++      "22941556",
++      "22955727"
++    ],
++    "prior_claimed_inventory_count": 30
++  },
++  "monitor_id": "qikvrt-publication-discovery-v1",
++  "queries": {
++    "arxiv": [
++      "all:\"QIK-VRT\"",
++      "all:TEMDD",
++      "all:\"Cloud Transputer\""
++    ],
++    "cratesio": [
++      "qik-vrt",
++      "qikvrt",
++      "temdd",
++      "cloud-transputer"
++    ],
++    "wikimedia": [
++      "QIK-VRT",
++      "TEMDD",
++      "Cloud Transputer"
++    ],
++    "zenodo": [
++      "creators.name:\"Lohmann, Ingolf\""
++    ]
++  },
++  "repository": "Goldkelch/qik-vrt",
++  "schema": "qikvrt.publication-monitor.policy.v1",
++  "state_path": "monitor/state.json",
++  "state_ref": "qikvrt/publication-monitor-state-v1",
++  "wiki_sites": [
++    "en.wikipedia.org",
++    "de.wikipedia.org"
++  ],
++  "wikidata_search_languages": [
++    "en",
++    "de"
++  ],
++  "zenodo_known_ids": [
++    "22813431",
++    "22840633",
++    "22845516",
++    "22847245",
++    "22907018",
++    "22941556",
++    "22955727"
++  ]
++}
+diff --git a/state/publication-monitor/migration/ACK_515570598dad2437.json b/state/publication-monitor/migration/ACK_515570598dad2437.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..eecee3b808933518d683427af566322931ba1114
+--- /dev/null
++++ b/state/publication-monitor/migration/ACK_515570598dad2437.json
+@@ -0,0 +1,381 @@
++{
++  "canonical_baseline": {
++    "existing_monitor_state_file_located": false,
++    "existing_monitor_state_updated": false,
++    "incomplete_prior_report_promoted_to_verified_baseline": false,
++    "pending": "Fresh official metadata including valid complete file checksums and access to the actual existing baseline store are needed before a canonical monitor update can be claimed.",
++    "replace_last_verified_state": false
++  },
++  "checksum_validation_issues": [],
++  "consumed_crates_io_baseline_as_user_supplied": {
++    "canonical_state": {
++      "queries": {
++        "cloud-transputer": 0,
++        "qik-vrt": 0,
++        "qikvrt": 0,
++        "temdd": 0
++      },
++      "relevant_crates": []
++    },
++    "observation_time": "2026-09-12T08:35:40.709Z",
++    "reobserved_this_turn": false,
++    "unchanged_by_this_action": true
++  },
++  "current_public_read_attempts": [
++    {
++      "method": "GET",
++      "platform_http_status": null,
++      "platform_state_transition_established": false,
++      "result": "TOOL_READ_FAILED_URL_NOT_ACCESSIBLE",
++      "tool": "web.open",
++      "url": "https://zenodo.org/api/records/22907018"
++    },
++    {
++      "method": "GET",
++      "platform_http_status": null,
++      "platform_state_transition_established": false,
++      "result": "TOOL_READ_FAILED_URL_NOT_ACCESSIBLE",
++      "tool": "web.open",
++      "url": "https://zenodo.org/api/records/22941556"
++    },
++    {
++      "method": "GET",
++      "platform_http_status": null,
++      "platform_state_transition_established": false,
++      "result": "TOOL_READ_FAILED_URL_NOT_ACCESSIBLE",
++      "tool": "web.open",
++      "url": "https://zenodo.org/api/records/22955727"
++    },
++    {
++      "method": "GET",
++      "platform_http_status": null,
++      "platform_state_transition_established": false,
++      "result": "TOOL_READ_FAILED_URL_NOT_ACCESSIBLE",
++      "tool": "web.open",
++      "url": "https://zenodo.org/records/22907018"
++    },
++    {
++      "method": "GET",
++      "platform_http_status": null,
++      "platform_state_transition_established": false,
++      "result": "TOOL_READ_FAILED_URL_NOT_ACCESSIBLE",
++      "tool": "web.open",
++      "url": "https://zenodo.org/records/22941556"
++    },
++    {
++      "method": "GET",
++      "platform_http_status": null,
++      "platform_state_transition_established": false,
++      "result": "TOOL_READ_FAILED_URL_NOT_ACCESSIBLE",
++      "tool": "web.open",
++      "url": "https://zenodo.org/records/22955727"
++    }
++  ],
++  "deduplication_boundary": "Acknowledgment applies only to these already reported subject/version notices. A genuinely different version, metadata state, accessibility state or corrected evidence is not suppressed. Historical report payload hashes are not public file hashes.",
++  "external_mutations_performed": [],
++  "general_effect_ack_done_claimed": false,
++  "new_platform_transition_alert": false,
++  "other_existing_platform_baselines": "PRESERVE_UNCHANGED_NOT_REPLACED_BY_THIS_ARTIFACT",
++  "previous_report_claims": {
++    "zenodo_author_inventory_new": 30,
++    "zenodo_author_inventory_old": 27
++  },
++  "recorded_at_utc": "2026-09-26T10:10:59.489904Z",
++  "records_as_previously_reported": [
++    {
++      "access": "Open",
++      "concept_doi": "10.5281/zenodo.22907017",
++      "concept_id": "22907017",
++      "created": "2026-09-23T00:22:23.302804Z",
++      "creator": "Lohmann, Ingolf",
++      "doi": "10.5281/zenodo.22907018",
++      "evidence_class": "PRIOR_ASSISTANT_REPORT_NOT_FRESH_PUBLIC_READBACK",
++      "files": [
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "PROVENANCE.json",
++          "reported_checksum": "md5:075ce37999a9983a5fc9ed9f83597ae9"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "QIK_Publikationsfassung_revidiert.docx",
++          "reported_checksum": "md5:16debf82dddd3b86a20417414c83b2ae"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "QIK_Wissenschaftlicher_Revisionsbericht.docx",
++          "reported_checksum": "md5:ee3b9d864f6ee6b45bc27644903234f6"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "README.md",
++          "reported_checksum": "md5:4632f2095d970f948502a4cd0fea65b6"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "SHA256SUMS",
++          "reported_checksum": "md5:b95f6ed4ccb4b71453ecb0bdc487ddfb"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "ZENODO_EFFECT_METADATA.json",
++          "reported_checksum": "md5:e9c8bdd56a469f70d9f028fd36e50e66"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "ZENODO_METADATA.json",
++          "reported_checksum": "md5:bc46cd3fbd2f880091398504b6130d89"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "ZENODO_PUBLISH_REQUEST.json",
++          "reported_checksum": "md5:00254b9e3d0bfab1e9362bc581686f3e"
++        }
++      ],
++      "language": "Deutsch",
++      "license_label": "Other (Open)",
++      "notification_disposition": "ALREADY_REPORTED_AND_ACKNOWLEDGED",
++      "platform": "zenodo",
++      "previous_report_payload_sha256": "2727b79ac8e37fbdf812ffd6bba20131f07b73c8e52b177adfb66d94bd57c973",
++      "public_url": "https://zenodo.org/records/22907018",
++      "record_id": "22907018",
++      "resource_type": "Working paper",
++      "title": "Quantität–Information–Kausalität (QIK): Ein operationales Rahmenmodell für Ereignisstruktur, Kausalordnung und emergente Raumzeit",
++      "updated": "2026-09-23T00:22:23.882922Z",
++      "version": "2026-09-23-qik-scientific-revision"
++    },
++    {
++      "access": "Open",
++      "concept_doi": null,
++      "concept_id": null,
++      "concept_id_disposition": "UNKNOWN_IN_PREVIOUS_REPORT_DO_NOT_INFER",
++      "created": "2026-09-24T14:50:12.028339Z",
++      "creator": "Lohmann, Ingolf",
++      "doi": "10.5281/zenodo.22941556",
++      "evidence_class": "PRIOR_ASSISTANT_REPORT_NOT_FRESH_PUBLIC_READBACK",
++      "files": [
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "CLAIM_MATRIX.json",
++          "reported_checksum": "md5:1331d824bdef8dc0821ba6c56fd82789"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "PROOF_CLOSURE_CONTRACT.json",
++          "reported_checksum": "md5:cf9e3ecc7c2092184be1365e80fddba1"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "PROOF_CLOSURE_DE.md",
++          "reported_checksum": "md5:32f16952e7b2a2f3e4e69f8b11ee36b2"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "PROOF_CLOSURE_EN.md",
++          "reported_checksum": "md5:f8cbcb758785faf9a0c512b35a9bc5b1"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "README.md",
++          "reported_checksum": "md5:f58c3d657cd70ef141c4cdc105bdc4cc"
++        }
++      ],
++      "language": "Englisch",
++      "license_label": "CC BY-NC-ND 4.0",
++      "notification_disposition": "ALREADY_REPORTED_AND_ACKNOWLEDGED",
++      "platform": "zenodo",
++      "previous_report_payload_sha256": "2660ef2a7f4a514403313dc2a48f44ca7b44912c0e5d7460e546a2be781b70c2",
++      "public_url": "https://zenodo.org/records/22941556",
++      "record_id": "22941556",
++      "resource_type": "Working paper",
++      "title": "Proof Closure: The Terminal Meta-Condition for an Evidence-Bound Subject",
++      "updated": "2026-09-24T14:50:12.381551Z",
++      "version": "1.0.0"
++    },
++    {
++      "access": "Open",
++      "concept_doi": "10.5281/zenodo.22955726",
++      "concept_id": "22955726",
++      "created": "2026-09-25T09:29:48.588657Z",
++      "creator": "Lohmann, Ingolf",
++      "doi": "10.5281/zenodo.22955727",
++      "evidence_class": "PRIOR_ASSISTANT_REPORT_NOT_FRESH_PUBLIC_READBACK",
++      "files": [
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "CC-BY-NC-ND-4.0.txt",
++          "reported_checksum": "md5:c70f85fe39eb601f25b595299c688bfd"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "CHANGE_NOTICE.md",
++          "reported_checksum": "md5:481e8f44dcac1a036d8e7084bae75a7a"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "CITATION.cff",
++          "reported_checksum": "md5:cdd0ee698b57badffc110d4f1a0cd59b"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "CLAIM_MATRIX_V2.json",
++          "reported_checksum": "md5:b2005e19776dd9a26d5b55c2db6ec71a"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "KERNEL_RECEIPT.json",
++          "reported_checksum": "md5:ed63ec99e99a551d57a2d17be05a418a"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "Leibniz_QIK-VRT_Monaden_und_evidenzgebundener_Unterschied.pdf",
++          "reported_checksum": "md5:9ee5b9abdd5d9b73b5a9513462f71daa"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "MACHINE_PROOF_BUNDLE.json",
++          "reported_checksum": "md5:a6aa88451703230feef312cb25c38ec6"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "ONTOLOGICAL_ORIGIN_OF_DIFFERENCE_DE.md",
++          "reported_checksum": "md5:13c9c9b8e1760df47f7b7b12587cad6b"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "PREPUBLICATION_GATE_RECEIPT.json",
++          "reported_checksum": "md5:289e1e9228c17f20296210834e6b4af7"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "PREPUBLICATION_RETURN_RECEIPT_V2.json",
++          "reported_checksum": "md5:7933baa0c6f8ca3cef01044c65facbe9"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "PROSA_VOM_UNTERSCHIED_ZU_QIKVRT_DE.md",
++          "reported_checksum": "md5:62908a567f7f728b22e5d00c0f08dc91"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "QIKVRT_REQUIRED_KNOWLEDGE_ARTIFACTS_20260925_V1.json",
++          "reported_checksum": "md5:39c2a7c42733049aad1f218c44d50989"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "QIKVRT_UNIVERSAL_PROOF_AND_THOUGHT_SCHEMA_DE.md",
++          "reported_checksum": "md5:32ce774262bb5ac1723a358279d7bd4f"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "QIKVRTUniversalOntology_AxiomAudit.lean",
++          "reported_checksum": "md5:7ffce5cad1a4676637b02d11c03b21c5"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "QIKVRTUniversalOntology_Core.lean",
++          "reported_checksum": "md5:74d1c8ec05eda20572e747a02c8c916a"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "README.md",
++          "reported_checksum": "md5:d0b80ba8a893b40f184e460320a282cb"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "SCIENTIFIC_ARTICLE_DE.md",
++          "reported_checksum": "md5:9ec5f8a5fd40697ca66dd5f1c4c70a98"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "SCIENTIFIC_ARTICLE_LEIBNIZ_QIKVRT_DE.md",
++          "reported_checksum": "md5:eb64a6bda88a40af8b345165ea7b82a6"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "SCIENTIFIC_CLAIM_MATRIX.json",
++          "reported_checksum": "md5:b78c72df5c38ba3d3ee7469cc4d2e2c3"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "SOURCE_EVIDENCE_BINDINGS.json",
++          "reported_checksum": "md5:4c49387a6ce1a1cf3969a197c9b19076"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "SOURCE_EVIDENCE_BINDINGS_V2.json",
++          "reported_checksum": "md5:12edf9217b2f651558c6a3ad9e90998c"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "UNIVERSAL_ONTOLOGY_CLAIM_MATRIX.json",
++          "reported_checksum": "md5:c8c71a9612eca4e2d234b7d18cef147f"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "UNIVERSAL_ONTOLOGY_KERNEL_RECEIPT.json",
++          "reported_checksum": "md5:0743f1f02340ce7d8b2ed2a7776c70b0"
++        },
++        {
++          "byte_redownload_verified_in_this_turn": false,
++          "checksum_syntax_valid": true,
++          "key": "ZENODO_LICENSE_NOTICE.md",
++          "reported_checksum": "md5:e717aaf91fcd6244ad90457712d00585"
++        }
++      ],
++      "language": "Deutsch",
++      "license_label": "CC BY-NC-ND 4.0",
++      "notification_disposition": "ALREADY_REPORTED_AND_ACKNOWLEDGED",
++      "platform": "zenodo",
++      "previous_report_payload_sha256": "3d005e8f3486078aca8e77d1ca952597b6ac26184fdeb667b3d43dbd436e2021",
++      "public_url": "https://zenodo.org/records/22955727",
++      "record_id": "22955727",
++      "resource_type": "Journal article",
++      "title": "Der ontologische Vorrang des Unterschieds: Ein maschinenprüfbares Minimaltheorem über Bestimmbarkeit, Information und den Geltungsbereich formaler Welterklärungen",
++      "updated": "2026-09-25T09:29:49.815601Z",
++      "version": "1.0.0"
++    }
++  ],
++  "repository_mutations_performed": [],
++  "scheduled_tasks_created_or_modified": false,
++  "schema": "qikvrt_readonly_observation_acknowledgment_v1",
++  "scope": "Local acknowledgment and deduplication of the three immediately preceding Zenodo notices only",
++  "storage_scope": "LOCAL_CHAT_ARTIFACT_NOT_REPOSITORY_OR_MONITOR_STATE",
++  "user_confirmation": "ja"
++}
+diff --git a/tests/test_qikvrt_publication_monitor.py b/tests/test_qikvrt_publication_monitor.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..44405af17a3e8151b4dd8afe6e6dee7f7b4e2010
+--- /dev/null
++++ b/tests/test_qikvrt_publication_monitor.py
+@@ -0,0 +1,378 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++"""Synthetic fixtures prove adapter/state behavior, not live platform availability."""
++import copy
++from datetime import timedelta
++import importlib.util
++import json
++from pathlib import Path
++import subprocess
++import sys
++import tempfile
++import unittest
++from unittest.mock import patch
++import xml.etree.ElementTree as ET
++
++ROOT = Path(__file__).resolve().parents[1]
++spec = importlib.util.spec_from_file_location('monitor', ROOT / 'tools/qikvrt_publication_monitor.py')
++m = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(m)
++POLICY = m.load_json((ROOT / 'policy/PUBLICATION_MONITOR_V1.json').read_bytes())
++NOW = '2026-09-26T12:00:00Z'
++SOURCE = {'head': 'a' * 40, 'tree': 'b' * 40, 'run_id': 'local-test'}
++
++
++def proof(url='https://crates.io/api/v1/crates/qik-vrt', now=NOW, status=200, raw=b'fixture'):
++    return {'evidence_class': 'PUBLIC_READBACK', 'method': 'GET', 'url': url,
++            'observed_at': now, 'status': status, 'response_sha256': m.digest(raw),
++            'response_path': 'monitor/responses/' + m.digest(raw) + '.body'}
++
++
++def crate(yanked=False, owner='ingolf-lohmann', num='1.0.0', ident=1):
++    data = {'crate': {'id': 'qik-vrt', 'name': 'qik-vrt', 'versions': [ident],
++                     'max_version': num, 'repository': 'https://github.com/Goldkelch/qik-vrt'},
++            'versions': [{'id': ident, 'num': num, 'crate': 'qik-vrt', 'yanked': yanked}]}
++    owners = {'users': [{'id': 294949349, 'login': owner, 'kind': 'user'}]}
++    return data, owners
++
++
++def zenodo():
++    return {'id': 22941556, 'doi': '10.5281/zenodo.22941556',
++            'metadata': {'title': 'Proof Closure', 'creators': [{'name': 'Lohmann, Ingolf'}], 'version': '1.0.0'},
++            'files': [{'key': 'README.md', 'checksum': 'md5:' + 'a' * 32, 'size': 42}]}
++
++
++class Client:
++    def __init__(self, responses):
++        self.responses = iter(responses)
++        self.calls = []
++    def read(self, url, xml=False):
++        self.calls.append(url)
++        result = next(self.responses)
++        if isinstance(result, Exception):
++            raise result
++        return result, proof(url)
++
++
++class StateTests(unittest.TestCase):
++    def setUp(self):
++        self.state = m.genesis(POLICY, SOURCE)
++        self.l = m.Ledger(self.state, POLICY, NOW)
++
++    def test_consumed_zero_baseline_preserved_silently(self):
++        p = self.state['platforms']['cratesio']
++        self.assertTrue(p['baseline_established'])
++        self.assertEqual(p['queries']['canonical'], {'queries': {'cloud-transputer': 0, 'qik-vrt': 0, 'qikvrt': 0, 'temdd': 0}, 'relevant_crates': []})
++        self.assertEqual(self.state['outbox'], {})
++
++    def test_historical_ack_is_not_public_state(self):
++        self.assertEqual(self.state['platforms']['zenodo']['subjects'], {})
++        self.assertFalse(self.state['migration']['historical_reports_are_public_readback'])
++        self.assertFalse(self.state['migration']['complete_prior_inventory_recovered'])
++        p = ROOT / POLICY['migration']['historical_ack_path']
++        self.assertEqual(m.digest(p.read_bytes()), POLICY['migration']['historical_ack_sha256'])
++
++    def test_new_crate_version_after_zero_baseline_is_material(self):
++        self.l.accept('cratesio', 'version:qik-vrt@1.0.0', {'yanked': False}, proof())
++        event = next(iter(self.l.state['outbox'].values()))
++        self.assertIsNone(event['old'])
++        self.assertEqual(event['subject'], 'version:qik-vrt@1.0.0')
++        self.assertEqual(event['new']['state'], {'yanked': False})
++
++    def test_first_recovered_zenodo_subject_is_not_reannounced(self):
++        self.l.accept('zenodo', 'record:22941556', zenodo(), proof('https://zenodo.org/api/records/22941556'))
++        self.assertEqual(self.l.state['outbox'], {})
++        self.l.finish('zenodo', {'q': [22941556]})
++        self.assertTrue(self.l.state['platforms']['zenodo']['baseline_established'])
++
++    def test_same_subject_replay_does_not_duplicate(self):
++        for _ in range(3):
++            self.l.accept('cratesio', 'version:qik-vrt@1.0.0', {'yanked': False}, proof())
++        self.assertEqual(len(self.l.state['outbox']), 1)
++
++    def test_real_repeated_yank_transition_has_new_event(self):
++        for state in (False, True, False, True):
++            self.l.accept('cratesio', 'version:qik-vrt@1.0.0', {'yanked': state}, proof())
++        self.assertEqual(len(self.l.state['outbox']), 4)
++
++    def test_new_version_cannot_validate_predecessor(self):
++        self.l.accept('cratesio', 'version:qik-vrt@1.0.0', {'yanked': False}, proof())
++        old = copy.deepcopy(self.l.state['platforms']['cratesio']['subjects']['version:qik-vrt@1.0.0'])
++        self.l.accept('cratesio', 'version:qik-vrt@2.0.0', {'yanked': True}, proof())
++        self.assertEqual(self.l.state['platforms']['cratesio']['subjects']['version:qik-vrt@1.0.0'], old)
++
++    def test_failure_retains_last_good_and_outbox(self):
++        self.l.accept('cratesio', 'crate:qik-vrt', {'name': 'qik-vrt'}, proof())
++        before = copy.deepcopy(self.l.state['platforms']['cratesio']['subjects'])
++        outbox = copy.deepcopy(self.l.state['outbox'])
++        for status in (None, 403, 429, 500, 503):
++            self.l.failure('cratesio', 'crate:qik-vrt', m.ReadError('failure', status, proof(status=status)))
++        self.l.finish('cratesio', None)
++        self.assertEqual(before, self.l.state['platforms']['cratesio']['subjects'])
++        self.assertEqual(outbox, self.l.state['outbox'])
++        self.assertEqual(self.l.state['platforms']['cratesio']['health'], 'READ_FAILED_PRESERVED_LAST_GOOD')
++
++    def test_one_404_is_not_disappearance(self):
++        self.l.accept('cratesio', 'crate:qik-vrt', {'name': 'qik-vrt'}, proof())
++        self.l.failure('cratesio', 'crate:qik-vrt', m.ReadError('404', 404, proof(status=404)), True)
++        self.assertTrue(self.l.state['platforms']['cratesio']['subjects']['crate:qik-vrt']['available'])
++        self.assertEqual(len(self.l.state['outbox']), 1)
++
++    def test_two_official_404s_with_working_inventory_preserve_last_metadata(self):
++        self.l.accept('cratesio', 'crate:qik-vrt', {'name': 'qik-vrt'}, proof())
++        self.l.failure('cratesio', 'crate:qik-vrt', m.ReadError('404', 404, proof(status=404)), True)
++        later = '2026-09-26T12:02:00Z'
++        l = m.Ledger(self.l.state, POLICY, later)
++        l.failure('cratesio', 'crate:qik-vrt', m.ReadError('404', 404, proof(now=later, status=404)), True)
++        item = l.state['platforms']['cratesio']['subjects']['crate:qik-vrt']
++        self.assertFalse(item['available'])
++        self.assertEqual(item['canonical'], {'name': 'qik-vrt'})
++        self.assertEqual(len(l.state['outbox']), 2)
++        l.accept('cratesio', 'crate:qik-vrt', {'name': 'qik-vrt'}, proof(now=later))
++        self.assertEqual(len(l.state['outbox']), 3)
++
++    def test_owner_endpoint_failure_cannot_remove_crate(self):
++        self.l.accept('cratesio', 'crate:qik-vrt', {'name': 'qik-vrt'}, proof())
++        for now in (NOW, '2026-09-26T12:02:00Z'):
++            self.l.now = now
++            self.l.failure('cratesio', 'crate:qik-vrt', m.ReadError('404', 404, proof('https://crates.io/api/v1/crates/qik-vrt/owners', now, 404)), True)
++        self.assertTrue(self.l.state['platforms']['cratesio']['subjects']['crate:qik-vrt']['available'])
++        self.assertNotIn('pending_absence', self.l.state['platforms']['cratesio']['subjects']['crate:qik-vrt'])
++
++    def test_corruption_and_policy_drift_fail_closed(self):
++        self.state['policy_sha256'] = '0' * 64
++        with self.assertRaises(m.MonitorError):
++            m.validate_state(self.state, POLICY)
++
++    def test_string_or_missing_evidence_is_not_success(self):
++        for bad in ({}, {**proof(), 'status': '200'}, {**proof(), 'evidence_class': 'PRIOR_ASSISTANT_REPORT_NOT_FRESH_PUBLIC_READBACK'}):
++            with self.assertRaises(m.MonitorError):
++                self.l.accept('zenodo', 'record:22941556', zenodo(), bad)
++
++    def test_retry_after_preserved_without_platform_alert(self):
++        ev = {**proof(status=429), 'retry_after': '3600'}
++        self.l.failure('cratesio', 'query:qik-vrt', m.ReadError('quota', 429, ev))
++        self.l.finish('cratesio', None)
++        self.assertEqual(self.l.state['platforms']['cratesio']['retry_not_before'], '2026-09-26T13:00:00Z')
++        self.assertEqual(self.l.state['outbox'], {})
++
++
++class AdapterTests(unittest.TestCase):
++    def test_complete_empty_inventory_not_missing_total(self):
++        items, _ = m.paged_json(Client([{'meta': {'total': 0}, 'crates': []}]), 'https://crates.io/api/v1/crates', {'q': 'temdd'}, 'cratesio', 2)
++        self.assertEqual(items, [])
++        with self.assertRaises((m.MonitorError, KeyError)):
++            m.paged_json(Client([{'crates': []}]), 'https://crates.io/api/v1/crates', {}, 'cratesio', 2)
++
++    def test_truncated_and_duplicate_paging_rejected(self):
++        for responses in ([{'meta': {'total': 1}, 'crates': []}],
++                          [{'meta': {'total': 2}, 'crates': [{'id': 'a'}]}, {'meta': {'total': 2}, 'crates': [{'id': 'a'}]}],
++                          [{'meta': {'total': {'relation': 'gte', 'value': 0}}, 'crates': []}]):
++            with self.assertRaises(m.MonitorError):
++                m.paged_json(Client(responses), 'https://crates.io/api/v1/crates', {}, 'cratesio', 2)
++
++    def test_pagination_collects_all_unique_subjects(self):
++        c = Client([{'meta': {'total': 2}, 'crates': [{'id': 'a'}]}, {'meta': {'total': 2}, 'crates': [{'id': 'b'}]}])
++        result, _ = m.paged_json(c, 'https://crates.io/api/v1/crates', {}, 'cratesio', 2)
++        self.assertEqual([r['id'] for r in result], ['a', 'b'])
++        self.assertIn('page=2', c.calls[1])
++
++    def test_crates_exact_owners_and_version_identity(self):
++        data, owners = crate()
++        result = m.crate_subjects(data, owners, 'qik-vrt')
++        self.assertEqual(result['crate:qik-vrt']['owners'][0]['login'], 'ingolf-lohmann')
++        self.assertEqual(result['version:qik-vrt@1.0.0']['id'], 1)
++        self.assertFalse(result['version:qik-vrt@1.0.0']['yanked'])
++
++    def test_incomplete_version_inventory_does_not_remove_predecessor(self):
++        data, owners = crate()
++        data['crate']['versions'].append(2)
++        with self.assertRaises(m.MonitorError):
++            m.crate_subjects(data, owners, 'qik-vrt')
++
++    def test_string_false_yanked_rejected(self):
++        data, owners = crate(yanked='false')
++        with self.assertRaises(m.MonitorError):
++            m.crate_subjects(data, owners, 'qik-vrt')
++
++    def test_download_counts_do_not_change_identity(self):
++        data, owners = crate()
++        before = m.crate_subjects(data, owners, 'qik-vrt')
++        data['crate']['downloads'] = 123456
++        data['versions'][0]['downloads'] = 99999
++        self.assertEqual(before, m.crate_subjects(data, owners, 'qik-vrt'))
++
++    def test_crate_owner_and_project_link_changes_remain_visible(self):
++        data, owners = crate()
++        before = m.crate_subjects(data, owners, 'qik-vrt')
++        owners['users'][0]['login'] = 'different-owner'
++        data['crate']['repository'] = None
++        self.assertNotEqual(before, m.crate_subjects(data, owners, 'qik-vrt'))
++
++    def test_no_inferred_zenodo_concept(self):
++        value = m.zenodo_record(zenodo(), '22941556')
++        self.assertIsNone(value['concept_id'])
++        self.assertIsNone(value['concept_doi'])
++
++    def test_wrong_record_and_invalid_digest_rejected(self):
++        with self.assertRaises(m.MonitorError):
++            m.zenodo_record(zenodo(), '22941555')
++        item = zenodo()
++        item['files'][0]['checksum'] = 'md5:short'
++        with self.assertRaises(m.MonitorError):
++            m.zenodo_record(item, '22941556')
++
++    def test_public_metadata_does_not_claim_redownload(self):
++        self.assertEqual(m.zenodo_record(zenodo(), '22941556')['file_evidence_scope'], 'PUBLISHER_METADATA_NOT_FRESH_FILE_REDOWNLOAD')
++
++    def test_stats_and_order_not_identity_changes(self):
++        value = zenodo()
++        first = m.zenodo_record(value, '22941556')
++        value['stats'] = {'downloads': 98765}
++        self.assertEqual(first, m.zenodo_record(value, '22941556'))
++
++    def test_wiki_missing_is_explicit_only(self):
++        value = {'query': {'pages': [{'title': 'QIK-VRT', 'missing': True}]}}
++        self.assertFalse(m.wiki_page(value, 'QIK-VRT')['exists'])
++        with self.assertRaises(m.MonitorError):
++            m.wiki_page({'query': {'pages': []}}, 'QIK-VRT')
++        with self.assertRaises(m.MonitorError):
++            m.wiki_page({'error': {'code': 'maxlag'}}, 'QIK-VRT')
++
++    def test_wiki_positive_binds_revision(self):
++        value = {'query': {'pages': [{'title': 'QIK-VRT', 'pageid': 5, 'revisions': [{'revid': 6, 'timestamp': NOW, 'sha1': 'abc'}]}]}}
++        result = m.wiki_page(value, 'QIK-VRT')
++        self.assertEqual(result['pageid'], 5)
++        self.assertEqual(result['revision']['revid'], 6)
++
++    def test_arxiv_exact_version_required(self):
++        xml = '<feed xmlns="http://www.w3.org/2005/Atom" xmlns:o="http://a9.com/-/spec/opensearch/1.1/"><o:totalResults>1</o:totalResults><entry><id>http://arxiv.org/abs/2609.12345v2</id><title>Example</title></entry></feed>'
++        count, records = m.arxiv_entries(ET.fromstring(xml))
++        self.assertEqual(count, 1)
++        self.assertEqual(records[0]['version_id'], '2609.12345v2')
++        with self.assertRaises(m.MonitorError):
++            m.arxiv_entries(ET.fromstring(xml.replace('2609.12345v2', '2609.12345')))
++
++    def test_arxiv_error_entry_is_not_absence(self):
++        xml = '<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>http://arxiv.org/api/errors#badquery</id></entry></feed>'
++        with self.assertRaises(m.MonitorError):
++            m.arxiv_entries(ET.fromstring(xml))
++
++    def test_query_schemas_reject_boolean_totals(self):
++        with self.assertRaises(m.MonitorError):
++            m.total(False)
++
++    def test_read_transport_forbids_effects_secrets_and_redirect_targets(self):
++        bad = ['http://zenodo.org/api/records', 'https://zenodo.org/api/deposit/depositions',
++               'https://crates.io/api/v1/crates/new?token=abc', 'https://u:p@crates.io/api/v1/crates',
++               'https://evil.example/api/records', 'https://en.wikipedia.org/w/api.php?action=edit',
++               'https://zenodo.org/api/records?access_token=secret', 'https://zenodo.org/api/records?q=a&q=b']
++        for url in bad:
++            with self.subTest(url=url), self.assertRaises((m.MonitorError, ValueError)):
++                m.allowed_url(url)
++        self.assertEqual(m.NoRedirect().redirect_request(None, None, 302, '', {}, 'https://evil.example'), None)
++
++    def test_duplicate_json_and_nan_rejected(self):
++        for data in (b'{"total":0,"total":1}', b'{"total":NaN}'):
++            with self.assertRaises(m.MonitorError):
++                m.load_json(data)
++
++
++class PersistenceTests(unittest.TestCase):
++    def test_missing_state_is_not_zero(self):
++        with tempfile.TemporaryDirectory() as directory:
++            with self.assertRaises(m.MonitorError):
++                m.safe_read(Path(directory) / m.STATE_PATH)
++
++    def test_roundtrip_history_and_cas(self):
++        with tempfile.TemporaryDirectory() as directory:
++            root = Path(directory)
++            before = m.canonical(m.genesis(POLICY, SOURCE))
++            m.atomic_write(root / m.STATE_PATH, before)
++            state = m.load_json(before)
++            sha, history = m.publish_local_snapshot(root, before, state)
++            self.assertEqual(m.digest(m.safe_read(root / m.STATE_PATH)), sha)
++            self.assertEqual(m.safe_read(root / history), m.safe_read(root / m.STATE_PATH))
++            self.assertEqual(m.load_json(m.safe_read(root / history))['previous_state_sha256'], m.digest(before))
++            with self.assertRaises(m.MonitorError):
++                m.publish_local_snapshot(root, before, m.load_json(before))
++
++    def test_restart_can_read_and_cannot_reinitialize(self):
++        with tempfile.TemporaryDirectory() as directory:
++            base = [sys.executable, '-B', str(ROOT / 'tools/qikvrt_publication_monitor.py')]
++            flags = ['--policy', str(ROOT / 'policy/PUBLICATION_MONITOR_V1.json'), '--store', directory]
++            init = base + ['initialize'] + flags + ['--source-head', 'a' * 40, '--source-tree', 'b' * 40, '--run-id', 'local-test']
++            subprocess.run(init, check=True, capture_output=True)
++            value = subprocess.run(base + ['validate'] + flags, check=True, capture_output=True, text=True)
++            self.assertEqual(json.loads(value.stdout)['generation'], 0)
++            self.assertEqual(subprocess.run(init, capture_output=True).returncode, 2)
++
++    def test_symlinks_and_parallel_writers_rejected(self):
++        with tempfile.TemporaryDirectory() as directory:
++            store = Path(directory)
++            with m.exclusive_store(store):
++                with self.assertRaises(m.MonitorError):
++                    with m.exclusive_store(store):
++                        pass
++            (store / 'outside').mkdir()
++            (store / 'alias').symlink_to(store / 'outside', target_is_directory=True)
++            with self.assertRaises(m.MonitorError):
++                m.atomic_write(store / 'alias' / 'file.json', b'{}')
++
++    def test_consumed_event_is_retained_after_restart(self):
++        with tempfile.TemporaryDirectory() as directory:
++            store = Path(directory)
++            ledger = m.Ledger(m.genesis(POLICY, SOURCE), POLICY, NOW)
++            ledger.accept('cratesio', 'crate:qik-vrt', {'name': 'qik-vrt'}, proof())
++            identifier = next(iter(ledger.state['outbox']))
++            raw = m.canonical(ledger.state)
++            m.atomic_write(store / m.STATE_PATH, raw)
++            m.atomic_write(store / 'monitor/history' / ('%012d-%s.json' % (0, m.digest(raw))), raw)
++            m.atomic_write(store / proof()['response_path'], b'fixture')
++            result = subprocess.run([sys.executable, '-B', str(ROOT / 'tools/qikvrt_publication_monitor.py'), 'acknowledge', '--store', directory, '--event-id', identifier], capture_output=True)
++            self.assertEqual(result.returncode, 0, result.stderr)
++            state = m.load_json(m.safe_read(store / m.STATE_PATH))
++            self.assertEqual(state['outbox'], {})
++            self.assertIn(identifier, state['acknowledged_events'])
++            m.validate_state(state, POLICY)
++
++
++    def test_streaming_read_timeout_becomes_read_error(self):
++        class Response:
++            def __enter__(self): return self
++            def __exit__(self, *args): return None
++            def geturl(self): return 'https://crates.io/api/v1/crates'
++            def read(self, size): raise TimeoutError('synthetic network timeout')
++        with tempfile.TemporaryDirectory() as directory:
++            client = m.PublicGET(POLICY, Path(directory))
++            with patch.object(client.opener, 'open', return_value=Response()):
++                with self.assertRaises(m.ReadError):
++                    client.read('https://crates.io/api/v1/crates')
++
++    def test_persisted_public_bytes_and_history_are_verified(self):
++        with tempfile.TemporaryDirectory() as directory:
++            store = Path(directory)
++            state = m.genesis(POLICY, SOURCE)
++            raw = m.canonical(state)
++            m.atomic_write(store / m.STATE_PATH, raw)
++            m.atomic_write(store / 'monitor/history' / ('%012d-%s.json' % (0,m.digest(raw))), raw)
++            ledger = m.Ledger(state, POLICY, NOW)
++            ledger.accept('cratesio', 'crate:qik-vrt', {'name':'qik-vrt'}, proof())
++            m.atomic_write(store / proof()['response_path'], b'fixture')
++            m.publish_local_snapshot(store, raw, ledger.state)
++            m.validate_store(store, ledger.state, POLICY)
++            (store / proof()['response_path']).write_bytes(b'changed')
++            with self.assertRaises(m.MonitorError):
++                m.validate_store(store, ledger.state, POLICY)
++            (store / proof()['response_path']).write_bytes(b'fixture')
++            (store / 'monitor/history' / ('%012d-%s.json' % (0,m.digest(raw)))).unlink()
++            with self.assertRaises(m.MonitorError):
++                m.validate_store(store, ledger.state, POLICY)
++
++    def test_required_ci_registers_regressions(self):
++        ci = (ROOT / '.github/workflows/qikvrt_ci.yml').read_text()
++        self.assertIn('python3 -B tests/test_qikvrt_publication_monitor.py', ci)
++
++
++if __name__ == '__main__':
++    unittest.main(verbosity=2)
+diff --git a/tools/qikvrt_publication_monitor.py b/tools/qikvrt_publication_monitor.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d9afa68cd1ebf1a2a4b73c09d4246a72719763
+--- /dev/null
++++ b/tools/qikvrt_publication_monitor.py
+@@ -0,0 +1,830 @@
++#!/usr/bin/env python3
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++"""Bounded public GET collector and recoverable publication-monitor state machine.
++
++Code and policy are versioned on the reviewed source branch. Mutable observations
++live on the explicitly named data-only Git ref. No credentials are accepted by
++the public collector. Git persistence is a separate authorized runner operation.
++A local snapshot, successful GET, or queued outbox event is not a delivered alert.
++"""
++from __future__ import annotations
++
++import argparse
++import copy
++import datetime as dt
++import fcntl
++from contextlib import contextmanager
++from email.utils import parsedate_to_datetime
++import hashlib
++import http.client
++import json
++import os
++from pathlib import Path
++import re
++import sys
++import tempfile
++import time
++import urllib.error
++import urllib.parse as urlparse
++import urllib.request as request
++import xml.etree.ElementTree as ET
++
++STATE_SCHEMA = 'qikvrt.publication-monitor.state.v1'
++MONITOR_ID = 'qikvrt-publication-discovery-v1'
++PLATFORMS = ('zenodo', 'arxiv', 'wikimedia', 'cratesio')
++STATE_PATH = Path('monitor/state.json')
++HEX = re.compile(r'^[0-9a-f]{64}$')
++CRATE = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
++ARXIV_ID = re.compile(r'^(?:\d{4}\.\d{4,5}|[a-z][a-z.\-]+/\d{7})v[1-9]\d*$')
++
++
++class MonitorError(RuntimeError):
++    """Fail closed; never substitute an empty inventory for a failed read."""
++
++
++class ReadError(MonitorError):
++    def __init__(self, reason: str, status: int | None = None, evidence: dict | None = None):
++        super().__init__(reason)
++        self.status, self.evidence = status, evidence
++
++
++def utc() -> str:
++    return dt.datetime.now(dt.timezone.utc).isoformat().replace('+00:00', 'Z')
++
++
++def parse_time(value: str) -> dt.datetime:
++    parsed = dt.datetime.fromisoformat(value.replace('Z', '+00:00'))
++    if parsed.tzinfo is None:
++        raise MonitorError('Timestamp must include a timezone')
++    return parsed
++
++
++def canonical(value) -> bytes:
++    return (json.dumps(value, ensure_ascii=False, sort_keys=True,
++                       separators=(',', ':'), allow_nan=False) + '\n').encode('utf-8')
++
++
++def digest(data: bytes) -> str:
++    return hashlib.sha256(data).hexdigest()
++
++
++def fingerprint(value) -> str:
++    return digest(canonical(value))
++
++
++def load_json(data: bytes):
++    def unique(pairs):
++        result = {}
++        for key, value in pairs:
++            if key in result:
++                raise MonitorError('Duplicate JSON key')
++            result[key] = value
++        return result
++    def invalid(_):
++        raise MonitorError('Non-finite JSON number')
++    return json.loads(data.decode('utf-8'), object_pairs_hook=unique, parse_constant=invalid)
++
++
++def require(condition: bool, reason: str) -> None:
++    if not condition:
++        raise MonitorError(reason)
++
++
++def integer(value, label: str) -> int:
++    require(type(value) is int and value >= 0, 'Invalid ' + label)
++    return value
++
++
++def total(value) -> int:
++    if isinstance(value, dict):
++        require(value.get('relation') == 'eq', 'Non-exact total')
++        value = value.get('value')
++    return integer(value, 'total')
++
++
++def dictionary(value, label: str) -> dict:
++    require(isinstance(value, dict), 'Missing object: ' + label)
++    return value
++
++
++def seq(value, label: str) -> list:
++    require(isinstance(value, list), 'Missing array: ' + label)
++    return value
++
++
++def ordered(items: list) -> list:
++    return sorted(items, key=canonical)
++
++
++def pick(obj: dict, fields: str) -> dict:
++    return {key: obj.get(key) for key in fields.split()}
++
++
++def safe_read(path: Path) -> bytes:
++    require(all(not parent.is_symlink() for parent in (path, *path.parents)), 'Refuse symlink path')
++    require(path.is_file(), 'STATE_UNAVAILABLE: ' + str(path))
++    require(path.stat().st_size <= 64 * 1024 * 1024, 'Oversize local state')
++    return path.read_bytes()
++
++
++def atomic_write(path: Path, data: bytes) -> None:
++    require(all(not parent.is_symlink() for parent in (path, *path.parents)), 'Refuse symlink path')
++    path.parent.mkdir(parents=True, exist_ok=True)
++    fd, name = tempfile.mkstemp(prefix='.pending-', dir=path.parent)
++    try:
++        with os.fdopen(fd, 'wb') as stream:
++            stream.write(data)
++            stream.flush()
++            os.fsync(stream.fileno())
++        os.replace(name, path)
++        parent = os.open(path.parent, os.O_RDONLY)
++        try:
++            os.fsync(parent)
++        finally:
++            os.close(parent)
++    finally:
++        if os.path.exists(name):
++            os.unlink(name)
++
++
++def validate_policy(policy: dict) -> None:
++    require(policy.get('schema') == 'qikvrt.publication-monitor.policy.v1', 'Unknown policy')
++    require(policy.get('monitor_id') == MONITOR_ID, 'Wrong monitor')
++    require(policy.get('repository') == 'Goldkelch/qik-vrt', 'Wrong Authority')
++    require(policy.get('state_ref') == 'qikvrt/publication-monitor-state-v1', 'Wrong state ref')
++    require(policy.get('state_path') == STATE_PATH.as_posix(), 'Wrong state path')
++    require(policy.get('external_methods') == ['GET'], 'Public writes forbidden')
++    require(set(policy['queries']) == set(PLATFORMS), 'Incomplete platform policy')
++    require(set(policy['queries']['cratesio']) == {'qik-vrt', 'qikvrt', 'temdd', 'cloud-transputer'}, 'Baseline scope drift')
++    for host in policy['wiki_sites']:
++        require(host in {'en.wikipedia.org', 'de.wikipedia.org', 'commons.wikimedia.org'}, 'Unapproved wiki')
++
++
++def genesis(policy: dict, provenance: dict) -> dict:
++    validate_policy(policy)
++    return {
++        'schema': STATE_SCHEMA, 'monitor_id': MONITOR_ID,
++        'policy_sha256': fingerprint(policy), 'generation': 0,
++        'previous_state_sha256': None, 'source': provenance,
++        'platforms': {name: {
++            'baseline_established': name == 'cratesio', 'subjects': {},
++            'queries': copy.deepcopy(policy['genesis']['cratesio']) if name == 'cratesio' else {},
++            'last_attempt': None, 'health': 'NOT_YET_OBSERVED',
++        } for name in PLATFORMS},
++        'migration': copy.deepcopy(policy['migration']),
++        'outbox': {}, 'acknowledged_events': {},
++        'boundary': 'ONLY_PUBLIC_PLATFORM_STATE; NO_GENERAL_EFFECT_ACK_DONE',
++    }
++
++
++def validate_state(state: dict, policy: dict) -> None:
++    require(state.get('schema') == STATE_SCHEMA and state.get('monitor_id') == MONITOR_ID, 'Wrong state identity')
++    require(state.get('policy_sha256') == fingerprint(policy), 'POLICY_DRIFT: reviewed migration required')
++    integer(state.get('generation'), 'generation')
++    require(set(state.get('platforms', {})) == set(PLATFORMS), 'Missing platform state')
++    dictionary(state.get('outbox'), 'outbox')
++    dictionary(state.get('acknowledged_events'), 'acknowledged events')
++    for name, platform in state['platforms'].items():
++        require(type(platform.get('baseline_established')) is bool, 'Invalid baseline flag')
++        for key, item in dictionary(platform.get('subjects'), name + ' subjects').items():
++            require(isinstance(key, str) and item.get('fingerprint') == fingerprint(item['canonical']), 'Corrupt subject fingerprint')
++            require(type(item.get('available')) is bool, 'Invalid availability')
++            integer(item.get('revision'), 'revision')
++            require(item['evidence']['evidence_class'] == 'PUBLIC_READBACK', 'Historical report cannot be last-good state')
++
++
++
++def validate_store(store: Path, state: dict, policy: dict) -> None:
++    """Validate persisted bytes, current/predecessor history and referenced GETs.
++
++    Git's exact commit/tree remains the outside anchor. This check does not
++    pretend that a self-contained writable hash chain authenticates its writer.
++    """
++    validate_state(state, policy)
++    raw = safe_read(store / STATE_PATH)
++    require(raw == canonical(state), 'Noncanonical or changed state bytes')
++    history = store / 'monitor/history'
++    current = history / ('%012d-%s.json' % (state['generation'], digest(raw)))
++    require(safe_read(current) == raw, 'Current immutable snapshot missing or changed')
++    if state['generation']:
++        previous = state.get('previous_state_sha256')
++        require(isinstance(previous, str) and HEX.fullmatch(previous) is not None, 'Missing predecessor hash')
++        prior = history / ('%012d-%s.json' % (state['generation'] - 1, previous))
++        prior_raw = safe_read(prior)
++        require(digest(prior_raw) == previous, 'Predecessor snapshot changed')
++        require(load_json(prior_raw).get('generation') == state['generation'] - 1, 'Wrong predecessor generation')
++    else:
++        require(state['previous_state_sha256'] is None, 'Genesis has a predecessor')
++    checked = set()
++    def check(value):
++        if isinstance(value, dict):
++            if 'response_sha256' in value:
++                sha = value['response_sha256']
++                require(isinstance(sha, str) and HEX.fullmatch(sha) is not None, 'Invalid raw-response hash')
++                expected = 'monitor/responses/' + sha + '.body'
++                require(value.get('response_path') == expected, 'Missing or escaped response path')
++                require(value.get('method') == 'GET', 'Wrong recorded method')
++                allowed_url(value['url'])
++                if sha not in checked:
++                    require(digest(safe_read(store / expected)) == sha, 'Raw public response missing or changed')
++                    checked.add(sha)
++            for item in value.values():
++                check(item)
++        elif isinstance(value, list):
++            for item in value:
++                check(item)
++    check(state)
++    require(not (set(state['outbox']) & set(state['acknowledged_events'])), 'Event both pending and acknowledged')
++    for ident, item in list(state['outbox'].items()) + [(i, v['event']) for i, v in state['acknowledged_events'].items()]:
++        require(ident == item['event_id'] == fingerprint({k: item[k] for k in ('platform', 'subject', 'revision', 'old', 'new')}), 'Corrupt outbox event')
++
++
++
++def subject_view(item: dict | None):
++    return None if item is None else {'available': item['available'], 'state': item['canonical']}
++
++
++class Ledger:
++    def __init__(self, state: dict, policy: dict, now: str):
++        validate_state(state, policy)
++        parse_time(now)
++        self.state, self.policy, self.now = copy.deepcopy(state), policy, now
++        self.errors: dict[str, list] = {name: [] for name in PLATFORMS}
++
++    def event(self, platform: str, key: str, before: dict | None, after: dict, proof: dict) -> None:
++        old, new = subject_view(before), subject_view(after)
++        if old == new:
++            return
++        entry = {'platform': platform, 'subject': key, 'revision': after['revision'],
++                 'old': old, 'new': new, 'observed_at': proof.get('observed_at', self.now),
++                 'platform_updated_at': after['canonical'].get('updated', after['canonical'].get('updated_at')),
++                 'evidence_class': 'PUBLIC_READBACK', 'evidence': proof,
++                 'smallest_safe_action': 'Read the exact official subject and compare identity/version bindings; do not mutate the platform.'}
++        identifier = fingerprint({k: entry[k] for k in ('platform', 'subject', 'revision', 'old', 'new')})
++        entry['event_id'] = identifier
++        if identifier not in self.state['acknowledged_events']:
++            self.state['outbox'].setdefault(identifier, entry)
++
++    def accept(self, platform: str, key: str, value: dict, evidence: dict) -> None:
++        require(evidence.get('evidence_class') == 'PUBLIC_READBACK' and evidence.get('method') == 'GET', 'Unverified observation')
++        require(evidence.get('status') == 200 and HEX.fullmatch(evidence.get('response_sha256', '')) is not None, 'Missing public byte binding')
++        p = self.state['platforms'][platform]
++        previous = p['subjects'].get(key)
++        if previous:
++            require(parse_time(evidence['observed_at']) >= parse_time(previous['last_success_at']), 'Stale subject observation')
++        h = fingerprint(value)
++        changed = previous is None or previous['fingerprint'] != h or not previous['available']
++        current = {
++            'canonical': value, 'fingerprint': h, 'available': True,
++            'revision': (previous['revision'] if previous else 0) + int(changed),
++            'last_success_at': evidence['observed_at'], 'evidence': evidence,
++        }
++        p['subjects'][key] = current
++        # Recovery observations establish a missing baseline silently. A known
++        # verified subject may still undergo a real transition during recovery.
++        if previous is not None or p['baseline_established']:
++            self.event(platform, key, previous, current, evidence)
++
++    def failure(self, platform: str, key: str, error: Exception, inventory_ok: bool = False) -> None:
++        status = error.status if isinstance(error, ReadError) else None
++        evidence = error.evidence if isinstance(error, ReadError) else None
++        self.errors[platform].append({'subject': key, 'reason': str(error)[:200], 'http_status': status, 'evidence': evidence})
++        current = self.state['platforms'][platform]['subjects'].get(key)
++        # A timeout, schema failure, quota response or lost tool route NEVER
++        # means disappearance. Only repeated official 404/410 with a successful
++        # platform inventory in this run can change a prior public availability.
++        if current is None or status not in (404, 410) or not evidence or not inventory_ok:
++            return
++        expected_url = None
++        if platform == 'zenodo' and key.startswith('record:'):
++            expected_url = 'https://zenodo.org/api/records/' + key.split(':', 1)[1]
++        elif platform == 'cratesio':
++            expected_url = 'https://crates.io/api/v1/crates/' + key.split(':', 1)[1].split('@', 1)[0]
++        if evidence.get('url') != expected_url or expected_url is None:
++            return
++        previous_pending = current.get('pending_absence')
++        if (previous_pending and previous_pending['status'] == status
++                and (parse_time(self.now) - parse_time(previous_pending['observed_at'])).total_seconds() >= 60):
++            if current['available']:
++                old = copy.deepcopy(current)
++                current['available'] = False
++                current['revision'] += 1
++                current['absence_evidence'] = [previous_pending, evidence]
++                self.event(platform, key, old, current, {'confirmations': current['absence_evidence'], 'predicate': 'EXACT_ENDPOINT_REPEATED_OFFICIAL_HTTP_' + str(status)})
++        elif not previous_pending:
++            current['pending_absence'] = evidence
++
++    def finish(self, platform: str, queries: dict | None) -> None:
++        p = self.state['platforms'][platform]
++        p['last_attempt'] = self.now
++        p['health'] = 'READ_FAILED_PRESERVED_LAST_GOOD' if self.errors[platform] else 'OBSERVED'
++        p['errors'] = self.errors[platform]
++        p.pop('retry_not_before', None)
++        for error in self.errors[platform]:
++            ev = error.get('evidence') or {}
++            delay = ev.get('retry_after')
++            if not delay:
++                continue
++            try:
++                until = (parse_time(ev['observed_at']) + dt.timedelta(seconds=int(delay))) if str(delay).isdigit() else parsedate_to_datetime(delay)
++                if until.tzinfo is None:
++                    continue
++                value = until.astimezone(dt.timezone.utc).isoformat().replace('+00:00', 'Z')
++                if parse_time(value) > parse_time(p.get('retry_not_before', self.now)):
++                    p['retry_not_before'] = value
++            except (TypeError, ValueError, OverflowError):
++                pass
++        if queries is not None:
++            p['queries'] = {'canonical': queries, 'observed_at': self.now}
++            if not self.errors[platform]:
++                p['baseline_established'] = True
++
++
++class NoRedirect(request.HTTPRedirectHandler):
++    def redirect_request(self, req, fp, code, msg, headers, newurl):
++        return None
++
++
++def allowed_url(url: str) -> str:
++    p = urlparse.urlsplit(url)
++    require(p.scheme == 'https' and p.username is None and p.password is None
++            and p.port in (None, 443) and not p.fragment, 'Unapproved public URL')
++    args = urlparse.parse_qs(p.query, strict_parsing=True) if p.query else {}
++    host, path = p.hostname, p.path
++    if host == 'zenodo.org':
++        good = bool(re.fullmatch(r'/api/records(?:/[1-9][0-9]*)?', path))
++        permitted = {'q', 'page', 'size', 'sort', 'all_versions'}
++    elif host == 'crates.io':
++        good = bool(re.fullmatch(r'/api/v1/crates(?:/[A-Za-z0-9_-]+(?:/owners|/versions)?)?', path))
++        permitted = {'q', 'page', 'per_page', 'sort'}
++    elif host == 'export.arxiv.org':
++        good = path == '/api/query'
++        permitted = {'search_query', 'id_list', 'start', 'max_results', 'sortBy', 'sortOrder'}
++    elif host in {'en.wikipedia.org', 'de.wikipedia.org', 'commons.wikimedia.org', 'www.wikidata.org'}:
++        good = path == '/w/api.php' and args.get('action') in (['query'], ['wbsearchentities'])
++        permitted = {'action', 'format', 'formatversion', 'prop', 'titles', 'redirects', 'rvprop', 'rvlimit', 'inprop', 'search', 'language', 'limit', 'continue'}
++    else:
++        good, permitted = False, set()
++    require(good and set(args) <= permitted and all(len(v) == 1 for v in args.values()), 'Unapproved read endpoint or parameter')
++    return url
++
++
++class PublicGET:
++    """No token parameter, no cookie handler, no secret environment lookup."""
++    def __init__(self, policy: dict, store: Path):
++        self.limits, self.store = policy['limits'], store
++        self.count = 0
++        self.deadline = time.monotonic() + self.limits['deadline_seconds']
++        self.last_by_host: dict[str, float] = {}
++        self.opener = request.build_opener(NoRedirect())
++
++    def read(self, url: str, xml: bool = False):
++        allowed_url(url)
++        require(time.monotonic() < self.deadline, 'Read deadline reached; retain baseline')
++        self.count += 1
++        require(self.count <= self.limits['requests'], 'Bounded request budget exhausted')
++        host = urlparse.urlsplit(url).hostname
++        pause = self.limits['arxiv_pacing_seconds'] if host == 'export.arxiv.org' else self.limits['pacing_seconds']
++        time.sleep(max(0, self.last_by_host.get(host, 0) + pause - time.monotonic()))
++        self.last_by_host[host] = time.monotonic()
++        req = request.Request(url, method='GET', headers={
++            'User-Agent': 'QIKVRT-publication-monitor/1.0 (https://github.com/Goldkelch/qik-vrt)',
++            'Accept': 'application/atom+xml' if xml else 'application/json',
++            'Accept-Encoding': 'identity',
++        })
++        try:
++            response = self.opener.open(req, timeout=max(0.1, min(self.limits['timeout_seconds'], self.deadline - time.monotonic())))
++        except urllib.error.HTTPError as exc:
++            response = exc
++        except (OSError, urllib.error.URLError) as exc:
++            raise ReadError('TRANSPORT_' + type(exc).__name__) from None
++        try:
++            with response:
++                require(response.geturl() == url, 'Unexpected redirect')
++                raw = response.read(self.limits['json_bytes'] + 1)
++                status = response.code
++                content_type = response.headers.get('Content-Type', '').split(';')[0].lower()
++                retry_after = response.headers.get('Retry-After')
++        except (OSError, http.client.HTTPException) as exc:
++            raise ReadError('TRANSPORT_BODY_' + type(exc).__name__) from None
++        require(len(raw) <= self.limits['json_bytes'], 'Public response too large')
++        sha = digest(raw)
++        raw_path = self.store / 'monitor' / 'responses' / (sha + '.body')
++        if raw_path.exists():
++            require(safe_read(raw_path) == raw, 'Response digest collision')
++        else:
++            atomic_write(raw_path, raw)
++        proof = {'method': 'GET', 'url': url, 'status': status,
++                 'observed_at': utc(), 'response_sha256': sha,
++                 'response_path': raw_path.relative_to(self.store).as_posix(),
++                 'content_type': content_type, 'evidence_class': 'PUBLIC_READBACK'}
++        if retry_after:
++            proof['retry_after'] = retry_after[:80]
++        if status != 200:
++            raise ReadError('OFFICIAL_HTTP_' + str(status), status, proof)
++        try:
++            if xml:
++                require(content_type in ('application/atom+xml', 'application/xml', 'text/xml'), 'Wrong XML content type')
++                require(b'<!DOCTYPE' not in raw.upper() and b'<!ENTITY' not in raw.upper(), 'XML entities forbidden')
++                value = ET.fromstring(raw)
++            else:
++                require(content_type == 'application/json', 'Wrong JSON content type')
++                value = load_json(raw)
++        except (ValueError, ET.ParseError, MonitorError) as exc:
++            raise ReadError('SCHEMA_' + type(exc).__name__, status, proof) from None
++        return value, proof
++
++
++def endpoint(base: str, **params) -> str:
++    return base + ('?' + urlparse.urlencode(params) if params else '')
++
++
++def paged_json(client, base: str, params: dict, family: str, limit: int) -> tuple[list, list]:
++    items, proofs, seen, expected = [], [], set(), None
++    for page in range(1, limit + 1):
++        args = {**params, 'page': page, ('per_page' if family == 'cratesio' else 'size'): 100}
++        value, proof = client.read(endpoint(base, **args))
++        dictionary(value, family)
++        container = dictionary(value['meta'] if family == 'cratesio' else value['hits'], 'inventory metadata')
++        count = total(container['total'])
++        require(expected is None or count == expected, 'Inventory moved while paging')
++        expected = count
++        batch = seq(value['crates'] if family == 'cratesio' else value['hits']['hits'], 'inventory')
++        for item in batch:
++            key = str(item['id'])
++            require(key not in seen, 'Duplicate inventory entry')
++            seen.add(key)
++            items.append(item)
++        proofs.append(proof)
++        require(len(items) <= expected, 'Inventory exceeded declared total')
++        if len(items) == expected:
++            return items, proofs
++        require(bool(batch), 'Truncated inventory')
++    raise MonitorError('Pagination bound exceeded; incomplete inventory')
++
++
++def zenodo_record(value: dict, record_id: str) -> dict:
++    require(str(value.get('id')) == record_id, 'Zenodo record identity mismatch')
++    metadata = dictionary(value.get('metadata'), 'Zenodo metadata')
++    require(isinstance(metadata.get('title'), str) and bool(metadata['title']), 'Missing title')
++    creators = seq(metadata.get('creators'), 'creators')
++    files = []
++    names = set()
++    for file in seq(value.get('files'), 'Zenodo files'):
++        key = file.get('key')
++        require(isinstance(key, str) and key not in names, 'Invalid/duplicate public file key')
++        names.add(key)
++        checksum = file.get('checksum')
++        require(isinstance(checksum, str) and re.fullmatch(r'(?:md5:[0-9a-f]{32}|sha256:[0-9a-f]{64})', checksum) is not None, 'Invalid publisher file checksum')
++        integer(file.get('size'), 'file size')
++        files.append(pick(file, 'key size checksum id version_id links'))
++    return {'record_id': record_id, 'doi': value.get('doi'),
++            'concept_id': value.get('conceptrecid'), 'concept_doi': value.get('conceptdoi'),
++            'version': metadata.get('version'), 'title': metadata['title'],
++            'description': metadata.get('description'), 'language': metadata.get('language'),
++            'keywords': ordered(metadata.get('keywords', [])),
++            'access_conditions': metadata.get('access_conditions'), 'embargo_date': metadata.get('embargo_date'),
++            'creators': creators, 'owners': ordered(seq(value.get('owners', []), 'owners')),
++            'created': value.get('created'), 'updated': value.get('updated'),
++            'publication_date': metadata.get('publication_date'),
++            'license': metadata.get('license'), 'access_right': metadata.get('access_right'),
++            'resource_type': metadata.get('resource_type'), 'related_identifiers': ordered(metadata.get('related_identifiers', [])),
++            'relations': value.get('relations'), 'status': value.get('status'),
++            'files': sorted(files, key=lambda f: f['key']),
++            'public_url': 'https://zenodo.org/records/' + record_id,
++            'file_evidence_scope': 'PUBLISHER_METADATA_NOT_FRESH_FILE_REDOWNLOAD'}
++
++
++def collect_zenodo(client, ledger: Ledger):
++    queries, ids = {}, set(ledger.policy['zenodo_known_ids'])
++    for key in ledger.state['platforms']['zenodo']['subjects']:
++        if key.startswith('record:'):
++            ids.add(key.split(':', 1)[1])
++    healthy = True
++    for query in ledger.policy['queries']['zenodo']:
++        try:
++            items, proofs = paged_json(client, 'https://zenodo.org/api/records', {'q': query, 'all_versions': 'true', 'sort': 'mostrecent'}, 'zenodo', ledger.policy['limits']['pages'])
++            query_ids = sorted(str(item['id']) for item in items)
++            queries[query] = {'ids': query_ids, 'evidence': proofs}
++            ids.update(query_ids)
++        except (MonitorError, KeyError, TypeError, ValueError) as exc:
++            healthy = False
++            ledger.failure('zenodo', 'query:' + query, exc)
++    for rid in sorted(ids):
++        key = 'record:' + rid
++        try:
++            data, proof = client.read('https://zenodo.org/api/records/' + rid)
++            ledger.accept('zenodo', key, zenodo_record(data, rid), proof)
++        except (MonitorError, KeyError, TypeError, ValueError) as exc:
++            ledger.failure('zenodo', key, exc, healthy)
++    ledger.finish('zenodo', queries if healthy else None)
++
++
++def relevant_crate(value: dict) -> bool:
++    name = re.sub(r'[-_]', '', str(value.get('id', '')).lower())
++    if any(term in name for term in ('qikvrt', 'temdd', 'cloudtransputer')):
++        return True
++    text = ' '.join(str(value.get(key) or '') for key in ('description', 'repository', 'homepage', 'documentation'))
++    return bool(re.search(r'(?i)(?<![A-Za-z0-9])(?:qik[-_]?vrt|temdd|cloud[-_ ]transputer)(?![A-Za-z0-9])', text))
++
++
++def crate_subjects(data: dict, owner_data: dict, name: str) -> dict:
++    crate = dictionary(data.get('crate'), 'crate')
++    require(crate.get('id') == name, 'Crate identity mismatch')
++    owners = seq(owner_data.get('users'), 'crate owners')
++    owners = ordered([pick(dictionary(o, 'owner'), 'id login name kind url') for o in owners])
++    require(all(type(o['id']) is int and isinstance(o['login'], str) for o in owners), 'Incomplete owner identity')
++    versions = seq(data.get('versions'), 'crate versions')
++    version_ids = seq(crate.get('versions'), 'complete version identifiers')
++    require(all(type(v) is int and v > 0 for v in version_ids), 'Invalid crate version ID')
++    require(len(set(version_ids)) == len(version_ids), 'Duplicate crate version ID')
++    require(set(version_ids) == {v.get('id') for v in versions} and len(versions) == len(version_ids), 'Incomplete crate version readback')
++    results = {'crate:' + name: {**pick(crate, 'id name description repository homepage documentation created_at updated_at max_version newest_version max_stable_version'), 'owners': owners, 'public_url': 'https://crates.io/crates/' + name}}
++    for version in versions:
++        require(version.get('crate') == name and type(version.get('yanked')) is bool, 'Crate version binding/yank flag invalid')
++        require(type(version.get('id')) is int and isinstance(version.get('num'), str), 'Missing exact version')
++        key = 'version:' + name + '@' + version['num']
++        require(key not in results, 'Duplicate semantic version')
++        results[key] = {**pick(version, 'id crate num yanked checksum created_at updated_at license rust_version repository homepage documentation'), 'public_url': 'https://crates.io/crates/' + name + '/' + version['num']}
++    return results
++
++
++def collect_crates(client, ledger: Ledger):
++    queries, names, healthy = {}, set(), True
++    previous = ledger.state['platforms']['cratesio']['subjects']
++    for key in previous:
++        if key.startswith('crate:'):
++            names.add(key.split(':', 1)[1])
++    for query in ledger.policy['queries']['cratesio']:
++        try:
++            items, proofs = paged_json(client, 'https://crates.io/api/v1/crates', {'q': query}, 'cratesio', ledger.policy['limits']['pages'])
++            queries[query] = {'count': len(items), 'relevant': sorted(v['id'] for v in items if relevant_crate(v)), 'evidence': proofs}
++            names.update(queries[query]['relevant'])
++        except (MonitorError, KeyError, TypeError, ValueError) as exc:
++            healthy = False
++            ledger.failure('cratesio', 'query:' + query, exc)
++    for name in sorted(names):
++        try:
++            require(CRATE.fullmatch(name) is not None, 'Invalid crate name')
++            data, proof = client.read('https://crates.io/api/v1/crates/' + name)
++            owners, owner_proof = client.read('https://crates.io/api/v1/crates/' + name + '/owners')
++            subjects = crate_subjects(data, owners, name)
++            proof = {**proof, 'owner_readback': owner_proof}
++            for key, value in subjects.items():
++                ledger.accept('cratesio', key, value, proof)
++            # Missing from a complete ID list is an exact public transition,
++            # unlike missing from a search query or an incomplete version page.
++            for key in sorted(set(previous) - set(subjects)):
++                if key.startswith('version:' + name + '@'):
++                    old = copy.deepcopy(previous[key])
++                    if old['available']:
++                        previous[key]['available'] = False
++                        previous[key]['revision'] += 1
++                        previous[key]['absence_evidence'] = proof
++                        ledger.event('cratesio', key, old, previous[key], {'predicate': 'ABSENT_FROM_COMPLETE_PUBLIC_VERSION_ID_LIST', 'readback': proof})
++        except (MonitorError, KeyError, TypeError, ValueError) as exc:
++            # Preserve each version separately if the crate endpoint fails.
++            keys = [k for k in previous if k == 'crate:' + name or k.startswith('version:' + name + '@')]
++            for key in keys or ['crate:' + name]:
++                ledger.failure('cratesio', key, exc, healthy)
++    ledger.finish('cratesio', queries if healthy else None)
++
++
++ATOM = '{http://www.w3.org/2005/Atom}'
++OS = '{http://a9.com/-/spec/opensearch/1.1/}'
++AX = '{http://arxiv.org/schemas/atom}'
++
++
++def arxiv_entries(root: ET.Element) -> tuple[int, list]:
++    require(root.tag == ATOM + 'feed', 'Not an Atom feed')
++    count = root.findtext(OS + 'totalResults')
++    require(count is not None and count.isdecimal(), 'Missing exact arXiv total')
++    items = []
++    for element in root.findall(ATOM + 'entry'):
++        ident = element.findtext(ATOM + 'id', '')
++        p = urlparse.urlsplit(ident)
++        require(p.hostname == 'arxiv.org' and p.path.startswith('/abs/'), 'arXiv error or wrong ID origin')
++        version_id = p.path.removeprefix('/abs/')
++        require(ARXIV_ID.fullmatch(version_id) is not None, 'Missing exact arXiv version')
++        items.append({'version_id': version_id, 'public_url': 'https://arxiv.org/abs/' + version_id,
++                      'title': ' '.join(element.findtext(ATOM + 'title', '').split()),
++                      'summary': ' '.join(element.findtext(ATOM + 'summary', '').split()),
++                      'authors': [a.findtext(ATOM + 'name') for a in element.findall(ATOM + 'author')],
++                      'published': element.findtext(ATOM + 'published'), 'updated': element.findtext(ATOM + 'updated'),
++                      'doi': element.findtext(AX + 'doi'), 'journal_ref': element.findtext(AX + 'journal_ref'),
++                      'categories': sorted(c.get('term') for c in element.findall(ATOM + 'category'))})
++    return int(count), items
++
++
++def collect_arxiv(client, ledger: Ledger):
++    queries, found, healthy = {}, {}, True
++    for query in ledger.policy['queries']['arxiv']:
++        try:
++            ids, expected, proofs = set(), None, []
++            for page in range(ledger.policy['limits']['pages']):
++                root, proof = client.read(endpoint('https://export.arxiv.org/api/query', search_query=query, start=page * 100, max_results=100), xml=True)
++                count, items = arxiv_entries(root)
++                require(expected is None or expected == count, 'arXiv inventory moved')
++                expected = count
++                for item in items:
++                    require(item['version_id'] not in ids, 'Duplicate arXiv entry')
++                    ids.add(item['version_id'])
++                    found[item['version_id']] = (item, proof)
++                proofs.append(proof)
++                if len(ids) == count:
++                    break
++                require(items and len(ids) < count, 'Incomplete arXiv inventory')
++            else:
++                raise MonitorError('arXiv pagination exceeded')
++            queries[query] = {'ids': sorted(ids), 'evidence': proofs}
++        except (MonitorError, KeyError, TypeError, ValueError) as exc:
++            healthy = False
++            ledger.failure('arxiv', 'query:' + query, exc)
++    # Explicit old versions remain independently queried, even when search only
++    # exposes a newer version. Search omission is never deletion evidence.
++    for key in ledger.state['platforms']['arxiv']['subjects']:
++        ident = key.removeprefix('version:')
++        if ident not in found:
++            try:
++                root, proof = client.read(endpoint('https://export.arxiv.org/api/query', id_list=ident, max_results=1), xml=True)
++                count, entries = arxiv_entries(root)
++                require(count == 1 and len(entries) == 1 and entries[0]['version_id'] == ident, 'Historical arXiv version not independently resolved')
++                found[ident] = (entries[0], proof)
++            except (MonitorError, KeyError, TypeError, ValueError) as exc:
++                ledger.failure('arxiv', key, exc, healthy)
++    for ident, (value, proof) in sorted(found.items()):
++        ledger.accept('arxiv', 'version:' + ident, value, proof)
++    ledger.finish('arxiv', queries if healthy else None)
++
++
++def wiki_page(value: dict, title: str) -> dict:
++    require('error' not in value and 'continue' not in value, 'MediaWiki error or continuation')
++    pages = seq(dictionary(value.get('query'), 'wiki query').get('pages'), 'wiki pages')
++    require(len(pages) == 1, 'Ambiguous wiki result')
++    page = dictionary(pages[0], 'wiki page')
++    require('invalid' not in page and isinstance(page.get('title'), str), 'Invalid wiki title')
++    if 'missing' in page:
++        require(page['missing'] is True, 'Invalid missing flag')
++        return {'requested_title': title, 'resolved_title': page['title'], 'exists': False}
++    require(type(page.get('pageid')) is int and page['pageid'] > 0, 'Missing page identity')
++    revisions = seq(page.get('revisions'), 'wiki revisions')
++    require(len(revisions) == 1 and type(revisions[0].get('revid')) is int, 'Missing exact wiki revision')
++    return {'requested_title': title, 'exists': True,
++            **pick(page, 'title pageid ns fullurl lastrevid'), 'revision': pick(revisions[0], 'revid parentid timestamp sha1'),
++            'redirects': value['query'].get('redirects', []), 'normalized': value['query'].get('normalized', [])}
++
++
++def collect_wikimedia(client, ledger: Ledger):
++    queries = {}
++    for host in ledger.policy['wiki_sites']:
++        for title in ledger.policy['queries']['wikimedia']:
++            key = host + ':' + title
++            try:
++                data, proof = client.read(endpoint('https://' + host + '/w/api.php', action='query', format='json', formatversion=2, prop='info|revisions', titles=title, redirects=1, rvprop='ids|timestamp|sha1', rvlimit=1, inprop='url'))
++                ledger.accept('wikimedia', key, wiki_page(data, title), proof)
++                queries[key] = {'evidence': proof}
++            except (MonitorError, KeyError, TypeError, ValueError) as exc:
++                ledger.failure('wikimedia', key, exc)
++    for language in ledger.policy['wikidata_search_languages']:
++        for query in ledger.policy['queries']['wikimedia']:
++            key = 'wikidata:' + language + ':' + query
++            try:
++                data, proof = client.read(endpoint('https://www.wikidata.org/w/api.php', action='wbsearchentities', format='json', search=query, language=language, limit=50))
++                require(data.get('success') == 1 and 'error' not in data and 'search-continue' not in data, 'Incomplete Wikidata result')
++                items = seq(data.get('search'), 'Wikidata search')
++                require(all(re.fullmatch(r'Q[1-9][0-9]*', i.get('id', '')) for i in items), 'Invalid Wikidata ID')
++                ledger.accept('wikimedia', key, {'query': query, 'language': language, 'entities': ordered([pick(i, 'id label description concepturi url') for i in items])}, proof)
++                queries[key] = {'evidence': proof}
++            except (MonitorError, KeyError, TypeError, ValueError) as exc:
++                ledger.failure('wikimedia', key, exc)
++    ledger.finish('wikimedia', queries if not ledger.errors['wikimedia'] else None)
++
++
++def publish_local_snapshot(store: Path, before: bytes, after: dict) -> tuple[str, str]:
++    require(safe_read(store / STATE_PATH) == before, 'STATE_CONFLICT: never overwrite a successor')
++    after['previous_state_sha256'] = digest(before)
++    after['generation'] += 1
++    output = canonical(after)
++    sha = digest(output)
++    history = store / 'monitor/history' / ('%012d-%s.json' % (after['generation'], sha))
++    if history.exists():
++        require(safe_read(history) == output, 'History collision')
++    else:
++        atomic_write(history, output)
++    # The source authority is Git: only the runner's atomic commit/ref update and
++    # independent readback make this local replacement an acknowledged effect.
++    require(safe_read(store / STATE_PATH) == before, 'STATE_CONFLICT during preparation')
++    atomic_write(store / STATE_PATH, output)
++    require(safe_read(store / STATE_PATH) == output, 'Local readback mismatch')
++    return sha, history.relative_to(store).as_posix()
++
++
++def provenance(source_head: str, source_tree: str, run_id: str) -> dict:
++    require(re.fullmatch(r'[0-9a-f]{40}', source_head) is not None, 'Invalid source HEAD')
++    require(re.fullmatch(r'[0-9a-f]{40}', source_tree) is not None, 'Invalid source TREE')
++    require(re.fullmatch(r'[0-9]+(?:-[0-9]+)?|local-test', run_id) is not None, 'Invalid run identity')
++    return {'repository': 'Goldkelch/qik-vrt', 'head': source_head, 'tree': source_tree, 'run_id': run_id}
++
++
++@contextmanager
++def exclusive_store(store: Path):
++    require(all(not parent.is_symlink() for parent in (store, *store.parents)), 'Refuse symlink store')
++    folder = store / 'monitor'
++    require(not folder.is_symlink(), 'Refuse symlink monitor directory')
++    folder.mkdir(parents=True, exist_ok=True)
++    path = folder / '.lock'
++    require(not path.is_symlink(), 'Refuse symlink lock')
++    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
++    try:
++        try:
++            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
++        except BlockingIOError:
++            raise MonitorError('STATE_WRITER_BUSY') from None
++        yield
++    finally:
++        os.close(fd)
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('command', choices=('initialize', 'observe', 'validate', 'acknowledge'))
++    parser.add_argument('--policy', type=Path, default=Path(__file__).resolve().parents[1] / 'policy/PUBLICATION_MONITOR_V1.json')
++    parser.add_argument('--store', type=Path, required=True)
++    parser.add_argument('--source-head', default='')
++    parser.add_argument('--source-tree', default='')
++    parser.add_argument('--run-id', default='')
++    parser.add_argument('--event-id', action='append', default=[])
++    parser.add_argument('--receipt', type=Path)
++    args = parser.parse_args()
++    policy = load_json(safe_read(args.policy))
++    validate_policy(policy)
++    args.store.mkdir(parents=True, exist_ok=True)
++    require(not args.store.is_symlink(), 'Refuse symlink store')
++    with exclusive_store(args.store):
++        return execute(args, policy)
++
++
++def execute(args, policy) -> int:
++    path = args.store / STATE_PATH
++    if args.command == 'initialize':
++        require(not path.exists() and not path.is_symlink(), 'Refuse to reset existing state')
++        require(not any((args.store / 'monitor/history').glob('*.json')), 'Refuse genesis over existing history')
++        state = genesis(policy, provenance(args.source_head, args.source_tree, args.run_id))
++        raw = canonical(state)
++        atomic_write(args.store / 'monitor/history' / ('%012d-%s.json' % (0, digest(raw))), raw)
++        atomic_write(path, raw)
++        require(load_json(safe_read(path)) == state, 'Genesis readback mismatch')
++        return 0
++    before = safe_read(path)  # Missing state is an error, NEVER a fresh genesis.
++    state = load_json(before)
++    validate_store(args.store, state, policy)
++    if args.command == 'validate':
++        print(json.dumps({'state_sha256': digest(before), 'generation': state['generation'], 'monitor_id': MONITOR_ID}))
++        return 0
++    if args.command == 'acknowledge':
++        require(bool(args.event_id), 'No exact notification event IDs')
++        for ident in args.event_id:
++            require(HEX.fullmatch(ident) is not None, 'Invalid event ID')
++            if ident in state['acknowledged_events']:
++                continue
++            require(ident in state['outbox'], 'Unknown outbox event')
++            state['acknowledged_events'][ident] = {'acknowledged_at': utc(), 'event': state['outbox'].pop(ident)}
++        if state != load_json(before):
++            publish_local_snapshot(args.store, before, state)
++        return 0
++    state['source'] = provenance(args.source_head, args.source_tree, args.run_id)
++    ledger = Ledger(state, policy, utc())
++    client = PublicGET(policy, args.store)
++    for platform, collector in zip(PLATFORMS, (collect_zenodo, collect_arxiv, collect_wikimedia, collect_crates)):
++        retry = ledger.state['platforms'][platform].get('retry_not_before')
++        if retry and parse_time(ledger.now) < parse_time(retry):
++            ledger.state['platforms'][platform]['health'] = 'RETRY_AFTER_HOLD_LAST_GOOD_RETAINED'
++            continue
++        try:
++            collector(client, ledger)
++        except (MonitorError, KeyError, TypeError, ValueError) as exc:
++            ledger.failure(platform, 'collector', exc)
++            ledger.finish(platform, None)
++    validate_state(ledger.state, policy)
++    sha, history = publish_local_snapshot(args.store, before, ledger.state)
++    validate_store(args.store, ledger.state, policy)
++    receipt = {'schema': 'qikvrt.publication-monitor.local-preparation.v1',
++               'state_sha256': sha, 'previous_state_sha256': digest(before),
++               'history': history, 'source': state['source'], 'public_request_attempts': client.count,
++               'health': {p: ledger.state['platforms'][p]['health'] for p in PLATFORMS},
++               'outbox_event_ids': sorted(ledger.state['outbox']),
++               'external_publication_writes': 0, 'repository_persistence_readback': False,
++               'notification_authorized_by_this_receipt': False}
++    if args.receipt:
++        atomic_write(args.receipt, canonical(receipt))
++    print(json.dumps(receipt, ensure_ascii=False, sort_keys=True))
++    return 0
++
++
++if __name__ == '__main__':
++    try:
++        raise SystemExit(main())
++    except (MonitorError, OSError, ValueError, KeyError, TypeError) as exc:
++        print('BLOCK_PUBLICATION_MONITOR: ' + str(exc)[:300], file=sys.stderr)
++        raise SystemExit(2)
+diff --git a/tools/qikvrt_publication_monitor_runner.sh b/tools/qikvrt_publication_monitor_runner.sh
+new file mode 100644
+index 0000000000000000000000000000000000000000..eab4890abf950b6d4ee02f3945ddbaa2e9939ff8
+--- /dev/null
++++ b/tools/qikvrt_publication_monitor_runner.sh
+@@ -0,0 +1,110 @@
++#!/bin/sh
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++# POSIX runner. The collector performs public GETs; only this explicit wrapper
++# may commit the data-only monitor ref. It never publishes to an external venue.
++set -eu
++mode=${1:?probe or persist}
++store=${2:?state checkout}
++audit=${3:?new audit directory}
++case "$mode" in probe|persist) ;; *) exit 2;; esac
++code=$(pwd)
++case "$store" in /*) ;; *) echo 'BLOCK: absolute state path required' >&2; exit 2;; esac
++case "$audit" in /*) ;; *) echo 'BLOCK: absolute audit path required' >&2; exit 2;; esac
++[ ! -e "$audit" ] || { echo 'BLOCK: audit path already exists' >&2; exit 2; }
++mkdir -p "$audit"
++{ python3 --version; git --version; uname -s; } > "$audit/TOOLCHAIN.txt"
++ref=qikvrt/publication-monitor-state-v1
++expected_origin=https://github.com/Goldkelch/qik-vrt
++origin=$(git -C "$store" remote get-url origin)
++[ "$origin" = "$expected_origin" ] || [ "$origin" = "$expected_origin.git" ] || {
++    echo 'BLOCK: wrong state repository' >&2; exit 2;
++}
++source_head=$(git rev-parse --verify HEAD)
++source_tree=$(git rev-parse --verify 'HEAD^{tree}')
++old_head=$(git -C "$store" rev-parse --verify HEAD)
++old_tree=$(git -C "$store" rev-parse --verify 'HEAD^{tree}')
++python3 -B tools/qikvrt_publication_monitor.py validate --store "$store" > "$audit/STATE_BEFORE.json"
++python3 -B tests/test_qikvrt_publication_monitor.py > "$audit/REGRESSIONS.log" 2>&1
++python3 -B tools/qikvrt_publication_monitor.py observe --store "$store" \
++    --source-head "$source_head" --source-tree "$source_tree" \
++    --run-id "${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}" \
++    --receipt "$audit/LOCAL_PREPARATION.json" > "$audit/COLLECTOR.log"
++python3 -B tools/qikvrt_publication_monitor.py validate --store "$store" > "$audit/STATE_AFTER.json"
++[ "$(git rev-parse --verify HEAD)" = "$source_head" ]
++[ -z "$(git status --porcelain --untracked-files=all)" ] || {
++    echo 'BLOCK: source checkout mutated' >&2; exit 2;
++}
++cp -R "$store/monitor" "$audit/monitor"
++rm -f "$audit/monitor/.lock"
++export QPM_SOURCE_HEAD="$source_head" QPM_SOURCE_TREE="$source_tree"
++export QPM_STATE_BEFORE_HEAD="$old_head" QPM_STATE_BEFORE_TREE="$old_tree"
++export QPM_MODE="$mode" QPM_AUDIT="$audit"
++python3 -B - <<'PY'
++import json, os
++from pathlib import Path
++fields = ('SOURCE_HEAD','SOURCE_TREE','STATE_BEFORE_HEAD','STATE_BEFORE_TREE','MODE')
++data = {key.lower(): os.environ['QPM_'+key] for key in fields}
++data['schema'] = 'qikvrt.publication-monitor.runner-binding.v1'
++data['repository_persistence_readback'] = False
++data['external_publication_writes'] = 0
++Path(os.environ['QPM_AUDIT'],'RUN_BINDING.json').write_text(json.dumps(data,sort_keys=True,indent=2)+'\n')
++PY
++[ "$mode" = persist ] || exit 0
++[ "${GITHUB_REPOSITORY:-}" = Goldkelch/qik-vrt ]
++[ "${GITHUB_REF:-}" = refs/heads/main ]
++[ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$source_head" ] || {
++    echo 'BLOCK: source Main advanced' >&2; exit 2;
++}
++# Same admitted writer: materialize -> persist -> independently fetch -> readback.
++# A non-force push is the authoritative compare-and-swap, never force-with-lease.
++git -C "$store" fetch --no-tags --depth=1 origin "refs/heads/$ref"
++[ "$(git -C "$store" rev-parse FETCH_HEAD)" = "$old_head" ] || {
++    echo 'BLOCK: state successor already exists; preserve local audit' >&2; exit 2;
++}
++git -C "$store" add -- monitor/state.json monitor/history
++if [ -d "$store/monitor/responses" ]; then git -C "$store" add -- monitor/responses; fi
++# Never stage an unexpected path, a link or an executable from a public response.
++git -C "$store" diff --cached --name-only > "$audit/STAGED_PATHS.txt"
++python3 -B - "$store" "$audit/STAGED_PATHS.txt" <<'PY'
++import pathlib,sys
++root=pathlib.Path(sys.argv[1])
++for name in pathlib.Path(sys.argv[2]).read_text().splitlines():
++    if not (name=='monitor/state.json' or name.startswith(('monitor/history/','monitor/responses/'))):
++        raise SystemExit('BLOCK: non-state staged path')
++    if (root/name).is_symlink(): raise SystemExit('BLOCK: state symlink')
++PY
++git -C "$store" -c user.name='github-actions[bot]' \
++    -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
++    commit -m "monitor: persist public observation ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
++new_head=$(git -C "$store" rev-parse HEAD)
++new_tree=$(git -C "$store" rev-parse 'HEAD^{tree}')
++set +e
++git -C "$store" push origin "HEAD:refs/heads/$ref" > "$audit/PUSH.log" 2>&1
++push_status=$?
++# A failed/ambiguous transport still receives a fresh remote observation.
++git -C "$store" fetch --no-tags --depth=1 origin "refs/heads/$ref" > "$audit/READBACK.log" 2>&1
++fetch_status=$?
++set -e
++export QPM_NEW_HEAD="$new_head" QPM_NEW_TREE="$new_tree"
++export QPM_PUSH_STATUS="$push_status" QPM_FETCH_STATUS="$fetch_status" QPM_STORE="$store"
++python3 -B - <<'PY'
++import hashlib,json,os,pathlib,subprocess
++root=pathlib.Path(os.environ['QPM_STORE']);audit=pathlib.Path(os.environ['QPM_AUDIT'])
++def git(*args): return subprocess.check_output(['git','-C',str(root),*args])
++remote=git('rev-parse','FETCH_HEAD').decode().strip() if os.environ['QPM_FETCH_STATUS']=='0' else None
++body=git('show',remote+':monitor/state.json') if remote else None
++prepared=(root/'monitor/state.json').read_bytes()
++receipt={'schema':'qikvrt.publication-monitor.repository-readback.v1',
++ 'repository':'Goldkelch/qik-vrt','state_ref':'qikvrt/publication-monitor-state-v1',
++ 'before_head':os.environ['QPM_STATE_BEFORE_HEAD'],'written_head':os.environ['QPM_NEW_HEAD'],
++ 'written_tree':os.environ['QPM_NEW_TREE'],'observed_head':remote,
++ 'prepared_state_sha256':hashlib.sha256(prepared).hexdigest(),
++ 'readback_state_sha256':hashlib.sha256(body).hexdigest() if body is not None else None,
++ 'push_transport_status':int(os.environ['QPM_PUSH_STATUS']),
++ 'repository_persistence_readback':remote==os.environ['QPM_NEW_HEAD'] and body==prepared,
++ 'external_publication_writes':0,'general_effect_ack_done':False}
++(audit/'REPOSITORY_READBACK.json').write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
++print(json.dumps(receipt,sort_keys=True))
++if not receipt['repository_persistence_readback']: raise SystemExit('BLOCK: remote state not verified')
++PY
