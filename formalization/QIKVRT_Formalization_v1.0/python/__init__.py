@@ -1,1 +1,0 @@
-"""Independent Python verification layer."""
