@@ -66,7 +66,7 @@ def main():
             common.append("--offline")
         run("rust-tests", [args.cargo, "test", *common])
         run("release-build", [args.cargo, "build", "--release", *common])
-        for check in ("bus", "exchange", "continuity", "hardware"):
+        for check in ("bus", "nodes", "exchange", "continuity", "hardware"):
             command = [sys.executable, ROOT / "tools" / ("check_" + check + ".py"),
                        "--output", output / (check + ".json")]
             if check == "hardware":

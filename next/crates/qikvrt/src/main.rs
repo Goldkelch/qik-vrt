@@ -40,8 +40,9 @@ init STORE ID | verify STORE | discover STORE | history STORE [AFTER]\n\
 put STORE FILE | get STORE SHA256 | snapshot STORE | restore-store STORE SNAPSHOT NEW_DIRECTORY\n\
 compile FILE | run STORE | serve STORE [127.0.0.1:8771]\n\
 bus-config NEW_DIRECTORY BUS_ID SUBJECT_JSON PEER_ID...\n\
-bus-serve STORE PRIVATE_BUS_CONFIG IP:PORT\n\
-bus-peer STORE PRIVATE_PEER_CREDENTIAL IP:PORT [--worker]\n\
+bus-repository-config NEW_DIRECTORY BUS_ID SUBJECT_JSON NODES_JSON\n\
+bus-serve STORE PRIVATE_BUS_CONFIG IP:PORT [--supervised]\n\
+bus-peer STORE PRIVATE_PEER_CREDENTIAL IP:PORT [--worker] [--terminal 127.0.0.1:PORT]\n\
 subject-digest SUBJECT_JSON | packet FROM TO SUBJECT_SHA256 CODEC FILE\n\
 unpack FROM TO SUBJECT_SHA256 [reverse] | exchange STORE FROM SUBJECT_SHA256\n\
 mesh-serve STORE PEER SUBJECT_SHA256 [127.0.0.1:8772]\n\
@@ -64,13 +65,46 @@ bench [COUNT] | vectors";
             qikvrt_next::bus::create_config(Path::new(arg(2)?), arg(3)?, subject, &args[5..])?;
             output(&json!({"state":"CREATED","credential_files":"owner-only","done":false}))
         }
-        "bus-serve" => qikvrt_next::bus::serve(Path::new(arg(2)?), Path::new(arg(3)?), arg(4)?),
-        "bus-peer" => qikvrt_next::bus::peer(
+        "bus-repository-config" => {
+            let subject = serde_json::from_slice(&fs::read(arg(4)?).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+            let nodes = serde_json::from_slice(&fs::read(arg(5)?).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+            qikvrt_next::bus::create_repository_config(
+                Path::new(arg(2)?),
+                arg(3)?,
+                subject,
+                nodes,
+            )?;
+            output(&json!({"state":"CREATED","credential_files":"owner-only","done":false}))
+        }
+        "bus-serve" => qikvrt_next::bus::serve(
             Path::new(arg(2)?),
             Path::new(arg(3)?),
             arg(4)?,
-            args.get(5).map(|v| v == "--worker").unwrap_or(false),
+            args.get(5).map(|s| s == "--supervised").unwrap_or(false),
         ),
+        "bus-peer" => {
+            let mut worker = false;
+            let mut terminal = None;
+            let mut options = args[5..].iter();
+            while let Some(option) = options.next() {
+                match option.as_str() {
+                    "--worker" => worker = true,
+                    "--terminal" => {
+                        terminal = Some(options.next().ok_or("TERMINAL_ADDRESS_REQUIRED")?.as_str())
+                    }
+                    _ => return Err("UNKNOWN_PEER_OPTION".into()),
+                }
+            }
+            qikvrt_next::bus::peer(
+                Path::new(arg(2)?),
+                Path::new(arg(3)?),
+                arg(4)?,
+                worker,
+                terminal,
+            )
+        }
         "snapshot" => {
             let s = Store::open(Path::new(arg(2)?))?;
             let digest = s.export_snapshot()?;

@@ -4,6 +4,8 @@ import json
 import os
 import pathlib
 import runpy
+import select
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -16,6 +18,91 @@ BUILD = ROOT / "distribution/qikvrt-megast/build.sh"
 SESSION = ROOT / "distribution/qikvrt-megast/qikvrt-megast-session.sh"
 README = ROOT / "distribution/qikvrt-megast/README.md"
 WORKFLOW = ROOT / ".github/workflows/qikvrt_megast_distribution_v1.yml"
+
+
+class TransputerIntegration(unittest.TestCase):
+    """Execute the packaged bootstrap and terminal against the real C90/Rust runtime."""
+    @classmethod
+    def setUpClass(cls):
+        cls.binary = ROOT / 'next/target/release/qikvrt-next'
+        if not cls.binary.is_file():
+            raise unittest.SkipTest('build the locked next runtime to execute guest integration')
+        cls.boot = runpy.run_path(str(ROOT / 'distribution/qikvrt-megast/boot.py'))
+        cls.program = ROOT / 'next/examples/boolean_roundtrip.temdd'
+        cls.config = {
+            'source_sha': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+            'source_tree': subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], cwd=ROOT, text=True).strip(),
+            'universal_transputer': {
+                'binary_sha256': hashlib.sha256(cls.binary.read_bytes()).hexdigest(),
+                'program_sha256': hashlib.sha256(cls.program.read_bytes()).hexdigest(),
+            },
+        }
+
+    def prepare(self, state, config=None):
+        return self.boot['prepare_transputer'](self.binary, state, self.program, config or self.config)
+
+    def test_guest_terminal_executes_temdd_and_preserves_identity_across_restart(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state = pathlib.Path(temp) / 'state'
+            prepared = self.prepare(state)
+            initial_identity = prepared['identity']
+            first_records = None
+            for restart in range(2):
+                prepared = self.prepare(state)
+                self.assertEqual(prepared['identity'], initial_identity)
+                self.assertTrue(prepared['registration']['replayed'])
+                owner = subprocess.Popen([str(self.binary), 'serve', prepared['store'], '127.0.0.1:0'],
+                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                try:
+                    self.assertTrue(select.select([owner.stdout], [], [], 10)[0], 'terminal startup deadline')
+                    ready = json.loads(owner.stdout.readline())
+                    address = 'http://' + ready['address']
+                    result = self.boot['transputer_readback'](self.config, self.program, address)
+                    self.assertEqual(result['subject'], self.boot['transputer_subject'](self.config))
+                    self.assertEqual(result['identity'], initial_identity)
+                    self.assertEqual(result['c90_value'], 4)
+                    self.assertTrue(result['temdd_compiled'] and result['durable_replay'])
+                    self.assertFalse(result['effect_ack_done'])
+                    bad_subject = dict(self.config, source_sha='0' * 40)
+                    with self.assertRaisesRegex(ValueError, 'subject mismatch'):
+                        self.boot['transputer_readback'](bad_subject, self.program, address)
+                finally:
+                    owner.kill(); owner.communicate(timeout=5)
+                records = {p.name: p.read_bytes() for p in (state / 'store/events').iterdir()}
+                if first_records is None:
+                    first_records = records
+                else:
+                    self.assertTrue(all(records[name] == data for name, data in first_records.items()))
+                    self.assertGreater(len(records), len(first_records))
+
+    def test_missing_or_damaged_acknowledged_store_never_reinitializes(self):
+        for missing in (True, False):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as temp:
+                state = pathlib.Path(temp) / 'state'
+                self.prepare(state)
+                marker = (state / 'provisioned.json').read_bytes()
+                if missing:
+                    shutil.rmtree(state / 'store')
+                else:
+                    next((state / 'store/events').iterdir()).unlink()
+                with self.assertRaises(subprocess.CalledProcessError):
+                    self.prepare(state)
+                self.assertEqual((state / 'provisioned.json').read_bytes(), marker)
+                self.assertEqual((state / 'store').exists(), not missing)
+
+    def test_binary_binding_and_unrecognized_state_fail_before_mutation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state = pathlib.Path(temp) / 'state'
+            bad = dict(self.config, universal_transputer={**self.config['universal_transputer'],
+                                                          'binary_sha256': '0' * 64})
+            with self.assertRaisesRegex(ValueError, 'installed-byte mismatch'):
+                self.prepare(state, bad)
+            self.assertFalse(state.exists())
+            state.mkdir(); (state / 'retain').write_bytes(b'original')
+            with self.assertRaisesRegex(ValueError, 'explicit recovery required'):
+                self.prepare(state)
+            self.assertEqual(list(state.iterdir()), [state / 'retain'])
+            self.assertEqual((state / 'retain').read_bytes(), b'original')
 
 
 class MegaSTDistributionContract(unittest.TestCase):

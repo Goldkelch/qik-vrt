@@ -3,7 +3,7 @@
 //! Full duplex IP/TCP carrier for the C90 bus. Keys authenticate participants;
 //! EAP participation is CONTINUE, separate from any application effect approval.
 use crate::{
-    mesh, sha256,
+    mesh, server, sha256,
     store::{Command, Operation, Store, Subject},
     Result,
 };
@@ -40,6 +40,8 @@ pub struct Config {
     identity: String,
     subject: Subject,
     peers: Vec<PeerKey>,
+    #[serde(default)]
+    repositories: BTreeMap<String, Subject>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -49,6 +51,37 @@ pub struct Credential {
     subject: Subject,
     id: String,
     key: String,
+    #[serde(default)]
+    repositories: BTreeMap<String, Subject>,
+}
+fn validate_repositories(
+    nodes: &BTreeMap<String, Subject>,
+    peers: Option<&[PeerKey]>,
+) -> Result<()> {
+    if nodes.len() > 16 {
+        return Err("REPOSITORY_DIRECTORY_BOUND".into());
+    }
+    for (name, subject) in nodes {
+        subject.validate()?;
+        if subject.repository.len() > 200 {
+            return Err("REPOSITORY_NAME_BOUND".into());
+        }
+        let expected = format!(
+            "repo-{}",
+            &sha256(subject.repository.to_ascii_lowercase().as_bytes())[..32]
+        );
+        if name != &expected {
+            return Err("REPOSITORY_IDENTITY_MISMATCH".into());
+        }
+    }
+    if !nodes.is_empty() {
+        if let Some(peers) = peers {
+            if peers.len() != nodes.len() || peers.iter().any(|p| !nodes.contains_key(&p.id)) {
+                return Err("REPOSITORY_DIRECTORY_MISMATCH".into());
+            }
+        }
+    }
+    Ok(())
 }
 fn id(s: &str) -> bool {
     !s.is_empty()
@@ -127,6 +160,36 @@ pub fn create_config(
     subject: Subject,
     peers: &[String],
 ) -> Result<()> {
+    create_bound_config(directory, identity, subject, peers, BTreeMap::new())
+}
+pub fn create_repository_config(
+    directory: &Path,
+    identity: &str,
+    subject: Subject,
+    nodes: Vec<Subject>,
+) -> Result<()> {
+    let mut repositories = BTreeMap::new();
+    for node in nodes {
+        node.validate()?;
+        let name = format!(
+            "repo-{}",
+            &sha256(node.repository.to_ascii_lowercase().as_bytes())[..32]
+        );
+        if repositories.insert(name, node).is_some() {
+            return Err("DUPLICATE_REPOSITORY".into());
+        }
+    }
+    validate_repositories(&repositories, None)?;
+    let peers = repositories.keys().cloned().collect::<Vec<_>>();
+    create_bound_config(directory, identity, subject, &peers, repositories)
+}
+fn create_bound_config(
+    directory: &Path,
+    identity: &str,
+    subject: Subject,
+    peers: &[String],
+    repositories: BTreeMap<String, Subject>,
+) -> Result<()> {
     subject.validate()?;
     if !id(identity)
         || peers.is_empty()
@@ -146,6 +209,7 @@ pub fn create_config(
         identity: identity.into(),
         subject: subject.clone(),
         peers: Vec::new(),
+        repositories: repositories.clone(),
     };
     for peer in peers {
         let key = hex(&random()?);
@@ -161,6 +225,7 @@ pub fn create_config(
                 subject: subject.clone(),
                 id: peer.clone(),
                 key,
+                repositories: repositories.clone(),
             },
         )?;
     }
@@ -172,7 +237,7 @@ pub fn create_config(
 fn read_json(stream: &mut TcpStream) -> Result<Value> {
     let mut data = Vec::new();
     let mut b = [0u8];
-    for _ in 0..4096 {
+    for _ in 0..16384 {
         io(stream.read_exact(&mut b))?;
         if b[0] == b'\n' {
             return serde_json::from_slice(&data).map_err(|e| e.to_string());
@@ -223,6 +288,7 @@ enum Event {
     Frame(usize, u64, Vec<u8>),
     Offline(usize, u64),
     Input(Value),
+    Http(TcpStream, u16),
     Stop,
 }
 fn reader(
@@ -268,7 +334,7 @@ fn reader(
 }
 fn public(config: &Config) -> Value {
     json!({"schema":config.schema,"identity":config.identity,"subject":config.subject,
-    "peers":config.peers.iter().map(|p|json!({"id":p.id,"key_fingerprint":sha256(p.key.as_bytes())})).collect::<Vec<_>>()})
+    "repositories":config.repositories,"peers":config.peers.iter().map(|p|json!({"id":p.id,"key_fingerprint":sha256(p.key.as_bytes())})).collect::<Vec<_>>()})
 }
 fn register(store: &mut Store, subject: &Subject, value: Value) -> Result<String> {
     let artifact = store.put(&bytes(&value)?)?;
@@ -404,10 +470,19 @@ fn reply(
     subject: &Subject,
     node: &str,
     delivery: &Delivery,
+    expected_subject: Option<&Subject>,
 ) -> Result<Vec<Vec<u8>>> {
     let t = &delivery.transfer;
-    let result = mesh::apply(store, t, &delivery.binding)
-        .unwrap_or_else(|reason| json!({"state":"HOLD","reason":reason,"done":false}));
+    let result = if expected_subject
+        .map(|s| mesh::subject_digest(s))
+        .map(|s| s != hex(&delivery.binding.subject))
+        .unwrap_or(false)
+    {
+        Err("DESTINATION_REPOSITORY_SUBJECT_MISMATCH".into())
+    } else {
+        mesh::apply(store, t, &delivery.binding)
+    }
+    .unwrap_or_else(|reason| json!({"state":"HOLD","reason":reason,"done":false}));
     let body = bytes(
         &json!({"result":result,"store":store.identity(),"checkpoint":store.checkpoint(),"effect_ack_done":false}),
     )?;
@@ -427,11 +502,22 @@ fn reply(
     }
     Ok(frames)
 }
-pub fn peer(root: &Path, credential_path: &Path, address: &str, worker: bool) -> Result<()> {
+pub fn peer(
+    root: &Path,
+    credential_path: &Path,
+    address: &str,
+    worker: bool,
+    terminal: Option<&str>,
+) -> Result<()> {
     let credential: Credential = private_json(credential_path)?;
     credential.subject.validate()?;
     if credential.schema != "qikvrt-bus-peer-v1" || !id(&credential.bus) || !id(&credential.id) {
         return Err("PEER_CREDENTIAL_SCHEMA".into());
+    }
+    validate_repositories(&credential.repositories, None)?;
+    if !credential.repositories.is_empty() && !credential.repositories.contains_key(&credential.id)
+    {
+        return Err("NODE_NOT_IN_DIRECTORY".into());
     }
     let key = mesh::digest(&credential.key)?;
     let mut store = Store::open(root)?;
@@ -476,6 +562,11 @@ pub fn peer(root: &Path, credential_path: &Path, address: &str, worker: bool) ->
         || accepted["bus"] != credential.bus
         || accepted["wire_d4"] != 1
         || accepted["ordinary_release"] != false
+        || accepted
+            .get("repositories")
+            .cloned()
+            .unwrap_or_else(|| json!({}))
+            != serde_json::to_value(&credential.repositories).map_err(|e| e.to_string())?
     {
         return Err("EAP_JOIN_NOT_CONTINUE".into());
     }
@@ -507,6 +598,15 @@ pub fn peer(root: &Path, credential_path: &Path, address: &str, worker: bool) ->
             }
         }
     }
+    let mut messages: VecDeque<Value> = completed
+        .iter()
+        .rev()
+        .take(32)
+        .map(delivery_value)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
     let mut outgoing: Vec<Vec<u8>> = retained
         .into_iter()
         .filter(|r| r.0 == credential.id)
@@ -526,7 +626,13 @@ pub fn peer(root: &Path, credential_path: &Path, address: &str, worker: bool) ->
                 hex(&t.correlation)
             );
             if delivery.kind == 1 && !replied.contains(&key) {
-                outgoing.extend(reply(&mut store, &credential.subject, &node, &delivery)?);
+                outgoing.extend(reply(
+                    &mut store,
+                    &credential.subject,
+                    &node,
+                    &delivery,
+                    credential.repositories.get(&credential.id),
+                )?);
             }
         }
     }
@@ -549,6 +655,27 @@ pub fn peer(root: &Path, credential_path: &Path, address: &str, worker: bool) ->
         label: b"P2B",
     };
     let mut outgoing: VecDeque<Vec<u8>> = outgoing.into();
+    if let Some(address) = terminal {
+        let addr = socket(address)?;
+        if addr.ip().to_string() != "127.0.0.1" {
+            return Err("TERMINAL_LOOPBACK_ONLY".into());
+        }
+        let listener = io(TcpListener::bind(addr))?;
+        let bound = io(listener.local_addr())?;
+        output(
+            json!({"state":"TERMINAL_LISTENING","address":bound.to_string(),"identity":credential.id}),
+        );
+        let http_tx = tx.clone();
+        thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(stream) = stream else { break };
+                let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+                let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
+                // A saturated UI is rejected instead of growing an unbounded queue.
+                let _ = http_tx.try_send(Event::Http(stream, bound.port()));
+            }
+        });
+    }
     let input_tx = tx.clone();
     thread::spawn(move || {
         let stdin = std::io::stdin();
@@ -583,72 +710,54 @@ pub fn peer(root: &Path, credential_path: &Path, address: &str, worker: bool) ->
     loop {
         match rx.recv_timeout(Duration::from_millis(1)) {
             Ok(Event::Input(value)) => {
-                let result = (|| -> Result<Value> {
-                    let op = value["op"].as_str().ok_or("BUS_COMMAND")?;
-                    let destination = value["destination"].as_str().ok_or("BUS_DESTINATION")?;
-                    if !names.values().any(|n| n == destination) || destination == credential.id {
-                        return Err("BUS_DESTINATION".into());
-                    }
-                    let subject = value["subject"].as_str().ok_or("BUS_SUBJECT")?;
-                    let body = unhex(value["payload_hex"].as_str().ok_or("BUS_PAYLOAD_HEX")?)?;
-                    let codec = value["codec"]
-                        .as_u64()
-                        .filter(|n| (1..=3).contains(n))
-                        .ok_or("BUS_CODEC")? as u8;
-                    let b = mesh::binding(&credential.id, destination, subject)?;
-                    let frames = if op == "send" {
-                        serial = serial.checked_add(1).ok_or("PEER_SEQUENCE_EXHAUSTED")?;
-                        exchange::frames(&b, codec, &body, session, serial, serial, false)
-                            .map_err(str::to_owned)?
-                    } else if op == "reply" {
-                        let correlation = mesh::digest(
-                            value["correlation"].as_str().ok_or("REPLY_CORRELATION")?,
-                        )?;
-                        let number = |key: &str| {
-                            value[key]
-                                .as_u64()
-                                .filter(|n| *n <= u32::MAX as u64)
-                                .map(|n| n as u32)
-                                .ok_or_else(|| "REPLY_REQUEST_ID".to_string())
-                        };
-                        let mut b = b;
-                        b.source_layer = 4;
-                        b.destination_layer = 1;
-                        exchange::frames_correlated(
-                            &b,
-                            codec,
-                            &body,
-                            number("session")?,
-                            number("nonce")?,
-                            number("message_id")?,
-                            true,
-                            Some(&correlation),
-                        )
-                        .map_err(str::to_owned)?
-                    } else {
-                        return Err("BUS_COMMAND".into());
-                    };
-                    for frame in &frames {
-                        record(
-                            &mut store,
-                            &credential.subject,
-                            &node,
-                            &credential.id,
-                            destination,
-                            frame,
-                        )?;
-                    }
-                    outgoing.extend(frames.iter().cloned());
-                    let (header, route) = exchange::unpack(&frames[0]).map_err(str::to_owned)?;
-                    Ok(
-                        json!({"state":"SENT","destination":destination,"correlation":hex(&route[140..172]),
-                    "session":u32::from_be_bytes(header[12..16].try_into().unwrap()),"nonce":u32::from_be_bytes(header[16..20].try_into().unwrap()),
-                    "message_id":u32::from_be_bytes(header[32..36].try_into().unwrap()),"frames":frames.len(),"ordinary_release":false}),
-                    )
-                })();
+                let result = enqueue(
+                    &mut store,
+                    &credential,
+                    &node,
+                    &names,
+                    &mut outgoing,
+                    &mut serial,
+                    session,
+                    &value,
+                );
                 output(result.unwrap_or_else(
                     |reason| json!({"state":"HOLD","reason":reason,"ordinary_release":false}),
                 ));
+            }
+            Ok(Event::Http(mut stream, port)) => {
+                let _ = server::handle_with(&mut stream, port, |method, path, body| {
+                    match (method, path) {
+                        ("GET", "/api/bus") => {
+                            Ok(Some(json!({"identity":credential.id,"bus":credential.bus,
+                            "repositories":credential.repositories,
+                            "subject_digests":credential.repositories.iter().map(|(id,s)|(id.clone(),mesh::subject_digest(s))).collect::<BTreeMap<_,_>>(),
+                            "peers":names.values().collect::<Vec<_>>(),
+                            "pending_frames":outgoing.len(),"effect_ack_done":false})))
+                        }
+                        ("GET", "/api/bus/messages") => Ok(Some(
+                            json!({"messages":messages,"limit":32,"history_retained":true,"effect_ack_done":false}),
+                        )),
+                        ("POST", "/api/bus/send") => {
+                            let value: Value =
+                                serde_json::from_slice(body).map_err(|e| e.to_string())?;
+                            if value["op"] != "send" {
+                                return Err("TERMINAL_SEND_ONLY".into());
+                            }
+                            enqueue(
+                                &mut store,
+                                &credential,
+                                &node,
+                                &names,
+                                &mut outgoing,
+                                &mut serial,
+                                session,
+                                &value,
+                            )
+                            .map(Some)
+                        }
+                        _ => server::dispatch(&mut store, method, path, body),
+                    }
+                });
             }
             Ok(Event::Frame(_, _, raw)) => {
                 let (m, p) = exchange::unpack(&raw).map_err(str::to_owned)?;
@@ -667,6 +776,10 @@ pub fn peer(root: &Path, credential_path: &Path, address: &str, worker: bool) ->
                 )?;
                 match assembly.feed(&raw, &credential.id, &names) {
                     Ok(Some(delivery)) => {
+                        messages.push_back(delivery_value(&delivery));
+                        if messages.len() > 32 {
+                            messages.pop_front();
+                        }
                         let t = &delivery.transfer;
                         output(
                             json!({"state":"RECEIVED","source":delivery.from,"destination":delivery.to,"subject":hex(&delivery.binding.subject),
@@ -679,6 +792,7 @@ pub fn peer(root: &Path, credential_path: &Path, address: &str, worker: bool) ->
                                 &credential.subject,
                                 &node,
                                 &delivery,
+                                credential.repositories.get(&credential.id),
                             )?);
                         }
                     }
@@ -700,6 +814,91 @@ pub fn peer(root: &Path, credential_path: &Path, address: &str, worker: bool) ->
             writer.send(&frame)?;
         }
     }
+}
+fn delivery_value(delivery: &Delivery) -> Value {
+    let t = &delivery.transfer;
+    json!({"source":delivery.from,"destination":delivery.to,"subject":hex(&delivery.binding.subject),
+        "kind":delivery.kind,"correlation":hex(&t.correlation),"codec":t.codec,
+        "session":t.session,"nonce":t.nonce,"message_id":t.message,
+        "payload_sha256":sha256(&t.body),"bytes":t.body.len(),"payload_utf8":std::str::from_utf8(&t.body).ok(),
+        "effect_ack_done":false})
+}
+fn enqueue(
+    store: &mut Store,
+    credential: &Credential,
+    node: &str,
+    names: &BTreeMap<[u8; 32], String>,
+    outgoing: &mut VecDeque<Vec<u8>>,
+    serial: &mut u32,
+    session: u32,
+    value: &Value,
+) -> Result<Value> {
+    let op = value["op"].as_str().ok_or("BUS_COMMAND")?;
+    let destination = value["destination"].as_str().ok_or("BUS_DESTINATION")?;
+    if !names.values().any(|n| n == destination) || destination == credential.id {
+        return Err("BUS_DESTINATION".into());
+    }
+    let subject = value["subject"].as_str().ok_or("BUS_SUBJECT")?;
+    if op == "send" {
+        if let Some(expected) = credential.repositories.get(destination) {
+            if mesh::subject_digest(expected) != subject {
+                return Err("DESTINATION_REPOSITORY_SUBJECT_MISMATCH".into());
+            }
+        }
+    }
+    let body = unhex(value["payload_hex"].as_str().ok_or("BUS_PAYLOAD_HEX")?)?;
+    let codec = value["codec"]
+        .as_u64()
+        .filter(|n| (1..=3).contains(n))
+        .ok_or("BUS_CODEC")? as u8;
+    let b = mesh::binding(&credential.id, destination, subject)?;
+    let frames = if op == "send" {
+        *serial = serial.checked_add(1).ok_or("PEER_SEQUENCE_EXHAUSTED")?;
+        exchange::frames(&b, codec, &body, session, *serial, *serial, false)
+            .map_err(str::to_owned)?
+    } else if op == "reply" {
+        let correlation = mesh::digest(value["correlation"].as_str().ok_or("REPLY_CORRELATION")?)?;
+        let number = |key: &str| {
+            value[key]
+                .as_u64()
+                .filter(|n| *n <= u32::MAX as u64)
+                .map(|n| n as u32)
+                .ok_or_else(|| "REPLY_REQUEST_ID".to_string())
+        };
+        let mut b = b;
+        b.source_layer = 4;
+        b.destination_layer = 1;
+        exchange::frames_correlated(
+            &b,
+            codec,
+            &body,
+            number("session")?,
+            number("nonce")?,
+            number("message_id")?,
+            true,
+            Some(&correlation),
+        )
+        .map_err(str::to_owned)?
+    } else {
+        return Err("BUS_COMMAND".into());
+    };
+    for frame in &frames {
+        record(
+            store,
+            &credential.subject,
+            node,
+            &credential.id,
+            destination,
+            frame,
+        )?;
+    }
+    outgoing.extend(frames.iter().cloned());
+    let (header, route) = exchange::unpack(&frames[0]).map_err(str::to_owned)?;
+    Ok(
+        json!({"state":"QUEUED_DURABLE","destination":destination,"correlation":hex(&route[140..172]),
+                    "session":u32::from_be_bytes(header[12..16].try_into().unwrap()),"nonce":u32::from_be_bytes(header[16..20].try_into().unwrap()),
+                    "message_id":u32::from_be_bytes(header[32..36].try_into().unwrap()),"frames":frames.len(),"ordinary_release":false}),
+    )
 }
 fn record(
     store: &mut Store,
@@ -809,9 +1008,10 @@ fn route_retained(
     }
     result.map_err(str::to_owned)
 }
-pub fn serve(root: &Path, config_path: &Path, address: &str) -> Result<()> {
+pub fn serve(root: &Path, config_path: &Path, address: &str, supervised: bool) -> Result<()> {
     let config: Config = private_json(config_path)?;
     config.subject.validate()?;
+    validate_repositories(&config.repositories, Some(&config.peers))?;
     if config.schema != "qikvrt-bus-config-v1"
         || !id(&config.identity)
         || config.peers.is_empty()
@@ -849,6 +1049,15 @@ pub fn serve(root: &Path, config_path: &Path, address: &str) -> Result<()> {
     let listener = io(TcpListener::bind(socket(address)?))?;
     io(listener.set_nonblocking(true))?;
     let (tx, rx) = mpsc::sync_channel(64);
+    if supervised {
+        let lifetime = tx.clone();
+        thread::spawn(move || {
+            let mut input = std::io::stdin();
+            let mut data = [0u8; 1];
+            while input.read(&mut data).unwrap_or(0) != 0 {}
+            let _ = lifetime.send(Event::Stop);
+        });
+    }
     let mut writers: BTreeMap<usize, (u64, Writer, usize)> = BTreeMap::new();
     let mut generation = 0u64;
     output(
@@ -886,7 +1095,7 @@ pub fn serve(root: &Path, config_path: &Path, address: &str) -> Result<()> {
                         return Err("EAP_PARTICIPATION_REFUSED".into());
                     }
                     let mut accepted = json!({"state":"JOINED","effect_ack":"EFFECT_ACK_CONTINUE","wire_d4":state,"ordinary_release":false,
-                        "id":name,"bus":config.identity,"peers":config.peers.iter().map(|p|p.id.clone()).collect::<Vec<_>>()});
+                        "id":name,"bus":config.identity,"repositories":config.repositories,"peers":config.peers.iter().map(|p|p.id.clone()).collect::<Vec<_>>()});
                     let proof = sign(&key, &[b"ACCEPT\n", &nonce, &bytes(&accepted)?]);
                     accepted["proof"] = json!(hex(&proof));
                     write_json(&mut stream, &accepted)?;
@@ -1006,6 +1215,7 @@ pub fn serve(root: &Path, config_path: &Path, address: &str) -> Result<()> {
             Ok(Event::Offline(slot, g)) if writers.get(&slot).map(|p| p.0) == Some(g) => {
                 writers.remove(&slot);
             }
+            Ok(Event::Stop) => return Ok(()),
             Err(mpsc::RecvTimeoutError::Disconnected) => return Err("BUS_CHANNEL_CLOSED".into()),
             _ => {}
         }

@@ -57,6 +57,7 @@ Reproduction:
   cargo test --locked --manifest-path next/Cargo.toml
   cargo build --release --locked --manifest-path next/Cargo.toml
   python3 next/tools/check_bus.py
+  python3 next/tools/check_nodes.py
   python3 next/tools/check_exchange.py
   python3 next/tools/check_continuity.py
   python3 next/tools/check_hardware.py
@@ -73,3 +74,10 @@ proof does not validate a successor. Physical board boot, synthesis timing,
 native review, Main promotion, a release and public deployment each need their
 own exact evidence. Bus admission and transport receipts do not grant ordinary
 release. Keys remain in operator-owned private configuration outside Git.
+
+Repository nodes: next/tools/node.py supplies mutually authenticated TLS 1.3
+with explicit certificate pins above the existing C90/HMAC bus. Each enrolled
+repository has a distinct exact subject and durable store. The same store owner
+serves its local terminal concurrently. Enrollment, key distribution and live
+endpoint deployment must be observed separately; no global deployment follows
+from source presence. See next/README.md for the private service profile.

@@ -30,7 +30,9 @@ pub fn serve(root: &Path, address: &str) -> Result<()> {
         let mut client = client.map_err(|e| e.to_string())?;
         let _ = client.set_read_timeout(Some(Duration::from_secs(3)));
         let _ = client.set_write_timeout(Some(Duration::from_secs(3)));
-        if let Err(e) = handle(&mut client, &mut store, bound.port()) {
+        if let Err(e) = handle_with(&mut client, bound.port(), |method, path, body| {
+            dispatch(&mut store, method, path, body)
+        }) {
             let _ = respond(
                 &mut client,
                 400,
@@ -57,7 +59,11 @@ fn respond(stream: &mut TcpStream, code: u16, kind: &str, body: &[u8]) -> Result
         .and_then(|_| stream.flush())
         .map_err(|e| e.to_string())
 }
-fn handle(stream: &mut TcpStream, store: &mut Store, port: u16) -> Result<()> {
+pub(crate) fn handle_with(
+    stream: &mut TcpStream,
+    port: u16,
+    mut route: impl FnMut(&str, &str, &[u8]) -> Result<Option<serde_json::Value>>,
+) -> Result<()> {
     let mut reader = BufReader::new(stream.try_clone().map_err(|e| e.to_string())?);
     let mut head = Vec::new();
     // Read byte-bounded headers; do not allocate an unbounded request line.
@@ -114,48 +120,65 @@ fn handle(stream: &mut TcpStream, store: &mut Store, port: u16) -> Result<()> {
     {
         return Err("SAME_ORIGIN_REQUIRED".into());
     }
-    let result = match (parts[0], parts[1]) {
-        ("GET", "/") | ("GET", "/AI") => {
-            return respond(
-                stream,
-                200,
-                "text/html; charset=utf-8",
-                include_bytes!("../../../ui/index.html"),
-            )
+    if parts[0] == "POST" {
+        let expected = if parts[1] == "/api/compile" {
+            "text/plain"
+        } else {
+            "application/json"
+        };
+        if headers.get("content-type") != Some(&expected) {
+            return Err("CONTENT_TYPE_REQUIRED".into());
         }
+    }
+    if parts[0] == "GET" && matches!(parts[1], "/" | "/AI") {
+        return respond(
+            stream,
+            200,
+            "text/html; charset=utf-8",
+            include_bytes!("../../../ui/index.html"),
+        );
+    }
+    match route(parts[0], parts[1], &body) {
+        Ok(Some(value)) => respond(
+            stream,
+            200,
+            "application/json",
+            &serde_json::to_vec(&value).map_err(|e| e.to_string())?,
+        ),
+        Ok(None) => respond(
+            stream,
+            404,
+            "application/json",
+            b"{\"state\":\"NOT_FOUND\"}",
+        ),
+        Err(reason) => respond(
+            stream,
+            400,
+            "application/json",
+            &serde_json::to_vec(&json!({"state":"HOLD","reason":reason,"done":false}))
+                .map_err(|e| e.to_string())?,
+        ),
+    }
+}
+pub(crate) fn dispatch(
+    store: &mut Store,
+    method: &str,
+    path: &str,
+    body: &[u8],
+) -> Result<Option<serde_json::Value>> {
+    Ok(Some(match (method, path) {
         ("GET", "/api/directory") => store.discover(now()),
         ("GET", "/api/events") => store.history(0),
         ("GET", "/api/checkpoint") => {
             serde_json::to_value(store.checkpoint()).map_err(|e| e.to_string())?
         }
-        ("POST", "/api/compile") => {
-            if headers.get("content-type") != Some(&"text/plain") {
-                return Err("TEXT_CONTENT_TYPE_REQUIRED".into());
-            }
-            serde_json::to_value(compiler::compile(
-                std::str::from_utf8(&body).map_err(|_| "UTF8_REQUIRED")?,
-            )?)
-            .map_err(|e| e.to_string())?
-        }
+        ("POST", "/api/compile") => serde_json::to_value(compiler::compile(
+            std::str::from_utf8(body).map_err(|_| "UTF8_REQUIRED")?,
+        )?)
+        .map_err(|e| e.to_string())?,
         ("POST", "/api/execute") => {
-            if headers.get("content-type") != Some(&"application/json") {
-                return Err("JSON_CONTENT_TYPE_REQUIRED".into());
-            }
-            store.append(serde_json::from_slice::<Command>(&body).map_err(|e| e.to_string())?)?
+            store.append(serde_json::from_slice::<Command>(body).map_err(|e| e.to_string())?)?
         }
-        _ => {
-            return respond(
-                stream,
-                404,
-                "application/json",
-                b"{\"state\":\"NOT_FOUND\"}",
-            )
-        }
-    };
-    respond(
-        stream,
-        200,
-        "application/json",
-        &serde_json::to_vec(&result).map_err(|e| e.to_string())?,
-    )
+        _ => return Ok(None),
+    }))
 }

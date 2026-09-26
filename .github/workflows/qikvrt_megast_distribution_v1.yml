@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - 'distribution/qikvrt-megast/**'
+      - 'next/**'
+      - 'src/effect_ack_core.c'
+      - 'include/qikvrt/effect_ack.h'
       - '.github/workflows/qikvrt_megast_distribution_v1.yml'
       - 'tests/test_qikvrt_megast_distribution.py'
       - 'tests/test_qikvrt_netboot.py'
@@ -22,6 +25,9 @@ on:
     branches: [ main, 'work/qikvrt-linux-ssh-*' ]
     paths:
       - 'distribution/qikvrt-megast/**'
+      - 'next/**'
+      - 'src/effect_ack_core.c'
+      - 'include/qikvrt/effect_ack.h'
       - '.github/workflows/qikvrt_megast_distribution_v1.yml'
       - 'tests/test_qikvrt_megast_distribution.py'
       - 'tests/test_qikvrt_netboot.py'
@@ -141,9 +147,27 @@ jobs:
           path: /tmp/qikvrt-dependency-diagnostics/PHARO_VM_ARCHIVE_PROBE.json
           if-no-files-found: error
           retention-days: 30
+      - name: Execute universal Transputer gates before image integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin 26bc470bf553f471abc02e65950acaffb3e5302a
+          python3 -B next/tools/bootstrap.py --prefix "$RUNNER_TEMP/qikvrt-target-tools" --install
+          . "$RUNNER_TEMP/qikvrt-target-tools/target-env.sh"
+          python3 -B next/tools/run_checks.py --output-dir "$RUNNER_TEMP/qikvrt-megast-transputer-evidence"
+          test -x next/target/release/qikvrt-next
+          python3 -B -m unittest tests.test_qikvrt_megast_distribution.TransputerIntegration -v
+      - name: Preserve exact-subject Transputer gate results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: megast-transputer-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/qikvrt-megast-transputer-evidence/
+          if-no-files-found: warn
       - name: Build exact-subject ISO
         env:
           QIKVRT_EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          QIKVRT_TARGET_TOOLS: ${{ runner.temp }}/qikvrt-target-tools
         run: sudo -E ./distribution/qikvrt-megast/build.sh
       - name: Reobserve artifact binding
         run: |

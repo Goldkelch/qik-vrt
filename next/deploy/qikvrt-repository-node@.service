@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+[Unit]
+Description=QIK-VRT authenticated repository node %i
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+User=qikvrt
+Group=qikvrt
+ExecStart=/usr/bin/python3 -B /opt/qikvrt/node.py profile /etc/qikvrt/nodes/%i.json
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=10
+StateDirectory=qikvrt-nodes
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

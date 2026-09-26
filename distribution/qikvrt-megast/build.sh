@@ -82,6 +82,41 @@ cp -a "${QIKVRT_TOOLCHAIN_CACHE:-$ROOT/.qikvrt/toolchains}/pharo/$PHARO_VERSION/
 cp "$ROOT/src/smalltalk/smoke.st" "$GUEST/opt/qikvrt/smalltalk/"
 cp "$ROOT/runtime/toolchains/"pharo-*-LICENSE.txt "$GUEST/opt/qikvrt/smalltalk/"
 cp "$ROOT/distribution/qikvrt-megast/boot.py" "$GUEST/opt/qikvrt/boot.py"
+cp "$ROOT/next/tools/node.py" "$GUEST/opt/qikvrt/node.py"
+cp "$ROOT/next/deploy/qikvrt-repository-node@.service" "$GUEST/etc/systemd/system/"
+# Node certificates and profiles are provisioned per owner, never baked into an image.
+# Reuse the universal C90/Rust runtime; the desktop is its local terminal.
+# Cargo's lock and the existing isolated toolchain bootstrap own dependencies.
+TRANSPUTER_TOOLS="${QIKVRT_TARGET_TOOLS:-$WORK/target-tools}"
+python3 -B "$ROOT/next/tools/bootstrap.py" --prefix "$TRANSPUTER_TOOLS" --install
+. "$TRANSPUTER_TOOLS/target-env.sh"
+"$QIKVRT_CARGO" build --release --locked --manifest-path "$ROOT/next/Cargo.toml"
+install -m 0755 "$ROOT/next/target/release/qikvrt-next" "$GUEST/usr/local/bin/qikvrt-next"
+install -m 0644 "$ROOT/next/examples/boolean_roundtrip.temdd" "$GUEST/opt/qikvrt/boolean_roundtrip.temdd"
+TRANSPUTER_SHA=$(sha256sum "$GUEST/usr/local/bin/qikvrt-next" | cut -d ' ' -f 1)
+TRANSPUTER_PROGRAM_SHA=$(sha256sum "$GUEST/opt/qikvrt/boolean_roundtrip.temdd" | cut -d ' ' -f 1)
+cat > "$GUEST/etc/systemd/system/qikvrt-transputer.service" <<'EOF'
+[Unit]
+Description=QIK-VRT Universal Transputer and TEMDD Terminal
+Wants=live-config.service
+After=live-config.service network.target
+[Service]
+User=qikvrt
+Group=qikvrt
+StateDirectory=qikvrt-transputer
+StateDirectoryMode=0700
+UMask=0077
+ExecStart=/usr/bin/python3 -B /opt/qikvrt/boot.py transputer-guest
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+Restart=on-failure
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
+EOF
+ln -s ../qikvrt-transputer.service "$GUEST/etc/systemd/system/multi-user.target.wants/qikvrt-transputer.service"
 CODEX_LOCK="$ROOT/runtime/toolchains/codex-0.155.1.lock.json"
 CODEX_VERSION=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$CODEX_LOCK")
 python3 -B "$ROOT/distribution/qikvrt-megast/boot.py" codex-install \
@@ -238,6 +273,7 @@ cat > "$WORK/config/includes.chroot/etc/qikvrt/distribution.json" <<EOF
   "schema": "qikvrt_megast_distribution_v1",
   "source_sha": "$SHA",
   "source_tree": "$TREE",
+  "universal_transputer": {"binary_sha256": "$TRANSPUTER_SHA", "program_sha256": "$TRANSPUTER_PROGRAM_SHA", "terminal": "http://127.0.0.1:8772/AI", "store": "/var/lib/qikvrt-transputer/store"},
   "codex": $(cat "$GUEST/opt/qikvrt/codex/qikvrt-install-receipt.json"),
   "ssh": {"activation": "explicit_owner_public_key", "user": "qikvrt", "port": 2222, "chatgpt_pairing": "NOT_ESTABLISHED"},
   "emutos_rom_sha256": "$EMUTOS_ROM_SHA",

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 import hashlib
+import contextlib
 import importlib.util
 import io
 import json
@@ -21,6 +22,17 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("qikvrt_netboot", ROOT / "distribution/qikvrt-megast/boot.py")
 boot = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(boot)
+
+
+def guest_receipt_fixture():
+    """Synthetic protocol bytes only; these never claim an executed VM."""
+    return {"schema": "qikvrt_megast_runtime_receipt_v1", "source_sha": "a" * 40,
+            "source_tree": "b" * 40, "effect_ack_done": False,
+            "universal_transputer": {
+                "subject": boot.transputer_subject({"source_sha": "a" * 40, "source_tree": "b" * 40}),
+                "temdd_compiled": True, "durable_replay": True, "c90_value": 4,
+                "binary_sha256": "c" * 64, "program_sha256": "d" * 64,
+                "event_digest": "e" * 64, "effect_ack_done": False}}
 
 
 class NetbootTests(unittest.TestCase):
@@ -146,6 +158,41 @@ class NetbootTests(unittest.TestCase):
         self.assertEqual(boot.runtime_result(marker + "\r\n", "a" * 40), "success")
         self.assertEqual(boot.runtime_result(marker + "\nQIKVRT_RUNTIME_BLOCK return failed\n", "a" * 40), "failure")
 
+    def test_guest_receipt_uses_journal_relay_when_serial_is_denied(self):
+        spec = importlib.util.spec_from_file_location('guest_witness', ROOT / 'distribution/qikvrt-megast/runtime-witness.py')
+        witness = importlib.util.module_from_spec(spec); spec.loader.exec_module(witness)
+        receipt = guest_receipt_fixture()
+        receipt['diagnostic_padding'] = 'x' * 2000
+        with patch('builtins.open', side_effect=PermissionError('serial denied')), \
+                patch.object(witness.subprocess, 'run') as relay, contextlib.redirect_stdout(io.StringIO()):
+            witness.emit_runtime_receipt(receipt)
+        args = relay.call_args.args[0]
+        self.assertEqual(args[:5], ['logger', '--size', '65536', '-t', 'qikvrt-runtime'])
+        self.assertTrue(relay.call_args.kwargs['check'])
+        returned = boot.runtime_receipt(args[5] + '\n', receipt)
+        self.assertEqual(returned, receipt)
+
+    def test_marker_only_foreign_and_conflicting_receipts_are_rejected(self):
+        value = guest_receipt_fixture()
+        line = 'QIKVRT_RUNTIME_RECEIPT ' + json.dumps(value) + '\n'
+        self.assertEqual(boot.runtime_receipt(line + line, value), value)
+        for invalid in ('QIKVRT_MEGAST_RUNTIME_OK source_sha=' + 'a' * 40 + '\n',
+                        'QIKVRT_GRAPHICS_DIAGNOSTICS ' + json.dumps({'quoted': line}) + '\n',
+                        line.rstrip('\n')):
+            with self.subTest(invalid=invalid[:50]), self.assertRaisesRegex(ValueError, 'missing or conflicting'):
+                boot.runtime_receipt(invalid, value)
+        for field in ('source_sha', 'source_tree'):
+            wrong = dict(value, **{field: '0' * 40})
+            with self.assertRaisesRegex(ValueError, 'HEAD/TREE mismatch'):
+                boot.runtime_receipt('QIKVRT_RUNTIME_RECEIPT ' + json.dumps(wrong) + '\n', value)
+        for field, bad in (('durable_replay', False), ('effect_ack_done', True), ('event_digest', None)):
+            wrong = dict(value, universal_transputer={**value['universal_transputer'], field: bad})
+            with self.assertRaisesRegex(ValueError, 'execution receipt invalid'):
+                boot.runtime_receipt('QIKVRT_RUNTIME_RECEIPT ' + json.dumps(wrong) + '\n', value)
+        other = dict(value, changed=True)
+        with self.assertRaisesRegex(ValueError, 'missing or conflicting'):
+            boot.runtime_receipt(line + 'QIKVRT_RUNTIME_RECEIPT ' + json.dumps(other) + '\n', value)
+
     def test_early_boot_marker_never_substitutes_for_runtime_and_failure_is_retained(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -186,11 +233,12 @@ class NetbootTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             for name in boot.FILES.values(): (root / name).write_bytes(b"image")
-            manifest = boot.make_manifest(root, "a" * 40)
+            manifest = boot.make_manifest(root, "a" * 40, "b" * 40)
             fake = root / "qemu-stub"
             fake.write_text("#!/usr/bin/env python3\nimport signal,sys,time\n"
                             "def stop(*args):\n print('QEMU shutdown output', flush=True)\n sys.exit(0)\n"
                             "signal.signal(signal.SIGTERM, stop)\n"
+                            "print(" + repr('QIKVRT_RUNTIME_RECEIPT ' + json.dumps(guest_receipt_fixture())) + ", flush=True)\n"
                             "print('QIKVRT_MEGAST_RUNTIME_OK source_sha=" + "a" * 40 + "', flush=True)\n"
                             "while True: time.sleep(1)\n")
             fake.chmod(0o700)
@@ -200,6 +248,7 @@ class NetbootTests(unittest.TestCase):
                 receipt = boot.boot(root, manifest, timeout=5, verify_only=True)
             persisted = json.loads((root / "qikvrt-netboot-receipt.json").read_text())
             self.assertEqual(persisted, receipt)
+            self.assertEqual(receipt['guest_runtime_receipt'], guest_receipt_fixture())
             self.assertEqual(receipt["serial_sha256"], boot.sha256(root / receipt["serial_evidence_file"]))
             self.assertNotEqual(receipt["serial_sha256"], boot.sha256(root / "qikvrt-netboot-serial.log"))
             self.assertIn("QEMU shutdown output", (root / "qikvrt-netboot-serial.log").read_text())
