@@ -120,7 +120,7 @@ python3 -B tests/test_qikvrt_publication_monitor.py
 sh tools/qikvrt_publication_monitor_runner.sh probe /absolute/data-checkout /absolute/new-audit-dir
 ```
 
-Die 41 Regressionstests verwenden synthetische Fixtures. Sie prüfen Verlust,
+Die 43 Regressionstests verwenden synthetische Fixtures. Sie prüfen Verlust,
 Neustart, Sperre, beschädigte Antwortbytes, HTTP-Fehler, Versionstrennung,
 Deduplication und Negativfälle, nicht die heutige Verfügbarkeit einer Plattform.
 Ein gesonderter nativer Run liefert die frischen HTTP-Antworten. Externe
@@ -128,3 +128,10 @@ Netzausfälle werden nicht unmöglich; der überprüfbare Anspruch ist, sie nich
 mehr mit Zustandsverlust, leerer Inventur, Neuveröffentlichung oder erfolgreicher
 Reobservation zu verwechseln. Kein Ergebnis impliziert wissenschaftliche
 Bestätigung, Repository-Approval oder allgemeines `EFFECT_ACK_DONE`.
+
+Der erste native Probe fand sieben Zenodo-Records direkt, aber die Inventur
+wurde mit HTTP 400 zurückgewiesen: anonyme Requests dürfen höchstens 25
+Einträge pro Seite verlangen. Der Adapter verwendet deshalb 25, ohne Token
+anzufordern. Die arXiv-406-Antwort wird als Fehler erhalten; breitere XML-
+Medientypverhandlung bleibt erneut öffentlich zu prüfen. Daten und Fehler
+werden nicht zu einem globalen Erfolgsstatus zusammengezogen.

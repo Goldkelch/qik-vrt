@@ -2,6 +2,13 @@
 # Copyright 2026 Ingolf Lohmann.
 name: QIKVRT authoritative public-state monitor
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'PUBLICATION_MONITOR.json'
+      - 'policy/PUBLICATION_MONITOR_V1.json'
+      - 'tools/qikvrt_publication_monitor*'
+      - '.github/workflows/qikvrt_publication_monitor.yml'
   schedule:
     - cron: '41 * * * *'
   workflow_dispatch:

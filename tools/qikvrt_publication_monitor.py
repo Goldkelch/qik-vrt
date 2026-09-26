@@ -390,7 +390,7 @@ class PublicGET:
         self.last_by_host[host] = time.monotonic()
         req = request.Request(url, method='GET', headers={
             'User-Agent': 'QIKVRT-publication-monitor/1.0 (https://github.com/Goldkelch/qik-vrt)',
-            'Accept': 'application/atom+xml' if xml else 'application/json',
+            'Accept': 'application/atom+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.1' if xml else 'application/json',
             'Accept-Encoding': 'identity',
         })
         try:
@@ -443,7 +443,7 @@ def endpoint(base: str, **params) -> str:
 def paged_json(client, base: str, params: dict, family: str, limit: int) -> tuple[list, list]:
     items, proofs, seen, expected = [], [], set(), None
     for page in range(1, limit + 1):
-        args = {**params, 'page': page, ('per_page' if family == 'cratesio' else 'size'): 100}
+        args = {**params, 'page': page, ('per_page' if family == 'cratesio' else 'size'): (100 if family == 'cratesio' else 25)}
         value, proof = client.read(endpoint(base, **args))
         dictionary(value, family)
         container = dictionary(value['meta'] if family == 'cratesio' else value['hits'], 'inventory metadata')

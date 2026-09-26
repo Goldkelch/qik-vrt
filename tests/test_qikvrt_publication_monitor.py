@@ -369,6 +369,19 @@ class PersistenceTests(unittest.TestCase):
             with self.assertRaises(m.MonitorError):
                 m.validate_store(store, ledger.state, POLICY)
 
+    def test_zenodo_public_page_size_matches_observed_anonymous_limit(self):
+        client = Client([{'hits': {'total': 0, 'hits': []}}])
+        m.paged_json(client, 'https://zenodo.org/api/records', {}, 'zenodo', 2)
+        self.assertIn('size=25', client.calls[0])
+        self.assertNotIn('size=100', client.calls[0])
+
+    def test_xml_media_negotiation_and_main_effect_trigger(self):
+        source = (ROOT / 'tools/qikvrt_publication_monitor.py').read_text()
+        self.assertIn('application/atom+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.1', source)
+        workflow = (ROOT / '.github/workflows/qikvrt_publication_monitor.yml').read_text()
+        self.assertIn('push:\n    branches: [main]', workflow)
+        self.assertIn("github.ref == 'refs/heads/main'", workflow)
+
     def test_required_ci_registers_regressions(self):
         ci = (ROOT / '.github/workflows/qikvrt_ci.yml').read_text()
         self.assertIn('python3 -B tests/test_qikvrt_publication_monitor.py', ci)
