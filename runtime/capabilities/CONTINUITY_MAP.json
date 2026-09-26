@@ -1,0 +1,24 @@
+{
+  "schema": "qikvrt-capability-continuity-map/1",
+  "owner": "Ingolf Lohmann",
+  "direction_date": "2026-09-26",
+  "scope": "Every currently local runtime function and capability, with incremental discovery of previously unobserved surfaces.",
+  "rules": [
+    "Preserve behavior, inputs, outputs, dependencies, rights, private state, recovery and acceptance tests.",
+    "A catalog, policy, source file, mock test or queued work unit is not operational migration.",
+    "Proprietary platform implementation and credentials are not exported; use authorized interfaces or compatible implementations.",
+    "No stored ChatGPT task is created, reactivated or used as the replacement.",
+    "Do not retire a permitted working source before target acceptance; a prohibited source remains disabled even while target migration is blocked.",
+    "Mail bodies, message identifiers, recipient lists, tokens and private journals remain outside public Git, logs and Actions artifacts.",
+    "Fresh deployment, real task execution and restart recovery are required before operational parity can be asserted."
+  ],
+  "routes": [
+    {"prefix":"mcp__codex_apps__microsoft_outlook_email_", "reuse_locations":["tools/qikvrt_outlook_continuity.py"], "next_effect":"Bind an authorized private Outlook adapter, migrate the private checkpoint/journal, and verify live move and recovery without sending.", "blockers":["PRIVATE_OUTLOOK_ADAPTER_NOT_BOUND", "PRIVATE_DURABLE_RUNNER_NOT_BOUND", "SEMANTIC_CLASSIFIER_NOT_BOUND"]},
+    {"prefix":"mcp__codex_apps__github_", "reuse_locations":["tools/qikvrt_workflow_executor.py", "tools/ai_handoff.py"], "next_effect":"Bind each operation to its existing repository-native implementation and exact-subject acceptance receipt.", "blockers":["PER_OPERATION_PARITY_UNVERIFIED"]},
+    {"prefix":"mcp__codex_apps__automations_", "reuse_locations":["tools/qikvrt_workflow_executor.py", ".github/workflows/qikvrt_workflow_executor.yml"], "next_effect":"Map authorized task semantics and state to existing repository triggers; verify real execution and restart.", "blockers":["TASK_SEMANTIC_PARITY_UNVERIFIED"]},
+    {"prefix":"mcp__codex_apps__personal_context_", "reuse_locations":["next/crates/qikvrt/src/store.rs"], "next_effect":"Implement private provenance-preserving retrieval/import via authorized export, with correction and retention semantics.", "blockers":["PRIVATE_CONTEXT_ADAPTER_UNVERIFIED"]},
+    {"prefix":"mcp__cua_repl", "reuse_locations":["policy/THIRD_PARTY_HMI_INTEROP_REGISTRY_V1.json"], "next_effect":"Bind authorized browser adapter and verify actual browser interaction on the destination host.", "blockers":["BROWSER_RUNTIME_PARITY_UNVERIFIED"]},
+    {"prefix":"functions", "reuse_locations":["tools/qikvrt_subprocess.py", "runtime/toolchains/TOOLCHAIN.lock.tsv"], "next_effect":"Bind execution, orchestration, cancellation and result transport to tested repository-native paths.", "blockers":["HOST_EXECUTION_PARITY_UNVERIFIED"]}
+  ],
+  "fallback": {"reuse_locations":["policy/THIRD_PARTY_HMI_INTEROP_REGISTRY_V1.json"], "next_effect":"Discover reusable implementation, bind authorized adapter, dependency/license contract and real-task/restart acceptance; retain as open until verified.", "blockers":["DESTINATION_ADAPTER_UNVERIFIED"]}
+}
