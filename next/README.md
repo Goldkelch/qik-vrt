@@ -116,8 +116,9 @@ receipt. Codec 1 carries a JSON `Command`, codec 2 an immutable object, codec 3 
 receipt. Workers invoke the C90 calculation or store operation, and preserve
 results before replying. They do not execute arbitrary shell or Git commands.
 `serve STORE 127.0.0.1:8771` opens the local TEMDD editor and history terminal;
-one process owns a store at a time, so stop its bus peer before opening that
-same store in the terminal.
+one process owns a store at a time. Use `bus-peer --terminal 127.0.0.1:8771`
+to serve the terminal concurrently from that owner, or stop the bus peer before
+opening a separate standalone terminal on the same store.
 
 ## Protocol and evidence boundaries
 
@@ -136,6 +137,85 @@ Possessing a peer key does not prove a natural person's identity or authorize
 unrelated external effects. IP reachability alone does not confer participation.
 This is an addressed bus with one durable router; distributed router consensus
 and automatic route discovery across independent routers are not implemented.
+
+## Repository nodes with encrypted transport and a concurrent terminal
+
+`tools/node.py` wraps this same C90 bus in mutually authenticated TLS 1.3.
+It reuses Python's maintained `ssl`/`asyncio` implementation, the existing
+per-peer HMAC authentication, durable outboxes, fragment reassembly and store.
+The earlier adapter has no encrypted remote transport; the TLS adapter adds
+that missing boundary without defining a second delivery protocol.
+
+Resolve each admitted repository's current HEAD and TREE independently. Put
+those `Subject` objects in a JSON array; use `subject_id: repository-node`.
+Do not substitute Authority's HEAD for Mirror's HEAD. Provision the directory:
+
+```sh
+next/target/release/qikvrt-next bus-repository-config \
+  ../private-nodes router ../router-subject.json ../node-subjects.json
+```
+
+The stable participant ID is `repo-` followed by the first 32 hexadecimal
+characters of SHA-256 of the lowercase `owner/repository`. Duplicate
+repositories, conflicting directory entries and more than 16 participants
+are rejected. Each private credential contains only its own HMAC key and the
+public, exact repository directory. Directory updates are explicit operator
+actions. Registered but unreachable nodes retain their identities and history.
+
+Initialize one router store and one separate store per participant with these
+identities using the existing `init` command. Provision a distinct TLS key and
+certificate per participant, an approved CA bundle, and a router certificate
+with a DNS Subject Alternative Name. Private key/config files must be regular
+owner-only files. Keep them outside Git, images, logs and evidence archives.
+The router's `peer_certificates` file is a JSON map from participant ID to the
+SHA-256 of its DER certificate. It must match the complete bus directory.
+The peer also pins the router certificate's DER SHA-256; CA and hostname
+verification remain mandatory. The certificate identity must match the bus
+identity in the authenticated handshake. No trust-on-first-use is performed.
+
+Start with `python3 next/tools/node.py router --help` or `peer --help`.
+The binary's expected SHA-256 is mandatory; a peer's `--subject` must match its
+directory entry. `--terminal 127.0.0.1:8772` runs the existing TEMDD terminal
+inside the bus peer's single store owner. It can compile, inspect history, send
+to other admitted repositories and read received messages while networking
+continues. The terminal stays local; use an authenticated owner connection to
+access it remotely. Browser sends are bounded and same-origin checked.
+
+For a durable service, serialize the CLI flags with underscore-separated names
+into an owner-only profile, plus `schema: qikvrt-repository-node-profile-v1`
+and `mode: peer` or `router`. `node.py profile PROFILE` loads exactly that
+configuration. The shipped `deploy/qikvrt-repository-node@.service` uses
+`/etc/qikvrt/nodes/NAME.json`, stores under `/var/lib/qikvrt-nodes/`, restarts
+on failures and terminates the entire process group. The router also exits
+when its supervisor's lifetime pipe closes, including supervisor SIGKILL.
+The Mega-ST image contains the adapter and service template. It contains no
+shared production credentials and does not silently enroll itself.
+
+The router is trusted and can read routed plaintext. TLS protects each remote
+hop; this is not encryption against the router operator or compromised
+endpoints. Certificate/key distribution and endpoint deployment remain real
+admission requirements. Installing source code in a repository is not a live
+node deployment. The historical registry is a source of declared membership,
+not current reachability or a certificate authority.
+
+`QUEUED_DURABLE` is emitted only after the sender's complete frame set is
+persisted. It is not a receiving-node ACK. Receipts bind source, destination,
+subject, full payload digest and request session/nonce/message ID. The terminal
+shows at most the last 32 completed messages; the full history remains stored.
+Reconnect replays retained frames at least once; modeled commands use durable
+event IDs to avoid re-executing the same effect. Partitions remain pending and
+never become success. Storage exhaustion blocks acceptance. Loss of every
+durable copy, arbitrary external exactly-once effects, unbounded scale and
+global `EFFECT_ACK_DONE` are not claimed.
+
+`check_nodes.py` executes fresh isolated test PKI, all six directed pairs of
+three processes, simultaneous terminal/store access, destination-subject and
+certificate rejection, exact retry binding, and SIGKILL/restart byte readback.
+`--subjects FILE` additionally accepts explicitly resolved repository contexts;
+the receipt still identifies the single-host process scope. `run_checks.py`
+includes this gate. Test keys never leave its temporary directory. Test PKI
+generation uses the declared OpenSSL 3 host tool; production TLS uses Python's
+standard library and operator-provisioned certificates.
 
 A complete frame or successful computation is not evidence of an external
 effect. Receipt claims remain subject-bound observations. TCP/MAC sequence is

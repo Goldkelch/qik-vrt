@@ -27,9 +27,34 @@ until { IDENTITY_RETAINED &amp;&amp; HISTORY_RETAINED; }</textarea>
 <button id="compile">Prüfen und IR erzeugen</button><p>Die Prüfung führt keine angeforderten Außenwirkungen aus.</p>
 </section><section><h2>IR und Diagnose</h2><pre id="ir" aria-live="polite">Noch kein Programm geprüft.</pre></section></div>
 <section><h2>Gebundener Ereignisverlauf</h2><pre id="events"></pre><small>Die ersten 128 Einträge. Der vollständige Verlauf ist über den CLI-Replay-Cursor abrufbar.</small></section>
+<section id="bus-panel" hidden><h2>Repository-Nodes</h2>
+<p id="bus-state"></p><pre id="bus-directory"></pre>
+<label for="destination">Empfänger</label> <select id="destination"></select>
+<label for="message">Nachricht</label><textarea id="message" maxlength="4000" style="min-height:90px"></textarea>
+<button id="send">Dauerhaft einreihen und senden</button><button id="messages-refresh">Empfang zurücklesen</button>
+<pre id="delivery" aria-live="polite"></pre><pre id="messages"></pre>
+<small>Einreihung ist kein Empfang. Empfangsbelege binden Gegenstelle, Quellstand und Nachrichtenhash. Der vollständige Verlauf bleibt im Store.</small></section>
 <script>
 const el=id=>document.getElementById(id);const show=(id,v)=>{el(id).textContent=JSON.stringify(v,null,2)};
 async function request(path,options){const r=await fetch(path,options);const v=await r.json();if(!r.ok)throw new Error(v.reason||r.status);return v}
 async function refresh(){try{const d=await request('/api/directory');show('directory',d);show('events',await request('/api/events'));el('status').textContent=`${d.node_count} bekannte Komponenten · ${d.checkpoint.sequence} dauerhaft gespeicherte Ereignisse`}catch(e){el('status').textContent='Verbindung unterbrochen: '+e.message}}
-el('refresh').onclick=refresh;el('compile').onclick=async()=>{try{show('ir',await request('/api/compile',{method:'POST',headers:{'Content-Type':'text/plain'},body:el('source').value}))}catch(e){el('ir').textContent=e.message}};refresh();
+let bus;
+async function busRefresh(){try{
+ bus=await request('/api/bus');el('bus-panel').hidden=false;
+ el('bus-state').textContent=bus.identity+' über '+bus.bus;
+ show('bus-directory',bus.repositories);el('destination').replaceChildren();
+ for(const [id,subject] of Object.entries(bus.repositories))if(id!==bus.identity){
+  const option=document.createElement('option');option.value=id;option.textContent=subject.repository;el('destination').append(option);
+ }
+ show('messages',await request('/api/bus/messages'));
+}catch(e){if(bus)el('bus-state').textContent='Verbindung unterbrochen: '+e.message}}
+el('messages-refresh').onclick=busRefresh;
+el('send').onclick=async()=>{try{
+ const destination=el('destination').value;
+ const bytes=new TextEncoder().encode(el('message').value);
+ const payload_hex=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
+ show('delivery',await request('/api/bus/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({op:'send',destination,subject:bus.subject_digests[destination],codec:2,payload_hex})}));
+}catch(e){el('delivery').textContent=e.message}};
+busRefresh();
+el('refresh').onclick=async()=>{await refresh();await busRefresh()};el('compile').onclick=async()=>{try{show('ir',await request('/api/compile',{method:'POST',headers:{'Content-Type':'text/plain'},body:el('source').value}))}catch(e){el('ir').textContent=e.message}};refresh();
 </script></body></html>

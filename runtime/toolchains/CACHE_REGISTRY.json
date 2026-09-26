@@ -376,6 +376,28 @@
       ],
       "version": "ed25519-exact-guest-readback-v1"
     },
+    "openssl": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "next/tools/node.py"
+      ],
+      "cache_class": "runner-image-layer",
+      "cache_locations": [
+        "github-hosted-runner-image:ubuntu-24.04",
+        "task-host:reported-tool-contract"
+      ],
+      "failure_recovery": "Stop the gate; retain stores; provision the declared host tool. Test certificates exist only in disposable directories.",
+      "profiles": [
+        "target"
+      ],
+      "provider": "Ubuntu runner OpenSSL 3 package; maintained host OpenSSL 3 implementation",
+      "trusted_save": false,
+      "verification": [
+        "openssl version must report OpenSSL 3",
+        "fresh isolated CA and mutually authenticated TLS 1.3 execution; reject wrong hostname and untrusted peer"
+      ],
+      "version": "3.x"
+    },
     "pharo": {
       "authority_files": [
         "runtime/toolchains/TOOLCHAIN.lock.tsv",

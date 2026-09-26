@@ -82,6 +82,9 @@ cp -a "${QIKVRT_TOOLCHAIN_CACHE:-$ROOT/.qikvrt/toolchains}/pharo/$PHARO_VERSION/
 cp "$ROOT/src/smalltalk/smoke.st" "$GUEST/opt/qikvrt/smalltalk/"
 cp "$ROOT/runtime/toolchains/"pharo-*-LICENSE.txt "$GUEST/opt/qikvrt/smalltalk/"
 cp "$ROOT/distribution/qikvrt-megast/boot.py" "$GUEST/opt/qikvrt/boot.py"
+cp "$ROOT/next/tools/node.py" "$GUEST/opt/qikvrt/node.py"
+cp "$ROOT/next/deploy/qikvrt-repository-node@.service" "$GUEST/etc/systemd/system/"
+# Node certificates and profiles are provisioned per owner, never baked into an image.
 # Reuse the universal C90/Rust runtime; the desktop is its local terminal.
 # Cargo's lock and the existing isolated toolchain bootstrap own dependencies.
 TRANSPUTER_TOOLS="${QIKVRT_TARGET_TOOLS:-$WORK/target-tools}"

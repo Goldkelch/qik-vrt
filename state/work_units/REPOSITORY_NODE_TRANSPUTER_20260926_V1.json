@@ -1,0 +1,71 @@
+{
+  "schema": "qikvrt_repository_node_transputer_work_unit_v1",
+  "work_unit_id": "REPOSITORY_NODE_TRANSPUTER_20260926_V1",
+  "human_owner": "Ingolf Lohmann",
+  "implementation": "OpenAI Codex",
+  "owner_authorization": {
+    "submitted_at": "2026-09-26T13:00:10+02:00",
+    "declaration": "Codeowner Freigabe ist hiermit erteilt",
+    "approved_head": "f96073d346372c12601393ed69aade4d8d2e0da6",
+    "approved_tree": "f09461ae32610ef904fb7913e7430d0cdfc44d8d",
+    "github_record": "https://github.com/Goldkelch/qik-vrt/pull/1241#pullrequestreview-5325701417",
+    "native_approved_review_inferred": false,
+    "successor_review_transfer": false
+  },
+  "authorized_scope": "Use the universal Transputer and terminal for authenticated, unambiguous, losslessly replayable communication among admitted repository nodes.",
+  "reuse": [
+    "next/crates/qikvrt/src/bus.rs",
+    "next/crates/qikvrt/src/store.rs",
+    "next/crates/qikvrt/src/server.rs",
+    "next/core/src/qikvrt_bus.c",
+    "next/core/src/qikvrt_exchange.c",
+    "next/tools/run_checks.py",
+    "distribution/qikvrt-megast/build.sh"
+  ],
+  "identified_gaps": [
+    "Existing authenticated TCP adapter lacks encryption.",
+    "Standalone terminal and bus peer could not share the same store concurrently.",
+    "Peer names were not bound to a per-repository exact-subject directory."
+  ],
+  "implemented": [
+    "TLS 1.3 mutual authentication, CA/hostname verification, explicit certificate fingerprints and certificate-to-bus-identity binding.",
+    "Stable per-repository identity and distinct exact subject; stale or wrong receiver subject rejected.",
+    "Shared single store owner for local terminal, durable bus outbox, receive projection and exact correlated receipts.",
+    "Supervisor lifetime binding, service group cleanup and restart without resetting history."
+  ],
+  "execution_scope": "Executor resolves the actual committed HEAD/TREE. Three-process all-directed-pairs gate; optional independently resolved repository-context execution.",
+  "acceptance": [
+    "All directed pairs carry actual bytes and receivers return durable exact-correlated receipts.",
+    "Wrong subject, certificate, hostname and router pin fail closed.",
+    "SIGKILL, partition, replay and terminal re-entry preserve acknowledged bytes and old event files.",
+    "Full existing C90, Rust, sanitizer, exchange, continuity, hardware and distribution gates remain mandatory."
+  ],
+  "limits": [
+    "Trusted single router; no encryption against its operator.",
+    "Finite 16-peer and message-size bounds; admission fails on overflow.",
+    "Delivery is at least once; arbitrary external effects are not globally exactly once.",
+    "Source persistence and tests do not establish deployment of public endpoints or universal reachability.",
+    "Production private credentials remain outside Git and images."
+  ],
+  "output_sha256": {
+    "AI_CONTEXT.json": "6e665cc5b0f5db5ece3de222ac02cdf81ad8a36302bc57ef76d4767935ca4e24",
+    "distribution/qikvrt-megast/README.md": "1d75e385d786a30510379522fa917adaf255bcbdee24dadc3f10c0f4a55f8780",
+    "distribution/qikvrt-megast/build.sh": "ef647dfb2a11cba74c1f238e1bf98460f2a511c98d7544e9709b344d280de1f4",
+    "next/AI": "1d911fcbe16718b782a5aa1cd52b5493f4d63afedfe6d2cbdfa4898a9d5dafe9",
+    "next/README.md": "5556ca405e23bc84421be2d8eb914ffeedd82f1ef9121208785c76b517b68898",
+    "next/TARGET_ENTRYPOINTS.json": "e4b185e175c61d26db8cdf3b74225f66f0fde0a2c816dd53c2fe9d72e0beb38b",
+    "next/crates/qikvrt/src/bus.rs": "94a9b38e11f110a94878480c1f9d3e6344458ac3a85ec3aee9cd114f07d03e03",
+    "next/crates/qikvrt/src/main.rs": "23d755c72b371bd4811bbb135e9cbc4f9e54759de88abf96b0a9fee0775d3f11",
+    "next/crates/qikvrt/src/server.rs": "050a5865a6ff95a112222f33d0745f54d43955a62dd832ca9dd3313ce9e3e455",
+    "next/deploy/qikvrt-repository-node@.service": "338d0868b4e3d928d7892a7c94aaa35022e31ace24e01961dd5e0a65bbe069e5",
+    "next/tools/check_nodes.py": "2bafda5912790222907cea9cd60f540fc0ab0b7935ba13d2d9b11e6ef6d34109",
+    "next/tools/node.py": "aff8e79a8facb364716f534887890966766243348733045d1ac97009a2e14fc4",
+    "next/tools/run_checks.py": "05caa4159737ed9578bcab1732f3bbaa85a69bc1e148b0bfb565d2c815ad273a",
+    "next/ui/index.html": "191d320cb5bc545609c39a7bf43d8edff1ca8d42990c311787deaf8ad8707b86",
+    "runtime/toolchains/CACHE_COVERAGE.json": "4adcb95a976238ae350a0b437664c6b228c994d4a53165b95bf7cbc42b4c6dd8",
+    "runtime/toolchains/CACHE_REGISTRY.json": "d01a44668a0125e144280264a0bf4f2c332f1a07dddb0fbfdcb414de1d33359d",
+    "runtime/toolchains/TOOLCHAIN.lock.tsv": "2ee6eb1dd7a19ecac850c48bed6b9f33de3be8844688842a894b515db23b14ca"
+  },
+  "effect_ack_done": false,
+  "predecessor_evidence_transfer": false
+}

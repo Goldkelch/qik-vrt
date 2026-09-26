@@ -204,3 +204,13 @@ Sources: [OpenAI remote connections](https://learn.chatgpt.com/docs/remote-conne
 ## Principle
 
 **Stay fail closed and keep future open.** Missing runtime or publication evidence leaves the lane open; it never converts transport success into effect. The return path carries the original request, material descendants, artifacts, effects, failures, repairs, successors and still-open obligations back into the evidence chain.
+
+## Gesicherte Repository-Nodes
+
+Das Image enthält `/opt/qikvrt/node.py` und die Vorlage
+`qikvrt-repository-node@.service`. Sie verwenden denselben C90-Transputer mit
+gegenseitig authentifiziertem TLS 1.3, expliziten Zertifikats-Fingerprints und
+eigenem dauerhaftem Store je Repository-Node. Das Terminal wird vom laufenden
+Bus-Teilnehmer mitbedient. Zertifikate, Schlüssel, konkrete Gegenstellen und
+Node-Profile werden durch den Betreiber provisioniert; sie sind nicht im
+Image enthalten. Die Anleitung steht in `next/README.md`.

@@ -12,7 +12,14 @@
     "branch": "architecture/universal-transputer-c90-v1",
     "verification": "python3 next/tools/run_checks.py --output-dir <external-new-directory>",
     "work_unit": "state/work_units/UNIVERSAL_TRANSPUTER_C90_BUS_20260921_V1.json",
-    "evidence_rule": "Resolve actual HEAD/TREE; preserve prior identity, versions and result bytes; no predecessor proof transfer or implicit Main promotion."
+    "evidence_rule": "Resolve actual HEAD/TREE; preserve prior identity, versions and result bytes; no predecessor proof transfer or implicit Main promotion.",
+    "repository_nodes": {
+      "adapter": "next/tools/node.py",
+      "verification": "next/tools/check_nodes.py",
+      "service": "next/deploy/qikvrt-repository-node@.service",
+      "transport": "mutually authenticated TLS 1.3 over the existing C90/HMAC bus",
+      "evidence_rule": "Exact per-repository subjects; durable at-least-once replay; source presence is not enrollment, deployment, cross-repository equality or EFFECT_ACK_DONE."
+    }
   },
   "progress_protocol": {
     "human_contract": "docs/HUMAN_MACHINE_PROGRESS_PROTOCOL.md",
